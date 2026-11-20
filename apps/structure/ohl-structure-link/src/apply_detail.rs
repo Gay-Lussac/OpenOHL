@@ -310,8 +310,23 @@ fn table_of(doc: &DocumentMut, key: &str, pick: impl Fn(&Table) -> bool) -> Opti
         .and_then(|a| a.iter().find(|x| pick(x)).cloned())
 }
 
-/// `x` added to the array of tables `key`.
-fn push(doc: &mut DocumentMut, key: &str, x: Table) {
+/// `x` added to the array of tables `key` — its own place and its sub-tables'
+/// (`[plate.leg_bolts]`, `[plate.bend]`, `[[plate.weld]]`) left to follow it
+/// (copied with the source's places, a sub-table would be written beside
+/// the source's: a duplicate key).
+fn push(doc: &mut DocumentMut, key: &str, mut x: Table) {
+    x.set_position(None);
+    for (_, item) in x.iter_mut() {
+        match item {
+            Item::Table(t) => t.set_position(None),
+            Item::ArrayOfTables(a) => {
+                for t in a.iter_mut() {
+                    t.set_position(None);
+                }
+            }
+            _ => {}
+        }
+    }
     if doc.get(key).and_then(Item::as_array_of_tables).is_none() {
         doc.insert(key, Item::ArrayOfTables(toml_edit::ArrayOfTables::new()));
     }

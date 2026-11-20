@@ -59,8 +59,9 @@ fn a_run_writes_the_layout_records_it_and_a_run_again_changes_nothing() {
     let rec = LayoutRecord::of(&t);
     assert!(rec.joints.contains("N2"));
     assert!(rec.ends.contains_key(&("D1".to_owned(), "N2".to_owned())));
-    // Provisional bolts (none of their own): listed.
-    assert_eq!(provisional_bolts(&t).len(), 2);
+    // Provisional bolts (none of their own): listed — D1's, D2's and
+    // (L5o) their plate's own bolts onto the leg.
+    assert_eq!(provisional_bolts(&t).len(), 3);
     // The body generators do not see the record.
     assert!(ohl_structure_edit::body::check(&t).is_ok());
     assert!(ohl_structure_edit::body::generators(&t).unwrap().is_empty());
@@ -294,7 +295,8 @@ fn a_preset_gives_its_bolt_area() {
     let t = parse(&r.text);
     let c = t.connection("D1", "N2").unwrap();
     assert_eq!(c.pitch.map(|p| (p.si() * 1000.0).round()), Some(55.0));
-    assert_eq!(provisional_bolts(&t).len(), 2);
+    // (D1's, D2's and their plate's own bolts onto the leg, L5o.)
+    assert_eq!(provisional_bolts(&t).len(), 3);
     let rec = LayoutRecord::of(&t);
     assert_eq!(
         rec.settings
@@ -979,7 +981,12 @@ fn a_plate_marked_short_is_drawn_short_of_the_work_point() {
         "",
     );
     assert!(!one.contains("\"D2\""));
-    let r = run(&one, &settings(), Some(&["N2"]), false);
+    // (Without L5o's holding bolts: the plate drawn round its member only.)
+    let s = LayoutSettings {
+        hold_plates: false,
+        ..settings()
+    };
+    let r = run(&one, &s, Some(&["N2"]), false);
     let t = parse(&r.text);
     let id = t.plates[0].id.clone();
     let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
@@ -1483,7 +1490,9 @@ fn no_roll_for_both_ends_leaves_the_member_as_it_was() {
 /// is left, said. The search as L1 measured it with L2's two off.)
 #[test]
 fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
-    let (lib, wide) = crate::joint_layout_tests::wide_main();
+    // (J6: a built-up angle's root radius now kept clear by the nuts — a
+    // small one, so that D2's bolts still land on it as this test needs.)
+    let (lib, wide) = crate::joint_layout_tests::wide_main_with("2 mm");
     let text = wide
         .replace("section = \"EA-160x15\"", "section = \"2S-160x15\"")
         .replacen(
@@ -1507,8 +1516,10 @@ fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
         )
         .unwrap()
     };
+    // (J6 off: the built-up main member takes no plate, as the test asks.)
     let today = LayoutSettings {
         onto_search: false,
+        built_up_plates: false,
         ..settings()
     };
     let base = go(&text, &today);
@@ -1519,7 +1530,11 @@ fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
         "{:?}",
         n2.plan
     );
-    let l2 = go(&text, &settings());
+    let no_j6 = LayoutSettings {
+        built_up_plates: false,
+        ..settings()
+    };
+    let l2 = go(&text, &no_j6);
     let n2 = l2.joints.iter().find(|o| o.joint == "N2").unwrap();
     assert!(
         n2.plan.hand_members.iter().any(|m| m == "D1")
@@ -1530,6 +1545,7 @@ fn an_end_left_bolts_onto_another_member_where_that_lays_it_out() {
     let s = LayoutSettings {
         plate_on: false,
         exact_plan: false,
+        built_up_plates: false,
         ..settings()
     };
     assert!(s.onto_search);
@@ -1642,4 +1658,168 @@ fn a_half_or_quarter_turn_decides_whether_a_bent_plate_takes_an_end() {
         "{q0} {q1}"
     );
     assert_ne!(j0, j1);
+}
+
+/// L5o (2026-11-20, the owner's decision of that day): a gusset plate on a
+/// leg running on through the joint (L1 into L2, said one part), which no
+/// leg's end bolts onto, is given at least two provisional bolts of its own
+/// onto the leg — within its flange, inside the plate, the default minimum
+/// spacing apart —, written as `[plate.leg_bolts]` and recorded
+/// provisional; the joint checks then check how it is held (before: "not
+/// checked"). Off: as before. A run again changes nothing.
+#[test]
+fn a_plate_on_a_leg_running_on_gets_bolts_of_its_own_holding_it() {
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+        k_brace().replace(
+            "design = { class = \"bracing\" }",
+            "design = { class = \"bracing\", bolts = { diameter = \"16 mm\", count = 4 } }",
+        )
+    );
+    let holding = |t: &str| {
+        let plans = crate::plate_plans(t, &library(), &Default::default()).unwrap();
+        let rows = crate::plate_usage(&plans, &BTreeMap::new(), 1.0);
+        let nc = rows.iter().any(
+            |x| matches!(&x.part, crate::PlatePart::NotChecked(w) if w.contains("is held to the")),
+        );
+        let held = rows
+            .iter()
+            .any(|x| matches!(&x.part, crate::PlatePart::Holding(_)));
+        (nc, held)
+    };
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let n2 = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+    assert_eq!(n2.plan.plates.len(), 1, "{:?}", n2.plan);
+    let hold = n2.plan.plates[0].hold.as_ref().expect("its own bolts");
+    assert!(hold.member == "L1" || hold.member == "L2", "{hold:?}");
+    assert!(hold.provisional && hold.points.len() >= 2, "{hold:?}");
+    // Within the 61 mm flange: clear of the heel's leg and root by the
+    // nut, short of the toe.
+    for p in &hold.points {
+        assert!(p[1] > 0.007 && p[1] < 0.061, "{hold:?}");
+    }
+    // Apart by the default minimum spacing (three diameters).
+    let d = (hold.points[1][0] - hold.points[0][0]).hypot(hold.points[1][1] - hold.points[0][1]);
+    assert!(d >= 0.048 - 1e-9, "{hold:?}");
+    assert!(
+        n2.plan
+            .notes
+            .iter()
+            .any(|n| n.contains("holding a plate on it")),
+        "{:?}",
+        n2.plan.notes
+    );
+    let t = parse(&r.text);
+    let id = &n2.plates[0];
+    let lb = t
+        .plates
+        .iter()
+        .find(|q| &q.id == id)
+        .and_then(|q| q.leg_bolts.as_ref())
+        .expect("written");
+    assert_eq!(lb.member, hold.member);
+    assert!(
+        LayoutRecord::of(&t)
+            .provisional
+            .contains(&(id.clone(), "N2".to_owned()))
+    );
+    // Nothing laid out runs into anything; the bolts within the plate.
+    let dd = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let j = dd.joint("N2").unwrap();
+    assert!(j.clashes.is_empty(), "{:?}", j.clashes);
+    let pd = j.plates.iter().find(|q| &q.id == id).unwrap();
+    assert!(pd.leg_bolts.is_some(), "{:?}", pd.notes);
+    assert_eq!(holding(&r.text), (false, true));
+    // Off: no bolts of its own, its holding not checked (as before).
+    let off = run(
+        &text,
+        &LayoutSettings {
+            hold_plates: false,
+            ..settings()
+        },
+        Some(&["N2"]),
+        false,
+    );
+    let o2 = off.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o2.plan.plates[0].hold.is_none());
+    assert_eq!(holding(&off.text), (true, false));
+    // A run again: the same file.
+    let again = run(&r.text, &settings(), Some(&["N2"]), false);
+    assert_eq!(again.text, r.text);
+}
+
+/// J6 (2026-11-20): the K-brace on a leg of four angles in a cross (its
+/// angles known), the diagonals' bolts too many for the facing angle's
+/// flange: onto a plate on that angle (the member it lies on written,
+/// `on`), drawn and seated on it — not through the work point — and
+/// nothing laid out running into the leg's other angles. Off: those that
+/// do not land are left, said, as before. A run again changes nothing.
+#[test]
+fn a_plate_on_a_built_up_leg_lies_on_the_angle_facing_the_ends() {
+    let text = k_brace()
+        .replace(
+            "section = \"EA-61x7\"\norientation = \"x+y+\"",
+            "section = \"4X-61x7\"",
+        )
+        .replace(
+            "design = { class = \"bracing\" }",
+            "design = { class = \"bracing\", bolts = { diameter = \"12 mm\", count = 3 } }",
+        );
+    let off = run(
+        &text,
+        &LayoutSettings {
+            built_up_plates: false,
+            ..settings()
+        },
+        Some(&["N2"]),
+        false,
+    );
+    let o2 = off.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(
+        o2.hand.iter().any(|h| h.contains("is built up")),
+        "{:?}",
+        o2.hand
+    );
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let n2 = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+    assert!(!n2.plan.plates.is_empty(), "{:?}", n2.plan);
+    let on = &n2.plan.plates[0].on;
+    assert!(on == "L1" || on == "L2", "{on}");
+    let t = parse(&r.text);
+    let id = &n2.plates[0];
+    assert_eq!(
+        t.plates
+            .iter()
+            .find(|q| &q.id == id)
+            .and_then(|q| q.on.as_deref()),
+        Some(on.as_str())
+    );
+    // Drawn on the facing angle: its outline off the work point's planes
+    // (the leg's axis), no clash of anything laid out, no bolt off the
+    // plate.
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    assert!(j.clashes.is_empty(), "{:?}", j.clashes);
+    let pd = j.plates.iter().find(|q| &q.id == id).unwrap();
+    let n = pd.through.expect("its plane");
+    let off_wp = pd
+        .outline
+        .iter()
+        .map(|q| {
+            ((q[0] - j.position[0]) * n[0]
+                + (q[1] - j.position[1]) * n[1]
+                + (q[2] - j.position[2]) * n[2])
+                .abs()
+        })
+        .fold(0.0, f64::max);
+    assert!(off_wp > 0.005, "{off_wp} {:?}", pd.outline);
+    for m in ["D1", "D2"] {
+        let a = j.arrivals.iter().find(|a| a.member == m).unwrap();
+        assert!(!a.misfit, "{:?}", a.notes);
+    }
+    // A run again: the same file.
+    let again = run(&r.text, &settings(), Some(&["N2"]), false);
+    assert_eq!(again.text, r.text);
 }

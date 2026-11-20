@@ -117,7 +117,9 @@ a flange's face bolted directly and the others onto a plate on the other
 side of the work point — more joints then clashed than were laid out;
 every end of the face goes onto the plate. On a **built-up** member, where
 no plate is laid out, the ends whose bolts land on its angle's flange are
-bolted to it and the others left.
+bolted to it and the others left (since L6, J6: onto a plate on the angle
+facing them where the member's angles are known and that lays out more,
+[below](#plates-on-a-built-up-member-j6)).
 
 ## Which member an end bolts onto
 
@@ -462,9 +464,10 @@ as a choice, welded together. On an **inner face** (since 2026-11-18) the
 plate lies between the flange and the members as on the outer one, its
 outline cut at the angle's thickness and root radius and half the gap
 from the heel — clear of the angle's other leg and its root — and the
-clash check sees it like any part. On a built-up leg no plate is laid
+clash check sees it like any part. On a built-up leg no plate was laid
 out (it is drawn through the work point, where its checks take it): a
-hand detail.
+hand detail — since L6 (J6, [below](#plates-on-a-built-up-member-j6)) a
+plate on the angle facing the ends where the member's angles are known.
 
 **On the steel of what it bolts onto** (J9 and D16, 2026-11-19): where the
 member an end bolts onto **ends at the joint** — not one part through it
@@ -1561,7 +1564,8 @@ owner). Found looking into it: a flat plate the layout lays on a leg
 running through the joint is held to that leg by no bolt of its own; the
 joint checks say the plate's holding *not checked* (as for any plate the
 leg does not bolt onto); a bolt through the plate and the leg would hold
-it.
+it (since L6, [below](#a-flat-plates-own-bolts-onto-the-member-running-through-l5o),
+two provisional bolts of its own).
 
 **Built: an end moved to bolt directly.** On a face that goes onto a plate
 (some end's bolts do not land on the flange where the search placed it),
@@ -1613,6 +1617,112 @@ takes about a quarter more time (measured below).
 Each move is said with the end in the window's notes ("D2: moved 3 mm
 sideways to bolt directly onto L1 (no plate): an eccentricity, its shift —
 at most the plate's thickness").
+
+## Holding bolts, plates on built-up members and the clashes after writing (L6)
+
+(The owner, 2026-11-20, on L5's questions: "Go ahead with it" — next L5o,
+then J6, then a look into the clashes after writing, L5m. Built
+2026-11-20, in active development, not approved yet. The code:
+`joint_layout` (`hold_flat`, `plate_holds`, `HoldRoom`; the switches
+`LayoutSettings::hold_plates` and `built_up_plates`, on by default) and
+`joints` (`PlateSeat::on_given`, `PartAngle::r`). **No format change**.)
+
+### A flat plate's own bolts onto the member running through (L5o)
+
+A gusset plate the layout lays on the flange of a member that runs on
+through the joint is bolted to its members, but nothing of the joint's legs
+bolts onto it: how the plate passes their forces into the member under it
+was not given, and the joint checks said its holding *not checked* (NOT ON
+THE SAFE SIDE, said). Such a plate now gets **its own provisional bolts
+onto that member** (`[plate.leg_bolts]`), as the bent plate's flat has
+them (J2b):
+
+- **How many**: two; more where one member on the plate has more bolts —
+  the most of one member's. *The program's starting value, not a code's*:
+  there are no forces when the layout runs; the joint checks then check
+  the plate's holding bolts under the forces of each case (the resultant of
+  the members' forces on the plate with its moment about the bolts, shared
+  elastically; [joint groups](joint-groups.md)) and the member's bearing
+  under them. Where more do not fit, fewer, not fewer than two, said in the
+  plan's notes.
+- **Where**: one gauge line along the member, the default minimum spacing
+  apart; each bolt **within the flange** by the rules of every bolt bolted
+  directly (clear of the angle's other leg and root by the nut's corner
+  radius, the edge distance from the toe; past the member's cut by the end
+  distance where it ends at the joint); **inside the plate's planned
+  outline** by the plate's edge and end distances, the larger all round
+  (*on the safe side*: the plate drawn round them stays as planned); the
+  default minimum spacing from every hole through the flange and every
+  bolt on the plate (*on the safe side*: the joint checks' rule is only
+  that holes do not overlap); its head clear of the members' legs on that
+  face and of the fixed steel over it by half the gap, its nut clear of
+  what lies behind the flange; on the flat plate's side of a plate bent or
+  welded from it, its thickness and bend beside the seam. The places
+  nearest the work point first, the gauge line in the middle of the band
+  first, whole steps of 2 mm from the work point (the same places at a
+  joint turned or mirrored, so that a joint laid out once per kind matches
+  one laid out on its own).
+- **Not given**: on a plate stopping short of the work point (its outline,
+  drawn round its members' legs and cut short of what it runs into, would
+  change with them; measured: members then left after writing), on a
+  built-up member (`[plate.leg_bolts]` names one angle's leg; not read for
+  a built-up member yet), and where two do not fit — the plate laid out
+  without them, its holding still *not checked*, said.
+- **The guard**: the run's guard on L1 (a joint laid out with fewer ends
+  after writing than its plan without L1's b and c — now also without L5o
+  and J6 — is planned again without them) keeps them only where they cost
+  no end.
+
+### Plates on a built-up member (J6)
+
+An end onto a built-up member (two angles back to back or in a star, four
+in a cross) was already **seated on the angle of it facing the end**
+(2026-11-11) and bolted to it where its bolts land on that angle's flange.
+Where they did not, no plate was laid out: a plate at a built-up leg was
+drawn through the work point (where a plate lies enters its checks, so it
+was not moved), and the ends were left for a hand detail — about 8 600 ends
+on the private real towers, the largest single cause after the clashes.
+
+Now, where the member's **angles are known** (the section's parts), the
+face goes **onto a plate on the angle facing its ends**, as on a single
+angle: the plate names that member (`on`), and the joint details seat a
+plate whose member is given on the angle of a built-up member facing its
+members (its flange under the plate that angle's). A plate added by hand
+without naming its member stays through the work point, as before.
+
+- **Kept clear of the member's other angles**: the plan's plate check sees
+  the built-up member's own steel in the plate's slab (the angle it lies on
+  is under its face, or beyond its heel's cut). A plate **between the
+  angles**, where the packing lies, is not laid out: the gap is the
+  section's (fitted to its properties on imported sections), the packing's
+  thickness and place are not given — by hand, said ("…'s other angle
+  (built up: a plate between its angles, where their packing lies, is not
+  laid out)").
+- **The guard — the clear rule**: each joint with a built-up member whose
+  angles are known is planned with and without it; the plan with it is kept
+  only where it lays out **more ends, or as many on fewer plates**.
+- **On the safe side, as for direct bolting onto a built-up member**: the
+  ends bolt into one angle of the member; the force reaches the others
+  through the member's stitch bolts and packing, as the member's design
+  assumes (the analysis and the member check take the built-up section
+  whole, as before).
+- **Found and fixed**: a built-up member's angles had no root radius for
+  the bolts landing on them — a nut could sit on the fillet. They now keep
+  the section's root radius (on the safe side: fewer ends land directly on
+  built-up members than before).
+
+### The clashes after writing, broken down (L5m)
+
+What the after-writing clash check finds (the steps before cannot see it:
+the plan's own check uses the outlines as planned, the run checks them as
+drawn) was counted on the private real towers by the pair of parts and
+what each part's member is in the plan: laid out, left for a hand detail,
+or left as it is (in line, running on as one part, not a single angle, the
+partner of a member bolting onto it). No change was clearly safe to make
+from it alone; the counts and the proposals are in the measured section
+below. One was tried and left out: the steel of a member not laid out that
+sits on a member laid out, moved with it in the plan — no change on the
+sample (the clashes are not of that kind).
 
 ## The clash check
 
@@ -2167,4 +2277,62 @@ column: the work merged since); "L5" with the moves (the default now).
   alike), the largest 21.3 s → 26.7 s — about a quarter more: each joint
   planned twice (the guard) and the moves searched a millimetre at a time.
   The full columns ran beside other work on a shared machine: their
+  times are not compared.
+
+## Measured (L6, 2026-11-20)
+
+On the same 78 private tower files and settings as L5 (J9's proposals and
+J7a's leg splice places confirmed, every switch before on). "Before" is
+the main build of 2026-11-20 measured again (with L5); "L5o" adds the flat
+plates' own bolts and J6's root radius of a built-up member's angles (J6's
+plates off); "L6" all of it (the default now).
+
+| | before | L5o | L6 |
+|---|---|---|---|
+| joints laid out whole | 32 376 (50.0 %) | 32 234 (49.8 %) | 33 776 (52.2 %) |
+| member ends laid out | 116 245 (65.2 %) | 115 672 (64.9 %) | 122 441 (68.7 %) |
+| ends left: built-up member | 8 197 | — | 1 857 |
+| plates written | 65 240 | 64 898 | 71 499 |
+| … their steel (the bill of materials, 73 towers) | 92.6 t | 88.7 t | 107.4 t |
+| bolts (the bill of materials) | 183 149 | 213 018 | 224 254 |
+| plates whose holding is not checked | 24 491 | 18 732 | 21 565 |
+| plates' holding groups checked | 6 392 | 20 045 | 19 184 |
+| shifts written | 1 789 | 1 752 | 1 704 |
+| joints that do not fit, as given / as assumed | 26 / 13 007 | 26 / 13 082 | 26 / 13 204 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 |
+
+- **L5o**: about 13 650 more plates are held by their own bolts (holding
+  groups 6 392 → 20 045); the plates whose holding is not checked fall by
+  a quarter. Those left: plates stopping short of the work point, plates on
+  a built-up member, plates where two bolts do not fit. On their own the
+  holding bolts cost about as many joints laid out whole as they gain
+  (99 more, about 100 fewer, the run's guard taking most back); the 142
+  fewer of the column are mostly J6's root radius: about 180 joints whose
+  ends no longer land directly on a built-up member's angle (on the safe
+  side). The bolts count about 30 000 more (two or more per plate).
+- **J6**: 1 542 more joints laid out whole than L5o (+2.4 points), 6 769
+  more ends; the ends left for a built-up member 8 197 → 1 857 (those left:
+  a plate between the angles, or the plan with the plate laying out no
+  more). About 6 600 more plates, their steel about a fifth more (the
+  plates the hand detail would have made, now counted).
+- **The clashes after writing** (L5m, counted on L6's run; about 14 300
+  member ends left at the time of writing, by the pair of parts and what
+  each part's member is): a plate laid out running into the steel of a
+  member left as it is — a piece running on as one part with another, a
+  section not a single angle, the partner of a member bolting onto it —
+  about 3 900; a member left as it is whose bolts (as assumed) no longer
+  fit the member laid out under it (off its flange or beyond its steel)
+  about 1 700; a head or nut of a member end against a plate about 2 500;
+  steel against steel of pieces in line or ends left for a hand detail
+  about 1 900; a plate's own bolts outside its outline after writing about
+  370 (most of them J2b's bent flats, before L6 too). One traced: a plate
+  4 mm thick on a member's flange running 4 mm into a member drawn on its
+  work line (no bolts, no seat) at the work point, which the plan's plate
+  check did not see. Not changed; proposals in the roadmap (O44 L6).
+- **Time**: every thirteenth tower (six), laid out back to back twice, the
+  machine shared (load 7–11, another build beside it): the median per
+  tower 26.7 and 26.9 s before, 33.7 and 36.2 s with L6 — about 30 % more
+  —, the largest 28.5 s → 41.5 and 42.6 s: J6's guard plans each joint
+  with a built-up member twice more, and the holding bolts' places are
+  searched 2 mm at a time. The full columns ran beside other work: their
   times are not compared.

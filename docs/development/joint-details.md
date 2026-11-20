@@ -1475,6 +1475,57 @@ that order; "plan ideas to get the automatic layout working"):
   one bolt through the leg with the rest on a shorter plate: looked into,
   not built (a bolt through three plies needs a format field; measured
   rarely possible).
+- **L6: holding bolts for flat plates (L5o), plates on built-up members
+  (J6), the clashes after writing broken down (L5m)** (2026-11-20; in
+  active development, not approved yet;
+  [theory](../theory/joint-layout.md#holding-bolts-plates-on-built-up-members-and-the-clashes-after-writing-l6)).
+  L5o: `LayoutSettings::hold_plates`, on. `plan_once` calls `hold_flat`
+  for each flat plate before it is pushed: where none of the ends on it is
+  one of the joint's legs (`welds::joint_legs`) nor the member it lies on,
+  `plate_holds` searches places for at least two provisional bolts (the
+  most of one member's on the plate where more) — one gauge line along that
+  member, the default minimum spacing apart, within the flange's landing
+  band (clear of the heel's leg and root by the nut, the edge distance from
+  the toe), past the member's cut by its end distance where it ends at the
+  joint, inside the plate's planned outline (`plate_outline2`, round or
+  short) by the plate's edge and end distances, the default minimum spacing
+  from every hole through the flange (`leg_holes`) and every bolt on the
+  plate, the head clear of the legs on that face (`HoldRoom::ends`), of the
+  seams of plates bent or welded from it (on the flat plate's side) and of
+  the fixed steel (`Strip::fixed`), the nut of what is behind the flange
+  (`Strip::fixed_far`); the places nearest the work point first, whole
+  2 mm steps from it (the same at a joint turned or mirrored). Written as
+  every `HoldPlan` (`[plate.leg_bolts]`, `leg` always named — an
+  equal-leg angle `long` along the section's y, as `joints::along_y` reads
+  it —, the record's `leg_bolts` mark, `provisional`). Not for a plate
+  stopping short of the work point (its drawn outline would change) nor on
+  a built-up member (`[plate.leg_bolts]` names a single angle's leg): said
+  in the plan's notes. The run's L1 guard (`PlanCtx::plain`) plans a joint
+  without them where it lays out fewer ends after writing than its plan
+  without L1 b/c, L5o and J6. The joint checks needed no change: a
+  `[plate.leg_bolts]` already gives the plate's holding group and the leg's
+  bearing (`joint_groups::holding_groups`). J6:
+  `LayoutSettings::built_up_plates`, on. A face of ends onto a built-up
+  member whose angles are known (`Profile::part_angles`) that does not
+  land goes onto a plate on the angle facing them, as on a single angle
+  (before: those landing bolted, the others left); `plate_hits` tests the
+  plate against the member's other angles (its own steel in the plate's
+  slab); `plan_joint_ctx` keeps the joint's plan with it only where it lays
+  out more ends, or as many on fewer plates. The joint details: a plate
+  whose `on` is given is seated on the angle of a built-up member facing
+  its members (`PlateSeat::on_given`, `seat` with `parts`), its flange
+  under the worked-out outline that angle's (`host_flange`); a plate
+  without `on` at a built-up leg stays through the work point as before.
+  Found and fixed with it: a built-up member's angles had no root radius
+  for the bolts landing on them (`HostFlange::r` 0); now the section's
+  (`PartAngle::r`, `built_up_root`) — on the safe side, fewer ends land
+  directly on built-up members. Also fixed: `apply_detail`'s copy of a
+  plate kept its sub-tables' places (`[plate.leg_bolts]` written twice: a
+  duplicate key); `push` clears them. L5m: no code; the causes counted.
+  No format change. Tests: `layout_run_tests::a_plate_on_a_leg_running_on_gets_bolts_of_its_own_holding_it`,
+  `layout_run_tests::a_plate_on_a_built_up_leg_lies_on_the_angle_facing_the_ends`,
+  the app's `layout_ui_tests::a_plate_on_a_built_up_leg_in_the_window`
+  (its picture); tests whose scenario was without them switch them off.
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

@@ -165,6 +165,8 @@ pub struct PartAngle {
     pub towards: [f64; 2],
     /// Thickness, m.
     pub t: f64,
+    /// Its root radius (the section's), m (J6, 2026-11-20).
+    pub r: f64,
 }
 
 /// An angle's geometry around its centroid.
@@ -1483,6 +1485,11 @@ struct PlateSeat {
     /// where they are across the flange. Its `leg` is then none (it does
     /// not lie on one: the clash check tests it against the leg).
     lift: Option<([f64; 3], [f64; 3])>,
+    /// The member it lies on given (`on`, the layout's plates): on a
+    /// built-up member, on the angle of it facing its members (J6,
+    /// 2026-11-20); else (the joint's leg worked out) a plate at a built-up
+    /// leg stays through the work point, as before.
+    on_given: bool,
 }
 
 /// The plates of a joint by id.
@@ -1545,6 +1552,7 @@ fn plate_seats(
             p.on.as_ref()
                 .filter(|m| all.iter().any(|a| &a.member == *m))
                 .cloned();
+        let on_given = given_on.is_some();
         let leg = if given_on.is_some() {
             given_on
         } else if on.is_empty() {
@@ -1568,6 +1576,7 @@ fn plate_seats(
                     leg: None,
                     thickness: p.thickness.si(),
                     lift: Some((lift, at)),
+                    on_given,
                 },
             );
             continue;
@@ -1598,6 +1607,7 @@ fn plate_seats(
                 leg,
                 thickness: p.thickness.si(),
                 lift: None,
+                on_given,
             },
         );
     }
@@ -1802,7 +1812,9 @@ fn seat(a: &Arrival, all: &[Arrival], seats: &PlateSeats, parts: bool) -> [f64; 
     // onto the leg, then the plate's thickness out); no leg: the plate
     // through the work point. A plate at a built-up leg stays through the
     // work point, as before 2026-11-11: where a plate lies enters its
-    // checks (its bolts against its edges), so it is not moved here.
+    // checks (its bolts against its edges), so it is not moved here —
+    // unless the member it lies on is given (`on`, the layout's plates):
+    // then on the angle of it facing the member (J6, 2026-11-20).
     if let Some(s) = a.onto.value.as_ref().and_then(|o| seats.get(o)) {
         let Some(p) = a.profile.as_ref() else {
             return [0.0; 3];
@@ -1814,7 +1826,7 @@ fn seat(a: &Arrival, all: &[Arrival], seats: &PlateSeats, parts: bool) -> [f64; 
         let on_leg = s.leg.as_ref().map(|l| {
             let mut b = a.clone();
             b.onto = Valued::of(l.clone(), Source::WorkedOut);
-            seat(&b, all, &PlateSeats::new(), false)
+            seat(&b, all, &PlateSeats::new(), s.on_given)
         });
         return match on_leg {
             Some(o) if norm(o) > 0.0 => add(o, scale(nb, s.thickness)),
@@ -2587,7 +2599,8 @@ pub(crate) struct HostFlange {
     pub width: f64,
     /// The angle's thickness, m.
     pub t: f64,
-    /// The angle's root radius, m (0 for a built-up member's angle).
+    /// The angle's root radius, m (a built-up member's angle: its
+    /// section's, J6).
     pub r: f64,
 }
 
@@ -2642,7 +2655,13 @@ fn flange_of(a: &Arrival, host: &Arrival, along: bool, other: bool) -> Option<Ho
             }
         }
     }
-    let r = q.angle.map_or(0.0, |g| g.r);
+    // (J6, 2026-11-20) A built-up member's angle: the section's root
+    // radius (before: none — a nut could sit on its fillet).
+    let r = q
+        .angle
+        .map(|g| g.r)
+        .or_else(|| q.part_angles.first().map(|g| g.r))
+        .unwrap_or(0.0);
     (width > 0.0).then_some(HostFlange {
         heel,
         across,
@@ -2948,7 +2967,13 @@ fn plate(
     // its heel, across it and its width.
     let flange = leg.and_then(|l| {
         let p = l.profile.as_ref()?;
-        let g = p.angle?;
+        // (J6, 2026-11-20) On a built-up member given (`on`): the flange of
+        // its angle facing the members.
+        let Some(g) = p.angle else {
+            let a = onto.first().filter(|_| seat.is_some_and(|s| s.on_given))?;
+            let f = host_flange(a, l)?;
+            return Some((l, add(joint, f.heel), (f.across, f.width)));
+        };
         let n = onto.first().map_or([0.0, 0.0, 1.0], |a| a.bolt_axis);
         let across = if dot(p.axes[2], n).abs() >= dot(p.axes[1], n).abs() {
             (p.axes[1], g.b)
@@ -3731,6 +3756,16 @@ fn face(at: [f64; 3], d: [f64; 3], far: [f64; 3]) -> String {
 }
 
 /// A member's profile from its axes and section.
+/// The root radius of a built-up section's angles, m (none: 0).
+fn built_up_root(s: Option<&Shape>) -> f64 {
+    match s {
+        Some(
+            Shape::DoubleAngle { r, .. } | Shape::StarAngle { r, .. } | Shape::CrossAngle { r, .. },
+        ) => *r,
+        _ => 0.0,
+    }
+}
+
 fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
     let [w, h] = s.size;
     let mut shaped = true;
@@ -3759,6 +3794,7 @@ fn profile(axes: [[f64; 3]; 3], s: &crate::ExportSection) -> Profile {
                     heel: [g.heel[0] + ll[0], g.heel[1] + ll[1]],
                     towards: g.towards,
                     t: g.t,
+                    r: built_up_root(s.shape.as_ref()),
                 })
                 .collect()
         })

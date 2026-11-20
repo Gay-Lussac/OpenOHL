@@ -169,6 +169,13 @@ impl LayoutWindow {
             // directly where pulled back further, or moved by at most the
             // plate's thickness, its bolts land.
             direct_moved: true,
+            // L5o (2026-11-20): a flat plate on a member running on through
+            // the joint given two provisional bolts of its own onto it.
+            hold_plates: true,
+            // J6 (2026-11-20): a plate on the angle of a built-up member
+            // facing the ends (its angles known), kept where it lays out
+            // more.
+            built_up_plates: true,
         }
     }
 
