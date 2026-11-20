@@ -148,6 +148,12 @@ pub struct ImportReport {
     pub source_revision: Option<String>,
     /// The revision made (`None`: not asked).
     pub revision: Option<String>,
+    /// How each entry of the file's library files maps onto the network's
+    /// library (phase 9): the same, added, asked for; the model keeps its
+    /// own files until Update library pins.
+    pub libraries: Vec<crate::library::Mapping>,
+    /// Rows of the use index written (what its elements use).
+    pub uses: usize,
     /// Seconds, all of it.
     pub seconds: f64,
     /// Seconds of the revision.
@@ -422,7 +428,9 @@ pub fn import(
     // 4. Into the network, as one transaction.
     let store = PgStore::new(net.shared(), code);
     store.savepoint("ohl_import")?;
-    let written = (|| -> Result<Vec<Twin>, NetError> {
+    let lib_files = session.line_library_all(main)?;
+    let use_rows = crate::library::uses_of_session(&session, None);
+    let written = (|| -> Result<(Vec<Twin>, Vec<crate::library::Mapping>), NetError> {
         lock(&net.shared()).execute(
             "INSERT INTO line (id, name, source) VALUES ($1, $2, $3)",
             &[&code, &name, &file],
@@ -446,6 +454,11 @@ pub fn import(
         write_objects(net, code, &rows)?;
         write_spatial(net, code, &spatial)?;
         crate::stream::write_interest(net, code, main, &interest)?;
+        // What each element uses of the libraries (phase 9), and the
+        // file's library entries mapped onto the network's library.
+        net.write_uses(code, &[], &use_rows)?;
+        let mapping =
+            crate::library::map_import(net, code, &options.user, &file, &lib_files)?;
         let mut users = users.clone();
         if !users.iter().any(|(n, _)| n == &options.user) {
             users.push((options.user.clone(), Role::Admin));
@@ -537,15 +550,16 @@ pub fn import(
                 "objects": rows.len(),
                 "renamed": renamed.len(),
                 "twins": twins.len(),
+                "library_entries": mapping.len(),
             })
             .to_string(),
         )?;
-        Ok(twins)
+        Ok((twins, mapping))
     })();
-    let twins = match written {
-        Ok(twins) => {
+    let (twins, libraries) = match written {
+        Ok(x) => {
             store.release("ohl_import")?;
-            twins
+            x
         }
         Err(e) => {
             let _ = store.roll_back_to("ohl_import");
@@ -602,6 +616,8 @@ pub fn import(
         left_in_file: left,
         source_revision,
         revision,
+        libraries,
+        uses: use_rows.len(),
         seconds: started.elapsed().as_secs_f64(),
         revision_seconds,
     })
@@ -764,6 +780,24 @@ impl ImportReport {
         if !self.left_in_file.is_empty() {
             let _ = writeln!(out, "  left in the file: {}", self.left_in_file.join(", "));
         }
+        if !self.libraries.is_empty() {
+            let _ = writeln!(
+                out,
+                "  library entries mapped onto the network's library ({}; the line keeps its \
+                 own files until Update library pins):",
+                self.libraries.len()
+            );
+            for m in self.libraries.iter().take(40) {
+                let _ = writeln!(
+                    out,
+                    "    {}/{} {}: {}",
+                    m.kind, m.file, m.entry, m.outcome
+                );
+            }
+            if self.libraries.len() > 40 {
+                let _ = writeln!(out, "    … {} more", self.libraries.len() - 40);
+            }
+        }
         if let Some(r) = &self.revision {
             let _ = writeln!(
                 out,
@@ -849,6 +883,25 @@ impl ImportReport {
                 e(&t.other),
                 t.distance_m,
                 e(t.structure_type.as_deref().unwrap_or("—"))
+            );
+        }
+        let _ = write!(
+            out,
+            "</table><h2>Library entries ({})</h2><p>Each entry of the file's library files \
+             mapped onto the network's library: the same, added (a kind not locked), or asked \
+             for (a locked kind, or an entry that differs — for a maintainer; never replaced). \
+             The line keeps its own files until Update library pins.</p><table><tr><th>Kind\
+             </th><th>File</th><th>Entry</th><th>Mapped</th></tr>",
+            self.libraries.len()
+        );
+        for m in &self.libraries {
+            let _ = write!(
+                out,
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                e(&m.kind),
+                e(&m.file),
+                e(&m.entry),
+                e(&m.outcome)
             );
         }
         let _ = write!(out, "</table><h2>Left in the file</h2><ul>");

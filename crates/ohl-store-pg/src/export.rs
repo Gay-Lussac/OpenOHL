@@ -17,12 +17,19 @@
 //! - `network.line`: the model's code;
 //! - `network.revision`: the model's main branch revision when exported
 //!   (empty: nothing committed);
-//! - `network.library_pins`: the model's library pins (JSON; empty until
-//!   country libraries, phase 9);
+//! - `network.library_pins`: the model's library pins (JSON, kind →
+//!   release; phase 9);
+//! - `network.library_withdrawn`: the withdrawn entries the model uses
+//!   (JSON, `kind/entry`; it keeps them, shown as withdrawn);
 //! - `network.exported`: when and by whom (JSON).
 //!
-//! The export is in the audit. Rights (only what the exporter may see,
-//! the *export* permission) are phase 7.
+//! **The library entries it uses stand in the file**: a line holds the
+//! files of the releases it is pinned to as its own library files
+//! (phase 9), so they are copied with its rows — the file opens and
+//! solves alone, nothing else of the network's library comes along.
+//!
+//! The export is in the audit; it needs export on the whole line
+//! (phase 7).
 
 use std::path::Path;
 use std::time::Instant;
@@ -91,7 +98,7 @@ pub fn export(
             .into_iter()
             .find(|r| r.kind == "branch" && r.name == ohl_session::versions::MAIN)
             .and_then(|r| r.revision);
-        let (name, pins): (Option<String>, String) = {
+        let (name, pins, withdrawn): (Option<String>, String, Vec<String>) = {
             let mut c = lock(&shared);
             let name = c
                 .query_opt("SELECT value FROM net_meta WHERE key = 'name'", &[])?
@@ -102,13 +109,28 @@ pub fn export(
                     &[&code],
                 )?
                 .get(0);
-            (name, pins)
+            // The withdrawn entries the model uses (it keeps them).
+            let withdrawn = c
+                .query(
+                    "SELECT DISTINCT u.kind || '/' || u.entry FROM lib_use u
+                     JOIN lib_withdrawn w ON w.kind = u.kind AND w.entry = u.entry
+                     WHERE u.line_id = $1 AND u.branch = 'main' ORDER BY 1",
+                    &[&code],
+                )?
+                .into_iter()
+                .map(|r| r.get(0))
+                .collect();
+            (name, pins, withdrawn)
         };
         let time = store.now()?;
         file.set_meta("network.name", name.as_deref().unwrap_or_default())?;
         file.set_meta("network.line", code)?;
         file.set_meta("network.revision", revision.as_deref().unwrap_or_default())?;
         file.set_meta("network.library_pins", &pins)?;
+        file.set_meta(
+            "network.library_withdrawn",
+            &serde_json::to_string(&withdrawn).expect("serialises"),
+        )?;
         file.set_meta(
             "network.exported",
             &serde_json::json!({"time": time, "user": user}).to_string(),

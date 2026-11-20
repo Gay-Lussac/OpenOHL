@@ -1931,6 +1931,13 @@ impl Session {
         self.objects.keys()
     }
 
+    /// The JSON of object `kind`/`id` of the line worked on, as kept.
+    pub fn object_value(&self, kind: Kind, id: &str) -> Option<Arc<Value>> {
+        self.objects
+            .get(&(kind, id.to_owned()))
+            .map(|o| o.value.clone())
+    }
+
     /// The project's chunk grid.
     pub fn grid(&self) -> &Grid {
         &self.grid
@@ -2154,6 +2161,108 @@ impl Session {
             },
         )?;
         Ok(())
+    }
+
+    /// The library files kept with project line `line` of every kind:
+    /// (kind, name, text), by kind and name.
+    pub fn line_library_all(
+        &self,
+        line: &str,
+    ) -> Result<Vec<(String, String, String)>, SessionError> {
+        let objects = if line == self.current {
+            &self.objects
+        } else {
+            &self
+                .others
+                .get(line)
+                .ok_or_else(|| refused(format!("no project line \"{line}\"")))?
+                .objects
+        };
+        let mut out: Vec<(String, String, String)> = objects
+            .range((Kind::Library, String::new())..)
+            .take_while(|((k, _), _)| *k == Kind::Library)
+            .filter_map(|(_, o)| library_entry(&o.value))
+            .collect();
+        out.sort();
+        Ok(out)
+    }
+
+    /// **Update library pins** (country server, phase 9): the library
+    /// files of the current project line changed to a release's (`changes`:
+    /// kind, name, text — `None`: removed) as **one** log entry of kind
+    /// `library_pins` with `note`, and the routes in `stale` marked out of
+    /// date with their notice (route → what changed), as the shared
+    /// towers' rule marks them ([`shared`]). Not undone by the user's Undo:
+    /// the pin lives with the network, so the files go back by updating
+    /// the pins again (to the release before). Checked as
+    /// [`Session::put_library_file`] (the role, the "library" edit grant,
+    /// the names). `None`: nothing to change.
+    pub fn library_pins_update(
+        &mut self,
+        user: &str,
+        changes: &[(String, String, Option<String>)],
+        stale: &BTreeMap<String, String>,
+        note: &str,
+    ) -> Result<Option<Applied>, SessionError> {
+        self.require(user, Role::Designer)?;
+        self.check_library_edit(user)?;
+        let mut commands = Vec::new();
+        for (kind, name, text) in changes {
+            if kind.is_empty() || kind.contains('/') || !safe_file_name(name) {
+                return Err(refused(format!(
+                    "library file \"{name}\" of \"{kind}\": bad name"
+                )));
+            }
+            let id = library_id(kind, name);
+            let current = self.objects.get(&(Kind::Library, id.clone()));
+            match text {
+                Some(t) => {
+                    let value = library_value(kind, name, t);
+                    if current.is_none_or(|o| *o.value != value) {
+                        commands.push(Command::Put {
+                            kind: Kind::Library,
+                            id,
+                            value,
+                            ord: None,
+                        });
+                    }
+                }
+                None if current.is_some() => commands.push(Command::Delete {
+                    kind: Kind::Library,
+                    id,
+                    confirm: false,
+                }),
+                None => {}
+            }
+        }
+        if commands.is_empty() {
+            return Ok(None);
+        }
+        let mut prims = Vec::new();
+        let mut notes = vec![note.to_owned()];
+        self.primitives(Command::Batch { commands }, &mut prims, &mut notes, true)?;
+        deleted_once(&mut prims);
+        let routes: Vec<String> = stale.keys().cloned().collect();
+        if !routes.is_empty() {
+            notes.push(format!(
+                "results out of date on route{} {}",
+                if routes.len() == 1 { "" } else { "s" },
+                routes.join(", ")
+            ));
+        }
+        *self.shared_pending.lock().expect("not poisoned") =
+            (!stale.is_empty()).then(|| stale.clone());
+        let applied = self.apply_prims(
+            user,
+            prims,
+            Some(notes.join("; ")),
+            "library_pins",
+            None,
+            false,
+            true,
+        );
+        self.shared_pending.lock().expect("not poisoned").take();
+        applied.map(Some)
     }
 
     /// Writes a consistent copy of the project file to `path` (which must
@@ -4156,6 +4265,7 @@ impl Session {
 
 pub mod annotations;
 pub mod collab;
+pub mod country;
 pub mod impact;
 pub(crate) mod in_place;
 #[cfg(test)]

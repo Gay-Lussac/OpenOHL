@@ -842,7 +842,7 @@ fn schema_3_brought_to_4() {
         .unwrap();
     }
     let net = Network::connect(&url).unwrap();
-    assert_eq!(net.schema().unwrap(), 4);
+    assert_eq!(net.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
     assert_eq!(net.rights_rev().unwrap(), 0);
     let d = net.rights().unwrap();
     let rights = d.compile("old", &ohl_session::rights::NoModels);

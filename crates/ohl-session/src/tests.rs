@@ -1029,6 +1029,54 @@ fn library_files_are_kept_in_the_project() {
     assert_eq!(s.library_files("cables").unwrap().len(), 2);
 }
 
+/// Update library pins (country server, phase 9): the files changed as
+/// one entry of kind `library_pins` with its note, the routes given
+/// marked out of date, nothing for files already so; not undone by Undo.
+#[test]
+fn library_pins_move_as_one_entry_marking_routes_stale() {
+    let (_path, mut s) = project("pins");
+    s.put_library_file("ben", "cables", "old.ohlw", "x = 1")
+        .unwrap();
+    let route = s.line().routes[0].id.clone();
+    let stale: BTreeMap<String, String> =
+        [(route.clone(), "cables release R2: a changed".to_owned())].into();
+    let changes = vec![
+        ("cables".to_owned(), "new.ohlw".to_owned(), Some("y = 2".to_owned())),
+        ("cables".to_owned(), "old.ohlw".to_owned(), None),
+    ];
+    // A viewer may not.
+    assert!(
+        s.library_pins_update("vic", &changes, &stale, "pins")
+            .is_err()
+    );
+    let a = s
+        .library_pins_update("ben", &changes, &stale, "library pins: cables → R2")
+        .unwrap()
+        .expect("changed");
+    assert_eq!(a.objects.len(), 2);
+    assert_eq!(
+        s.library_files("cables").unwrap(),
+        vec![("new.ohlw".to_owned(), "y = 2".to_owned())]
+    );
+    let entry = s.log().unwrap().pop().unwrap();
+    assert_eq!(entry.kind, "library_pins");
+    assert!(
+        entry.note.as_deref().unwrap().contains("cables → R2"),
+        "{:?}",
+        entry.note
+    );
+    let marks = s.stale_routes().unwrap();
+    assert_eq!(marks[&route].notices[0].what, "cables release R2: a changed");
+    // Already so: nothing.
+    assert!(
+        s.library_pins_update("ben", &changes, &stale, "again")
+            .unwrap()
+            .is_none()
+    );
+    // Undo does not take it back (the pin is the network's).
+    assert_ne!(s.undo_entry("ben", "main").unwrap(), Some(entry.seq));
+}
+
 /// A project of schema 3 kept its library files in one table for all its
 /// lines: each line gets them as objects when it opens.
 #[test]

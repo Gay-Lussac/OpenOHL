@@ -13,7 +13,7 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 4;
+pub const SCHEMA: i32 = 5;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
@@ -309,6 +309,67 @@ ALTER TABLE stream ADD COLUMN whole boolean NOT NULL DEFAULT false;
 -- The rights' revision: each change of users, groups, roles or
 -- assignments adds one; the server reads the rights again when it moved.
 INSERT INTO net_meta (key, value) VALUES ('rights_rev', '0') ON CONFLICT (key) DO NOTHING;
+"#,
+    ),
+    (
+        5,
+        "country libraries (phase 9)",
+        r#"
+-- A library kind locked for the whole network (changed only by requests
+-- granted and releases; maintainers are assignments, no list here).
+CREATE TABLE lib_kind (
+  kind text PRIMARY KEY,
+  locked boolean NOT NULL DEFAULT false,
+  by_user text NOT NULL, time timestamptz NOT NULL DEFAULT clock_timestamp(),
+  note text NOT NULL DEFAULT '');
+-- A file of the network's library as it is now (its head, released or
+-- not); a file's own lock. (The draft's kind_locked: the kind's lock is
+-- lib_kind's.)
+ALTER TABLE lib_file DROP COLUMN kind_locked;
+ALTER TABLE lib_file ADD COLUMN text text NOT NULL DEFAULT '';
+ALTER TABLE lib_file ADD COLUMN hash text NOT NULL DEFAULT '';
+ALTER TABLE lib_file ADD COLUMN by_user text NOT NULL DEFAULT '';
+ALTER TABLE lib_file ADD COLUMN time timestamptz NOT NULL DEFAULT clock_timestamp();
+-- Releases in the order made; each one's files by hash (texts in vc_blob,
+-- each once for the network).
+ALTER TABLE lib_release ADD COLUMN n bigserial;
+CREATE UNIQUE INDEX lib_release_n ON lib_release (n);
+CREATE TABLE lib_release_file (
+  kind text NOT NULL, tag text NOT NULL, file text NOT NULL,
+  hash text NOT NULL REFERENCES vc_blob,
+  PRIMARY KEY (kind, tag, file),
+  FOREIGN KEY (kind, tag) REFERENCES lib_release ON DELETE CASCADE);
+-- Entry versions: each (kind, file, entry, version) with the release it
+-- first came in. Withdrawn entries apart (an entry, every version).
+ALTER TABLE lib_entry DROP COLUMN withdrawn;
+ALTER TABLE lib_entry DROP COLUMN withdrawn_note;
+CREATE TABLE lib_withdrawn (
+  kind text NOT NULL, file text NOT NULL, entry text NOT NULL,
+  note text NOT NULL DEFAULT '', by_user text NOT NULL,
+  time timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (kind, file, entry));
+-- The use index: what each element of a model's main branch uses (a
+-- wire, a structure type, an insulator assembly, a body's type; file
+-- empty: named by id) and, for the kinds a line picks as a whole, each
+-- entry of the files the line holds (object_kind 'library'). The routes
+-- and places: the object's own (object.routes, spatial), joined.
+DROP TABLE lib_use;
+CREATE TABLE lib_use (
+  line_id text NOT NULL REFERENCES line ON DELETE CASCADE,
+  branch text NOT NULL, object_kind text NOT NULL, object text NOT NULL,
+  kind text NOT NULL, file text NOT NULL DEFAULT '', entry text NOT NULL,
+  PRIMARY KEY (line_id, branch, object_kind, object, kind, file, entry));
+CREATE INDEX lib_use_entry ON lib_use (kind, entry);
+-- A request: the entry asked for as a file of its own (its draft), the
+-- model and branch where its requester uses it, the release it came in.
+ALTER TABLE lib_request ADD COLUMN text text NOT NULL DEFAULT '';
+ALTER TABLE lib_request ADD COLUMN line_id text REFERENCES line ON DELETE SET NULL;
+ALTER TABLE lib_request ADD COLUMN branch text;
+ALTER TABLE lib_request ADD COLUMN released text;
+CREATE INDEX lib_request_user ON lib_request (user_name);
+-- The libraries' revision: each change adds one; the server reads the
+-- locks, requests and withdrawn entries again when it moved.
+INSERT INTO net_meta (key, value) VALUES ('library_rev', '0') ON CONFLICT (key) DO NOTHING;
 "#,
     ),
 ];

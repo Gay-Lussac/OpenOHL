@@ -704,3 +704,91 @@ fn a_refusal_after_the_command_leaves_nothing() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// The network's own library (phase 9): covered by scopes of no line, no
+/// place and no object kind but `library`; a maintainer of one kind holds
+/// nothing of another; a grant naming an entry covers only it, a deny
+/// naming one covers its file and kind too.
+#[test]
+fn the_country_library_is_of_no_line() {
+    let cables = Target::CountryLibrary {
+        kind: "cables",
+        file: Some("acsr.ohlw"),
+        entry: Some("drake"),
+    };
+    let kind = Target::CountryLibrary {
+        kind: "cables",
+        file: None,
+        entry: None,
+    };
+    let costs = Target::CountryLibrary {
+        kind: "costs",
+        file: None,
+        entry: None,
+    };
+    let of_kind = |k: &str| Scope {
+        library_kind: Some(k.into()),
+        ..Scope::default()
+    };
+    let mut entry = of_kind("cables");
+    entry.library_file = Some("acsr.ohlw".into());
+    entry.library_entry = Some("drake".into());
+    let mut on_line = of_kind("cables");
+    on_line.line = Some("A".into());
+    let d = data(vec![
+        grant(1, "user:ann", "library_maintainer", of_kind("cables")),
+        grant(2, "user:bob", "designer", Scope::line("A")),
+        grant(3, "user:bob", "viewer", on_line),
+        grant(4, "user:cid", "viewer", entry.clone()),
+    ]);
+    let ann = d.compile("ann", &NoModels);
+    let bob = d.compile("bob", &NoModels);
+    let cid = d.compile("cid", &NoModels);
+    for p in [Permission::See, Permission::Review, Permission::Lock] {
+        assert!(ann.allows(p, &cables) && ann.allows(p, &kind), "{p:?}");
+        assert!(!ann.allows(p, &costs), "{p:?}");
+    }
+    // A line's designer, or a library kind on a line: not the network's.
+    for t in [&cables, &kind] {
+        assert!(!bob.allows(Permission::See, t));
+        assert!(!bob.allows(Permission::Request, t));
+    }
+    // Their own line's library files: yes.
+    assert!(bob.allows(
+        Permission::Request,
+        &Target::Library {
+            line: "A",
+            kind: "cables",
+            file: "acsr.ohlw",
+            entry: Some("drake"),
+        }
+    ));
+    // An entry's grant: that entry only.
+    assert!(cid.allows(Permission::See, &cables));
+    assert!(!cid.allows(Permission::See, &kind));
+    // An entry's deny: its file and kind too, whatever the order.
+    for order in [false, true] {
+        let mut v = vec![
+            grant(1, "user:ann", "library_maintainer", of_kind("cables")),
+            deny(2, "user:ann", None, entry.clone()),
+        ];
+        if order {
+            v.reverse();
+        }
+        let ann = data(v).compile("ann", &NoModels);
+        assert!(!ann.allows(Permission::See, &cables));
+        assert!(!ann.allows(Permission::Lock, &kind));
+        assert!(ann.allows(
+            Permission::See,
+            &Target::CountryLibrary {
+                kind: "cables",
+                file: Some("acsr.ohlw"),
+                entry: Some("other"),
+            }
+        ));
+    }
+    // A network admin: everything.
+    let d = data(vec![grant(1, "user:ann", "network_admin", Scope::network())]);
+    let ann = d.compile("ann", &NoModels);
+    assert!(ann.allows(Permission::Lock, &costs));
+}

@@ -40,6 +40,7 @@ use postgres::{Client, NoTls, Row, Statement};
 
 pub mod export;
 pub mod import;
+pub mod library;
 pub mod rights;
 pub mod schema;
 mod store;

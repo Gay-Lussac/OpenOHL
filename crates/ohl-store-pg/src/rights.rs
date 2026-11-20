@@ -168,7 +168,7 @@ fn check_name(what: &str, name: &str) -> Result<(), NetError> {
 }
 
 /// Reads the rights from a connection.
-fn read(c: &mut crate::Conn) -> Result<RightsData, postgres::Error> {
+pub(crate) fn read(c: &mut crate::Conn) -> Result<RightsData, postgres::Error> {
     let mut d = RightsData::default();
     for r in c.query("SELECT role, permission FROM role_permission", &[])? {
         let (role, p): (String, String) = (r.get(0), r.get(1));

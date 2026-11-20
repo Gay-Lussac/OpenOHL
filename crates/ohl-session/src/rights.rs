@@ -552,6 +552,18 @@ pub enum Target<'a> {
         /// An entry of it (none: the file).
         entry: Option<&'a str>,
     },
+    /// The network's own library of a kind (phase 9: country libraries),
+    /// a file of it or an entry of that file — kept once for the whole
+    /// network, of no line: covered by scopes naming no line, route,
+    /// region or object.
+    CountryLibrary {
+        /// The library kind.
+        kind: &'a str,
+        /// A file of it (none: the kind as a whole).
+        file: Option<&'a str>,
+        /// An entry of the file (none: the file, or the kind).
+        entry: Option<&'a str>,
+    },
 }
 
 impl<'a> Target<'a> {
@@ -794,6 +806,27 @@ impl Compiled {
         let s = &self.scope;
         match t {
             Target::Network => s.is_network(),
+            // The network's own library (phase 9): scopes of no line, no
+            // place and no object kind but `library`; a grant naming a
+            // file or an entry covers only it, a deny naming one covers
+            // the kind or file holding it too (it may touch it).
+            Target::CountryLibrary { kind, file, entry } => {
+                if s.line.is_some() || s.route.is_some() || s.region.is_some() || s.object.is_some()
+                {
+                    return false;
+                }
+                if s.kind.as_deref().is_some_and(|k| k != "library") {
+                    return false;
+                }
+                let within = |scope: &Option<String>, t: Option<&str>| match (scope, t) {
+                    (None, _) => true,
+                    (Some(a), Some(b)) => a == b,
+                    (Some(_), None) => deny,
+                };
+                s.library_kind.as_deref().is_none_or(|k| k == *kind)
+                    && within(&s.library_file, *file)
+                    && within(&s.library_entry, *entry)
+            }
             Target::Line(l) => {
                 if deny {
                     self.may_touch_line(l, true)
