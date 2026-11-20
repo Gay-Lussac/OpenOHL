@@ -125,7 +125,7 @@ pub use joints::{
     joint_details, joint_details_at, part_chains, similar_joints,
 };
 pub use layout_run::{
-    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, RECORD_ID, RECORD_KIND,
+    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, ONTO_HAND, RECORD_ID, RECORD_KIND,
     RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
     plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };

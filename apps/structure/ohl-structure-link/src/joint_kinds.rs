@@ -457,6 +457,8 @@ pub fn map_plan(p: &crate::joint_layout::JointPlan, l: &Like) -> crate::joint_la
                     keep_to: r.keep_to.iter().map(|(a, d)| (pt(a), l.dir(*d))).collect(),
                 }),
                 outline: x.outline.as_ref().map(|o| pts(o)),
+                short: x.short,
+                cuts: x.cuts.iter().map(|(a, d)| (pt(a), l.dir(*d))).collect(),
                 hold: x.hold.as_ref().map(|h| {
                     let mut h = h.clone();
                     h.member = m(&h.member);

@@ -154,6 +154,12 @@ impl LayoutWindow {
             exact_plan: true,
             clash_tries: true,
             direct_first: false,
+            // L2's follow-ups and L3 (2026-11-20): a plate stopping short of
+            // what it would run into, a bent plate's own bolts slid clear of
+            // the holes there, a plate bent by a few degrees.
+            short_plates: true,
+            slide_holds: true,
+            small_bends: true,
         }
     }
 
@@ -1433,7 +1439,16 @@ impl StructureApp {
                     .iter()
                     .filter(|((_, j), f)| j == joint && !f.is_empty())
                     .map(|((m, _), f)| {
-                        format!("{m}: {}", f.iter().cloned().collect::<Vec<_>>().join(", "))
+                        // (An `onto` given by hand the layout kept, L2's
+                        // follow-up: said as yours.)
+                        let words: Vec<String> = f
+                            .iter()
+                            .map(|x| match x.strip_prefix(ohl_structure_link::ONTO_HAND) {
+                                Some(h) => format!("onto (yours: {h}, kept)"),
+                                None => x.clone(),
+                            })
+                            .collect();
+                        format!("{m}: {}", words.join(", "))
                     })
                     .chain(
                         rec.made
