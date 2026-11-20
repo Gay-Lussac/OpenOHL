@@ -73,10 +73,92 @@ fn kind_of(k: NeighbourKind) -> Kind {
 /// tile index.
 struct HostNet<'a> {
     host: &'a mut NetHost,
+    /// Phase 13: what a check may read at most (the working set's bounds
+    /// grown by [`MAX_CHECK_REACH`] and the spans' margins): an area
+    /// asked beyond it reads nothing more, and the check is refused after
+    /// (`clipped`) — a check's reach comes from what its client sent (the
+    /// rules' distances, the field's distance).
+    limit: Option<Bounds>,
+    clipped: bool,
+}
+
+impl<'a> HostNet<'a> {
+    fn new(host: &'a mut NetHost) -> Self {
+        Self {
+            host,
+            limit: None,
+            clipped: false,
+        }
+    }
+}
+
+/// Phase 13: the farthest a check run on the server reads around its
+/// working set, m (a plugin's declared reach at most, `ohl_scope`).
+pub(crate) const MAX_CHECK_REACH: f64 = ohl_scope::reach::MAX_DECLARED_REACH;
+
+/// Phase 13: the field distance a client may ask, m.
+pub(crate) const MAX_FIELD_DISTANCE: f64 = 2_000.0;
+
+/// Phase 13: the clearance rules' text a client may send, bytes.
+pub(crate) const MAX_RULES: usize = 256 << 10;
+
+/// Phase 13: structures a check of loads may name.
+pub(crate) const MAX_CHECK_STRUCTURES: usize = 10_000;
+
+/// Phase 13: a check's parameters as a client sent them, refused before
+/// it waits for its turn (what it would make the server read or compute
+/// beyond the limits).
+pub(crate) fn check_parameters(check: &ScopedCheck) -> Result<(), String> {
+    match check {
+        ScopedCheck::Clearances { case, rules } => {
+            if rules.len() > MAX_RULES || case.len() > 256 {
+                return Err(format!(
+                    "clearance rules of {} KB: at most {} KB",
+                    rules.len() >> 10,
+                    MAX_RULES >> 10
+                ));
+            }
+        }
+        ScopedCheck::Fields {
+            case,
+            distance,
+            amps,
+            limit_ut,
+        } => {
+            if let Some(d) = distance
+                && !(d.is_finite() && *d > 0.0 && *d <= MAX_FIELD_DISTANCE)
+            {
+                return Err(format!(
+                    "the field distance: more than 0 m and at most {MAX_FIELD_DISTANCE} m"
+                ));
+            }
+            if amps.is_some_and(|a| !(a.is_finite() && a >= 0.0))
+                || limit_ut.is_some_and(|l| !(l.is_finite() && l >= 0.0))
+                || case.len() > 256
+            {
+                return Err("the field's current and limit: finite, not negative".into());
+            }
+        }
+        ScopedCheck::StructureLoads { structures } => {
+            if structures.len() > MAX_CHECK_STRUCTURES {
+                return Err(format!(
+                    "{} structures: a check of loads takes at most {MAX_CHECK_STRUCTURES}",
+                    structures.len()
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 impl HostNet<'_> {
-    fn objects_in(&self, area: &Bounds, kind: Kind) -> Vec<(String, String)> {
+    fn objects_in(&mut self, area: &Bounds, kind: Kind) -> Vec<(String, String)> {
+        // Beyond the limit: nothing more is read (the check is refused
+        // after, its little work done on nothing).
+        if self.clipped || self.limit.is_some_and(|l| !l.contains(area)) {
+            self.clipped = true;
+            return Vec::new();
+        }
         let mut out = BTreeSet::new();
         for t in self.host.tiles_of(area) {
             if let Some(s) = self.host.tiles.get(&t) {
@@ -318,9 +400,22 @@ impl NetHost {
             structures: of(Kind::Structure),
         };
         let name = check.name().to_owned();
+        check_parameters(&check)?;
         let raw = {
-            let mut net = HostNet { host: self };
-            crate::scoped_report::run(&mut net, &mut ws, &check, |n, m, s| n.has_twin(m, s))?
+            let mut net = HostNet::new(self);
+            let margin = net.max_margin();
+            net.limit = extent.summary.bounds.map(|b| {
+                Bounds::new([b[0], b[1]], [b[2], b[3]]).grown(MAX_CHECK_REACH + 2.0 * margin)
+            });
+            let raw =
+                crate::scoped_report::run(&mut net, &mut ws, &check, |n, m, s| n.has_twin(m, s))?;
+            if net.clipped {
+                return Err(format!(
+                    "{name}: its reach is more than {MAX_CHECK_REACH} m around the working set \
+                     (the rules' or the field's distances): refused"
+                ));
+            }
+            raw
         };
         let seconds = started.elapsed().as_secs_f64();
         keep(
@@ -381,7 +476,7 @@ impl NetHost {
         }
         let grow = match raw.reach() {
             ohl_scope::Reach::Wires { metres } | ohl_scope::Reach::Lines { metres } => {
-                metres + 2.0 * HostNet { host: self }.max_margin()
+                metres + 2.0 * HostNet::new(self).max_margin()
             }
             _ => ohl_scope::reach::TWIN_TOLERANCE,
         };
@@ -484,7 +579,7 @@ impl NetHost {
     /// search takes it; phase 12: an offline working set's checks take
     /// the same).
     pub(super) fn network_max_margin(&mut self) -> f64 {
-        HostNet { host: self }.max_margin()
+        HostNet::new(self).max_margin()
     }
 
     /// A client gone: its results no longer watched.

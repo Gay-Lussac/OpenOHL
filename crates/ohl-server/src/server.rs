@@ -37,8 +37,7 @@ use tokio_tungstenite::tungstenite::Utf8Bytes;
 use crate::stream::{Deliver, Feed, FeedEnd, Item, Own, To, View};
 use crate::{
     ALPN, Bucket, ClientMsg, Invitation, Keys, MAX_HELLO, Op, PROTOCOL, Peer, Presence, ServerMsg,
-    execute, fingerprint, lock_target, random_code, read_msg, read_msg_max, write_encoded,
-    write_msg,
+    execute, fingerprint, lock_target, random_code, read_msg_max, write_encoded, write_msg,
 };
 
 /// Messages waiting for a client before its forwarder stops taking
@@ -72,6 +71,15 @@ pub const MAX_QUIC: usize = 256;
 /// The users' list is broadcast at most this often for presence changes
 /// (the latest one wins).
 pub const PEERS_EVERY: Duration = Duration::from_millis(100);
+
+/// Phase 13: messages larger than [`crate::LARGE_MESSAGE`] read at once by
+/// the server, bytes in all (each joined connection could otherwise hold
+/// [`crate::MAX_MESSAGE`]; a large message waits for its share).
+pub const LARGE_BUDGET: usize = 256 << 20;
+
+/// Phase 13: how a network's server checks a sign-in token (OIDC): the
+/// issuer and subject it names, or why not. Run off the authority.
+pub(crate) type TokenCheck = Arc<dyn Fn(&str) -> Result<(String, String), String> + Send + Sync>;
 
 /// How a server is started.
 #[derive(Debug, Clone)]
@@ -130,6 +138,9 @@ pub struct Server {
     host: String,
     keys: Keys,
     pub(crate) jobs: std_mpsc::Sender<Job>,
+    /// A network's server.
+    #[cfg_attr(not(feature = "network"), allow(dead_code))]
+    network: bool,
     stop: Option<oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -288,6 +299,9 @@ pub(crate) struct JoinOptions {
     pub(crate) working_set: Option<ohl_session::working_set::WorkingSetSpec>,
     /// Network, phase 7: an admin seeing as this user.
     pub(crate) see_as: Option<String>,
+    /// Network, phase 13: signed in with a token of the network's
+    /// identity provider (issuer, subject), checked already.
+    pub(crate) identity: Option<(String, String)>,
 }
 
 /// Network, phase 6: what a client asks about working sets.
@@ -334,6 +348,18 @@ pub(crate) enum NetAsk {
         bundle: Box<ohl_session::versions::Bundle>,
         branch: Option<String>,
     },
+}
+
+#[cfg_attr(not(feature = "network"), allow(dead_code))]
+impl NetAsk {
+    /// Phase 13: a check, an export or a bundle — long work on the
+    /// authority, queued behind the commands and limited.
+    pub(crate) fn is_heavy(&self) -> bool {
+        matches!(
+            self,
+            NetAsk::Check { .. } | NetAsk::Export { .. } | NetAsk::Import { .. }
+        )
+    }
 }
 
 /// Phase 12: what a program hosting a network asks of its authority for
@@ -436,6 +462,14 @@ pub(crate) enum Job {
         user: String,
         what: OfflineJob,
         reply: std_mpsc::Sender<Result<serde_json::Value, String>>,
+    },
+    /// Network, phase 13: `user`'s personal invitation's access code
+    /// (its generation, valid `days` days if given).
+    #[cfg(feature = "network")]
+    Invitation {
+        user: String,
+        days: Option<u32>,
+        reply: std_mpsc::Sender<Result<String, String>>,
     },
     /// Network: a measurement of the authority's own work (the bench).
     #[cfg(feature = "network")]
@@ -672,6 +706,13 @@ pub(crate) trait Host {
     fn common(&mut self) -> &mut Common;
     /// A job (the common ones are answered before).
     fn handle(&mut self, job: Job);
+    /// Phase 13: long work waits (checks, exports, bundles of a network):
+    /// done when no other job waits.
+    fn deferred(&self) -> bool {
+        false
+    }
+    /// Phase 13: one waiting long work done.
+    fn run_deferred(&mut self) {}
     /// When it wants [`Host::tick`] next.
     fn due(&self) -> Option<Instant> {
         None
@@ -689,16 +730,30 @@ pub(crate) fn run<H: Host>(mut host: H, jobs: std_mpsc::Receiver<Job>) {
             .into_iter()
             .flatten()
             .min();
-        let job = match due {
-            Some(due) => match jobs.recv_timeout(due.saturating_duration_since(Instant::now())) {
+        // Phase 13: long work waiting goes after every job already
+        // there (the commands, interests, joins), one at a time.
+        let job = if host.deferred() {
+            match jobs.try_recv() {
                 Ok(job) => Some(job),
-                Err(std_mpsc::RecvTimeoutError::Timeout) => None,
-                Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
-            },
-            None => match jobs.recv() {
-                Ok(job) => Some(job),
-                Err(_) => break,
-            },
+                Err(std_mpsc::TryRecvError::Empty) => {
+                    host.run_deferred();
+                    None
+                }
+                Err(std_mpsc::TryRecvError::Disconnected) => break,
+            }
+        } else {
+            match due {
+                Some(due) => match jobs.recv_timeout(due.saturating_duration_since(Instant::now()))
+                {
+                    Ok(job) => Some(job),
+                    Err(std_mpsc::RecvTimeoutError::Timeout) => None,
+                    Err(std_mpsc::RecvTimeoutError::Disconnected) => break,
+                },
+                None => match jobs.recv() {
+                    Ok(job) => Some(job),
+                    Err(_) => break,
+                },
+            }
         };
         match job {
             Some(Job::Stop) => break,
@@ -1033,6 +1088,10 @@ impl Host for Authority {
             Job::Offline { reply, .. } => {
                 let _ = reply.send(Err(FILE_MODE.into()));
             }
+            #[cfg(feature = "network")]
+            Job::Invitation { reply, .. } => {
+                let _ = reply.send(Err(FILE_MODE.into()));
+            }
             #[cfg(test)]
             Job::Panic { reply } => {
                 let _ = reply.send(self.guarded("a test", |_| -> Result<(), String> {
@@ -1135,8 +1194,26 @@ impl Drop for Pending {
     }
 }
 
+/// Phase 13: the address the limits count by — an IPv6 address by its
+/// /64 (one host or network holds a whole /64: its addresses are one
+/// address for the limits), an IPv4 one (or one mapped into IPv6) as it
+/// is.
+pub(crate) fn gate_key(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let s = v6.segments();
+                IpAddr::V6(std::net::Ipv6Addr::new(s[0], s[1], s[2], s[3], 0, 0, 0, 0))
+            }
+        },
+        v4 => v4,
+    }
+}
+
 impl Gate {
     fn with<T>(&self, ip: IpAddr, f: impl FnOnce(&mut Seen) -> T) -> T {
+        let ip = gate_key(ip);
         let mut seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
         let now = Instant::now();
         // Forgotten after ten quiet minutes.
@@ -1240,7 +1317,10 @@ impl Pace {
     }
 }
 
-/// Joins at the authority, within the address's limits.
+/// Joins at the authority, within the address's limits; a sign-in token
+/// (phase 13, OIDC) checked first, off the authority (a bad one makes the
+/// address wait as a wrong access code does).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn join(
     gate: &Gate,
     ip: IpAddr,
@@ -1248,10 +1328,28 @@ pub(crate) async fn join(
     client: u64,
     user: String,
     code: String,
-    options: JoinOptions,
+    mut options: JoinOptions,
+    token: Option<(String, Option<TokenCheck>)>,
 ) -> Result<Result<Joined, String>, String> {
     if let Err(e) = gate.may_join(ip) {
         return Ok(Err(e));
+    }
+    if let Some((token, check)) = token {
+        let Some(check) = check else {
+            return Ok(Err(
+                "this server takes no sign-in tokens: join with your personal invitation".into(),
+            ));
+        };
+        let checked = tokio::task::spawn_blocking(move || check(&token))
+            .await
+            .map_err(|_| "server stopped".to_owned())?;
+        match checked {
+            Ok(identity) => options.identity = Some(identity),
+            Err(why) => {
+                gate.joined(ip, &Err(WRONG_CODE.into()));
+                return Ok(Err(why));
+            }
+        }
     }
     let (tx, rx) = oneshot::channel();
     jobs.send(Job::Join {
@@ -1325,6 +1423,11 @@ pub(crate) struct Listening {
     pub(crate) fingerprint: [u8; 32],
     pub(crate) jobs: std_mpsc::Sender<Job>,
     pub(crate) authority_thread: std::thread::JoinHandle<()>,
+    /// Phase 13: a network's checker of sign-in tokens (OIDC), if any.
+    pub(crate) token_check: Option<TokenCheck>,
+    /// A network's server (its personal invitations made by its
+    /// authority: generations, expiry).
+    pub(crate) network: bool,
 }
 
 impl Server {
@@ -1416,6 +1519,8 @@ impl Server {
                 fingerprint: fp,
                 jobs,
                 authority_thread,
+                token_check: None,
+                network: false,
             },
         )
     }
@@ -1431,6 +1536,8 @@ impl Server {
             fingerprint: fp,
             jobs,
             authority_thread,
+            token_check,
+            network,
         } = l;
         let (stop, stop_rx) = oneshot::channel();
         let (ready_tx, ready_rx) = std_mpsc::channel();
@@ -1488,8 +1595,10 @@ impl Server {
                             acceptor,
                             net_jobs.clone(),
                             gate.clone(),
+                            token_check.clone(),
                         ))
                     });
+                    let large = Arc::new(tokio::sync::Semaphore::new(LARGE_BUDGET >> 10));
                     let slots = Arc::new(tokio::sync::Semaphore::new(options.max_connections.max(1)));
                     let mut next = 0u64;
                     let mut stop_rx = stop_rx;
@@ -1509,8 +1618,10 @@ impl Server {
                                 };
                                 next += 1;
                                 let (jobs, gate) = (net_jobs.clone(), gate.clone());
+                                let (large, token_check) = (large.clone(), token_check.clone());
                                 tokio::spawn(async move {
-                                    if let Err(e) = connection(incoming, next, jobs, gate, pending).await {
+                                    let limits = Limits { large, token_check };
+                                    if let Err(e) = connection(incoming, next, jobs, gate, pending, limits).await {
                                         log(&format!("connection {next}: {e}"));
                                     }
                                     drop(slot);
@@ -1542,6 +1653,7 @@ impl Server {
             host,
             keys,
             jobs,
+            network,
             stop: Some(stop),
             thread: Some(thread),
         })
@@ -1553,12 +1665,48 @@ impl Server {
     }
 
     /// The personal invitation of `user` (a user of the project joins
-    /// only with theirs).
+    /// only with theirs). On a network (phase 13): of the user's current
+    /// generation (a reissued one refuses the older), valid for the
+    /// server's `invite_days` if set.
     pub fn invitation_for(&self, user: &str) -> Invitation {
+        #[cfg(feature = "network")]
+        if self.network
+            && let Ok(code) = self.network_code(user, None)
+        {
+            return Invitation {
+                code,
+                ..self.invitation.clone()
+            };
+        }
         Invitation {
             code: self.keys.code(Some(user)),
             ..self.invitation.clone()
         }
+    }
+
+    /// Phase 13: a network user's personal invitation valid `days` days
+    /// (`None`: the server's `invite_days`; refused for a user the
+    /// network does not have).
+    #[cfg(feature = "network")]
+    pub fn invitation_valid(&self, user: &str, days: Option<u32>) -> Result<Invitation, String> {
+        Ok(Invitation {
+            code: self.network_code(user, days)?,
+            ..self.invitation.clone()
+        })
+    }
+
+    #[cfg(feature = "network")]
+    fn network_code(&self, user: &str, days: Option<u32>) -> Result<String, String> {
+        let (tx, rx) = std_mpsc::channel();
+        self.jobs
+            .send(Job::Invitation {
+                user: user.to_owned(),
+                days,
+                reply: tx,
+            })
+            .map_err(|_| "server stopped")?;
+        rx.recv_timeout(Duration::from_secs(10))
+            .map_err(|_| "no answer in 10 s".to_owned())?
     }
 
     /// The web client's link (when it is served), with the general access
@@ -1566,7 +1714,10 @@ impl Server {
     /// not send to the server: `https://HOST:PORT/#user=NAME&code=CODE`.
     pub fn web_link(&self, user: Option<&str>) -> Option<String> {
         let addr = self.web_addr?;
-        let code = self.keys.code(user);
+        let code = match user {
+            Some(u) => self.invitation_for(u).code,
+            None => self.keys.code(None),
+        };
         let who = user
             .map(|u| format!("user={}&", crate::web::fragment_escape(u)))
             .unwrap_or_default();
@@ -1611,6 +1762,13 @@ pub(crate) fn log(text: &str) {
     eprintln!("ohl-server: {text}");
 }
 
+/// Phase 13: what a connection shares with the others: the budget of
+/// large messages, the checker of sign-in tokens.
+struct Limits {
+    large: Arc<tokio::sync::Semaphore>,
+    token_check: Option<TokenCheck>,
+}
+
 /// One client: hello, the copy, then requests in and broadcasts out.
 async fn connection(
     incoming: quinn::Incoming,
@@ -1618,6 +1776,7 @@ async fn connection(
     jobs: std_mpsc::Sender<Job>,
     gate: Arc<Gate>,
     pending: Pending,
+    limits: Limits,
 ) -> Result<(), String> {
     let ip = incoming.remote_address().ip();
     let conn = incoming.await.map_err(|e| e.to_string())?;
@@ -1629,7 +1788,7 @@ async fn connection(
         tokio::time::timeout(Duration::from_secs(10), read_msg_max(&mut recv, MAX_HELLO))
             .await
             .map_err(|_| "no hello in 10 s".to_owned())??;
-    let (protocol, user, code, options) = match hello {
+    let (protocol, user, code, options, id_token) = match hello {
         Some(ClientMsg::Hello {
             protocol,
             user,
@@ -1642,6 +1801,7 @@ async fn connection(
                 copy: true,
                 ..JoinOptions::default()
             },
+            None,
         ),
         Some(ClientMsg::Join {
             protocol,
@@ -1654,6 +1814,7 @@ async fn connection(
             held,
             working_set,
             see_as,
+            id_token,
         }) => (
             protocol,
             user,
@@ -1667,7 +1828,9 @@ async fn connection(
                 tiles,
                 working_set,
                 see_as,
+                identity: None,
             },
+            id_token,
         ),
         _ => return Err("no hello".into()),
     };
@@ -1679,7 +1842,8 @@ async fn connection(
         tokio::time::sleep(Duration::from_millis(200)).await;
         return Ok(());
     }
-    let joined = join(&gate, ip, &jobs, client, user.clone(), code, options).await?;
+    let token = id_token.map(|t| (t, limits.token_check.clone()));
+    let joined = join(&gate, ip, &jobs, client, user.clone(), code, options, token).await?;
     drop(pending);
     let joined = match joined {
         Ok(j) => j,
@@ -1692,7 +1856,17 @@ async fn connection(
         }
     };
     log(&format!("{user} joined from {}", conn.remote_address()));
-    let result = serve(&conn, &mut send, &mut recv, client, &user, joined, &jobs).await;
+    let result = serve(
+        &conn,
+        &mut send,
+        &mut recv,
+        client,
+        &user,
+        joined,
+        &jobs,
+        &limits.large,
+    )
+    .await;
     let _ = jobs.send(Job::Leave {
         client,
         user: user.clone(),
@@ -1710,6 +1884,7 @@ async fn serve(
     user: &str,
     joined: Joined,
     jobs: &std_mpsc::Sender<Job>,
+    large: &Arc<tokio::sync::Semaphore>,
 ) -> Result<(), String> {
     let Joined {
         events,
@@ -1806,7 +1981,9 @@ async fn serve(
     let mut pace = Pace::new();
     let reading = async {
         loop {
-            let Some(msg) = read_msg::<ClientMsg>(recv).await? else {
+            let Some(msg) =
+                crate::read_msg_budget::<ClientMsg>(recv, crate::MAX_MESSAGE, Some(large)).await?
+            else {
                 return Ok::<(), String>(());
             };
             if let Some(answer) = dispatch(msg, client, user, jobs, &mut pace).await? {

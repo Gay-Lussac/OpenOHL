@@ -1,0 +1,133 @@
+# This file is part of OpenOHL. Copyright (C) 2026 the OpenOHL contributors.
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# A country server with Docker Compose (ADR-0013, phase 13; in active
+# development, not approved yet): PostgreSQL with PostGIS, the network's
+# server (`ohl network serve`) and a backup job. One way among others —
+# plain binaries work as well; the owner's IT decides. Not needed for the
+# desktop applications.
+#
+#   cp -r secrets.example secrets   # then put real secrets in secrets/
+#   docker compose up -d db
+#   docker compose run --rm server network migrate --user admin
+#   docker compose run --rm server network rights bootstrap --user admin
+#   docker compose up -d
+#
+# The guide: docs/user-guide/server-deployment.md.
+
+name: ohl-network
+
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      # The server's own role (no superuser): made by initdb/20-ohl.sh.
+      OHL_DB_PASSWORD_FILE: /run/secrets/ohl_db_password
+    secrets:
+      - postgres_password
+      - ohl_db_password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./initdb/20-ohl.sh:/docker-entrypoint-initdb.d/20-ohl.sh:ro
+    # Reached by the server and the backup job only (no port published).
+    networks: [back]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d network"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  server:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/Dockerfile
+    image: ohl-network:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # The password comes from the secret file, never the command line.
+      OHL_DATABASE_URL: "host=db port=5432 user=ohl dbname=network"
+      OHL_DATABASE_PASSWORD_FILE: /run/secrets/ohl_db_password
+      # The database is on another host (the db container): TLS, or the
+      # explicit choice of none on this private network.
+      OHL_DATABASE_SSLMODE: disable
+    secrets:
+      - ohl_db_password
+    command:
+      - network
+      - serve
+      - --bind
+      - 0.0.0.0:4433
+      - --advertise
+      - ohl.example.org
+      - --keys
+      - /var/lib/ohl/server-key
+      - --stats
+      - /var/lib/ohl/stats.json
+      # OIDC sign-in, if the owner's IT wants it (else leave these out):
+      # - --oidc-issuer
+      # - https://id.example.org/realms/grid
+      # - --oidc-audience
+      # - ohl-server
+    ports:
+      - "4433:4433/udp"
+    volumes:
+      - server-state:/var/lib/ohl
+    networks: [back]
+    healthcheck:
+      # The server writes its counters every half second while it runs.
+      test: ["CMD-SHELL", "find /var/lib/ohl/stats.json -mmin -2 | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  backup:
+    image: ohl-network:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      OHL_DATABASE_URL: "host=db port=5432 user=ohl dbname=network"
+      OHL_DATABASE_PASSWORD_FILE: /run/secrets/ohl_db_password
+      OHL_DATABASE_SSLMODE: disable
+      # A network admin (the backups are in the audit under this name).
+      OHL_BACKUP_USER: admin
+      OHL_BACKUP_EVERY_HOURS: "6"
+      OHL_BACKUP_KEEP: "28"
+    secrets:
+      - ohl_db_password
+    entrypoint: ["/bin/sh", "/opt/ohl/backup-loop.sh"]
+    volumes:
+      - backups:/backups
+      - ./backup-loop.sh:/opt/ohl/backup-loop.sh:ro
+    networks: [back]
+    healthcheck:
+      # A backup folder newer than a day.
+      test: ["CMD-SHELL", "find /backups -maxdepth 1 -name 'ohl-*' -mmin -1500 | grep -q ."]
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 30m
+
+volumes:
+  db-data:
+  server-state:
+  backups:
+
+networks:
+  back:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  ohl_db_password:
+    file: ./secrets/ohl_db_password.txt

@@ -93,8 +93,17 @@ use crate::{
 /// and catches up when it joins again).
 const EVENTS: usize = 8192;
 
+/// Phase 13: routes one client follows at most.
+pub const MAX_ROUTES: usize = 4096;
+
+/// Phase 13: picks of one working set at most.
+pub const MAX_PICKS: usize = 256;
+
+/// Phase 13: working sets one user saves at most.
+pub const MAX_SAVED_SETS: usize = 200;
+
 /// How a server on a network is started (beyond [`Options`]).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct NetOptions {
     /// The database: a PostgreSQL connection string (from the command
     /// line or the environment, never from a project file).
@@ -126,6 +135,39 @@ pub struct NetOptions {
     pub idle_solve: bool,
     /// Idle: no client's job for this long.
     pub idle_after: Duration,
+    /// Phase 13: new tiles (not kept already) made for one client a
+    /// second, and at once; more are not made then (a notice says to ask
+    /// again).
+    pub tiles_per_second: f64,
+    /// See `tiles_per_second`.
+    pub tiles_burst: f64,
+    /// Phase 13: tiles being made at once for all clients at most.
+    pub max_building: usize,
+    /// Phase 13: checks, exports and bundles waiting at most (one per
+    /// user), done one at a time when no other job waits.
+    pub max_heavy_queue: usize,
+    /// Phase 13: the personal invitations the server gives are valid this
+    /// many days (none: until reissued).
+    pub invite_days: Option<u32>,
+    /// Phase 13: OIDC sign-in (none: personal invitations only).
+    pub oidc: Option<Arc<crate::oidc::Oidc>>,
+}
+
+impl std::fmt::Debug for NetOptions {
+    /// Without the database's connection string (it may hold a
+    /// password).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NetOptions")
+            .field("database", &"(not shown)")
+            .field("readers", &self.readers)
+            .field("packagers", &self.packagers)
+            .field("max_tiles", &self.max_tiles)
+            .field("tiles_per_second", &self.tiles_per_second)
+            .field("max_heavy_queue", &self.max_heavy_queue)
+            .field("invite_days", &self.invite_days)
+            .field("oidc", &self.oidc)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for NetOptions {
@@ -144,6 +186,12 @@ impl Default for NetOptions {
             large_tiles: 256,
             idle_solve: true,
             idle_after: Duration::from_millis(500),
+            tiles_per_second: 64.0,
+            tiles_burst: 256.0,
+            max_building: 1024,
+            max_heavy_queue: 4,
+            invite_days: None,
+            oidc: None,
         }
     }
 }
@@ -183,6 +231,11 @@ impl Server {
         let (events, _) = broadcast::channel(EVENTS);
         let (jobs, job_rx) = std_mpsc::channel();
         let common = Common::new(keys.clone(), options.newcomers, events);
+        let token_check: Option<crate::server::TokenCheck> = net.oidc.clone().map(|o| {
+            let check: crate::server::TokenCheck =
+                Arc::new(move |token: &str| o.verify(token).map(|i| (i.issuer, i.subject)));
+            check
+        });
         let authority = NetHost::open(&net, common, jobs.clone())?;
         let authority_thread = std::thread::Builder::new()
             .name("ohl-authority".into())
@@ -199,6 +252,8 @@ impl Server {
                 fingerprint,
                 jobs,
                 authority_thread,
+                token_check,
+                network: true,
             },
         )
     }
@@ -328,6 +383,16 @@ struct NetClient {
     ws: Option<Ws>,
     /// Phase 7: an admin seeing as this user.
     see_as: Option<String>,
+    /// Phase 13: the new tiles it may have made now.
+    tile_budget: crate::Bucket,
+}
+
+/// Phase 13: a check, an export or a bundle waiting for its turn.
+struct Heavy {
+    client: u64,
+    user: String,
+    ask: NetAsk,
+    queued: Instant,
 }
 
 /// A client's working set as its replica holds it (phase 6): the extent
@@ -435,6 +500,12 @@ struct Stats {
     rights_change_us: Vec<f64>,
     /// Phase 7: the rights compiled for a user, µs.
     rights_compile_us: Vec<f64>,
+    /// Phase 13: a check's, export's or bundle's wait for its turn, ms.
+    heavy_wait_ms: Vec<f64>,
+    /// Phase 13: refused: the queue full or one of the user's waiting;
+    /// tiles not made (the budgets).
+    heavy_refused: usize,
+    tiles_not_made: usize,
 }
 
 fn keep(v: &mut Vec<f64>, x: f64) {
@@ -495,6 +566,12 @@ pub(crate) struct NetHost {
     lib: Arc<ohl_store_pg::library::LibraryState>,
     /// Phase 10: the scoped checks' state (results watched, bounds kept).
     scoped: scoped::ScopedState,
+    /// Phase 13: checks, exports and bundles waiting (done when no other
+    /// job waits, one at a time).
+    heavy: std::collections::VecDeque<Heavy>,
+    /// Phase 13: each user's personal invitation's generation (read with
+    /// the rights).
+    generations: BTreeMap<String, i32>,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -531,6 +608,7 @@ impl NetHost {
             ohl_core::units::Temperature::from_celsius(celsius),
         ));
         let rights = net.rights().map_err(|e| e.to_string())?;
+        let generations = net.invitation_generations().map_err(|e| e.to_string())?;
         let lib = Arc::new(net.library_state().map_err(|e| e.to_string())?);
         let copies = crate::private_temp_dir("ohl-network")?;
         let caches = Arc::new(Caches::new(o.shapes_mb, o.resolved_models));
@@ -578,6 +656,8 @@ impl NetHost {
             regions: BTreeMap::new(),
             lib,
             scoped: scoped::ScopedState::default(),
+            heavy: std::collections::VecDeque::new(),
+            generations,
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -987,6 +1067,20 @@ impl NetHost {
         };
         let old: HashMap<String, Arc<UserRights>> = std::mem::take(&mut *self.compiled_mut());
         self.rights = data;
+        // Phase 13: an invitation reissued lets its user's connection go.
+        let generations = match self.net.invitation_generations() {
+            Ok(g) => g,
+            Err(e) => {
+                log(&format!("reading the invitations' generations: {e}"));
+                self.generations.clone()
+            }
+        };
+        let reissued: BTreeSet<String> = generations
+            .iter()
+            .filter(|(u, g)| self.generations.get(*u).is_some_and(|o| o != *g))
+            .map(|(u, _)| u.clone())
+            .collect();
+        self.generations = generations;
         self.regions.clear();
         let clients: Vec<(u64, String, Option<String>)> = self
             .clients
@@ -995,10 +1089,11 @@ impl NetHost {
             .collect();
         let mut let_go = 0;
         for (id, user, see_as) in clients {
-            let changed = [Some(user), see_as].into_iter().flatten().any(|u| {
-                let new = self.rights_of(&u);
-                old.get(&u).is_none_or(|o| !o.same_as(&new))
-            });
+            let changed = reissued.contains(&user)
+                || [Some(user), see_as].into_iter().flatten().any(|u| {
+                    let new = self.rights_of(&u);
+                    old.get(&u).is_none_or(|o| !o.same_as(&new))
+                });
             if changed {
                 self.let_go(id, "your rights on this network changed: join again");
                 let_go += 1;
@@ -1375,7 +1470,16 @@ impl NetHost {
         code: &str,
         o: JoinOptions,
     ) -> Result<Joined, String> {
-        let personal = self.common.check_code(user, code)?;
+        let personal = self.check_join(user, code, o.identity.as_ref())?;
+        if o.routes.len() > MAX_ROUTES {
+            return Err(format!(
+                "{} routes: a client follows at most {MAX_ROUTES}",
+                o.routes.len()
+            ));
+        }
+        if let Some(spec) = &o.working_set {
+            check_picks(spec)?;
+        }
         if o.copy && !o.web && o.model.is_none() && o.working_set.is_none() {
             return Err(format!(
                 "this server holds a network of {} lines: join it with a working set (File › \
@@ -1507,6 +1611,10 @@ impl NetHost {
                 waiting: BTreeSet::new(),
                 ws: None,
                 see_as: o.see_as.clone(),
+                tile_budget: crate::Bucket::new(
+                    self.options.tiles_per_second,
+                    self.options.tiles_burst,
+                ),
             },
         );
         // In the stream's order: what it follows, what the network holds,
@@ -1615,9 +1723,11 @@ impl NetHost {
             return Err(e.to_string());
         }
         self.live.fetch_add(1, Ordering::SeqCst);
+        // Phase 13: no name in a path (the model's code is checked, but a
+        // path is made of the server's own words only).
         let path = self
             .copies
-            .join(format!("{code}-{}-{}.ohl", self.position, random_code(8)));
+            .join(format!("copy-{}-{}.ohl", self.position, random_code(16)));
         let (tx, rx) = oneshot::channel();
         let (readers, live, code) = (self.readers.clone(), self.live.clone(), code.to_owned());
         std::thread::Builder::new()
@@ -1696,11 +1806,9 @@ impl NetHost {
             ),
         ];
         self.live.fetch_add(1, Ordering::SeqCst);
-        let path = self.copies.join(format!(
-            "{code}-ws-{}-{}.ohl",
-            self.position,
-            random_code(8)
-        ));
+        let path = self
+            .copies
+            .join(format!("ws-{}-{}.ohl", self.position, random_code(16)));
         let (tx, rx) = oneshot::channel();
         let (live, user) = (self.live.clone(), user.to_owned());
         std::thread::Builder::new()
@@ -1857,6 +1965,12 @@ impl NetHost {
             .ok_or("not joined (let go): join again")?;
         let msg = match ask {
             NetAsk::Pick { id, model, picks } => {
+                if picks.len() > MAX_PICKS {
+                    return Err(format!(
+                        "{} picks: a working set has at most {MAX_PICKS}",
+                        picks.len()
+                    ));
+                }
                 let result = match self.models.get_mut(&model) {
                     Some(m) => m.session.pick_extent(&picks).map_err(|e| e.to_string()),
                     None => Err(format!("the network has no line {model}")),
@@ -2002,6 +2116,15 @@ impl NetHost {
                 }))
             }
             NetAsk::Save { spec } => {
+                check_picks(&spec)?;
+                let saved = self.net.working_sets(user).map_err(|e| e.to_string())?;
+                if saved.len() >= MAX_SAVED_SETS
+                    && !saved.iter().any(|w| w.spec.name.trim() == spec.name.trim())
+                {
+                    return Err(format!(
+                        "{user} keeps {MAX_SAVED_SETS} working sets already: delete one first"
+                    ));
+                }
                 let extent = {
                     let m = self
                         .models
@@ -2057,11 +2180,8 @@ impl NetHost {
                 {
                     return Err("seeing as another user: nothing is exported so".into());
                 }
-                let path = self.copies.join(format!(
-                    "offline-{}-{}.ohl",
-                    working_set.model,
-                    random_code(8)
-                ));
+                // Phase 13: no name a client gave in a path.
+                let path = self.copies.join(format!("offline-{}.ohl", random_code(16)));
                 let made = self.offline_export(user, &rights, working_set, reach, &path);
                 let result = made.and_then(|report| {
                     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
@@ -3121,6 +3241,12 @@ impl NetHost {
                 self.options.max_tiles
             ));
         }
+        if routes.len() > MAX_ROUTES {
+            return Err(format!(
+                "{} routes: a client follows at most {MAX_ROUTES}",
+                routes.len()
+            ));
+        }
         if let Some(t) = tiles.iter().find(|t| t.tile.0 != self.level) {
             return Err(format!(
                 "tile {}: the packages are tiles of level {}",
@@ -3166,6 +3292,7 @@ impl NetHost {
             .client_rights(client)
             .ok_or("not joined (let go): join again")?;
         let mut held = Vec::new();
+        let mut not_made = 0usize;
         for (t, have, holding) in new {
             let rev = self.tile_rev(&t);
             if have == Some(rev) {
@@ -3187,10 +3314,38 @@ impl NetHost {
                 );
                 continue;
             }
+            // Phase 13: a tile to make takes from the client's budget and
+            // the server's; over either, not made now (asked again later).
+            let busy =
+                self.building.len() >= self.options.max_building && !self.building.contains_key(&t);
+            let allowed = !busy
+                && self
+                    .clients
+                    .get_mut(&client)
+                    .is_some_and(|c| c.tile_budget.take());
+            if !allowed {
+                not_made += 1;
+                continue;
+            }
             if let Some(c) = self.clients.get_mut(&client) {
                 c.waiting.insert(t);
             }
             self.make(t, client)?;
+        }
+        if not_made > 0 {
+            self.stats.tiles_not_made += not_made;
+            self.push(
+                client,
+                None,
+                None,
+                Some(ServerMsg::Notice {
+                    text: format!(
+                        "{not_made} tile(s) not made now (more than {} new tiles a second, or \
+                         the server is making {} already): ask for them again in a moment",
+                        self.options.tiles_per_second, self.options.max_building
+                    ),
+                }),
+            );
         }
         if !held.is_empty() {
             if let Some(c) = self.clients.get_mut(&client) {
@@ -3581,6 +3736,9 @@ impl NetHost {
                     "rights_compile_us": self.stats.rights_compile_us,
                     "places": self.models.values().map(|m| m.places.len()).sum::<usize>(),
                     "scoped_ms": self.scoped.ms,
+                    "heavy_wait_ms": self.stats.heavy_wait_ms,
+                    "heavy_refused": self.stats.heavy_refused,
+                    "tiles_not_made": self.stats.tiles_not_made,
                 })
                 .to_string())
             }
@@ -3634,6 +3792,169 @@ impl NetHost {
                 ))
             }
         }
+    }
+}
+
+/// Phase 13: why a check, export or bundle of `user` does not join the
+/// queue of the users `waiting` (at most `max`): one of theirs waits, or
+/// the queue is full.
+pub(crate) fn heavy_refusal(waiting: &[&str], max: usize, user: &str) -> Option<String> {
+    if waiting.contains(&user) {
+        Some(format!(
+            "{user}: a check or export of yours waits already — one at a time"
+        ))
+    } else if waiting.len() >= max {
+        Some(format!(
+            "the server is busy with {} checks or exports: try again in a minute",
+            waiting.len()
+        ))
+    } else {
+        None
+    }
+}
+
+/// Phase 13: a working set's picks within [`MAX_PICKS`].
+fn check_picks(spec: &WorkingSetSpec) -> Result<(), String> {
+    if spec.picks.len() > MAX_PICKS {
+        return Err(format!(
+            "{} picks: a working set has at most {MAX_PICKS}",
+            spec.picks.len()
+        ));
+    }
+    Ok(())
+}
+
+impl NetHost {
+    /// Phase 13: who joins — a sign-in already checked (its subject mapped
+    /// to `user` by a network admin), or `user`'s personal access code of
+    /// the current generation, not expired (`Ok(true)`), or the general
+    /// invitation's (`Ok(false)`: admits nobody on a network) — and not
+    /// connected already.
+    fn check_join(
+        &mut self,
+        user: &str,
+        code: &str,
+        identity: Option<&(String, String)>,
+    ) -> Result<bool, String> {
+        crate::check_name(user)?;
+        let personal = match identity {
+            Some((issuer, subject)) => {
+                let mapped = self
+                    .net
+                    .identity_user(issuer, subject)
+                    .map_err(|e| e.to_string())?;
+                if mapped.as_deref() != Some(user) {
+                    let why = match mapped {
+                        Some(_) => "this sign-in is another user's: join under your own name",
+                        None => {
+                            "this sign-in is not mapped to a user of this network: ask a \
+                             network admin (ohl network rights map-identity)"
+                        }
+                    };
+                    self.audit_refused(user, &format!("sign-in {subject} of {issuer}"), why);
+                    return Err(why.into());
+                }
+                true
+            }
+            None => {
+                let generation = self.generations.get(user).copied().unwrap_or(0);
+                match self
+                    .common
+                    .keys
+                    .check_personal(user, code, generation, crate::utc_day(0))
+                {
+                    Ok(()) => true,
+                    Err(crate::CodeRefusal::Wrong) => {
+                        if crate::same_code(code, &self.common.keys.code(None)) {
+                            false
+                        } else {
+                            return Err(crate::server::WRONG_CODE.into());
+                        }
+                    }
+                    Err(crate::CodeRefusal::Withdrawn) => {
+                        let why = "this invitation was reissued since (the older ones are \
+                                   refused): ask a network admin for your new one";
+                        self.audit_refused(user, "join", why);
+                        return Err(why.into());
+                    }
+                    Err(crate::CodeRefusal::Expired(day)) => {
+                        let why = format!(
+                            "this invitation expired on {}-{:02}-{:02}: ask a network admin for a \
+                             new one",
+                            day / 10_000,
+                            day / 100 % 100,
+                            day % 100
+                        );
+                        self.audit_refused(user, "join", &why);
+                        return Err(why);
+                    }
+                }
+            }
+        };
+        if self.common.peers.contains_key(user) {
+            return Err(format!("{user} is connected already"));
+        }
+        Ok(personal)
+    }
+
+    /// Phase 13: `user`'s personal access code (their generation; valid
+    /// `days` days, or the server's `invite_days`); refused for who is not
+    /// a user of the network.
+    fn personal_code(&mut self, user: &str, days: Option<u32>) -> Result<String, String> {
+        self.refresh_rights();
+        if !self.rights.users.contains_key(user) {
+            return Err(format!("no user {user} on this network"));
+        }
+        let generation = self.generations.get(user).copied().unwrap_or(0);
+        let until = days
+            .or(self.options.invite_days)
+            .map(|d| crate::utc_day(i64::from(d)));
+        Ok(self.common.keys.personal_code(user, generation, until))
+    }
+
+    /// Phase 13: a check, export or bundle put in the queue (answered
+    /// when done, on the client's own queue): one per user waiting, at
+    /// most `max_heavy_queue` in all; its parameters refused at once.
+    fn enqueue_heavy(&mut self, client: u64, user: &str, ask: NetAsk) -> Result<(), String> {
+        if !self.clients.contains_key(&client) {
+            return Err("not joined (let go): join again".into());
+        }
+        match &ask {
+            NetAsk::Check {
+                check, working_set, ..
+            } => {
+                scoped::check_parameters(check)?;
+                if let Some(w) = working_set {
+                    check_picks(w)?;
+                }
+            }
+            NetAsk::Export {
+                working_set, reach, ..
+            } => {
+                check_picks(working_set)?;
+                if let Some(r) = reach
+                    && !(r.is_finite() && *r > 0.0 && *r <= offline::MAX_REACH)
+                {
+                    return Err(format!(
+                        "the checks' reach of an export: more than 0 m and at most {} m",
+                        offline::MAX_REACH
+                    ));
+                }
+            }
+            _ => {}
+        }
+        let waiting: Vec<&str> = self.heavy.iter().map(|h| h.user.as_str()).collect();
+        if let Some(why) = heavy_refusal(&waiting, self.options.max_heavy_queue, user) {
+            self.stats.heavy_refused += 1;
+            return Err(why);
+        }
+        self.heavy.push_back(Heavy {
+            client,
+            user: user.to_owned(),
+            ask,
+            queued: Instant::now(),
+        });
+        Ok(())
     }
 }
 
@@ -3706,8 +4027,15 @@ impl Host for NetHost {
                 ask,
                 reply,
             } => {
-                let _ =
-                    reply.send(self.guarded("the working set", |h| h.net_ask(client, &user, ask)));
+                let done = if ask.is_heavy() {
+                    self.guarded("the working set", |h| h.enqueue_heavy(client, &user, ask))
+                } else {
+                    self.guarded("the working set", |h| h.net_ask(client, &user, ask))
+                };
+                let _ = reply.send(done);
+            }
+            Job::Invitation { user, days, reply } => {
+                let _ = reply.send(self.personal_code(&user, days));
             }
             Job::Built(b) => self.built(*b),
             Job::Offline { user, what, reply } => {
@@ -3746,6 +4074,29 @@ impl Host for NetHost {
             | Job::Unlock { .. }
             | Job::Peers { .. }
             | Job::Stop => {}
+        }
+    }
+
+    fn deferred(&self) -> bool {
+        !self.heavy.is_empty()
+    }
+
+    fn run_deferred(&mut self) {
+        let Some(h) = self.heavy.pop_front() else {
+            return;
+        };
+        if !self.clients.contains_key(&h.client) {
+            return;
+        }
+        self.last_busy = Instant::now();
+        self.refresh_rights();
+        keep(
+            &mut self.stats.heavy_wait_ms,
+            h.queued.elapsed().as_secs_f64() * 1e3,
+        );
+        let (client, user) = (h.client, h.user.clone());
+        if let Err(text) = self.guarded("the working set", |s| s.net_ask(client, &user, h.ask)) {
+            self.push(client, None, None, Some(ServerMsg::Notice { text }));
         }
     }
 

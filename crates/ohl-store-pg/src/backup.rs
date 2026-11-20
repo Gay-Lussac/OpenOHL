@@ -692,6 +692,9 @@ pub fn restore(url: &str, user: &str, dir: &Path) -> Result<RestoreReport, NetEr
         "--single-transaction",
         "--no-owner",
         "--no-privileges",
+        // No comment of the schema's own; PostGIS's extension's comment is
+        // its owner's (a restore by a role that is not a superuser).
+        "--no-comments",
         "--no-password",
     ])
     .arg(format!("--dbname={}", target.libpq_string()))
