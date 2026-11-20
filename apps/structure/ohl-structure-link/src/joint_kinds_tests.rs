@@ -236,3 +236,83 @@ fn words_are_said_with_the_joints_own_members() {
         "D11: runs into L11 at J11. H11, D100 kept."
     );
 }
+
+/// L7 (2026-11-20): a plate's own bolts onto a leg, its leg named (`long`
+/// or `short`), mapped onto a joint like it name the leg the map carries
+/// the representative's onto — under a mirror an equal angle's leg along
+/// its y is the matched member's leg along its z (before, the name was
+/// copied and the bolts drawn on the other leg, off the plate).
+#[test]
+fn a_plates_own_bolts_name_the_leg_the_map_carries_theirs_onto() {
+    use crate::joint_kinds::{Like, Map, map_hold_legs};
+    use crate::joint_layout::{HoldPlan, JointPlan, PlatePlan};
+    let text = oriented_body();
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let a = d.joint("J10").unwrap();
+    let leg = a
+        .arrivals
+        .iter()
+        .find(|x| x.class.as_deref() == Some("leg"))
+        .expect("a leg")
+        .clone();
+    // Its mirror across the x = 0 plane: the same joint mirrored (an
+    // angle's legs swap their roles: its leg along y now along z).
+    let map = Map {
+        m: [[-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        mirrors: true,
+        name: "mirrored across x",
+    };
+    let mut b = a.clone();
+    b.id = "M".into();
+    for x in &mut b.arrivals {
+        x.direction = map.apply(x.direction);
+        if let Some(p) = x.profile.as_mut() {
+            let (y, z) = (map.apply(p.axes[1]), map.apply(p.axes[2]));
+            p.axes = [map.apply(p.axes[0]), z, y];
+            if let Some(g) = p.angle.as_mut() {
+                g.heel = [g.heel[1], g.heel[0]];
+                (g.b, g.h) = (g.h, g.b);
+            }
+        }
+    }
+    let l = Like {
+        joint: "M".into(),
+        of: "J10".into(),
+        map,
+        from: a.position,
+        to: map.apply(a.position),
+        pairs: a
+            .arrivals
+            .iter()
+            .map(|x| (x.member.clone(), x.member.clone()))
+            .collect(),
+    };
+    for (given, mirrored) in [("long", "short"), ("short", "long")] {
+        let plan = JointPlan {
+            joint: "J10".into(),
+            plates: vec![PlatePlan {
+                members: Vec::new(),
+                thickness: 0.008,
+                on: leg.member.clone(),
+                heel: None,
+                own: None,
+                reach: None,
+                outline: None,
+                hold: Some(HoldPlan {
+                    member: leg.member.clone(),
+                    leg: Some(given),
+                    bolt: BoltArea::picked(None, 0.016, None),
+                    provisional: true,
+                    points: vec![[0.05, 0.03], [0.1, 0.03]],
+                }),
+                short: false,
+                cuts: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let mut p = map_plan(&plan, &l);
+        map_hold_legs(&mut p, &l, a, &b);
+        let h = p.plates[0].hold.as_ref().unwrap();
+        assert_eq!(h.leg, Some(mirrored), "{given}");
+    }
+}

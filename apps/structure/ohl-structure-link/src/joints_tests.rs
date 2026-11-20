@@ -1568,3 +1568,49 @@ fn misfits_are_problems_with_what_a_fix_needs() {
     // A nest that fits: none.
     assert!(kinds(&with_l2("EA-45x5", "")).is_empty());
 }
+
+/// L7 (2026-11-20): an end bolted onto a member that is itself seated on
+/// a third is drawn on that member where it is drawn — its leg on the face
+/// of that member's leg as seated, not as if that member lay on its work
+/// line (before, it floated off it by that member's seat, and what the
+/// automatic layout planned onto that member ran into steel).
+#[test]
+fn an_end_on_a_seated_member_is_drawn_on_it_where_it_is_drawn() {
+    let text = format!(
+        "{}\n[[node]]\nid = \"N6\"\npoint = [\"2.5 m\", \"0 m\", \"3 m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"R\"\nnodes = [\"N6\", \"N2\"]\nsection = \"EA-61x7\"\n\
+         orientation = \"y-z+\"\ndesign = {{ class = \"redundant\" }}\n\
+         \n[[connection]]\nmember = \"R\"\njoint = \"N2\"\nonto = \"D1\"\n\
+         \n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\n",
+        crate::joint_layout_tests::K
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let a = |m: &str| j.arrivals.iter().find(|a| a.member == m).unwrap();
+    let (r, d1) = (a("R"), a("D1"));
+    let pr = r.profile.as_ref().unwrap();
+    let gr = pr.angle.unwrap();
+    let nb = if r.leg_y { pr.axes[2] } else { pr.axes[1] };
+    let dot = |u: [f64; 3], v: [f64; 3]| u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    let heel = |p: &crate::Profile, g: [f64; 2], off: [f64; 3]| {
+        let mut h = off;
+        for k in 0..3 {
+            h[k] += p.axes[1][k] * g[0] + p.axes[2][k] * g[1];
+        }
+        h
+    };
+    // D1 is seated on the leg: drawn off its work line across R's face.
+    assert!(dot(d1.offset, nb).abs() > 1e-3, "{:?} {nb:?}", d1.offset);
+    let pd = d1.profile.as_ref().unwrap();
+    let gd = pd.angle.unwrap();
+    let f = dot(heel(pd, gd.heel, d1.offset), nb);
+    let h = dot(heel(pr, gr.heel, r.offset), nb);
+    // R's leg on a face of D1's leg as drawn: its heel on that face, or a
+    // leg's thickness from it.
+    let ok = [f, f + gd.t, f - gd.t].iter().any(|x| {
+        [0.0, gr.t, -gr.t]
+            .iter()
+            .any(|dt| (h - (x + dt)).abs() < 1e-6)
+    });
+    assert!(ok, "R's heel {h}, D1's heel {f} across R's face");
+}

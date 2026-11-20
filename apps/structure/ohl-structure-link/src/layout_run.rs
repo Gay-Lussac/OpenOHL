@@ -1913,7 +1913,13 @@ fn plans_of(
             .filter(|_| !plain)
             .and_then(|l| planned.get(&l.of).map(|p| (l, p)))
         {
-            Some((l, rep)) => crate::joint_kinds::map_plan(rep, l),
+            Some((l, rep)) => {
+                let mut p = crate::joint_kinds::map_plan(rep, l);
+                if let Some(of) = joints.iter().find(|x| x.id == l.of) {
+                    crate::joint_kinds::map_hold_legs(&mut p, l, of, j);
+                }
+                p
+            }
             None => {
                 let p = own(plain);
                 if !plain {

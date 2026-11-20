@@ -862,76 +862,106 @@ pub(crate) fn joint_details_and_model(
             let idx = m.members.iter().position(|x| x.id == a.member)?;
             crate::member_view::rules_in(m, idx, a.end, None, part)
         };
-        for a in &mut arrivals {
-            let c = t.connection(&a.member, &n.id);
-            let design = designs.get(a.member.as_str()).map(|d| d.0);
-            let ends = conditions.get(a.member.as_str());
-            condition(
-                a,
-                c,
-                design,
-                &snapshot,
-                &areas,
-                &plates_here,
-                level3,
-                bolts,
-                ends,
-                &seats,
-                &t.default_bolt_minimums.unwrap_or_default(),
-            );
-            if level3 {
-                let host = a
-                    .onto
-                    .value
-                    .as_ref()
-                    .is_some_and(|o| nested.get(&a.member).is_some_and(|v| v.contains(o)));
-                let gauge = on_gauge.contains(&(a.member.clone(), n.id.clone()));
-                place_bolts(a, at, c, &snapshot, &seats, host, gauge);
-                a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
-                // O44 J7: onto a spliced member's leg where the splice's
-                // outer cover lies: seated on the cover, its bolts through
-                // it, the member's leg and the inner covers.
-                if let Some(c) = through_cover(a, &snapshot, &t.splices, &n.id) {
-                    let lift = scale(a.bolt_axis, c.outer);
-                    a.offset = add(a.offset, lift);
-                    for q in a.bolt_points.iter_mut().chain(a.other_points.iter_mut()) {
-                        *q = add(*q, lift);
+        // (L7, 2026-11-20) Each end seated where the member it bolts onto
+        // is drawn: that member's own seat, shift and drawing offset taken
+        // across the face it lies on (before, the face as if that member
+        // lay on its work line — an end on a member seated on a third was
+        // drawn off it by that member's seat, and what the automatic
+        // layout planned onto it ran into steel or lay off its flat). The
+        // ends worked out again with the members' offsets of the pass
+        // before, until they no longer change (a chain of members each on
+        // the next; at most [`SEAT_PASSES`]).
+        let before = arrivals.clone();
+        let mut drawn = snapshot.clone();
+        for pass in 0..SEAT_PASSES {
+            if pass > 0 {
+                arrivals = before.clone();
+            }
+            for a in &mut arrivals {
+                let c = t.connection(&a.member, &n.id);
+                let design = designs.get(a.member.as_str()).map(|d| d.0);
+                let ends = conditions.get(a.member.as_str());
+                condition(
+                    a,
+                    c,
+                    design,
+                    &snapshot,
+                    &areas,
+                    &plates_here,
+                    level3,
+                    bolts,
+                    ends,
+                    &seats,
+                    &t.default_bolt_minimums.unwrap_or_default(),
+                );
+                if level3 {
+                    let host = a
+                        .onto
+                        .value
+                        .as_ref()
+                        .is_some_and(|o| nested.get(&a.member).is_some_and(|v| v.contains(o)));
+                    let gauge = on_gauge.contains(&(a.member.clone(), n.id.clone()));
+                    place_bolts(a, at, c, &drawn, &seats, host, gauge);
+                    a.grip = grip(a, &snapshot, &plates_here, &t.splices, &n.id);
+                    // O44 J7: onto a spliced member's leg where the splice's
+                    // outer cover lies: seated on the cover, its bolts through
+                    // it, the member's leg and the inner covers.
+                    if let Some(c) = through_cover(a, &snapshot, &t.splices, &n.id) {
+                        let lift = scale(a.bolt_axis, c.outer);
+                        a.offset = add(a.offset, lift);
+                        for q in a.bolt_points.iter_mut().chain(a.other_points.iter_mut()) {
+                            *q = add(*q, lift);
+                        }
+                        a.grip = [a.grip[0], c.outer + c.leg_t + c.inner];
+                        a.through = Some((c.splice, c.leg));
                     }
-                    a.grip = [a.grip[0], c.outer + c.leg_t + c.inner];
-                    a.through = Some((c.splice, c.leg));
-                }
-                a.other_grip = match a
-                    .other_onto
-                    .as_ref()
-                    .and_then(|o| plates_here.iter().find(|p| &p.id == o))
-                {
-                    Some(p) => [a.grip[0], p.thickness.si()],
-                    None => a.grip,
-                };
-                a.flat = flat_of(a, &snapshot, &seats);
-                if let Some(f) = a.flat
-                    && f.off > FLAT_OFF
-                    && let Some(o) = a.onto.value.as_ref()
-                    && a.continuous.is_none()
-                {
-                    let what = if seats.contains_key(o) {
-                        "plate"
-                    } else {
-                        "leg of"
+                    a.other_grip = match a
+                        .other_onto
+                        .as_ref()
+                        .and_then(|o| plates_here.iter().find(|p| &p.id == o))
+                    {
+                        Some(p) => [a.grip[0], p.thickness.si()],
+                        None => a.grip,
                     };
-                    let text = format!(
-                        "{}: bolted face {:.0}° off the {what} {o} — turn it",
-                        a.member, f.off
-                    );
-                    a.problems.push((
-                        Problem::NotFlat {
-                            onto: o.clone(),
-                            turn: f.turn,
-                        },
-                        text.clone(),
-                    ));
-                    a.notes.push(text);
+                    a.flat = flat_of(a, &snapshot, &seats);
+                    if let Some(f) = a.flat
+                        && f.off > FLAT_OFF
+                        && let Some(o) = a.onto.value.as_ref()
+                        && a.continuous.is_none()
+                    {
+                        let what = if seats.contains_key(o) {
+                            "plate"
+                        } else {
+                            "leg of"
+                        };
+                        let text = format!(
+                            "{}: bolted face {:.0}° off the {what} {o} — turn it",
+                            a.member, f.off
+                        );
+                        a.problems.push((
+                            Problem::NotFlat {
+                                onto: o.clone(),
+                                turn: f.turn,
+                            },
+                            text.clone(),
+                        ));
+                        a.notes.push(text);
+                    }
                 }
+            }
+            // Again only where a member some end bolts onto moved.
+            let moved = level3
+                && arrivals.iter().zip(&drawn).any(|(a, d)| {
+                    norm(sub(a.offset, d.offset)) > SEAT_STILL
+                        && arrivals
+                            .iter()
+                            .any(|b| b.onto.value.as_deref() == Some(a.member.as_str()))
+                });
+            if !moved {
+                break;
+            }
+            for (d, a) in drawn.iter_mut().zip(&arrivals) {
+                d.offset = a.offset;
             }
         }
         if level3 {
@@ -1614,6 +1644,16 @@ fn plate_seats(
     out
 }
 
+/// How many times a joint's ends are seated with the offsets of the pass
+/// before (L7, 2026-11-20: each where the member it bolts onto is drawn;
+/// a chain of members each seated on the next needs one pass per link).
+/// The program's bound, not a standard's.
+pub const SEAT_PASSES: usize = 4;
+
+/// A member's offset changed by less than this (m) between two passes is
+/// taken as unchanged.
+const SEAT_STILL: f64 = 1e-6;
+
 /// How far off a leg bolted may lie from the face it bolts onto before
 /// Joint details says so, degrees — and still bolt flat, in the layout,
 /// in a member's whole roll (J3) and in the roll tolerance of pieces in
@@ -1968,13 +2008,23 @@ fn member_seat(
     given: Option<Face>,
     parts: bool,
 ) -> Option<MemberSeat> {
-    let o = a
+    let host = a
         .onto
         .value
         .as_ref()
-        .and_then(|o| all.iter().find(|b| &b.member == o))
-        .and_then(|b| b.profile.as_ref())?;
-    facing(a, o, given, parts)?.1
+        .and_then(|o| all.iter().find(|b| &b.member == o))?;
+    let o = host.profile.as_ref()?;
+    let mut s = facing(a, o, given, parts)?.1?;
+    // (L7) Where that member is drawn (its own offset), across the face:
+    // not where it bolts onto this end itself (the two would chase each
+    // other).
+    if host.onto.value.as_deref() != Some(a.member.as_str())
+        && let Some(p) = a.profile.as_ref()
+    {
+        let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+        s.offset = add(s.offset, scale(nb, dot(host.offset, nb)));
+    }
+    Some(s)
 }
 
 /// [`member_seat`] on the angle `c`: `a`'s profile `p`, an angle `g`.
@@ -2083,6 +2133,12 @@ fn nest(a: &Arrival, o: &Arrival, joint: [f64; 3]) -> Result<Nest, String> {
     );
     let own = add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1]));
     let off = sub(add(joint, target), add(joint, own));
+    // (L7) In that angle where it is drawn (its own offset).
+    let off = if o.onto.value.as_deref() == Some(a.member.as_str()) {
+        off
+    } else {
+        add(off, o.offset)
+    };
     let off = sub(off, scale(a.direction, dot(off, a.direction)));
     Ok(Nest { offset: off, legs })
 }

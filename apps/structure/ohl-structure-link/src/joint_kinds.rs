@@ -477,6 +477,60 @@ pub fn map_plan(p: &crate::joint_layout::JointPlan, l: &Like) -> crate::joint_la
     }
 }
 
+/// (L7, 2026-11-20) The leg each plate's own bolts name (`long` or
+/// `short`) in plan `p` mapped from joint `of` here (`here`, the joint
+/// [`map_plan`] mapped it to): the leg of this joint's member that the map
+/// carries the representative's leg onto — under a mirror an angle's leg
+/// along its y can be the matched member's leg along its z (before, the
+/// name was copied, and the bolts were drawn on the other leg, off the
+/// plate).
+pub fn map_hold_legs(
+    p: &mut crate::joint_layout::JointPlan,
+    l: &Like,
+    of: &JointDetail,
+    here: &JointDetail,
+) {
+    let leg_of = |a: &Arrival, name: &str| -> Option<[f64; 3]> {
+        let q = a.profile.as_ref()?;
+        let g = q.angle?;
+        let along_y = (name == "long") == (g.b >= g.h);
+        Some(if along_y { q.axes[1] } else { q.axes[2] })
+    };
+    for x in &mut p.plates {
+        let Some(h) = x.hold.as_mut() else {
+            continue;
+        };
+        let Some(name) = h.leg else {
+            continue;
+        };
+        let src = l
+            .pairs
+            .iter()
+            .find(|(_, mine)| *mine == h.member)
+            .map(|(theirs, _)| theirs.as_str());
+        let (Some(a), Some(b)) = (
+            src.and_then(|m| of.arrivals.iter().find(|a| a.member == m)),
+            here.arrivals.iter().find(|a| a.member == h.member),
+        ) else {
+            continue;
+        };
+        let (Some(v), Some(q)) = (leg_of(a, name), b.profile.as_ref()) else {
+            continue;
+        };
+        let Some(g) = q.angle else {
+            continue;
+        };
+        let v = l.dir(v);
+        let dot = |u: [f64; 3], w: [f64; 3]| u[0] * w[0] + u[1] * w[1] + u[2] * w[2];
+        let along_y = dot(v, q.axes[1]).abs() >= dot(v, q.axes[2]).abs();
+        h.leg = Some(if along_y == (g.b >= g.h) {
+            "long"
+        } else {
+            "short"
+        });
+    }
+}
+
 fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
