@@ -4888,9 +4888,39 @@ replay; refused from a client); a file server refuses both. A
 `library_pins` change reaches clients that may not see the whole line
 as "read these tiles again", as any library change.
 
+Phase 10 (2026-11-20; protocol 3, messages added; built, in active
+development, not approved yet): checks on a working set with their
+neighbours pulled in, computed by the server
+([theory](../theory/scoped-checks.md)). Nothing is stored: no table,
+column or meta key is added to the network's database (network schema 5
+unchanged) or to the project file.
+
+| Message | Fields | Meaning |
+|---|---|---|
+| client `check` | `id`, `working_set`? (`spec`; none: the one the connection follows), `check` (`kind`: `clearances` — `case`, `rules` (a rule file's text) —; `fields` — `case`, `distance`?, `amps`?, `limit_ut`? —; `structure_loads` — `structures` (none: those of the working set with a twin)) | a check on the working set, its neighbours pulled in by the check's reach; refused when the working set reaches what its user may not see (as a pick); paced as the working-set requests |
+| server `check_result` | `id`, `result` (`Ok`: `check`, `model`, `reach` (in words), `status` ("every part checked" / "NOT ALL CHECKED"), `findings` (`what`, `on`, `against`?, `measure`, `value`, `required`?, `violates`, `at`?, `hidden`), `results`, `violations`, `pulled` (`lines`, `routes`, `objects`, `hidden`, `read`), `not_all_checked`, `notes`, `seconds`; `Err`: why) | the result as its user may see it: a neighbour the user may not see is never named nor placed (`against` "a hidden object of another line", no `at`, `hidden`), counted in `pulled.hidden`; texts naming one replaced |
+| server `check_stale` | `id`, `reason` | what result `id` used changed (an object it used or read, a tile its reach covers, a line it read changed at large): sent once; `reason` names the change only when its user may see it. OHL-Design marks the working set's routes out of date in its replica (`stale_routes`, phase 8's marks, `Session::mark_stale`) |
+
+The engine's records (`ohl_scope`, not stored): `Reach` (`own`, `wires`
+— metres —, `towers` — tolerance —, `lines` — metres —, `unknown` —
+metres), `Neighbour` (`model`, `kind`: section / jumper / structure,
+`id`), `PulledIn` (`read`, `used`), `WorkingSet` (`model`, `sections`,
+`jumpers`, `structures`), `SpanChord` (a span's structures in plan, the
+bound of its wire, its top). `ohl_clearance::CaseTargets` gained
+`min_reach` (the wire-to-wire checks look at least this far; 0: as
+before).
+
 ## What a plugin sees
 
 Plugin tiers and manifests: [Writing plugins](plugins.md) and ADR-0003.
+**Manifest `[reach]`** (2026-11-20, the country server's phase 10;
+optional, additive: `sdk = "0.3"` unchanged, a manifest without it reads
+as before and declares no reach; hosts before refuse it, as every unknown
+key): `default` (m) and `check` (check id → m), each 0 to 10 000 m — how
+far from the checked wires other objects can change a check's result
+(`ohl_plugins::CheckReach`, `Manifest::check_reach`; none declared: the
+working set's whole line and every line within 2 km;
+[A check's reach](plugins.md#a-checks-reach)).
 **Manifest `[help]`** (2026-11-12; optional, additive: `sdk = "0.3"`
 unchanged, a manifest without it reads as before; hosts before refuse
 it, as every unknown key): `overview`, `design-code` (a path each) and

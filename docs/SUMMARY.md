@@ -119,6 +119,7 @@
 - [Vertical and radial clearances](theory/clearances.md)
 - [Internal clearances](theory/internal-clearances.md)
 - [Wire tensions](theory/wire-tensions.md)
+- [Checks on a working set: what is pulled in](theory/scoped-checks.md)
 
 # Design
 

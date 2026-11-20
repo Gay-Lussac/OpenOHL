@@ -85,6 +85,7 @@ theory page. Status: **done** (with the date), **open**.
 | [Spotting](../theory/spotting.md) | One catenary for every span (the ruling-span idea); holes in the terrain bridged: said in every spotted route's notes | done 2026-11-08 |
 | [LiDAR](../theory/lidar-analysis.md) | Leaning trees and crowns: said whenever fall-in is checked | done 2026-11-08 |
 | [Thermal](../theory/thermal.md) | Uniform radial temperature; one weather case per section: said above every thermal result | done 2026-11-08 |
+| [Checks on a working set](../theory/scoped-checks.md) | A network's field check leaves out the wires beyond the field distance (500 m, owner 2026-11-16); a shared tower's loads are solved rigid where a line asks level 3 or 4; a candidate wire outside its assumed bound (1.5 times its ends' distance) | "NOT ON THE SAFE SIDE: …" in every field result and with the tower; the bound checked on every candidate solved, said when it does not hold; a neighbour not read or solved: NOT ALL CHECKED (2026-11-20, in active development) | said where it applies, 2026-11-20 |
 
 Already said in the results where they apply (kept): members without a
 profile get no ice; wind-band types no ice or snow; a member's centre

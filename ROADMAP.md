@@ -2876,11 +2876,53 @@ or three, L four or more. The phases, in order:
   > line's library file sent whole to whoever sees it (an entry's deny
   > holds on the network's library)? → filter per entry with OHL-Server
   > stage D; deny the file until then.
-- [ ] 10 Scoped computations (L; an engine change and an optional plugin
-  interface step, asked first): each check's own reach, neighbours pulled
-  in, other lines' wires as targets, structure loads with other lines'
-  sections, hidden neighbours computed on the server, results saying what
-  was pulled in and marked stale when it changes.
+- [x] 10 Scoped computations (L; an engine change and an optional plugin
+  interface step, approved 2026-11-20: "You can go ahead with
+  recommendations and the changes to pull nearby lines"): each check's
+  own reach, neighbours pulled in, other lines' wires as targets,
+  structure loads with other lines' sections, hidden neighbours computed
+  on the server, results saying what was pulled in and marked stale when
+  it changes. **Built 2026-11-20, in active development, not approved
+  yet** ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-10),
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/scoped-checks.md),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server.md#checks-with-their-neighbours-phase-10-in-active-development),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-10-scoped-computations-2026-11-20)):
+  `ohl_scope` (each check's reach; the candidates by a bound of each
+  span's wire before it is solved; clearances between wires with this
+  line's and other lines' wires as targets, crossings among them; the
+  field with the lines within 500 m, added by size, what lies beyond
+  said NOT ON THE SAFE SIDE; the loads on shared towers — twins — under
+  each line's cases, the worst kept); the network's server computes them
+  on what it holds (each part as solving it alone reads it, never a whole
+  line), a hidden neighbour computed too and only counted (never named
+  nor placed), every result listing what it pulled in and watched — told
+  stale once, OHL-Design marking the working set's routes out of date
+  (phase 8's marks); a check run on the replica alone says NOT ALL
+  CHECKED where its reach needs more; plugins' optional `[reach]` (none:
+  the whole line and every line within 2 km). Proven on the synthetic
+  country: scoped clearances equal to the whole network's to the bit (the
+  same pairs, distances, violations), shared towers' loads to the bit;
+  the property that no message holds a hidden id or place extended to
+  checks. Measured on
+  the synthetic country: a whole route's clearances 9.6 s, its field
+  8.4 s, a shared tower's loads 0.39 s; moves, joining again and replica
+  loads as fast as with main's code.
+  Left: OHL-Design's windows asking the network for these checks; a
+  worker of their own (today on the authority between commands); the
+  ground and points on the network; rules across weather cases; the
+  field's left-out part bounded; shared towers at level 3/4.
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. Checks computed on the authority between commands (a long
+  > check holds the edits)? → a worker thread of their own next. 2. The
+  > field's wires beyond 500 m left out, said NOT ON THE SAFE SIDE? →
+  > keep, add a bound of what is left out later. 3. A wire at most 1.5
+  > times its ends' distance for the candidates (checked on what is
+  > solved)? → yes. 4. Several lines' sections at one point added, their
+  > strings counted again; other lines' sections in every case the twin
+  > takes? → yes. 5. A plugin without `[reach]`: the whole line and every
+  > line within 2 km? → yes. 6. A result stale when anything changes in
+  > its reach's tiles (more often than needed)? → yes. 7. A hidden
+  > neighbour's distance said ("within X m")? → yes, as the plan's answer.
 - [ ] 11 Version control at scale (M–L): trees split, branches over
   working sets, merges at shared towers.
 - [ ] 12 The offline working set (M): exported with read-only

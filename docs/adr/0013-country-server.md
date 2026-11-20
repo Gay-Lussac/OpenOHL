@@ -264,6 +264,23 @@ details. A structure carrying wires of several lines is checked under each
 line's load cases, the worst kept. (Engine changes in phase 10; the plugin
 interface step is asked first.)
 
+Built 2026-11-20 (phase 10, in active development; the owner: "You can go
+ahead with recommendations and the changes to pull nearby lines"; the
+[decision log](../development/decisions.md#2026-11-20-country-server-phase-10),
+the [theory](../theory/scoped-checks.md)): `ohl_scope` — each check's
+reach, the candidates by a bound of each span's wire before it is solved,
+clearances between wires with this line's and other lines' wires as
+targets, the field with the lines within 500 m (NOT ON THE SAFE SIDE for
+what lies beyond, said), the loads on shared towers (twins) under each
+line's cases, the worst kept; computed by the network's server on what it
+holds (each part as `Session::drawing_part` takes it), the report filtered
+by the rights (a hidden neighbour counted, never named nor placed), each
+result watched and marked stale once (protocol 3, messages `check`,
+`check_result`, `check_stale`; no schema change). Scoped results equal the
+whole network's (tested on the synthetic country, to the bit for the
+clearances and the loads). The plugin step: an optional manifest key
+`[reach]` (interface 0.3 unchanged).
+
 ### Towers shared by several routes
 
 A user may edit a tower shared with routes outside the working set (owner,

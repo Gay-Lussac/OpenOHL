@@ -800,6 +800,42 @@ as long as the same computation built into OpenOHL (0.8 s against
 0.65–0.9 s; with nearby pairs, about 10 500, 0.9 s against 0.65–0.7 s), plus
 about 0.3 s to load the plugin once.
 
+### A check's reach
+
+*Built 2026-11-20 (the country server's phase 10), in active development,
+not approved yet; an optional manifest key — an additive step of
+interface 0.3 ([ADR-0012](../adr/0012-plugin-interface-versions.md)).*
+
+On a country server a user checks a **working set** (a part of a line);
+each check pulls in what lies within its **reach** — the plan distance
+from the checked wires within which other objects, of the same line or of
+other lines, can change its result ([Checks on a working set](../theory/scoped-checks.md)).
+A plugin says its checks' reach in its manifest, **optionally**:
+
+```toml
+[reach]
+default = 0.0                       # m, every check not named below
+check = { "phase-distance" = 0.0 }  # m, per check id
+```
+
+- **0**: only what the working set holds — its sections and every
+  section on its structures (enough for a check that looks at the
+  conductors of one span, as the distance between conductors does).
+- **A distance** (up to 10 000 m): every wire within it, of this line and
+  of others.
+- **None declared** (no `[reach]`, or the check not named and no
+  `default`): **the most conservative default** — the working set's whole
+  line and every line within 2 km. A plugin built before keeps working
+  unchanged; its checks on a working set's replica say "NOT ALL CHECKED:
+  … no reach declared …" until it declares one.
+
+A reach that is not a distance (negative, above 10 000 m, not a number)
+is refused when the manifest is read. OpenOHL reads it with
+`ohl_plugins::Manifest::check_reach(id)`; `ohl_scope::reach_of` turns
+it into the reach the check pulls in by. A host before 2026-11-20 refuses
+a manifest with `[reach]` (every unknown key is refused): leave it out
+for older hosts.
+
 ## Member capacities
 
 *2026-10-27; built, in active development, not approved yet.* A plugin

@@ -268,6 +268,37 @@ On the command line (`--user` is who acts; their rights decide):
 server running); a running server carries it out when a client asks it
 through its protocol (a command for it in OHL-Design is to come).
 
+### Checks with their neighbours (phase 10, in active development)
+
+*Built 2026-11-20, in active development, not approved yet
+([decisions](../development/decisions.md#2026-11-20-country-server-phase-10),
+[theory](../theory/scoped-checks.md)).*
+
+A check on a working set can depend on what lies beside it: another
+line's wires crossing or running alongside, this line's wires beyond the
+working set, other lines' sections on a shared tower, other lines'
+currents near. Asked of the network's server, a check **pulls in what
+lies within its own reach** and computes there:
+
+- **Clearances between wires**: every wire within the rules' distance —
+  other lines' too (crossings among them) — is a target.
+- **Magnetic field**: the lines within 500 m (a setting) are added. The
+  wires farther away are left out: the result says **NOT ON THE SAFE
+  SIDE**.
+- **Structure loads**: a tower shared with another line carries every
+  line's sections, checked under each line's load cases, the worst kept.
+
+Every result says **what it pulled in** (the lines, routes and objects) and
+is **marked stale** when any of them changes: OHL-Design marks your
+working set's routes out of date, as when a shared tower moves. A
+neighbour you may not see is computed on the server too, so the numbers
+are complete; it is never named or placed — "a hidden object of another
+line is within 3.4 m", "check result limited by an object you may not
+see" — only counted. A neighbour that could not be read or solved makes
+the result **NOT ALL CHECKED**, never a pass. The bench `ohl network
+bench-scoped --user admin` measures the three checks
+([performance](../development/performance.md#synthetic-country-phase-10-scoped-computations-2026-11-20)).
+
 ## Roles
 
 Each user of a project has one role; admins give them (People). The

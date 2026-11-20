@@ -76,10 +76,23 @@ If the connection is lost, the working set stays readable; join again to
 edit. Joining again with the same working set sends only what changed
 meanwhile (your file says what it holds; the server compares).
 
+## Checks on a working set
+
+*Phase 10, built 2026-11-20, in active development, not approved yet.*
+
+A check run in OHL-Design on the working set reads what your file holds.
+Where that is not enough — the clearances between wires (other lines'
+wires, this line's beyond the working set), the structure loads (other
+lines' sections on a shared tower), a plugin's check that declares no
+reach — its result starts with **NOT ALL CHECKED** and says what was not
+pulled in: it is never a pass because nothing was there. The network's
+server runs these checks with their neighbours pulled in
+([server mode](server.md#checks-with-their-neighbours-phase-10-in-active-development));
+a result it sends is marked stale in your file when what it used changes.
+
 ## What is not there yet
 
-Checks on a working set use what it holds; pulling in the neighbours that
-can change a check's answer comes with phase 10 (until then, what a check
-did not see is said where it matters). Rights by role on each element are
-phase 7 (today every user who may join sees the whole network). Point
-clouds and terrain are not served by the network yet.
+A button for the network's checks in OHL-Design's check windows (the
+server answers them; the windows still run on the file). Point clouds
+and terrain are not served by the network yet: clearances to the ground
+and to points are not checked on the network.

@@ -860,6 +860,56 @@ Notes:
   it is done again only after a change of that model, when the user next
   acts or a change is filtered for them.
 
+## Synthetic country: phase 10, scoped computations (2026-11-20)
+
+Checks on a working set with their neighbours pulled in, computed by the
+network's server ([theory](../theory/scoped-checks.md),
+[decision log](decisions.md#2026-11-20-country-server-phase-10)): the 147
+line models of the 12 000-pylon country (seed 1), imported without
+revisions into a fresh throwaway cluster (57.7 s with main's code, 57.1 s
+with phase 10's), measured by
+
+```bash
+ohl network bench-scoped --user admin --runs 3
+```
+
+The server in the bench's process (the idle solve off); the working set
+is the whole route of the first line with a tower shared with another
+line (145 structures, 740 sections — a trunk line: what it pulls in
+is of 15 lines, its own beyond the working set among them); `bench-fast`, Apple M-series,
+10 cores, PostgreSQL 17 on 127.0.0.1, the machine shared with other
+agents' builds.
+
+| Check | Computed on the server | Pulled in |
+|---|---|---|
+| Clearances between wires (rules to other lines by voltage, 4–6.5 m radial, and 3 m between this line's wires; wind 300 Pa), the whole route | first 18.9 s, then p50 9.6 s (3 runs) | reach 12.0 m; 2 220 sections and jumpers read, 1 945 used, of 15 lines; 32 138 results, 3 560 below the rules' distances |
+| Magnetic field, lines within 500 m (500 A in every circuit, 40 °C), profiles at every span of the route | first 9.1 s, then p50 8.4 s | 1 331 sections of 15 lines; 3 024 points |
+| Structure loads on the shared tower (two lines' sections, each line's 8 default load cases) | p50 0.39 s | the other line's twin and its 10 sections there; 360 point loads |
+
+The checks run on the authority between two commands (a whole route's
+check holds the edits meanwhile: a worker of their own is the owner's
+question 1); most of the time is the solves (the working set's sections
+and the candidates, each in the check's case with finite elements).
+
+**Edits, working sets and replicas are not slower** — the same benches
+with main's code (the commit before phase 10) and phase 10's, each on a
+fresh database of the same 147 lines, one after the other on the same
+machine:
+
+| Measure | Main's code | Phase 10's code |
+|---|---|---|
+| A move applied and broadcast (`bench-rights`, 3 runs, network admin) | p50 9.7 / 9.8 / 9.7 ms, p95 10.6 / 10.3 / 10.7 ms | p50 9.2 / 9.8 / 9.6 ms, p95 10.5 / 11.4 / 10.6 ms |
+| The same, a designer of one route | p50 9.8 / 9.9 / 10.0 ms | p50 9.0 / 9.0 / 9.5 ms |
+| A replica joining again after 20 moves (`bench-working-set`) | 359 ms | 354 ms |
+| A partial replica loaded: a third of a route / the whole route | 0.072 / 0.119 s | 0.076 / 0.108 s |
+| A move's rows in the replica | p50 19.1 ms, p95 23.9 ms | p50 17.6 ms, p95 21.6 ms |
+| On the server: a move with a working set / its rows per change | p50 14.3 / 10.5 ms | p50 13.4 / 9.9 ms |
+| Server start | 2.81–2.93 s | 2.64–2.71 s |
+| Memory of the server, idle | 1 310 MB | 1 309 MB |
+
+A command looks at the results watched only when some are (none in these
+benches: nothing added to a move).
+
 ## Synthetic country: phase 9, country libraries (2026-11-20)
 
 What the country libraries cost on the network

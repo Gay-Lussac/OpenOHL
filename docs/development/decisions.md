@@ -8,6 +8,146 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (country server, phase 10)
+
+**Scoped computations: each check's reach, the neighbours within it
+pulled in from this and other lines, other lines' wires as targets,
+structure loads with other lines' sections on shared towers, hidden
+neighbours computed on the server, results saying what was pulled in and
+marked stale when it changes** (ROADMAP O17 phase 10; the plan's answers
+of 2026-11-16 — a hidden neighbour computed on the server and reported
+without its details, shared towers checked under each line's cases, the
+worst kept, fields pulling in lines within 500 m, plugin checks declaring
+an optional reach; **owner, 2026-11-20: "You can go ahead with
+recommendations and the changes to pull nearby lines"** — the engine
+change and the optional plugin-interface step approved; built, in active
+development, not approved yet;
+[ADR-0013](../adr/0013-country-server.md#computations-on-the-working-set-and-what-touches-it),
+[theory](../theory/scoped-checks.md),
+[data model](data-model.md#the-servers-messages-protocol-3),
+[plugins](plugins.md#a-checks-reach),
+[user guide](../user-guide/server.md#checks-with-their-neighbours-phase-10-in-active-development),
+[measured](performance.md#synthetic-country-phase-10-scoped-computations-2026-11-20)).
+
+- **The engine** (`crates/ohl-scope`, no store, no rights): each check's
+  reach (`reach_of`: clearances between wires — the wire rules' largest
+  reach; the distance between conductors — what the working set holds;
+  fields — lines within 500 m; structure loads — twins; a plugin's check —
+  its manifest's `[reach]`, else the working set's whole line and every
+  line within 2 km). A `Neighbourhood` gives what lies near (the server:
+  its models and tile index; each part as `Session::drawing_part` takes
+  it — never a whole line or the network copied).
+- **Clearances between wires** (`ohl_scope::clearance`): the reach for
+  every potential a section near can have (each phase of each system of
+  the lines found near) and the highest structure top near plus 2 m,
+  grown with the lines found until it holds; the candidates by a bound of
+  each span's wire before it is solved; each solved with its own line's
+  settings and wires; other lines' wires the targets of the rules to other
+  lines (crossings among them), this line's beyond the working set those
+  of the rules between its wires. One function runs the rules for the
+  scoped run and the whole network's, the wires in one order; the scoped
+  run looks for pairs as far as its reach plus the longest piece of a
+  checked wire. **Engine change**: `ohl_clearance::CaseTargets::min_reach`
+  (0: as before, every caller unchanged).
+- **Decided here (conservative)**: a wire is at most 1.5 times the
+  straight line between its ends (checked on every candidate solved;
+  NOT ON THE SAFE SIDE said when it does not hold); a typed structure's
+  points within 50 m of it and 150 m above it before its type is read; a
+  bundle 2 m above its structure's top at most.
+- **Fields** (`ohl_scope::fields`): the working set's line computed as one
+  with its sections within the field distance, the other lines' fields
+  **added by size** (their phase angles to this line's not known:
+  conservative); the wires beyond the field distance left out — **NOT ON
+  THE SAFE SIDE**, said in every result (the owner's 500 m, a setting).
+- **Structure loads** (`ohl_scope::loads`): twins (the same type within
+  0.5 m) are one tower; under each line's load cases (its own library's,
+  else the shipped defaults) every line's sections there solved and the
+  loads at its twin's points taken; a point's load from the line whose
+  sections hang there, a point holding none its strings from the case's
+  line, the body's wind once; the worst per point and component kept with
+  its line and case. **Decided here (conservative)**: several lines'
+  sections at one point added, each line's strings counted again; the
+  other lines' sections solved in every case the case's line's twin takes
+  (their own groups set aside). **Not on the safe side, said**: solved
+  rigid — a line set to level 3 or 4 says so with the tower.
+- **On the server** (`ohl_server`, `network_scoped.rs`; protocol 3,
+  messages added: `check`, `check_result`, `check_stale`; nothing stored,
+  network schema 5 unchanged): a check on the working set the connection
+  follows or one given (refused when it reaches what its user may not
+  see, as a pick); computed on the authority between two commands;
+  **hidden neighbours computed too** — the numbers are the whole
+  network's — and reported only as the rights allow: never named nor
+  placed ("a hidden object of another line is within X m", "check result
+  limited by an object you may not see" on the user's own span, without
+  the point on it), counted in what was pulled in; a line the user sees
+  nothing of never named; texts naming what is hidden replaced.
+- **Results say what was pulled in** (lines, routes, objects the user may
+  see, the hidden count, what was read) and are **watched**: the working
+  set's objects, the neighbours read, the tiles the reach covers, the
+  lines read; the first change touching any of them sends `check_stale`
+  once (naming the change only as its user may see it); OHL-Design marks
+  the working set's routes out of date in its replica — phase 8's marks,
+  the same key (`Session::mark_stale`, `client::take_check_stale`).
+- **A check run without its neighbours says so**: in OHL-Design on a
+  working set's replica, the clearances between wires, the structure
+  loads and a plugin's check whose reach is not 0 start with "NOT ALL
+  CHECKED: … its neighbours not pulled in …" — never a pass because
+  nothing is there. A neighbour the server could not read or solve: NOT
+  ALL CHECKED.
+- **The plugin step** (optional, additive; interface 0.3 unchanged): a
+  manifest's `[reach]` — `default` and `check` (id → m), 0 to 10 000 m;
+  none: the most conservative default; refused when not a distance
+  (`ohl_plugins::CheckReach`, `Manifest::check_reach`). Plugins stay
+  independent of the core: they declare a number, the core decides what
+  it pulls in.
+- **The safe side, proven** on the synthetic country (each route a line,
+  towers of two routes twins; `ohl-scope`'s tests): clearances between
+  wires on five working sets in still air and wind — the same pairs, the
+  same distances to the bit, the same violations as with every line solved
+  whole and every wire a target (three working sets: 22 239 pairs and wires, 2 499 violations, 1 022 other lines' objects used); the loads on nine
+  shared towers — the same as the whole network's to the bit, and within
+  1.7 % of each point's load of the country as one project (not the same
+  model: a tower of two routes there takes one route's alignment); the
+  field — what 500 m leaves out at most 0.00019 µT where the largest field is 4.2 µT. On the server: the same
+  numbers for a user who may see only the route as for an admin; the
+  property test of phase 7 now also asks checks each round — no message
+  holds a hidden id or place.
+- **Measured** (12 000 pylons, 147 lines;
+  [performance](performance.md#synthetic-country-phase-10-scoped-computations-2026-11-20)):
+  a whole route of 145 structures — clearances 9.6 s (the first 18.9 s;
+  2 220 objects read, of 15 lines with its own), the field 8.4 s, the loads on a shared
+  tower 0.39 s; main's code against phase 10's on fresh databases: a move
+  applied and broadcast p50 9.7–9.8 → 9.2–9.8 ms, joining again after 20
+  moves 359 → 354 ms, a replica loaded 0.072 / 0.119 → 0.076 / 0.108 s
+  (a third / the whole route), the start 2.8–2.9 → 2.6–2.7 s.
+- **Not yet**: OHL-Design's windows asking the network for these checks
+  (the protocol and the server are there; the windows still run on the
+  file and say what they did not pull in); the checks computed on a
+  worker of their own (they run on the authority between two commands
+  — a long check holds the edits); clearances to the ground and to points
+  on the network (no terrain or point cloud served); rules across weather
+  cases on the network; the field's left-out part bounded and added;
+  shared towers' flexible solve (level 3/4); plugin checks run on the
+  server (they run in OHL-Design).
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. Checks computed on the authority between commands (a long check
+> holds the edits) → a worker thread of their own next, the parts taken
+> on the authority.
+> 2. The field's wires beyond 500 m left out, said NOT ON THE SAFE SIDE →
+> keep, and add a bound of what is left out (the lines' currents by
+> tile) later.
+> 3. A wire at most 1.5 times its ends' distance (the candidates' bound,
+> checked on what is solved) → yes.
+> 4. Shared towers: several lines' sections at one point added, strings
+> counted again; other lines' sections in every case the twin takes → yes.
+> 5. A plugin without `[reach]`: the whole line and every line within
+> 2 km → yes.
+> 6. A result stale when anything changes within its reach's tiles (more
+> often than strictly needed) → yes.
+> 7. Hidden neighbours: the distance to them said ("within X m") →
+> yes, as the plan's answer.
+
 ## 2026-11-20 (country server, phase 9)
 
 **Country libraries: each library kind kept once for the network, locks
