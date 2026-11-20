@@ -119,8 +119,8 @@ impl LoadsResult {
     }
 }
 
-/// One line's loads at its twin in a case (none: the case failed).
-pub type TwinCase = (String, String, Result<CaseLoads, String>);
+/// One line's loads in a case, or why the case failed.
+type CaseResult = Result<CaseLoads, String>;
 
 /// The tower's loads in one case of line `own`: `twins` gives, per line,
 /// (model, its twin's id, its loads in that case). See the module's notes.
@@ -350,7 +350,7 @@ fn tower_loads(
         };
         let known: Vec<String> = cases.loads.iter().map(|c| c.name.clone()).collect();
         // Every line's loads at its twin in line x's cases.
-        let mut per_line: Vec<(String, String, Vec<Result<CaseLoads, String>>)> = Vec::new();
+        let mut per_line: Vec<(String, String, Vec<CaseResult>)> = Vec::new();
         for (m, t, part, library) in &parts {
             let solved = if m == x {
                 ohl_loads::structure_loads_each(
