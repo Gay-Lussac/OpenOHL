@@ -39,7 +39,7 @@
 //! a change touched them); every client of a network gets heartbeats and
 //! may catch up from its position (`stream`) after a disconnect.
 //!
-//! **Rights** (phase 7, [`crate::network_rights`]): only the network's
+//! **Rights** (phase 7, `network_rights`): only the network's
 //! users join, each with their personal invitation; every command is
 //! decided by the rights' one function before it runs (its rule) and on
 //! every object it changed (in the same unit of work, put back when
