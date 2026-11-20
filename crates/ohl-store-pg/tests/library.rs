@@ -717,6 +717,11 @@ fn schema_4_brought_to_5() {
         c.batch_execute("INSERT INTO line (id, name) VALUES ('A', 'a')")
             .unwrap();
     }
+    // Phase 13: an admin says they have a backup (in the audit).
+    Network::connect_as_is(&url)
+        .unwrap()
+        .migrate_now("admin", true)
+        .unwrap();
     let net = Network::connect(&url).unwrap();
     assert_eq!(net.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
     assert_eq!(net.library_rev().unwrap(), 0);

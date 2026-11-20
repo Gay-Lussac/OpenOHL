@@ -29,7 +29,7 @@
 //! Rights changes need no writer's lock: they are not commands of a model
 //! (no log entry), and an admin changes them while the server runs.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use ohl_session::Kind;
 use ohl_session::rights::{
@@ -134,6 +134,30 @@ pub enum RightsCommand {
     Unassign {
         /// Its number.
         id: i64,
+    },
+    /// Phase 13: a user's personal invitation made again (network admins):
+    /// every older one of that user refused from now on, the user let go
+    /// if connected.
+    ReissueInvitation {
+        /// The user.
+        name: String,
+    },
+    /// Phase 13: an identity provider's subject signs in as a user (OIDC;
+    /// network admins).
+    MapIdentity {
+        /// The issuer (as the server is configured with it).
+        issuer: String,
+        /// The ID token's `sub`.
+        subject: String,
+        /// The user.
+        user: String,
+    },
+    /// Phase 13: an identity provider's subject no longer signs in.
+    UnmapIdentity {
+        /// The issuer.
+        issuer: String,
+        /// The subject.
+        subject: String,
     },
 }
 
@@ -734,6 +758,87 @@ impl Network {
                         None,
                     )
                 }
+                RightsCommand::ReissueInvitation { name } => {
+                    admin_only("reissue invitations")?;
+                    if !data.users.contains_key(name) {
+                        return Err(refused(format!("no user {name}")));
+                    }
+                    let generation: i32 = c
+                        .query_one(
+                            "UPDATE net_user SET invitation = invitation + 1 WHERE name = $1
+                             RETURNING invitation",
+                            &[name],
+                        )?
+                        .get(0);
+                    (
+                        format!(
+                            "{name}'s personal invitation reissued (generation {generation}): \
+                             the older ones are refused"
+                        ),
+                        format!("user:{name}"),
+                        json(&serde_json::json!({"invitation": generation - 1})),
+                        json(&serde_json::json!({"invitation": generation})),
+                    )
+                }
+                RightsCommand::MapIdentity {
+                    issuer,
+                    subject,
+                    user,
+                } => {
+                    admin_only("map sign-in identities")?;
+                    if !data.users.contains_key(user) {
+                        return Err(refused(format!("no user {user}")));
+                    }
+                    if issuer.trim().is_empty()
+                        || subject.trim().is_empty()
+                        || issuer.len() > 1024
+                        || subject.len() > 255
+                    {
+                        return Err(refused(
+                            "an identity: an issuer (at most 1024 bytes) and a subject (at most \
+                             255)",
+                        ));
+                    }
+                    let before: Option<String> = c
+                        .query_opt(
+                            "SELECT user_name FROM net_identity WHERE issuer = $1 AND subject = $2",
+                            &[issuer, subject],
+                        )?
+                        .map(|r| r.get(0));
+                    c.execute(
+                        "INSERT INTO net_identity (issuer, subject, user_name, by_user)
+                         VALUES ($1, $2, $3, $4)
+                         ON CONFLICT (issuer, subject) DO UPDATE
+                             SET user_name = excluded.user_name, by_user = excluded.by_user,
+                                 time = clock_timestamp()",
+                        &[issuer, subject, user, &actor],
+                    )?;
+                    (
+                        format!("{subject} of {issuer} signs in as {user}"),
+                        format!("identity:{issuer} {subject}"),
+                        before.map(|u| serde_json::json!({"user": u}).to_string()),
+                        json(&serde_json::json!({"user": user})),
+                    )
+                }
+                RightsCommand::UnmapIdentity { issuer, subject } => {
+                    admin_only("map sign-in identities")?;
+                    let before: Option<String> = c
+                        .query_opt(
+                            "DELETE FROM net_identity WHERE issuer = $1 AND subject = $2
+                             RETURNING user_name",
+                            &[issuer, subject],
+                        )?
+                        .map(|r| r.get(0));
+                    let Some(before) = before else {
+                        return Err(refused(format!("no identity {subject} of {issuer}")));
+                    };
+                    (
+                        format!("{subject} of {issuer} no longer signs in (was {before})"),
+                        format!("identity:{issuer} {subject}"),
+                        json(&serde_json::json!({"user": before})),
+                        None,
+                    )
+                }
             })
         })();
         let out = out.and_then(|(text, target, before, after)| {
@@ -759,6 +864,38 @@ impl Network {
                 Err(e)
             }
         }
+    }
+
+    /// Phase 13: each user's personal invitation's generation (0: never
+    /// reissued).
+    pub fn invitation_generations(&self) -> Result<BTreeMap<String, i32>, NetError> {
+        Ok(lock(&self.conn)
+            .query("SELECT name, invitation FROM net_user", &[])?
+            .into_iter()
+            .map(|r| (r.get(0), r.get(1)))
+            .collect())
+    }
+
+    /// Phase 13: the user `subject` of `issuer` signs in as, if mapped.
+    pub fn identity_user(&self, issuer: &str, subject: &str) -> Result<Option<String>, NetError> {
+        Ok(lock(&self.conn)
+            .query_opt(
+                "SELECT user_name FROM net_identity WHERE issuer = $1 AND subject = $2",
+                &[&issuer, &subject],
+            )?
+            .map(|r| r.get(0)))
+    }
+
+    /// Phase 13: every identity mapped: issuer, subject, user.
+    pub fn identities(&self) -> Result<Vec<[String; 3]>, NetError> {
+        Ok(lock(&self.conn)
+            .query(
+                "SELECT issuer, subject, user_name FROM net_identity ORDER BY 3, 1, 2",
+                &[],
+            )?
+            .into_iter()
+            .map(|r| [r.get(0), r.get(1), r.get(2)])
+            .collect())
     }
 
     /// A route, part or object scope with its line (ids are unique in the

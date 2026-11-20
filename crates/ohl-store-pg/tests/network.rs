@@ -213,6 +213,15 @@ fn schema_and_the_writers_lock() {
         "INSERT INTO working_set (owner, name, routes) VALUES ('ana', 'old', '[\"r1\"]')",
     )
     .unwrap();
+    // Phase 13: a migration needs a backup; an admin says they have one.
+    let refused = Network::connect(&cluster.url("old"))
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("needs a backup"), "{refused}");
+    Network::connect_as_is(&cluster.url("old"))
+        .unwrap()
+        .migrate_now("admin", true)
+        .unwrap();
     let old = Network::connect(&cluster.url("old")).unwrap();
     assert_eq!(old.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
     let saved = old.working_sets("ana").unwrap();
@@ -840,6 +849,13 @@ fn schema_3_brought_to_4() {
                  VALUES ('user', 'old', 'designer', 'line', 'A', 'import')",
         )
         .unwrap();
+        // Phase 13: a backup recorded just now (as `ohl network backup`
+        // records it) lets the migration go.
+        c.batch_execute(
+            "INSERT INTO net_meta (key, value) VALUES ('last_backup',
+                 json_build_object('epoch', extract(epoch FROM now()), 'time', 'now')::text)",
+        )
+        .unwrap();
     }
     let net = Network::connect(&url).unwrap();
     assert_eq!(net.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
@@ -877,9 +893,15 @@ fn schema_5_brought_to_6() {
         c.batch_execute("INSERT INTO line (id, name) VALUES ('A', 'a')")
             .unwrap();
     }
+    // Phase 13: an admin says they have a backup (in the audit).
+    let (from, to) = Network::connect_as_is(&url)
+        .unwrap()
+        .migrate_now("admin", true)
+        .unwrap();
+    assert_eq!((from, to), (5, ohl_store_pg::schema::SCHEMA));
     let net = Network::connect_writer(&url).unwrap();
     assert_eq!(net.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
-    assert_eq!(ohl_store_pg::schema::SCHEMA, 6);
+    const { assert!(ohl_store_pg::schema::SCHEMA >= 6) };
     let id = net.next_offline_export().unwrap();
     let e = ohl_store_pg::offline::OfflineExport {
         id,
