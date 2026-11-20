@@ -2251,9 +2251,74 @@ only where it helps):
   > the plate when the layout puts the end onto a plate on that member, and
   > the record then takes it as the layout's (a run again from the file
   > takes it out): keep the hand value in the record? Recommended: yes.
-- [ ] L3. **A plate bent by a few degrees** for ends whose members need
+  > **(4)–(6) built 2026-11-20 as recommended** (L2's follow-ups, below).
+- [x] L2's follow-ups. **Built 2026-11-20, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#l2s-follow-ups-2026-11-20),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-l2s-follow-ups-a-plate-bent-by-a-few-degrees-l3)):
+  (a) a plate whose outline round the work point would run into
+  something stops short of the work point — round its members' legs from
+  the flange's toe over their bolts (each bolt's end and edge distances)
+  and the flange under them —, cut straight short of what it would still
+  run into (at most four cuts), where it still lies on the flange over half
+  a square of its width; convex, its bolts inside with their distances
+  (checked after writing); the plate checks take the outline as cut (the
+  strut's free length still to the flange's toe: less conservative than
+  round the work point, said). (b) a bent plate's holding bolts slid along
+  the leg clear of the holes there (the default minimum spacing). (c) an
+  `onto` given by hand kept in the record (`onto=<member>`). Each of (a)
+  and (b) a switch, on by default. Measured: below with L3.
+- [x] L3. **A plate bent by a few degrees** for ends whose members need
   rolls 5°–20° apart at their two ends (about 24 900 ends on the real
   towers, the second group; the owner's example joint shows such plates).
+  **Built 2026-11-20, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plate-bent-by-a-few-degrees-l3)):
+  an end at most 20° off its flange goes first onto a plate bent by as
+  much from step 4's flat plate — away from the flange, or towards it past
+  the flange's toe, whichever moves the member's axis least (within one
+  plate thickness either way, step 4's limit) —, then welded as before;
+  `[plate.bend]` as J2b's, **no new format field** (no version 24); the
+  bend's curved part (r + t) tan(θ/2) from its line, the member's steel
+  half the gap beyond it, its bolts their edge distance beyond it. The end
+  that takes the bend: unchanged rules — an end flat now stays flat, else
+  the end first bottom up, then out lies flat (the arms' and the top's end,
+  or the higher one, takes the bend). The bend check C12 applies as it is
+  (plugins unchanged). On the 78 real towers (kept privately; J9's and J7a's proposals confirmed;
+  L2's result 48.6 % whole, 61.8 % of the ends): (a) alone 49.0 % / 64.0 %
+  (5 533 plates stop short, the plates said to run into steel 8 290 →
+  5 396), (b) alone the ends left for a hole under a holding bolt 668 →
+  129, Part 1 together 49.0 % / 64.0 % (as given 42 → 28), **L3 on top
+  49.7 % whole (body 49.5 %, arms and top 50.0 %), 64.7 % of the ends**,
+  joints not fitting 24.7 % → 24.1 %, a run again identical 78/78; 4 085
+  bent plates written and the welded plates 2 758 → 11 (a bent plate fits
+  wherever the welded one did); the ends at most 20° off left 17 840 →
+  15 907 (most bends are of 2°–5°; of the 5°–20° ends left, 4 100 have
+  their outstanding leg towards the flange, 2 639 lie on an inner face
+  running towards the other leg, 2 598 would lie more than a plate's
+  thickness out). The bend check C12 as it is, under the comparison's one
+  vertical case: 83 % of the L3 bends pass (median usage 0.20, 90 % below
+  1.49, largest 6.97 — short bends of thin plates); J2b's 90° bends 50 %
+  (median 1.00). Time per tower (six back to back, twice): median
+  17.5–18.2 s → 19.3–20.1 s, the largest 24 s → 22 s.
+  > **Owner:** (1) Plates stopping short of the work point (a): keep on by default?
+  > The strut check of such a plate is less conservative than of the plate
+  > round the work point (its free length still reaches the flange's toe).
+  > Recommended: yes. (2) Bent before welded up to 20° off (the welded
+  > plates almost gone): keep? Recommended: yes (galvanised towers are
+  > rarely welded; no weld to check). (3) Bent towards the flange past its
+  > toe (the member then nearer the flange than on a flat plate): keep?
+  > Recommended: yes. (4) The bend check stays strict for now (no contact
+  > relief): 83 % of the L3 bends pass under one vertical case, J2b's only
+  > 50 %. Recommended: decide after a run with the design cases; then, if
+  > still many fail, a least bend length in the layout rather than relief.
+  > (5) Which end takes the bend: the existing rules (the end flat now, else
+  > bottom up then out — the arms' and top's end takes it); the end with
+  > fewer members not preferred. Recommended: keep; next, choose the flat
+  > end's half turn so that the bent end's leg faces its flange (4 100
+  > ends 5°–20° off are left for that alone). (6) 20° as the most a plate
+  > is bent (`BEND_SMALL_MAX`) and a bolt's edge distance from a bend's
+  > curved part as from a free edge: keep? Recommended: yes, until a shop
+  > gives its rules.
 - [ ] L4. **A joint's detail copied to the other towers of the line**
   (laid out or done by hand) onto their matching joints, not only within
   one tower.

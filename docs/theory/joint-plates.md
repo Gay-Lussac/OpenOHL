@@ -70,6 +70,26 @@ force-dependent minimum (ASCE 10-97 4.5.1's \\( 1.2P/(f_u t) \\)) can be
 larger, so they are **NOT ON THE SAFE SIDE** in that sense — said with
 them where a plugin gives none (the simple check checks no joint).
 
+## A plate's outline as cut
+
+Every check below measures to the plate's outline **as written** (given,
+or worked out round its bolts): the end and edge distances, the block
+shear's paths to the edge, the width a section is checked with (at most
+the plate's own width through the bolts) and the strut's free length to
+the edge. Since 2026-11-20 the automatic joint layout may give a plate an
+outline that **stops short of the work point** and is cut straight short of
+steel it would run into ([joint layout](joint-layout.md#a-plate-stopping-short-of-what-it-would-run-into-a)):
+round each member's leg from where it crosses the flange's toe over its
+bolts, each bolt's end and edge distances, and the flange under them. The
+checks are unchanged and take that outline as it is: a shorter plate gives
+shorter paths and a narrower width where it is narrower (*as built*). The
+strut's free length then reaches at least the flange's toe: the whole of
+the plate's free part beyond the flange is in it (*on the safe side* for
+that part). Where the plate lies on the flange it is held there on one side
+only, by contact — *an assumption*, as before; a plate round the work point
+had a longer free length to its edge, so the short plate's strut check is
+less conservative than before, though not shorter than its free part.
+
 ## The bolt group in the plate
 
 ![Left: a member in tension bolted onto a gusset plate by two gauge lines of three bolts, with the pitch p, the span between the outer lines, the end distance e1 to the plate's edge in the force's direction, the edge distance e2, and the block shear path: two shear planes along the outer gauge lines and the tension plane between them. Right: a fillet weld between plates at θ with its throat a and contact width s](../images/theory/joint-plate.svg)
