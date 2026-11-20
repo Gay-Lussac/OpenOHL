@@ -915,3 +915,230 @@ fn shared_towers_on_direct_edits_of_main() {
     drop((dora, ben, bob, admin));
     server.stop();
 }
+
+/// Phase 14: the exports' thread (owner, 2026-11-20: phase 12's question
+/// 6). An export written on its thread is the same as on the authority —
+/// its report (its number, revision, size and seconds aside) and what the
+/// file holds (its time and revision aside) — for a user seeing everything
+/// and one seeing a route, through the protocol and the command line's
+/// way. A move applied before an export's content is taken is in it; a
+/// move landing while it is written is not, the file staying the base
+/// revision's, and the export is marked stale. A user whose rights change
+/// while it is written gets nothing.
+#[test]
+fn exports_on_their_thread_as_on_the_authority() {
+    use crate::network::{NetOptions, Probe};
+    let Some(t) = test_network("exports", 200) else {
+        return;
+    };
+    let (code, route, _other, _twin, at) = shared(&t.url, &t.codes);
+    {
+        let net = Network::connect(&t.url).unwrap();
+        let on_route = Scope {
+            route: Some(route.clone()),
+            ..Scope::default()
+        };
+        add_user(&net, "pat", "designer", on_route);
+    }
+    let dir: PathBuf = t.dir.join("exports");
+    std::fs::create_dir_all(&dir).unwrap();
+    let spec = WorkingSetSpec {
+        name: String::new(),
+        model: code.clone(),
+        picks: vec![area(at, 400.0)],
+    };
+    // The main line recorded once (Bob may edit it all).
+    {
+        let server = Server::start_network(local("abcd2345"), net_options(&t.url)).unwrap();
+        let bob = join(&server, "bob");
+        let mut log = Vec::new();
+        request(
+            &bob,
+            &mut log,
+            1,
+            &code,
+            Op::Commit {
+                message: "first".into(),
+            },
+        )
+        .unwrap();
+        drop(bob);
+        server.stop();
+    }
+    let null = serde_json::Value::Null;
+    // What a file holds, its export's own revision and time aside.
+    let held = |path: &Path| -> serde_json::Value {
+        let s = Session::open(path).unwrap();
+        let mut meta = serde_json::to_value(s.offline_meta().unwrap().unwrap()).unwrap();
+        meta["time"] = null.clone();
+        meta["export"] = null.clone();
+        serde_json::json!({
+            "line": serde_json::to_value(s.line()).unwrap(),
+            "part": s.part(),
+            "neighbours": serde_json::to_value(s.offline_neighbours().unwrap()).unwrap(),
+            "meta": meta,
+        })
+    };
+    let report = |r: &OfflineExported| -> serde_json::Value {
+        assert!(!r.stale && r.changed_meanwhile == 0, "{r:?}");
+        let mut v = serde_json::to_value(r).unwrap();
+        for k in ["number", "export", "seconds", "bytes"] {
+            v[k] = null.clone();
+        }
+        v
+    };
+    for user in ["bob", "pat"] {
+        let mut got = Vec::new();
+        for worker in [false, true] {
+            let server = Server::start_network(
+                local("abcd2345"),
+                NetOptions {
+                    export_worker: worker,
+                    ..net_options(&t.url)
+                },
+            )
+            .unwrap();
+            let j = join(&server, user);
+            let mut log = Vec::new();
+            let via = dir.join(format!("{user}-{worker}-protocol.ohl"));
+            let a = export_via(&j, &mut log, 10, &spec, &via).unwrap();
+            let line = dir.join(format!("{user}-{worker}-command.ohl"));
+            let b: OfflineExported = serde_json::from_value(
+                server
+                    .offline(
+                        user,
+                        OfflineJob::Export {
+                            working_set: spec.clone(),
+                            reach: Some(800.0),
+                            out: line.clone(),
+                        },
+                    )
+                    .unwrap(),
+            )
+            .unwrap();
+            got.push((report(&a), held(&via), report(&b), held(&line)));
+            drop(j);
+            server.stop();
+        }
+        assert!(got[0] == got[1], "{user}: the thread's export differs");
+        if user == "pat" {
+            assert!(got[1].0["left_out"]["other_lines"].as_u64() > Some(0));
+        }
+    }
+    // A move before an export, one while it is written (its writing made
+    // to wait 1.5 s).
+    let server = Server::start_network(
+        local("abcd2345"),
+        NetOptions {
+            export_delay: Some(Duration::from_millis(1500)),
+            ..net_options(&t.url)
+        },
+    )
+    .unwrap();
+    let (bob, carol) = (join(&server, "bob"), join(&server, "carol"));
+    let mut log = Vec::new();
+    let position = |path: &Path, id: &str| -> [f64; 3] {
+        Session::open(path)
+            .unwrap()
+            .line()
+            .structure(id)
+            .unwrap()
+            .position
+    };
+    let first = dir.join("bob-true-protocol.ohl");
+    let sid = wanted_structure(&Session::open(&first).unwrap(), 0);
+    let p0 = position(&first, &sid);
+    request(
+        &carol,
+        &mut log,
+        20,
+        &code,
+        moved(&sid, [p0[0] + 0.3, p0[1], p0[2]]),
+    )
+    .unwrap();
+    let before = dir.join("before.ohl");
+    let out = export_via(&bob, &mut log, 21, &spec, &before).unwrap();
+    assert!(out.recorded_first && !out.stale, "{out:?}");
+    assert_eq!(position(&before, &sid)[0], p0[0] + 0.3);
+    let plans = |server: &Server| -> usize {
+        let v: serde_json::Value =
+            serde_json::from_str(&server.probe(Probe::Stats).unwrap()).unwrap();
+        v["export_plan_ms"].as_array().map_or(0, Vec::len)
+    };
+    let planned = plans(&server);
+    bob.link
+        .send(ClientMsg::ExportWorkingSet {
+            id: 22,
+            working_set: spec.clone(),
+            reach: None,
+        })
+        .unwrap();
+    // Its content taken on the authority, then the move.
+    let t0 = std::time::Instant::now();
+    while plans(&server) == planned {
+        assert!(t0.elapsed() < Duration::from_secs(60), "no export started");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    request(
+        &carol,
+        &mut log,
+        23,
+        &code,
+        moved(&sid, [p0[0] + 0.6, p0[1], p0[2]]),
+    )
+    .unwrap();
+    let got = pump_for(&bob, &mut log, Duration::from_secs(120), |m| {
+        matches!(m, ServerMsg::WorkingSetExported { id: 22, .. })
+    });
+    let Some(ServerMsg::WorkingSetExported { result, .. }) = got.last() else {
+        panic!("no export: {got:?}")
+    };
+    let during = result.clone().unwrap();
+    assert!(
+        during.report.stale && during.report.changed_meanwhile >= 1,
+        "{:?}",
+        during.report
+    );
+    assert!(!during.report.recorded_first, "{:?}", during.report);
+    let path = dir.join("during.ohl");
+    std::fs::write(&path, crate::base64::decode(&during.file).unwrap()).unwrap();
+    // The base revision's working set: the move before in it, not the one
+    // during.
+    assert_eq!(position(&path, &sid)[0], p0[0] + 0.3);
+    assert_eq!(during.report.base, out.base);
+    let net = Network::connect(&t.url).unwrap();
+    let record = net.offline_export(&during.report.export).unwrap().unwrap();
+    assert_eq!(record.base, out.base);
+    assert!(audit_has(
+        &t.url,
+        "export working set",
+        "changed on the server while it was written"
+    ));
+    drop((bob, carol));
+    // Pat's rights changed while her export is written: nothing.
+    let planned = plans(&server);
+    let out_path = dir.join("pat-changed.ohl");
+    let asked = std::thread::scope(|s| {
+        let h = s.spawn(|| {
+            server.offline(
+                "pat",
+                OfflineJob::Export {
+                    working_set: spec.clone(),
+                    reach: None,
+                    out: out_path.clone(),
+                },
+            )
+        });
+        let t0 = std::time::Instant::now();
+        while plans(&server) == planned {
+            assert!(t0.elapsed() < Duration::from_secs(60), "no export started");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assign(&t.url, "user:pat", Some("viewer"), false, Scope::network());
+        h.join().unwrap()
+    });
+    let e = asked.unwrap_err();
+    assert!(e.contains("rights changed"), "{e}");
+    assert!(!out_path.exists());
+    server.stop();
+}
