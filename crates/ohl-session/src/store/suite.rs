@@ -53,6 +53,7 @@ pub const TESTS: &[(&str, Test)] = &[
     ("surfaces", surfaces),
     ("whole_copies", whole_copies),
     ("session", session),
+    ("shared_towers_on_main", shared_towers_on_main),
 ];
 
 /// Runs every test of the suite on the stores `open` gives; returns the
@@ -780,6 +781,70 @@ fn example() -> ohl_line::Line {
             .join("../../examples/synthetic-line/synthetic-line.ohl.json"),
     )
     .expect("the example line")
+}
+
+/// Phase 12's first item: a command made directly on the main line, with
+/// the routes a network's server gives as its user's
+/// ([`Session::with_command_routes`]), is checked by the rules of shared
+/// towers as on a branch over a working set — a broken connection
+/// refused naming the other route, a move marking it stale, a protected
+/// line refusing it pending review; without routes, as before.
+fn shared_towers_on_main(open: Open<'_>) {
+    use std::collections::BTreeSet;
+    let name = "suite-shared-main";
+    let mut s = Session::open_on(open(name), name).expect("open");
+    s.import(&example(), "ana").expect("import");
+    s.set_user("ana", "ben", Role::Designer).unwrap();
+    let main: BTreeSet<String> = ["main".to_owned()].into();
+    let t3 = s.line().structure("T3").unwrap().position;
+    let moved = |dx: f64| Command::MoveStructure {
+        id: "T3".into(),
+        position: [t3[0] + dx, t3[1], t3[2]],
+    };
+    // A broken connection: refused, naming the other route, nothing kept.
+    let before = s.line().clone();
+    let e = s
+        .with_command_routes(Some(main.clone()), |s| {
+            s.apply(
+                "ben",
+                Command::DeleteStructure {
+                    id: "T3".into(),
+                    confirm: true,
+                },
+            )
+        })
+        .expect_err("a structure the other route uses is not deleted");
+    let text = e.to_string();
+    assert!(
+        text.contains("route branch") && text.contains("rule 1"),
+        "{text}"
+    );
+    assert_eq!(*s.line(), before);
+    // A move: allowed, the other route marked out of date.
+    let a = s
+        .with_command_routes(Some(main.clone()), |s| s.apply("ben", moved(0.4)))
+        .expect("a move is allowed");
+    assert!(a.notice.is_some(), "the move is said");
+    let stale = s.stale_routes().unwrap();
+    assert_eq!(stale.keys().collect::<Vec<_>>(), ["branch"]);
+    assert!(!stale.contains_key("main"));
+    // A protected main: the move needs a review by its owners.
+    s.commit("ana", "first").unwrap();
+    s.protect_branch("ana", "main", true).unwrap();
+    let e = s
+        .with_command_routes(Some(main.clone()), |s| s.apply("ana", moved(0.8)))
+        .expect_err("a protected line waits for a review, even for an admin");
+    assert!(
+        e.to_string().contains("needs a review by its owners"),
+        "{e}"
+    );
+    // Without routes (a user owning every route): as before.
+    s.protect_branch("ana", "main", false).unwrap();
+    let a = s
+        .with_command_routes(None, |s| s.apply("ben", moved(0.8)))
+        .unwrap();
+    assert!(a.notice.is_none());
+    assert_eq!(s.stale_routes().unwrap()["branch"].notices.len(), 1);
 }
 
 fn session(open: Open<'_>) {

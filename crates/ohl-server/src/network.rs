@@ -2198,6 +2198,19 @@ impl NetHost {
             Vec::new()
         };
         let resolved = (!parts.is_empty()).then(|| self.resolve_for(user));
+        let cmd_routes = if line == ohl_session::versions::MAIN
+            && matches!(
+                op,
+                Op::Do { .. }
+                    | Op::Undo
+                    | Op::Redo
+                    | Op::Rollback { .. }
+                    | Op::RollbackAfter { .. }
+            ) {
+            self.command_routes(answers.map(|a| a.0), user, &rights, code)
+        } else {
+            None
+        };
         let mut check_us = checking.elapsed().as_secs_f64() * 1e6;
         self.net.begin_unit().map_err(|e| e.to_string())?;
         let lib = self.lib.clone();
@@ -2266,39 +2279,48 @@ impl NetHost {
         let into_branch = need == nr::Need::IntoBranch;
         let mut refusal: Option<String> = None;
         let mut objects_us = 0.0;
-        let executed = crate::execute_checked(session, user, line, &op, |s, a| {
-            let t = Instant::now();
-            let check = nr::LibCheck {
-                state: &lib,
-                branch: line,
-                pins,
-                before: uses,
-            };
-            // Changes brought into a branch over a working set: those now
-            // as on main are main's (decided there).
-            let objects: Vec<(Kind, String)> = if into_branch {
-                let main = ohl_session::versions::MAIN;
-                a.objects
-                    .iter()
-                    .filter(|(k, id)| s.object_value(*k, id) != s.line_object_value(main, *k, id))
-                    .cloned()
-                    .collect()
-            } else {
-                a.objects.clone()
-            };
-            let decided = nr::check_objects(
-                &rights,
-                code,
-                s,
-                places,
-                &objects,
-                Some(&check),
-                (!parts.is_empty()).then_some(&again as &dyn Fn(&mut Session) -> _),
-            );
-            objects_us = t.elapsed().as_secs_f64() * 1e6;
-            decided.map_err(|why| {
-                refusal = Some(why.clone());
-                ohl_session::SessionError::Refused(why)
+        // Phase 12's first item: a command made directly on the main line
+        // is checked by the rules of shared towers (phase 8) against the
+        // routes that are its user's, as a branch over a working set is
+        // against its routes — the same code path.
+        let routes = cmd_routes;
+        let executed = session.with_command_routes(routes, |session| {
+            crate::execute_checked(session, user, line, &op, |s, a| {
+                let t = Instant::now();
+                let check = nr::LibCheck {
+                    state: &lib,
+                    branch: line,
+                    pins,
+                    before: uses,
+                };
+                // Changes brought into a branch over a working set: those now
+                // as on main are main's (decided there).
+                let objects: Vec<(Kind, String)> = if into_branch {
+                    let main = ohl_session::versions::MAIN;
+                    a.objects
+                        .iter()
+                        .filter(|(k, id)| {
+                            s.object_value(*k, id) != s.line_object_value(main, *k, id)
+                        })
+                        .cloned()
+                        .collect()
+                } else {
+                    a.objects.clone()
+                };
+                let decided = nr::check_objects(
+                    &rights,
+                    code,
+                    s,
+                    places,
+                    &objects,
+                    Some(&check),
+                    (!parts.is_empty()).then_some(&again as &dyn Fn(&mut Session) -> _),
+                );
+                objects_us = t.elapsed().as_secs_f64() * 1e6;
+                decided.map_err(|why| {
+                    refusal = Some(why.clone());
+                    ohl_session::SessionError::Refused(why)
+                })
             })
         });
         let applied = match executed {
@@ -2448,6 +2470,100 @@ impl NetHost {
                 );
                 self.push(client, None, None, Some(ServerMsg::Notice { text }));
             }
+        }
+    }
+
+    /// Phase 12's first item: the routes of model `code` that are
+    /// `user`'s for the rules of shared towers on a command made directly
+    /// on its main line — the routes on which the rights let it edit
+    /// something (phase 11's rule for a branch over a working set), and of
+    /// those only the ones of the working set its connection (`client`)
+    /// follows on this model, if any. `None`: no rule — a user who may
+    /// edit every route and follows no working set (a project without
+    /// working sets, as before).
+    ///
+    /// From the assignments when they name routes, a part of one, or the
+    /// line or network whole (a route list's cost); from every object's
+    /// place when a grant is on a region or an object, or a deny touches
+    /// the line (the safe way).
+    fn command_routes(
+        &mut self,
+        client: Option<u64>,
+        user: &str,
+        rights: &UserRights,
+        code: &str,
+    ) -> Option<BTreeSet<String>> {
+        let m = self.models.get(code)?;
+        let all: BTreeSet<String> = m
+            .session
+            .line()
+            .routes
+            .iter()
+            .map(|r| r.id.clone())
+            .collect();
+        let ws: Option<BTreeSet<String>> = client
+            .and_then(|c| self.clients.get(&c))
+            .and_then(|c| c.ws.as_ref())
+            .filter(|w| w.spec.model == code)
+            .map(|w| w.routes.clone());
+        let mut mine: BTreeSet<String> = BTreeSet::new();
+        if rights.allows(Permission::Edit, &Target::Line(code)) {
+            mine = all.clone();
+        } else {
+            let mut scan = false;
+            let mut whole = false;
+            for a in self.rights.assignments_of(user) {
+                let sc = &a.scope;
+                if sc.line.as_deref().is_some_and(|l| l != code)
+                    || sc.library_kind.is_some()
+                    || sc.library_file.is_some()
+                    || sc.library_entry.is_some()
+                {
+                    continue;
+                }
+                if a.deny {
+                    scan = true;
+                    continue;
+                }
+                let edits = match &a.role {
+                    Some(r) => self
+                        .rights
+                        .roles
+                        .get(r)
+                        .is_some_and(|(p, _)| p.contains(Permission::Edit)),
+                    None => true,
+                };
+                if !edits {
+                    continue;
+                }
+                if sc.region.is_some() || sc.object.is_some() {
+                    scan = true;
+                } else if let Some(r) = &sc.route {
+                    mine.insert(r.clone());
+                } else {
+                    whole = true;
+                }
+            }
+            if scan {
+                // Every object's place: the routes it may edit something on.
+                mine.clear();
+                for ((k, id), p) in m.places.iter() {
+                    if p.routes.iter().all(|r| mine.contains(r)) {
+                        continue;
+                    }
+                    if rights.allows(Permission::Edit, &nr::target(code, *k, id, Some(p))) {
+                        mine.extend(p.routes.iter().cloned());
+                    }
+                }
+            } else if whole {
+                mine = all.clone();
+            }
+        }
+        mine.retain(|r| all.contains(r));
+        match ws {
+            Some(w) => Some(mine.intersection(&w).cloned().collect()),
+            None if mine == all => None,
+            None => Some(mine),
         }
     }
 

@@ -392,3 +392,71 @@ fn merges_from_what_differs() {
             .is_none()
     );
 }
+
+/// Phase 12's second item: a branch's base kept as a split tree is read
+/// along what differs from the main line — the same objects (places,
+/// versions, JSON, library files) as the revision read whole, and every
+/// line the same after the project is opened again.
+#[test]
+fn a_branchs_base_is_read_along_what_differs() {
+    let mut s = project("bases", true, 200);
+    let path = std::env::temp_dir()
+        .join(format!("ohl-trees-{}-bases", std::process::id()))
+        .join("p.ohl");
+    let r1 = s.head_revision().unwrap().unwrap();
+    s.create_line("ana", "a", "main").unwrap();
+    shift(&mut s, "T2", 1.5).unwrap();
+    s.put_library_file("ana", "weather", "cases", "[cases]\n")
+        .unwrap();
+    s.apply(
+        "ana",
+        Command::Delete {
+            kind: Kind::Annotation,
+            id: "n5".into(),
+            confirm: true,
+        },
+    )
+    .unwrap();
+    s.apply("ana", note("n999", 3.0)).unwrap();
+    let r2 = s.commit("ana", "second").unwrap().id;
+    s.create_line("ana", "b", "main").unwrap();
+    s.create_line("ana", "c", &r1).unwrap();
+    s.with_line("b", |s| shift(s, "T6", -0.5).map(|_| ()))
+        .unwrap();
+    // Main moves on, uncommitted: the bases still come out as stored.
+    shift(&mut s, "T4", 2.0).unwrap();
+    s.put_library_file("ana", "weather", "more", "[cases]\n# more\n")
+        .unwrap();
+    let main = s.line_objects_named("main").unwrap().clone();
+    for rev in [&r1, &r2] {
+        let whole = crate::lines::objects_of_state(s.revision_state(rev).unwrap());
+        let along = s.objects_at(rev, "main", &main).unwrap().expect("split");
+        assert_eq!(along.len(), whole.len());
+        for (k, o) in &whole {
+            let a = &along[k];
+            assert_eq!(
+                (a.ord, a.version, &*a.value),
+                (o.ord, o.version, &*o.value),
+                "{k:?}"
+            );
+        }
+    }
+    let held = |s: &Session| -> BTreeMap<String, Vec<((Kind, String), i64, Value)>> {
+        ["main", "a", "b", "c"]
+            .iter()
+            .map(|n| {
+                let o = s.line_objects_named(n).unwrap();
+                (
+                    n.to_string(),
+                    o.iter()
+                        .map(|(k, o)| (k.clone(), o.ord, (*o.value).clone()))
+                        .collect(),
+                )
+            })
+            .collect()
+    };
+    let before = held(&s);
+    drop(s);
+    let again = Session::open(&path).unwrap();
+    assert_eq!(held(&again), before);
+}

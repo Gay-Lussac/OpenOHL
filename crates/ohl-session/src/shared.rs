@@ -1127,8 +1127,9 @@ impl Session {
 
     /// The routes a command of `user` is checked against: a merge's own
     /// ([`Session::merge`] of a branch over a working set), else the
-    /// working set of the line worked on (a branch over one), else
-    /// `user`'s.
+    /// working set of the line worked on (a branch over one), else the
+    /// routes a network's server gave for a command on the main line
+    /// ([`Session::with_command_routes`]), else `user`'s.
     pub(crate) fn working_routes(&self, user: &str) -> Option<&BTreeSet<String>> {
         match &self.merge_routes {
             Some(r) => r.as_ref(),
@@ -1136,8 +1137,26 @@ impl Session {
                 .branch_scopes
                 .get(&self.current)
                 .map(|s| &s.routes)
+                .or(self.command_routes.as_ref())
                 .or_else(|| self.working_sets.get(user)),
         }
+    }
+
+    /// Runs `f` with `routes` as the working set the rules of shared
+    /// towers check the commands against (a network's server, a command
+    /// made directly on its main line: the routes that are its user's —
+    /// phase 12's first item; `None`: as before, the user's own working
+    /// set or none). A branch over a working set keeps its own routes, a
+    /// merge its own. The routes are set back after `f`, whatever it gave.
+    pub fn with_command_routes<T>(
+        &mut self,
+        routes: Option<BTreeSet<String>>,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let kept = std::mem::replace(&mut self.command_routes, routes);
+        let out = f(self);
+        self.command_routes = kept;
+        out
     }
 
     /// The routes whose results are out of date, and why.

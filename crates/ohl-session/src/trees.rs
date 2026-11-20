@@ -968,6 +968,115 @@ impl crate::Session {
         Ok(root_hex)
     }
 
+    /// The objects of revision `rev`'s state as a line holds them
+    /// ([`crate::lines::objects_of_state`]: every object at version 1, the
+    /// library files after them by kind and name), **read along what
+    /// differs** from the objects `objects` of project line `name` (its
+    /// tree kept as a commit keeps it — the first time every object
+    /// hashed once, then what changed): when `rev`'s tree is split only
+    /// the nodes whose hashes differ and the objects in them that differ
+    /// are read, the rest taken from `objects` (their JSON shared). `None`:
+    /// `rev`'s tree is flat (read it whole).
+    ///
+    /// Phase 12's second item: opening a model whose branches are kept as
+    /// differences read each branch's base revision whole.
+    pub(crate) fn objects_at(
+        &self,
+        rev: &str,
+        name: &str,
+        objects: &BTreeMap<(Kind, String), Object>,
+    ) -> Result<Option<BTreeMap<(Kind, String), Object>>, SessionError> {
+        let tree = self.stored_tree(&self.revision(rev)?.tree)?;
+        let TreeBlob::Split {
+            objects: top,
+            libraries,
+        } = &tree
+        else {
+            return Ok(None);
+        };
+        let read = |h: &str| self.read_blob(h);
+        let mut stored = Stored::new(&read);
+        let mut changed = Changed::new();
+        let main_libs = {
+            let mut trees = self.trees_lock();
+            let index = trees.entry(name.to_owned()).or_default();
+            index.update(objects);
+            index.root();
+            let mine = index.top();
+            diff_nodes(
+                index,
+                &mut stored,
+                Prefix::ROOT,
+                mine.as_ref(),
+                top.as_ref(),
+                &mut changed,
+            )?;
+            index.library_hashes()
+        };
+        let mut out: BTreeMap<(Kind, String), Object> = objects
+            .iter()
+            .filter(|(k, _)| k.0 != Kind::Library)
+            .map(|(k, o)| {
+                (
+                    k.clone(),
+                    Object {
+                        ord: o.ord,
+                        version: 1,
+                        value: Arc::clone(&o.value),
+                    },
+                )
+            })
+            .collect();
+        let mut wanted = Vec::new();
+        for (key, (was, now)) in changed {
+            match now {
+                None => {
+                    out.remove(&key);
+                }
+                // The same JSON at another place: its place only.
+                Some((ord, h)) if was.is_some_and(|(_, w)| w == h) => {
+                    if let Some(o) = out.get_mut(&key) {
+                        o.ord = ord;
+                    }
+                }
+                Some(e) => wanted.push((key, e)),
+            }
+        }
+        for (key, (ord, value)) in self.stored_values(wanted.into_iter())? {
+            out.insert(
+                key,
+                Object {
+                    ord,
+                    version: 1,
+                    value,
+                },
+            );
+        }
+        // The library files: the line's own text where the hash is the
+        // same, else read; placed as a state places them.
+        let texts: BTreeMap<(String, String), String> = objects
+            .values()
+            .filter_map(|o| crate::library_entry(&o.value))
+            .map(|(k, n, t)| ((k, n), t))
+            .collect();
+        for (k, ((kind, file), h)) in libraries.iter().enumerate() {
+            let key = (kind.clone(), file.clone());
+            let text = match (main_libs.get(&key), texts.get(&key)) {
+                (Some(m), Some(t)) if m == h => t.clone(),
+                _ => self.read_blob(&hex(h))?,
+            };
+            out.insert(
+                (Kind::Library, crate::library_id(kind, file)),
+                Object {
+                    ord: k as i64,
+                    version: 1,
+                    value: Arc::new(crate::library_value(kind, file, &text)),
+                },
+            );
+        }
+        Ok(Some(out))
+    }
+
     /// Forgets what was kept of project line `name`'s tree (deleted).
     pub(crate) fn forget_tree(&self, name: &str) {
         self.trees_lock().remove(name);

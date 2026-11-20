@@ -1129,6 +1129,11 @@ pub struct Session {
     /// the rules of shared towers (`Some(None)`: none — changes made and
     /// checked elsewhere; `None`: the line's or the user's as usual).
     merge_routes: Option<Option<BTreeSet<String>>>,
+    /// While a network's server applies a command of a user directly on
+    /// the main line (phase 12's first item): the routes that are that
+    /// user's — the rules of shared towers check the command against them
+    /// as against a working set ([`Session::with_command_routes`]).
+    command_routes: Option<BTreeSet<String>>,
     /// While a merge through an approved review runs: a protected line's
     /// owners reviewed it.
     approved_merge: bool,
@@ -1885,6 +1890,7 @@ impl Session {
             role_source: None,
             branch_scopes: BTreeMap::new(),
             merge_routes: None,
+            command_routes: None,
             approved_merge: false,
             split: false,
             trees: std::sync::Mutex::new(std::collections::HashMap::new()),

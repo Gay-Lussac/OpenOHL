@@ -444,7 +444,9 @@ impl Session {
             self.conn.drop_legacy_snapshots()?;
         }
         // Lines kept as differences: their base revision's state (read
-        // once for the lines sharing it) with their rows laid over it.
+        // once for the lines sharing it) with their rows laid over it. A
+        // base kept as a split tree is read along what differs from the
+        // main line's objects (phase 12's second item), else whole.
         let mut bases: BTreeMap<String, Objects> = BTreeMap::new();
         for r in self.refs()? {
             if r.kind != RefKind::Branch {
@@ -454,8 +456,17 @@ impl Session {
                 continue;
             };
             if !bases.contains_key(&base) {
-                let state = self.revision_state(&base)?;
-                bases.insert(base.clone(), objects_of_state(state));
+                let along = match by_line.get(MAIN) {
+                    Some(main) if line_base(&*self.conn, MAIN)?.is_none() => {
+                        self.objects_at(&base, MAIN, main)?
+                    }
+                    _ => None,
+                };
+                let objects = match along {
+                    Some(o) => o,
+                    None => objects_of_state(self.revision_state(&base)?),
+                };
+                bases.insert(base.clone(), objects);
             }
             let mut objects = bases[&base].clone();
             for k in gone.get(&r.name).into_iter().flatten() {
@@ -760,7 +771,19 @@ impl Session {
             }
         } else {
             let rev = self.resolve_revision(from)?;
-            let base = objects_of_state(self.revision_state(&rev)?);
+            // Read along what differs from the main line when the
+            // revision's tree is split (phase 12: a branch made from an
+            // offline working set's base), else whole.
+            let along = if self.is_line(MAIN) {
+                let main = self.line_objects_named(MAIN)?;
+                self.objects_at(&rev, MAIN, main)?
+            } else {
+                None
+            };
+            let base = match along {
+                Some(b) => b,
+                None => objects_of_state(self.revision_state(&rev)?),
+            };
             // The revision's line with its library files (owner,
             // 2026-10-23; lines made from a revision started without them
             // before).
