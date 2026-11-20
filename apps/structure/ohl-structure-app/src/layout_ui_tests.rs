@@ -378,6 +378,172 @@ fn an_end_over_the_heel_is_laid_out_on_a_bent_plate_in_the_window() {
     assert_eq!(f.structure().bent_pairs("N2").len(), 1);
 }
 
+/// An invented K-brace for the plate bent by a few degrees (L3,
+/// 2026-11-20): the legs L1–L2 turned 8° (`roll`), the diagonal D1 lying
+/// flat on the horizontals H0–H1 at its foot N4, so a few degrees off the
+/// leg's flange at N2 — no one roll lays both its ends flat.
+const SMALL_BEND: &str = r#"id = "K"
+name = "Small bend example"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["2.5 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N5"
+point = ["2.5 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "N6"
+point = ["5 m", "0 m", "0 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-61x7"
+orientation = "x+y+"
+roll = "8 deg"
+design = { class = "leg" }
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-61x7"
+orientation = "x+y+"
+roll = "8 deg"
+design = { class = "leg" }
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "EA-61x7"
+orientation = "y-z+"
+design = { class = "bracing" }
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "EA-61x7"
+orientation = "z-y-"
+design = { class = "bracing" }
+
+[[member]]
+id = "H0"
+nodes = ["N1", "N4"]
+section = "EA-61x7"
+design = { class = "bracing" }
+
+[[member]]
+id = "H1"
+nodes = ["N4", "N6"]
+section = "EA-61x7"
+design = { class = "bracing" }
+"#;
+
+/// L3 (2026-11-20): the window lays D1 out onto a plate bent by its few
+/// degrees from the flat plate on the leg's flange; its picture (the
+/// close-up before and after) for the user guide.
+#[test]
+fn an_end_a_few_degrees_off_is_laid_out_on_a_small_bend_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-small-bend");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("small-bend.ohls");
+    std::fs::write(&tower, SMALL_BEND).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let n2 = p.run.joints.iter().find(|o| o.joint == "N2").unwrap();
+        assert!(n2.written, "{:?}", n2.hand);
+        let bend = n2
+            .plan
+            .plates
+            .iter()
+            .find_map(|q| q.own.as_ref().and_then(|o| o.bend.as_ref()))
+            .unwrap_or_else(|| panic!("no bent plate: {:?}", n2.plan));
+        assert!(
+            bend.angle > ohl_structure_link::FLAT_OFF
+                && bend.angle <= ohl_structure_link::BEND_SMALL_MAX,
+            "{bend:?}"
+        );
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        // Turned to look down the leg, the bend's few degrees seen.
+        if let Some(w) = h.state_mut().layout_window.as_mut() {
+            for v in [&mut w.views.0, &mut w.views.1] {
+                v.yaw += 0.6;
+                v.pitch += 0.45;
+                v.zoom = 0.6;
+            }
+        }
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(
+            &mut h,
+            "Lay out joints",
+            "lay-out-joints-small-bend",
+        );
+    }
+    wait_apply(&mut h);
+    h.get_all_by_label_contains("Apply (")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    let f = h.state().file.as_ref().unwrap();
+    assert!(
+        f.structure()
+            .plates
+            .iter()
+            .any(|p| p
+                .bend
+                .as_ref()
+                .is_some_and(|b| b.angle.si().to_degrees() < 20.0)),
+        "{}",
+        f.text()
+    );
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// Pieces in line (O44 J9, D15): a horizontal in two pieces of one section
 /// through a mid-panel joint (an invented tower). The preview proposes them
 /// one part and writes nothing of it; *Confirm all* writes both ends one

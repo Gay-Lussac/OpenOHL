@@ -1232,7 +1232,7 @@ fn lay_out_once(
     // Kept for a member only when more of its ends are planned laid out
     // with it and its joints no worse; the rest as for any turn (tuning on
     // real towers, 2026-11-18).
-    let mut first: Option<Planned> = None;
+    let mut first: Option<Planned>;
     {
         let turns: BTreeMap<&String, f64> = turned.iter().map(|(m, x)| (m, *x)).collect();
         let base = planned_with(&turns, &flat_only)?;
@@ -1276,38 +1276,39 @@ fn lay_out_once(
             }
         }
         let mut chosen: BTreeSet<String> = BTreeSet::new();
+        // Half a turn more, as written: degrees to a hundredth.
+        let half = |x: f64| {
+            let mut d = x.to_degrees() + 180.0;
+            if d > 180.0 {
+                d -= 360.0;
+            }
+            ((d * 100.0).round() / 100.0).to_radians()
+        };
+        // Ends laid out (planned) of member `m`, and at its joints.
+        let count = |plans: &[(String, JointPlan)], m: &str| -> (usize, usize) {
+            let joints = &members_here[m];
+            plans
+                .iter()
+                .filter(|(j, _)| joints.contains(j))
+                .fold((0, 0), |(own, all), (_, p)| {
+                    (
+                        own + usize::from(p.ends.iter().any(|e| e.member == m)),
+                        all + p.ends.len(),
+                    )
+                })
+        };
+        let mut flipped: Option<Planned> = None;
         if !flips.is_empty() {
-            // Half a turn more, as written: degrees to a hundredth.
-            let half = |x: f64| {
-                let mut d = x.to_degrees() + 180.0;
-                if d > 180.0 {
-                    d -= 360.0;
-                }
-                ((d * 100.0).round() / 100.0).to_radians()
-            };
             let mut with = turned.clone();
             for m in &flips {
                 let x = with.get(m).copied().unwrap_or(0.0);
                 with.insert(m.clone(), half(x));
             }
             let turns: BTreeMap<&String, f64> = with.iter().map(|(m, x)| (m, *x)).collect();
-            let flipped = planned_with(&turns, &flat_only)?;
-            // Ends laid out (planned) of member `m`, and at its joints.
-            let count = |plans: &[(String, JointPlan)], m: &str| -> (usize, usize) {
-                let joints = &members_here[m];
-                plans.iter().filter(|(j, _)| joints.contains(j)).fold(
-                    (0, 0),
-                    |(own, all), (_, p)| {
-                        (
-                            own + usize::from(p.ends.iter().any(|e| e.member == m)),
-                            all + p.ends.len(),
-                        )
-                    },
-                )
-            };
+            let p = planned_with(&turns, &flat_only)?;
             for m in &flips {
                 let (own0, all0) = count(&base.2, m);
-                let (own1, all1) = count(&flipped.2, m);
+                let (own1, all1) = count(&p.2, m);
                 if own1 > own0 && all1 >= all0 {
                     chosen.insert(m.clone());
                 }
@@ -1316,13 +1317,100 @@ fn lay_out_once(
                 let x = turned.get(m).copied().unwrap_or(0.0);
                 turned.insert(m.clone(), half(x));
             }
-            if chosen == flips {
-                first = Some(with_bent(flipped));
+            flipped = Some(p);
+        }
+        // L3b (2026-11-20): an equal-leg angle the half turn did not help,
+        // left at an end at most [`crate::BEND_SMALL_MAX`] off its flange
+        // with its outstanding leg towards the flange — its other leg
+        // bolted instead (a quarter turn: the leg mirrored about the heel,
+        // its outstanding leg the other way, so that a plate bent by as
+        // much can take that end; an end lying flat stays flat, the other
+        // leg on its flange), the quarter turn that turns that end's
+        // outstanding leg away from its flange. Kept as the half turns are.
+        let mut mirrors: BTreeMap<String, f64> = BTreeMap::new();
+        if settings.bend_facing && settings.small_bends {
+            for (jid, p) in &base.2 {
+                let Some(j) = base.0.joint(jid) else { continue };
+                for h in &p.hand {
+                    let Some((m, why)) = h.split_once(": ") else {
+                        continue;
+                    };
+                    if !flips.contains(m)
+                        || chosen.contains(m)
+                        || mirrors.contains_key(m)
+                        || !why.contains("its outstanding leg points towards the flange")
+                    {
+                        continue;
+                    }
+                    let Some(a) = j.arrivals.iter().find(|a| a.member == m) else {
+                        continue;
+                    };
+                    let equal_legs = members_here[m].iter().all(|jj| {
+                        base.0.joint(jj).is_none_or(|x| {
+                            x.arrivals.iter().filter(|b| b.member == m).all(either_leg)
+                        })
+                    });
+                    if !equal_legs || !a.flat.is_some_and(|f| f.off <= crate::BEND_SMALL_MAX) {
+                        continue;
+                    }
+                    let q = [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2]
+                        .into_iter()
+                        .find(|q| {
+                            crate::joint_layout::turned_end(j, a, *q, true)
+                                .is_some_and(|(off, takes)| takes && off <= crate::BEND_SMALL_MAX)
+                        });
+                    if let Some(q) = q {
+                        mirrors.insert(m.to_owned(), q);
+                    }
+                }
             }
         }
-        if chosen.is_empty() {
-            first = Some(with_bent(base));
+        let mut mirrored: BTreeSet<String> = BTreeSet::new();
+        let mut mirror_plan: Option<Planned> = None;
+        if !mirrors.is_empty() {
+            // A quarter turn more, as written: degrees to a hundredth.
+            let quarter = |x: f64, q: f64| {
+                let mut d = (x + q).to_degrees();
+                while d > 180.0 {
+                    d -= 360.0;
+                }
+                while d <= -180.0 {
+                    d += 360.0;
+                }
+                ((d * 100.0).round() / 100.0).to_radians()
+            };
+            let mut with = turned.clone();
+            for (m, q) in &mirrors {
+                let x = with.get(m).copied().unwrap_or(0.0);
+                with.insert(m.clone(), quarter(x, *q));
+            }
+            let turns: BTreeMap<&String, f64> = with.iter().map(|(m, x)| (m, *x)).collect();
+            let p = planned_with(&turns, &flat_only)?;
+            for m in mirrors.keys() {
+                let (own0, all0) = count(&base.2, m);
+                let (own1, all1) = count(&p.2, m);
+                if own1 > own0 && all1 >= all0 {
+                    mirrored.insert(m.clone());
+                }
+            }
+            for m in &mirrored {
+                let x = turned.get(m).copied().unwrap_or(0.0);
+                turned.insert(m.clone(), quarter(x, mirrors[m]));
+            }
+            if mirrored.len() == mirrors.len() {
+                mirror_plan = Some(p);
+            }
         }
+        // The plan with the turns as now chosen, where one made has them.
+        first = if !mirrored.is_empty() {
+            mirror_plan.map(with_bent)
+        } else if chosen.is_empty() {
+            Some(with_bent(base))
+        } else if chosen == flips {
+            flipped.map(with_bent)
+        } else {
+            None
+        };
     }
     // (L1 d: what each end bolted onto before, at the joints where it
     // changed.)

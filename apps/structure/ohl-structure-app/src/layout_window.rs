@@ -160,6 +160,11 @@ impl LayoutWindow {
             short_plates: true,
             slide_holds: true,
             small_bends: true,
+            // L3b (2026-11-20): an equal-leg angle's other leg tried for
+            // the end bent the wrong way; an end running towards its bend
+            // bent away from the flange too.
+            bend_facing: true,
+            bend_back: true,
         }
     }
 

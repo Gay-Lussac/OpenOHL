@@ -192,6 +192,21 @@ pub struct LayoutSettings {
     /// the flange's toe — before a welded plate (step 4). On by default;
     /// off: as before.
     pub small_bends: bool,
+    /// L3b, 2026-11-20: where a member's one end lies flat whichever of
+    /// its turns that lay it flat is taken (a half turn, or an equal-leg
+    /// angle's other leg), the one leaving more of its other ends flat or
+    /// for a plate bent by a few degrees (their outstanding leg away from
+    /// the flange). With [`Self::small_bends`]. On by default; off: as
+    /// before.
+    pub bend_facing: bool,
+    /// L3b, 2026-11-20: an end at most [`BEND_SMALL_MAX`] off its flange
+    /// that runs towards the bend line going away from the joint also on a
+    /// plate bent away from the flange — its steel kept clear of the bend
+    /// (half the gap beyond its curved part) wherever it lies over the
+    /// flange (to half the gap past the flange's toe), its bolts their edge
+    /// distance from it, its axis within a plate's thickness as every bent
+    /// plate's. With [`Self::small_bends`]. On by default; off: as before.
+    pub bend_back: bool,
 }
 
 impl Default for LayoutSettings {
@@ -216,6 +231,8 @@ impl Default for LayoutSettings {
             short_plates: true,
             slide_holds: true,
             small_bends: true,
+            bend_facing: true,
+            bend_back: true,
         }
     }
 }
@@ -992,36 +1009,21 @@ fn bent_over(
             .then(|| laid_cut.get(&first.host).copied().unwrap_or(first.host_cut) + first.host_end);
         let clear = |b: [f64; 2]| {
             need.is_none_or(|n| at(b[0]).min(at(b[1])) >= n - 1e-9)
-                && b.iter().all(|x| {
-                    holes
-                        .iter()
-                        .all(|h| (h[0] - x).hypot(h[1] - gauge) >= spacing_min - 1e-9)
-                })
+                && holds_clear(b, gauge, &holes, spacing_min)
         };
-        if !clear(bx) {
-            let out = o.along_host.signum();
-            let steps = (s.pull_back * 1000.0).round() as i64;
-            let found = (1..=steps).find_map(|k| {
-                [out, -out].into_iter().find_map(|w| {
-                    let d = w * k as f64 * 0.001;
-                    let b = [bx[0] + d, bx[1] + d];
-                    clear(b).then_some(b)
-                })
-            });
-            match found {
-                Some(b) => bx = b,
-                None => {
-                    return Err(all(
-                        &format!(
-                            "no place for its own bolts on {}'s other leg clear of the holes \
-                             there within {:.0} mm",
-                            first.host,
-                            s.pull_back * 1000.0
-                        ),
-                        left,
-                        &placed,
-                    ));
-                }
+        match slide_holds(bx, o.along_host.signum(), s.pull_back, clear) {
+            Some(b) => bx = b,
+            None => {
+                return Err(all(
+                    &format!(
+                        "no place for its own bolts on {}'s other leg clear of the holes there \
+                         within {:.0} mm",
+                        first.host,
+                        s.pull_back * 1000.0
+                    ),
+                    left,
+                    &placed,
+                ));
             }
         }
     }
@@ -1173,6 +1175,44 @@ fn bent_over(
     })
 }
 
+/// Whether a bent plate's holding bolts at `b` (along the leg, m) on the
+/// gauge line `gauge` (down the leg from its heel, m) keep `spacing` (the
+/// default minimum, m) from each of `holes` (along, down; [`leg_holes`])
+/// — L2's follow-up (b), 2026-11-20 (*on the safe side*: the joint checks'
+/// rule is only that holes do not overlap).
+fn holds_clear(b: [f64; 2], gauge: f64, holes: &[[f64; 2]], spacing: f64) -> bool {
+    b.iter().all(|x| {
+        holes
+            .iter()
+            .all(|h| (h[0] - x).hypot(h[1] - gauge) >= spacing - 1e-9)
+    })
+}
+
+/// A bent plate's two holding bolts at `bx` (along the leg, m) slid along
+/// it until `clear` holds — L2's follow-up (b), 2026-11-20: as they are
+/// where it holds already; else the least slide, in millimetre steps up to
+/// `reach` (the longest pull-back), either way — `out` (the sign of away
+/// from the work point along the leg) first on a tie. None: no place within
+/// `reach`. Deterministic.
+fn slide_holds(
+    bx: [f64; 2],
+    out: f64,
+    reach: f64,
+    clear: impl Fn([f64; 2]) -> bool,
+) -> Option<[f64; 2]> {
+    if clear(bx) {
+        return Some(bx);
+    }
+    let steps = (reach * 1000.0).round() as i64;
+    (1..=steps).find_map(|k| {
+        [out, -out].into_iter().find_map(|w| {
+            let d = w * k as f64 * 0.001;
+            let b = [bx[0] + d, bx[1] + d];
+            clear(b).then_some(b)
+        })
+    })
+}
+
 /// The holes through the other leg of the member `first` bolts onto (J2b's
 /// bent plate's flat lies on that leg; L2's follow-up, 2026-11-20), in that
 /// leg's axes from `heel` (along the plane's x, down the leg): the member's
@@ -1275,6 +1315,12 @@ struct Tilted {
     out: [f64; 3],
     /// That face's heel line at the joint, from the work point.
     face: [f64; 3],
+    /// The flange across it from that heel to its toe (unit) and its width,
+    /// m (L3b).
+    band: ([f64; 3], f64),
+    /// L3b: bent away from the flange even running towards the bend away
+    /// from the joint ([`LayoutSettings::bend_back`]).
+    back: bool,
 }
 
 impl Strip {
@@ -2985,6 +3031,74 @@ pub fn flat_turns(j: &JointDetail) -> Vec<(String, f64)> {
     out
 }
 
+/// How end `a` at `j` would lie with its member turned by `turn` more
+/// (radians, about its axis; L3b, 2026-11-20): its leg bolted's angle off
+/// the flange it bolts onto (degrees; the leg lying flatter where either
+/// leg may be bolted, `either`) and whether a plate bent by as much from
+/// the flat plate on that flange can take it — its outstanding leg away
+/// from the flange (as [`strip_of`] reads it for an end off its flange, on
+/// either of the flange's two faces it may come to). None: it bolts onto
+/// no single angle drawn here (onto a plate, nothing named, or not an
+/// angle). A prediction from the geometry, for choosing a member's turn;
+/// the plan decides.
+pub(crate) fn turned_end(
+    j: &JointDetail,
+    a: &Arrival,
+    turn: f64,
+    either: bool,
+) -> Option<(f64, bool)> {
+    let p = a.profile.as_ref()?;
+    p.angle?;
+    let host = j
+        .arrivals
+        .iter()
+        .find(|b| a.onto.value.as_deref() == Some(b.member.as_str()))?;
+    let q = host.profile.as_ref()?;
+    if q.angle.is_none() || !q.parts.is_empty() {
+        return None;
+    }
+    let [x, y, z] = p.axes;
+    let (c, s) = (turn.cos(), turn.sin());
+    let y2 = add(scale(y, c), scale(z, s));
+    let z2 = add(scale(y, -s), scale(z, c));
+    let axes = [x, y2, z2];
+    // The leg bolted: as given, else (either leg) the one lying flatter
+    // on the member it bolts onto (as the joint details take it).
+    let leg_y = if either {
+        let flat = |n: [f64; 3]| dot(n, q.axes[1]).abs().max(dot(n, q.axes[2]).abs());
+        flat(z2) >= flat(y2)
+    } else {
+        a.leg_y
+    };
+    // How far off: on the flange whose face runs most nearly along it (as
+    // the joint details' `flat_of`).
+    let across = |n: [f64; 3]| (dot(n, x).abs() * 1e3).round();
+    let off = [q.axes[1], q.axes[2]]
+        .into_iter()
+        .filter_map(|n| crate::welds::flat_roll(axes, leg_y, n).map(|f| (across(n), f.off)))
+        .min_by(|u, v| u.0.total_cmp(&v.0).then(u.1.total_cmp(&v.1)))?
+        .1;
+    if off <= FLAT_OFF {
+        return Some((off, true));
+    }
+    let mut turned = a.clone();
+    if let Some(pp) = turned.profile.as_mut() {
+        pp.axes = axes;
+    }
+    turned.leg_y = leg_y;
+    let nb = if leg_y { z2 } else { y2 };
+    let sin_flat = FLAT_OFF.to_radians().sin();
+    let takes = [false, true].into_iter().any(|other| {
+        host_flange_along(&turned, host, other).is_some_and(|f| {
+            let behind = dot(a.direction, f.out);
+            let inside = behind < -sin_flat || (behind <= sin_flat && dot(nb, f.out) < 0.0);
+            let face_out = if inside { scale(f.out, -1.0) } else { f.out };
+            dot(nb, face_out) >= TILT_MAX.to_radians().cos()
+        })
+    });
+    Some((off, takes))
+}
+
 /// The classes of members in the owner's order (2026-11-19: "start with
 /// aligning the main legs then diagonals and finally secondary braces with
 /// redundant members being last"): the order the layout turns them in and
@@ -3297,6 +3411,8 @@ fn strip_of(
                 } else {
                     f.heel
                 },
+                band: (f.across, f.width),
+                back: s.bend_back && s.small_bends,
             };
             // Its footprint on the flange's plane: its section where it is
             // drawn and its plate's (to the seam), across the plane's `v`.
@@ -3682,7 +3798,13 @@ fn own_geometry(
     let down = matches!(room, Room::Bend { down: true });
     let q = if down { scale(q, -1.0) } else { q };
     let qo = dot(q, out);
-    if dot(q, t.dir) < -FLAT_OFF.to_radians().sin() {
+    // (L3b) Bent away from the flange, running towards the bend away from
+    // the joint: its steel kept clear of the bend only over the flange.
+    let back = !down
+        && t.back
+        && matches!(room, Room::Bend { .. })
+        && dot(q, t.dir) < -FLAT_OFF.to_radians().sin();
+    if dot(q, t.dir) < -FLAT_OFF.to_radians().sin() && !back {
         return Err(if down {
             "it runs up towards its bend away from the joint".to_owned()
         } else {
@@ -3706,9 +3828,31 @@ fn own_geometry(
     };
     let along = t.bolts.iter().map(|b| b.0).fold(0.0, f64::max) + keep_end;
     let mut keeps: Vec<([f64; 3], f64)> = Vec::new();
-    for s in [cut, cut + along, t.half.max(cut + along)] {
-        for w in [0.0, t.width] {
-            keeps.push((add(h, add(scale(t.dir, s), scale(t.across, w))), steel_room));
+    let far = t.half.max(cut + along);
+    for w in [0.0, t.width] {
+        let edge = |s: f64| add(h, add(scale(t.dir, s), scale(t.across, w)));
+        // (L3b, `back`) Where this edge leaves the flange's band — past its
+        // toe (or heel) by half the gap — going away from the joint: beyond,
+        // no flange under it (its steel may pass the bend's plane there).
+        let to = if back {
+            let (fa, fw) = t.band;
+            let at = |s: f64| dot(sub(edge(s), t.face), fa);
+            let rate = at(1.0) - at(0.0);
+            let lim = if rate > 0.0 {
+                fw + gap / 2.0
+            } else {
+                -gap / 2.0
+            };
+            if rate.abs() > 1e-6 {
+                ((lim - at(0.0)) / rate).clamp(cut, far)
+            } else {
+                far
+            }
+        } else {
+            far
+        };
+        for s in [cut, cut + along, to] {
+            keeps.push((edge(s), steel_room));
         }
     }
     for b in &pts {
@@ -5048,5 +5192,130 @@ mod cut_tests {
         // Touching (or overlapping): no cut.
         assert!(separate(&core, &sq(0.1015, 0.0, 0.05), 0.010).is_none());
         assert!(separate(&core, &sq(0.05, 0.05, 0.10), 0.010).is_none());
+    }
+}
+
+#[cfg(test)]
+mod back_tests {
+    use super::{Room, Tilted, add, bend_radius, cross, dot, own_geometry, scale, sub, unit};
+
+    /// L3b (2026-11-20): an end running towards its bend going away from
+    /// the joint — its leg's plane turned 8° about the member it bolts onto
+    /// (x), sloping down towards the flange's toe (+y), the member leaving
+    /// over the toe. Bent away from the flange it was refused; with
+    /// `back`, laid out with its steel clear of the bend (the curved part
+    /// and half the gap) wherever it lies over the flange — to half the gap
+    /// past the toe —, passing the bend's plane beyond (no flange there).
+    #[test]
+    fn an_end_running_towards_its_bend_is_bent_away_over_the_flange_only() {
+        let th = 8f64.to_radians();
+        let (out, across_f, width) = ([0.0, 0.0, 1.0], [0.0, 1.0, 0.0], 0.1);
+        let nb = [0.0, th.sin(), th.cos()];
+        let q = [0.0, -th.cos(), th.sin()];
+        let dir = unit(add(scale([1.0, 0.0, 0.0], 0.3), scale(q, -1.0))).unwrap();
+        let across = unit(cross(nb, dir)).unwrap();
+        let heel = [0.0, 0.01, 0.012];
+        let (tf, gap) = (0.008, 0.01);
+        let tilted = |back: bool| Tilted {
+            off: 8.0,
+            dir,
+            bolts: vec![(0.03, 0), (0.08, 0)],
+            lu: 1.0,
+            half: 1.5,
+            nb,
+            across,
+            heel,
+            axis: heel,
+            width: 0.06,
+            gauges: vec![0.03],
+            shift_dir: [1.0, 0.0, 0.0],
+            shift_per: 1.0,
+            keep: (0.025, 0.03),
+            x3: [1.0, 0.0, 0.0],
+            out,
+            face: [0.0; 3],
+            band: (across_f, width),
+            back,
+        };
+        let room = Room::Bend { down: false };
+        let cut = 0.02;
+        let e = own_geometry(&tilted(false), cut, 0.0, [0.0; 3], out, tf, gap, room)
+            .expect_err("refused before");
+        assert!(e.contains("runs down towards the flange"), "{e}");
+        let t = tilted(true);
+        let geo = own_geometry(&t, cut, 0.0, [0.0; 3], out, tf, gap, room).expect("laid out");
+        assert!((geo.angle - 8.0).abs() < 0.01, "{}", geo.angle);
+        // Up the flap from the bend line (in its plane), each point lifted.
+        let face = scale(out, tf);
+        let up = |p: [f64; 3]| dot(out, sub(add(p, scale(out, geo.lift)), face)) / th.sin();
+        let curved = (bend_radius(tf) + tf) * (th / 2.0).tan();
+        let edge = |s: f64, w: f64| add(heel, add(scale(dir, s), scale(across, w)));
+        for w in [0.0, t.width] {
+            // Where the edge leaves the flange's band, past its toe by half
+            // the gap.
+            let rate = dot(sub(edge(1.0, w), edge(0.0, w)), across_f);
+            let exit = (width + gap / 2.0 - dot(edge(0.0, w), across_f)) / rate;
+            assert!(exit > cut && exit < t.half, "{exit}");
+            for s in [cut, exit] {
+                assert!(
+                    up(edge(s, w)) >= curved + gap / 2.0 - 1e-9,
+                    "{s} {w} {}",
+                    up(edge(s, w))
+                );
+            }
+            // Beyond: past the bend's plane at half its length.
+            assert!(up(edge(t.half, w)) < 0.0);
+        }
+        // Its bolts their edge distance (grown) and the curved part up it.
+        for (s, _) in &t.bolts {
+            let b = edge(cut + s, 0.03);
+            assert!(up(b) >= t.keep.0 * super::RING_GROW + curved - 1e-9);
+        }
+    }
+}
+
+#[cfg(test)]
+mod slide_tests {
+    use super::{holds_clear, slide_holds};
+
+    /// L2's follow-up (b): a bent plate's holding bolts on a hole of the
+    /// leg slide along it the least that keeps the default minimum spacing
+    /// from every hole — away from the work point first on a tie, back
+    /// towards it where that is less —, and stay where already clear.
+    #[test]
+    fn the_holding_bolts_slide_clear_of_the_holes() {
+        let (gauge, spacing) = (0.045, 0.048);
+        let bx = [0.10, 0.148];
+        let near =
+            |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).abs() < 1e-9 && (a[1] - b[1]).abs() < 1e-9;
+        // A hole under the first bolt: out by the spacing (back would put
+        // the second bolt on it).
+        let holes = [[0.10, gauge]];
+        let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
+        let b = slide_holds(bx, 1.0, 0.3, clear).unwrap();
+        assert!(near(b, [0.148, 0.196]), "{b:?}");
+        // A hole midway between them: 72 mm either way, a tie — away from
+        // the work point first, whichever way the leg runs (`out`).
+        let holes = [[0.124, gauge]];
+        let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
+        let b = slide_holds(bx, 1.0, 0.3, clear).unwrap();
+        assert!(near(b, [0.172, 0.220]), "{b:?}");
+        let b = slide_holds(bx, -1.0, 0.3, clear).unwrap();
+        assert!(near(b, [0.028, 0.076]), "{b:?}");
+        // A hole just ahead of the second bolt: back towards the work
+        // point by the least that clears it (6 mm), not out past it.
+        let holes = [[0.19, gauge]];
+        let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
+        let b = slide_holds(bx, 1.0, 0.3, clear).unwrap();
+        assert!(near(b, [0.094, 0.142]), "{b:?}");
+        // A hole off the gauge line by the spacing: they stay.
+        let holes = [[0.10, gauge + spacing]];
+        let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
+        assert_eq!(slide_holds(bx, 1.0, 0.3, clear), Some(bx));
+        // Holes every 40 mm along the gauge line: no place within the reach
+        // (the layout then leaves the plate, said).
+        let holes: Vec<[f64; 2]> = (-20..40).map(|k| [f64::from(k) * 0.04, gauge]).collect();
+        let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
+        assert_eq!(slide_holds(bx, 1.0, 0.3, clear), None);
     }
 }
