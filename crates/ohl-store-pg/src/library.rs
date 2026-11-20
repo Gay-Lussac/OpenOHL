@@ -781,6 +781,53 @@ fn withdrawn_of(c: &mut Conn, kind: &str) -> Result<BTreeSet<(String, String)>, 
 /// Checks a head file's new text: TOML with entries; for the kinds named
 /// by id, no id another file of the kind holds; its withdrawn entries
 /// kept as they are.
+/// Phase 14: the entry ids of each file of `kind` in the head — each
+/// file's text read and parsed only when it is not known by its SHA-256
+/// already (a line's import lays in hundreds of files one after the
+/// other: each used to read and parse every other file of its kind
+/// again, minutes for a line with its towers' structure files).
+fn head_entry_ids(
+    c: &mut Conn,
+    kind: &str,
+) -> Result<Vec<(String, crate::EntryIds)>, postgres::Error> {
+    let rows = c.query(
+        "SELECT name, sha256(convert_to(text, 'UTF8')) FROM lib_file WHERE kind = $1 \
+         ORDER BY name",
+        &[&kind],
+    )?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        let (name, hash): (String, Vec<u8>) = (r.get(0), r.get(1));
+        let key = (kind.to_owned(), name.clone());
+        let known = c
+            .entry_ids
+            .get(&key)
+            .filter(|(h, _)| *h == hash)
+            .map(|(_, ids)| ids.clone());
+        let ids = match known {
+            Some(ids) => ids,
+            None => {
+                let text: String = c
+                    .query_one(
+                        "SELECT text FROM lib_file WHERE kind = $1 AND name = $2",
+                        &[&kind, &name],
+                    )?
+                    .get(0);
+                let ids: BTreeSet<String> = country::entries(&name, &text)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|e| e.id)
+                    .collect();
+                let ids = std::sync::Arc::new(ids);
+                c.entry_ids.insert(key, (hash, ids.clone()));
+                ids
+            }
+        };
+        out.push((name, ids));
+    }
+    Ok(out)
+}
+
 fn check_head_text(
     c: &mut Conn,
     kind: &str,
@@ -788,17 +835,11 @@ fn check_head_text(
     text: &str,
 ) -> Result<Vec<country::Entry>, NetError> {
     let entries = country::entries(file, text).map_err(refused)?;
-    let files = head(c, kind)?;
     if REFERENCED_KINDS.contains(&kind) {
-        for (other, t) in &files {
+        for (other, theirs) in head_entry_ids(c, kind)? {
             if other == file {
                 continue;
             }
-            let theirs: BTreeSet<String> = country::entries(other, t)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|e| e.id)
-                .collect();
             if let Some(e) = entries.iter().find(|e| theirs.contains(&e.id)) {
                 return Err(refused(format!(
                     "entry {} is in {kind}/{other} already: an entry of {kind} is named once \
@@ -808,8 +849,14 @@ fn check_head_text(
             }
         }
     }
-    if let Some(old) = files.get(file) {
-        let old = country::entries(file, old).unwrap_or_default();
+    let old: Option<String> = c
+        .query_opt(
+            "SELECT text FROM lib_file WHERE kind = $1 AND name = $2",
+            &[&kind, &file],
+        )?
+        .map(|r| r.get(0));
+    if let Some(old) = old {
+        let old = country::entries(file, &old).unwrap_or_default();
         for (f, e) in withdrawn_of(c, kind)? {
             if f != file {
                 continue;
@@ -2602,13 +2649,21 @@ pub(crate) fn map_import(
         };
         let referenced = REFERENCED_KINDS.contains(&kind.as_str());
         for e in entries {
-            let files_now = head(&mut c, kind)?;
+            // Phase 14: each file's entries known by its text's SHA-256;
+            // only a file holding the entry read again for its version.
+            let ids_now = head_entry_ids(&mut c, kind)?;
             let mut found: Option<(String, String)> = None;
-            for (f, t) in &files_now {
-                if !(referenced || f == name) {
+            for (f, ids) in &ids_now {
+                if !(referenced || f == name) || !ids.contains(&e.id) {
                     continue;
                 }
-                if let Some(x) = country::entries(f, t)
+                let t: String = c
+                    .query_one(
+                        "SELECT text FROM lib_file WHERE kind = $1 AND name = $2",
+                        &[kind, f],
+                    )?
+                    .get(0);
+                if let Some(x) = country::entries(f, &t)
                     .unwrap_or_default()
                     .into_iter()
                     .find(|x| x.id == e.id)
@@ -2638,7 +2693,7 @@ pub(crate) fn map_import(
                     push(&e.id, format!("differs, requested #{id}"));
                 }
                 None => {
-                    let single_taken = e.list.is_none() && files_now.contains_key(name);
+                    let single_taken = e.list.is_none() && ids_now.iter().any(|(f, _)| f == name);
                     if file_locked(&mut c, kind, name)? || single_taken {
                         let id = ask(&mut c, name, &format!("import of {source}"))?;
                         changed = true;

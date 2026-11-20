@@ -123,7 +123,14 @@ pub(crate) struct Conn {
     prepared: std::collections::HashMap<&'static str, Statement>,
     /// Holds the writer's advisory lock ([`WRITER_LOCK`]).
     writer: bool,
+    /// Phase 14: the entry ids of the country library's files, by kind
+    /// and file, with the SHA-256 of the text they were read from (a
+    /// pure function of the text: kept while the text is the same).
+    pub(crate) entry_ids: std::collections::HashMap<(String, String), (Vec<u8>, EntryIds)>,
 }
+
+/// A country library file's entry ids (phase 14, [`Conn::entry_ids`]).
+pub(crate) type EntryIds = std::sync::Arc<std::collections::BTreeSet<String>>;
 
 impl Drop for Conn {
     /// The writer's lock released explicitly when the connection's last
@@ -252,6 +259,7 @@ impl Network {
                 client,
                 steps: Vec::new(),
                 prepared: std::collections::HashMap::new(),
+                entry_ids: std::collections::HashMap::new(),
                 writer: false,
             })),
             writer: false,
