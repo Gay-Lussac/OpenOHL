@@ -101,6 +101,29 @@ pub enum NetworkCommand {
         #[arg(long, default_value_t = 20)]
         queries: usize,
     },
+    /// Measure phase 11 on the network's models: a commit of one changed
+    /// route, a branch over a working set (diff, ahead and behind, the
+    /// merge), a merge at a shared tower — with split trees and with flat
+    /// ones on the same model. Needs the writer (no server running);
+    /// prints JSON. Edits the network (structures moved, revisions,
+    /// branches).
+    BenchVersions {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// A user of the models (their admin: the importer).
+        #[arg(long)]
+        user: String,
+        /// The models measured (default: the network's first).
+        #[arg(long = "line")]
+        lines: Vec<String>,
+        /// Commits of the changed route timed.
+        #[arg(long, default_value_t = 10)]
+        rounds: usize,
+        /// The trees measured, in order (`split`, `flat`).
+        #[arg(long, value_delimiter = ',', default_value = "split,flat")]
+        trees: Vec<String>,
+    },
     /// The network's lines, its schema and size.
     Lines {
         /// Database (default: OHL_DATABASE_URL).
@@ -301,6 +324,26 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
     match command {
         NetworkCommand::Rights { command } => crate::network_rights_run::run(command),
         NetworkCommand::Library { command } => crate::network_library_run::run(command),
+        NetworkCommand::BenchVersions {
+            database: db,
+            user,
+            lines,
+            rounds,
+            trees,
+        } => {
+            let report = crate::network_bench_versions::bench(
+                &database(db)?,
+                &user,
+                &lines,
+                rounds,
+                &trees,
+            )?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         NetworkCommand::BenchLibrary {
             database: db,
             user,
