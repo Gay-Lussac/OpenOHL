@@ -513,5 +513,9 @@ fn a_line_made_ready_elsewhere_is_the_line_made_here() {
         s.create_line("ana", "other-here", &second).unwrap();
         assert_eq!(s.others["other"].line, s.others["other-here"].line);
         assert_ne!(s.others["other"].line, s.others["here"].line);
+        // An offer not taken is withdrawn.
+        s.offer_line(s.line_source(&first).unwrap().prepare().unwrap());
+        s.withdraw_line_offer();
+        assert!(s.offered.is_none());
     }
 }

@@ -986,6 +986,10 @@ impl NetHost {
                 team: Vec::new(),
             },
         );
+        // A line made ready and not taken (refused first): not kept.
+        if let Some(m) = self.models.get_mut(&code) {
+            m.session.withdraw_line_offer();
+        }
         if let Err(e) = made {
             return Err(refuse(self, e));
         }

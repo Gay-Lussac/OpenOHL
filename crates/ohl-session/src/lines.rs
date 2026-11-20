@@ -469,6 +469,12 @@ impl Session {
         self.offered = Some(Box::new(line));
     }
 
+    /// Drops a line offered and not taken (the command that was to take
+    /// it refused before making the line): its memory freed now.
+    pub fn withdraw_line_offer(&mut self) {
+        self.offered = None;
+    }
+
     /// Revision `rev`'s objects, read along the main line's when its tree
     /// is split, else whole.
     fn revision_objects(&self, rev: &str) -> Result<Objects, SessionError> {
