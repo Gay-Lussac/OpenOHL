@@ -436,7 +436,8 @@ pub(crate) fn need_on(op: &Op, branch: &str, s: &Session) -> (Need, Option<Membe
         }
         Op::BringIn { .. } if scoped(branch) => (Need::IntoBranch, team(branch)),
         Op::Merge { other: b, .. } | Op::BringIn { from: b, .. } if branch == main && scoped(b) => {
-            (Need::Objects, None)
+            // Its maker or team merges it (others through a review).
+            (Need::Objects, team(b))
         }
         _ => (need(op), None),
     }

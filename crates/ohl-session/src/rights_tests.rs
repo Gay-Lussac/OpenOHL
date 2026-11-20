@@ -187,6 +187,25 @@ fn a_deny_wins_whatever_the_order() {
     ]);
     let ann = d.compile("ann", &NoModels);
     assert!(!ann.allows(Permission::Edit, &t) && ann.allows(Permission::Lock, &t));
+    // The owner, 2026-11-20 (phase 9's question 10): a deny of one entry
+    // of a line's file denies the file whole (until it is filtered per
+    // entry); a grant of one entry does not give the file.
+    let mut entry = Scope {
+        line: Some("B".into()),
+        library_kind: Some("cables".into()),
+        library_file: Some("acsr".into()),
+        library_entry: Some("old-wire".into()),
+        ..Scope::default()
+    };
+    let d = data(vec![
+        grant(1, "user:cy", "designer", Scope::network()),
+        deny(2, "user:cy", None, entry.clone()),
+    ]);
+    let cy = d.compile("cy", &NoModels);
+    assert!(!cy.allows(Permission::See, &other));
+    entry.library_entry = Some("new-wire".into());
+    let d = data(vec![grant(1, "user:di", "designer", entry)]);
+    assert!(!d.compile("di", &NoModels).allows(Permission::See, &other));
 }
 
 #[test]

@@ -854,7 +854,11 @@ impl Compiled {
                     && match (&s.library_entry, entry) {
                         (None, _) => true,
                         (Some(e), Some(t)) => e == t,
-                        (Some(_), None) => false,
+                        // A deny naming an entry denies the file holding it
+                        // whole (the owner, 2026-11-20: until a line's file
+                        // is filtered per entry); a grant of an entry gives
+                        // not the file.
+                        (Some(_), None) => deny,
                     }
             }
             Target::Object { line, kind, id, at } => {

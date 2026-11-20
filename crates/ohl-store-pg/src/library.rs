@@ -1815,19 +1815,24 @@ impl Network {
                 .filter(|l| viewer.sees_objects_of_line(l))
                 .collect()
         };
-        let rows = lock(&self.conn).query(
-            "SELECT u.line_id, u.object_kind, u.object, u.file, o.routes, s.x0, s.y0, s.x1, s.y1,
-                 u.branch
-             FROM lib_use u
-             LEFT JOIN object o ON o.line_id = u.line_id AND o.branch = 'main'
-                 AND o.kind = u.object_kind AND o.id = u.object
-             LEFT JOIN spatial s ON s.line_id = u.line_id AND s.branch = 'main'
-                 AND s.kind = u.object_kind AND s.id = u.object
-             WHERE u.kind = $1 AND u.entry = $2
-               AND ($3 OR u.object_kind = 'library' OR u.line_id = ANY($4))
-             ORDER BY u.line_id, u.branch <> 'main', u.branch, u.object_kind, u.object",
-            &[&kind, &entry, &viewer.sees_everything(), &lines],
-        )?;
+        // Main's rows, then (phase 11) the branches' — placed as on main;
+        // two statements: the branches' few rows do not widen main's sort.
+        let mut rows = Vec::new();
+        for on_main in [true, false] {
+            rows.extend(lock(&self.conn).query(
+                "SELECT u.line_id, u.object_kind, u.object, u.file, o.routes, s.x0, s.y0, s.x1,
+                     s.y1, u.branch
+                 FROM lib_use u
+                 LEFT JOIN object o ON o.line_id = u.line_id AND o.branch = 'main'
+                     AND o.kind = u.object_kind AND o.id = u.object
+                 LEFT JOIN spatial s ON s.line_id = u.line_id AND s.branch = 'main'
+                     AND s.kind = u.object_kind AND s.id = u.object
+                 WHERE u.kind = $1 AND u.entry = $2 AND (u.branch = 'main') = $5
+                   AND ($3 OR u.object_kind = 'library' OR u.line_id = ANY($4))
+                 ORDER BY u.line_id, u.object_kind, u.object, u.branch",
+                &[&kind, &entry, &viewer.sees_everything(), &lines, &on_main],
+            )?);
+        }
         let mut route_seen: BTreeMap<(String, String), bool> = BTreeMap::new();
         let mut out = Vec::new();
         for r in rows {

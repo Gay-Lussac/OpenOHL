@@ -1238,6 +1238,18 @@ fn branches_over_working_sets_on_a_network() {
         },
     )
     .unwrap();
+    // Not merged into main by Tom (not its maker nor of its team).
+    let e = go(
+        &tom,
+        "main",
+        Op::Merge {
+            other: "dora-ws".into(),
+            message: None,
+            choices: Default::default(),
+        },
+    )
+    .unwrap_err();
+    assert!(e.contains("dora's"), "{e}");
     // Merged into main by Dora: what the merge changes there is hers to
     // change.
     go(

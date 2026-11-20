@@ -426,7 +426,7 @@ pub struct MergePlan {
     /// Worked out from what differs (split trees, [`crate::trees`]): the
     /// objects that may differ between the working state and `merged`.
     /// The merged line is then validated where it changes when the merge
-    /// is carried out, as a command is ([`crate::in_place`]), not whole
+    /// is carried out, as a command is (phase 3, `in_place`), not whole
     /// here (`problem` says only what was found without it). `None`: the
     /// whole states compared, the merged line validated whole.
     pub local: Option<BTreeSet<(Kind, String)>>,

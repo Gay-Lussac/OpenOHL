@@ -31,7 +31,7 @@
 //! that differ.
 //!
 //! **A commit costs what changed**: the session keeps per project line a
-//! [`TreeIndex`] — each object's value hash with the JSON it was taken
+//! `TreeIndex` — each object's value hash with the JSON it was taken
 //! from (shared, never copied) and the hashes of the trie's nodes. A
 //! commit compares the line's objects with it by their shared JSON (a
 //! pointer each), hashes the objects changed since, makes again the nodes
