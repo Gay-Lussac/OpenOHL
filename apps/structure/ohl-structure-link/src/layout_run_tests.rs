@@ -1605,3 +1605,41 @@ fn holes_overlap_as_the_joint_checks_say() {
     assert!(!holes_overlap([0.0; 3], d, [0.001, 0.0, 0.0], d));
     assert!(!holes_overlap([0.0; 3], d, [0.0, 0.03, 0.0], d));
 }
+
+/// L3b (2026-11-20): how an end off its flange would lie with its member
+/// turned more — a half turn keeps how far off it is and turns its
+/// outstanding leg the other way (the plate bent by as much takes it one
+/// way only); an equal-leg angle's quarter turns lay its other leg there,
+/// one of them taking the bent plate, the other not.
+#[test]
+fn a_half_or_quarter_turn_decides_whether_a_bent_plate_takes_an_end() {
+    use std::f64::consts::{FRAC_PI_2, PI};
+    let text = format!(
+        "{}\n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\n",
+        d1_spoiled(10.0)
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let a = j.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let off = a.flat.unwrap().off;
+    assert!(
+        off > crate::FLAT_OFF && off < crate::BEND_SMALL_MAX,
+        "{off}"
+    );
+    let at = |t: f64, either: bool| crate::joint_layout::turned_end(j, a, t, either).unwrap();
+    let (o0, k0) = at(0.0, false);
+    let (o1, k1) = at(PI, false);
+    assert!(
+        (o0 - off).abs() < 0.01 && (o1 - off).abs() < 0.01,
+        "{o0} {o1} {off}"
+    );
+    assert_ne!(k0, k1);
+    // Equal legs, the other leg bolted: as far off, one way round each.
+    let (q0, j0) = at(FRAC_PI_2, true);
+    let (q1, j1) = at(-FRAC_PI_2, true);
+    assert!(
+        (q0 - off).abs() < 0.01 && (q1 - off).abs() < 0.01,
+        "{q0} {q1}"
+    );
+    assert_ne!(j0, j1);
+}

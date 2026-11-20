@@ -1424,6 +1424,34 @@ that order; "plan ideas to get the automatic layout working"):
   `onto` given by hand kept in the record and by a run again, replaced
   when asked), `joint_layout::cut_tests` (the straight cut), the welded
   plate's test now with `small_bends` off.
+- **L3b, the bent end's turn and the end running back to its bend**
+  (2026-11-20; in active development, not approved yet;
+  [theory](../theory/joint-layout.md#the-bent-ends-turn-and-the-end-running-back-to-its-bend-l3b)).
+  Two switches of `LayoutSettings`, on by default with `small_bends` (the
+  window lays out with them on). `bend_facing`: step 2b (the half turns)
+  then, for an equal-leg angle (`either_leg` at every end) it flipped
+  without gain whose plan leaves an end at most `BEND_SMALL_MAX` off with
+  "its outstanding leg points towards the flange", the quarter turn that
+  `joint_layout::turned_end` finds facing that end's leg away (the leg
+  lying flatter after the turn, its off on the flange `flat_of` would take,
+  the facing as `strip_of` reads it on either face) — all such members in
+  one more `planned_with` pass (flat plates and L3 bends, no J2b), each
+  kept as the half turns are (more of its ends planned, its joints no
+  fewer); the first plan reused where every one is kept. `bend_back`:
+  `Tilted::back` (and `Tilted::band`, the flange across and its width)
+  lets `own_geometry` take `Room::Bend { down: false }` for an end whose
+  `q` runs against its direction (`dot(q, dir) < −sin FLAT_OFF`, refused
+  before): each leg edge's steel kept up the flap only from the cut to
+  where that edge leaves the flange's band by half the gap (past the toe,
+  or the heel), not to half its length; the bolts and the limit as before.
+  The holding bolts' slide is now `slide_holds` / `holds_clear` (pure, the
+  same behaviour). Tests: `joint_layout::slide_tests` (the slide: least
+  either way, the tie out, stays where clear, none past the reach),
+  `joint_layout::back_tests` (an end running back refused, then laid out
+  with its steel clear over the flange and past the bend's plane beyond),
+  `layout_run_tests` (`turned_end`: a half turn keeps the off and turns the
+  facing; the two quarter turns face opposite ways), and the app's
+  `layout_ui_tests` (the window lays a few-degree bend out; its picture).
 
 ## Detail levels
 
