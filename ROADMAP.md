@@ -2045,7 +2045,10 @@ step, reasons left), and the work stops where it stops paying:
   the shift limit and the welded plate's offset limit growing with the
   member's size, the moment checked instead of the end refused.
 - [ ] J6. **Built-up members**: each angle of a back-to-back or star
-  member a surface to bolt onto.
+  member a surface to bolt onto. The safe part built with L6 below
+  (2026-11-20, in active development): a plate on the angle facing the
+  ends; the rest (between the angles, built-up members arriving, holding
+  bolts onto them) not yet.
 - [x] J7a. **Leg splices** as decided above, then the bracing bolted
   through the splice cover. **Built 2026-11-19, in active development,
   not approved yet**
@@ -2433,6 +2436,8 @@ only where it helps):
   > own target barely), the member a further plate's thickness out of the
   > flange, not in the analysis → Recommended: after
   > O45 D (the out-of-plane offsets in the analysis), not before.
+  > **Answered 2026-11-20: as recommended** (owner: "Go ahead with it";
+  > (4) built with L6 below).
 - Proposed (2026-11-20, L5's part 3; the owner: "imagine more ways the
   number of automatically laid joints can increase. The goal is to have a
   level 3 pylon where the steel is defined and to help the designer to go to
@@ -2519,6 +2524,62 @@ only where it helps):
   > → Recommended: L5o (small, the plates' holding), then J6 (the largest
   > single gain, +3.9 points at most), then a look into the clashes after
   > writing (L5m); L5a after O45 A5; L5b after O45 D; L5c–L5e not.
+  > **Answered 2026-11-20: as recommended** (owner: "Go ahead with it";
+  > L5o, J6 and a first look into L5m built with L6 below).
+- [x] L6. **The flat plates' own bolts (L5o), plates on built-up members
+  (J6's safe part), the clashes after writing counted (L5m)** (the owner's
+  order of 2026-11-20). **Built 2026-11-20, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#holding-bolts-plates-on-built-up-members-and-the-clashes-after-writing-l6)):
+  a flat plate on a member running on through the joint, which nothing of
+  the joint's legs bolts onto, gets at least two provisional bolts of its
+  own onto that member (`[plate.leg_bolts]`; more where one member on it
+  has more — the program's starting value), within the flange, inside the
+  plate, clear of the holes and steel there — the joint checks then check
+  its holding (before: not checked); not on a plate stopping short of the
+  work point nor on a built-up member (said). A face onto a built-up member
+  whose angles are known goes onto a plate on the angle facing it, kept
+  clear of the other angles (never between them: the packing not known),
+  kept only where the joint lays out more ends, or as many on fewer
+  plates; a built-up member's angles keep their root radius for the bolts
+  landing on them (before none: on the safe side now). No format change.
+  On the 78 real towers (kept privately): joints laid out whole 50.0 % →
+  52.2 %, ends 65.2 % → 68.7 %, the ends left for a built-up member
+  8 197 → 1 857, plates 65 240 → 71 499 (their steel 92.6 → 107.4 t),
+  bolts 183 149 → 224 254, plates whose holding is not checked 24 491 →
+  21 565 (L5o alone: 18 732), joints not fitting as given 26 → 26, a run
+  again identical 78/78; the time per tower about 30 % more (median 26.8 → 35 s on six towers back to back: J6's guard plans joints with a built-up member twice more, the holding bolts' places searched). L5m: the clashes after writing counted
+  by their parts (a plate into the steel of a member left as it is about
+  3 900; a member left as it is no longer fitting the member laid out under
+  it about 1 700; a head or nut against a plate about 2 500; steel against
+  steel about 1 900) — not changed.
+  > **Owner:** (1) The flat plates' holding bolts: two, or the most of one
+  > member's on the plate — the program's starting value until the codes
+  > choose the bolts → Recommended: keep until O45 B, the joint checks
+  > checking them meanwhile. (2) No holding bolts on plates stopping short
+  > of the work point (their outline would change) and on built-up members
+  > (the format's `[plate.leg_bolts]` names a single angle's leg) →
+  > Recommended: the short plates next (their outline planned round the
+  > bolts), the built-up members with a reading of which angle (no new
+  > field). (3) J6's plates: 6 600 more plates, a fifth more plate steel,
+  > for 1 542 more joints whole → Recommended: keep (they are the plates a
+  > hand detail would make; the bill of materials counts them). (4) The
+  > root radius of a built-up member's angles kept by the nuts (fewer ends
+  > bolted directly: about 180 joints) → Recommended: keep (on the safe
+  > side). (5) Next for the clashes after writing → Recommended: first the
+  > plates running into steel left as it is (about 3 900; the plan's check
+  > misses a member drawn on its work line without bolts or a seat), then
+  > the members left as they are no longer fitting (about 1 700: their
+  > host's cut and move kept within their bolts, or the member laid onto
+  > the host's plate), then the heads and nuts against plates. (6) Found:
+  > main measured again lays out 32 376 joints whole, not the 32 652 of
+  > L5's measured column (plates 65 240, not 61 800) → Recommended: trace
+  > it before L5a. (7) Found: a J2b bent plate's own bolts drawn outside
+  > its flat after writing, its members then left (about 400 ends before
+  > L6, 486 with it) → Recommended: trace and fix next (small).
+- Not built yet, J6's rest: a plate between a built-up member's angles
+  (where the packing lies), built-up members arriving (as the end, not
+  what it bolts onto), holding bolts onto a built-up member.
 - [ ] L4. **A joint's detail copied to the other towers of the line**
   (laid out or done by hand) onto their matching joints, not only within
   one tower.

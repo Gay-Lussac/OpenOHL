@@ -8,6 +8,66 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (joint layout: holding bolts, plates on built-up members L6)
+
+**The flat plates' own bolts onto the member running through (L5o), a
+plate on the angle of a built-up member facing the ends (J6's safe part),
+the clashes after writing counted (L5m)** (roadmap O44 L6, the owner's
+order of 2026-11-20; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#holding-bolts-plates-on-built-up-members-and-the-clashes-after-writing-l6),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md)). No format change.
+
+- **L5o** (`LayoutSettings::hold_plates`, on): a flat plate on a member
+  that nothing of the joint's legs bolts onto gets at least two
+  provisional bolts of its own onto that member (`[plate.leg_bolts]`; the
+  most of one member's on it where more — the program's starting value,
+  not a code's), one gauge line along the member, the default minimum
+  spacing apart, within the flange, inside the plate's planned outline,
+  clear of the holes and steel there; its `leg` always named. Not on a
+  plate stopping short of the work point nor on a built-up member (said;
+  holding not checked). The joint checks then check the holding (no change
+  there). The run's L1 guard plans a joint without them (and without J6)
+  where it lays out fewer ends after writing.
+- **J6** (`LayoutSettings::built_up_plates`, on): a face onto a built-up
+  member whose angles are known that does not land goes onto a plate on
+  the angle facing it; the plan keeps it clear of the member's other
+  angles (never between them: the packing not known — by hand, said); kept
+  only where the joint lays out more ends, or as many on fewer plates. A
+  plate whose `on` names a built-up member is seated on that angle by the
+  joint details (a plate without `on` stays through the work point).
+- **Fixed with it**: a built-up member's angles keep their root radius
+  for the bolts landing on them (before none; on the safe side); a plate
+  copied by *Apply this joint's detail* with a `[plate.leg_bolts]` was
+  written twice (a duplicate key).
+- **L5m**: counted, not changed; proposals in the roadmap.
+- Measured on the 78 private real towers: joints laid out whole 50.0 % →
+  52.2 %, ends 65.2 % → 68.7 %, plates 65 240 → 71 499, plates whose
+  holding is not checked 24 491 → 21 565, not fitting as given 26 → 26, a
+  run again identical 78/78.
+
+## 2026-11-20 (owner): joint layout L5 recommendations approved
+
+The owner, 2026-11-20 ("Go ahead with it"): the eight questions of the
+joint layout's [L5](#2026-11-20-joint-layout-ends-moved-to-bolt-directly-l5)
+(roadmap O44) answered as recommended:
+
+1. Moves up to the plate's thickness to bolt directly stay on by default.
+2. Moves up to the shift limit (30 mm) not by default; after O45 A5 (the
+   estimated eccentricities on by default), shown with their usage (L5a).
+3. The one bolt through the leg (the rest on a shorter plate) not built
+   now; looked at again with O45 B (the codes choosing the bolts).
+4. The flat plates on a leg running through given two provisional holding
+   bolts (L5o) — next, built with L6.
+5. The bend check stays strict; the bent plate made thick enough for its
+   bend at the forces with O45 B, else a flat or welded plate.
+6. The packing plate under a bent flap after O45 D (the out-of-plane
+   offsets in the analysis), not before (L5b).
+7. The weighing rule approved: the automatic steps (1)–(8) in that order,
+   (9)–(12) only proposed to the designer with their effect on the usage.
+8. The order: L5o, then J6, then L5m; L5a after O45 A5, L5b after O45 D;
+   L5c–L5e not built.
+
 ## 2026-11-20 (country server, phase 13)
 
 **Security, deployment, backups: a security review of the network
