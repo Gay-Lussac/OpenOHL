@@ -1,6 +1,6 @@
 # The country server's database: running it and its tests locally
 
-*In active development (ADR-0013, phases 4–6, 2026-11-19, phase 7 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.*
+*In active development (ADR-0013, phases 4–6, 2026-11-19, phases 7 and 9 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.*
 
 A country server keeps every model of its network in one PostgreSQL
 database with PostGIS ([ADR-0013](../adr/0013-country-server.md); the
@@ -71,7 +71,7 @@ refused its second writer while two check runs ran side by side): 1 run in
 three tests each in a process of its own, as nextest runs them); with the
 scheme above, 0 in 144, and the same runs took 90 s instead of 126 s.
 
-About 6 s for the five tests:
+About 8 s for the seven tests (two programs, `network` and `library`):
 
 - `store_suite_on_postgresql` — the **store suite**
   (`ohl_session::store::suite`, feature `store-suite`), the same tests the
@@ -103,6 +103,24 @@ About 6 s for the five tests:
   the refusals) and the rights' revision.
 - `schema_3_brought_to_4` (phase 7) — a database of phase 6 brought
   forward, its assignments read.
+- `country_libraries_through_the_rights` (phase 9, `tests/library.rs`) —
+  the import's mapping (entries added) and use index; a kind locked: a
+  network-wide designer, a line's designer and maintainers without an
+  emergency refused, a network admin's emergency change only; an
+  unlocked kind changed by a network-wide designer, not by a line's;
+  an entry named once per kind; releases by maintainers only; requests
+  (never in main, only in one's own branch) seen by their requester and
+  the maintainers (a draft by its writer only; the line hidden from a
+  maintainer who may not see it); a draft only in its requester's branch,
+  blocking main until granted by another maintainer; Update library pins
+  (the release's files, one entry, the pins, the stale marks; a built
+  line only by who reviews it; a release changing no line); a withdrawn
+  entry kept and shown; the use index through the rights (a viewer of
+  the kind without lines, of a route, of a line's structures; a denied
+  entry not found in the words of one that is not there); the export's
+  pinned files and meta; the audit.
+- `schema_4_brought_to_5` (phase 9) — a database of phase 7 brought
+  forward, the libraries' tables made.
 
 ## The server's tests on a network
 
@@ -162,6 +180,16 @@ each:
   on the old connection, less seen after; the audit.
 - `see_as_a_user` — an admin seeing as a viewer of one line: that line
   only, edits refused, in the audit; a viewer may not see as another.
+- `country_libraries_on_the_server` (in `library_tests`, phase 9, about
+  3 s) — Update library pins asked by a client, planned and carried out
+  by the server (its carried-out form refused from a client; nothing to
+  update said); a kind locked while the server runs: a line's file of it
+  refused (put and batch); a pending draft in its requester's own branch
+  (refused in main and for another user), the branch's review and merge
+  refused until the request is granted, then merged; a withdrawn entry:
+  a move of what uses it passes, a new use refused, then (restored) the
+  use index follows the command; a built line's pins refused to a
+  designer.
 - `property_no_message_holds_a_hidden_id_or_place` — six rounds of random
   assignments, moves, tiles, catch-ups, route details and picks: no id
   and no place of what the user may not see in any message (about 7 s).
@@ -183,7 +211,10 @@ self-signed certificate after comparing its fingerprint, look around).
 `ohl network bench --user admin --work DIR` measures it (phase 5's
 targets, the idle solve off; `ohl network bench-working-set --user admin
 --work DIR` phase 6's: working sets shown and loaded, rows, joining
-again, a route added, context tiles, then the idle solve) (it starts
+again, a route added, context tiles, then the idle solve; `ohl network
+bench-library --user admin` phase 9's: a library released, Update
+library pins of every line in design, the use index, moves — as the
+writer, with no server running) (it starts
 `ohl network serve` as a process of its own, then the server in its own
 process; the machine's other work shows in the numbers; it moves
 structures back and forth, so use a database made for it):
@@ -227,8 +258,10 @@ on the command line.
 
 ## What is not there yet
 
-Rights are evaluated since phase 7, managed with `ohl network rights …`
-(the admin app OHL-Server is a plan); point clouds, backgrounds and tiled terrain stay in the project files (the
+Rights are evaluated since phase 7, managed with `ohl network rights …`,
+the country libraries with `ohl network library …` (phase 9) — the admin
+app OHL-Server is a plan; Update library pins from OHL-Design is to come
+(the server's operation is there); point clouds, backgrounds and tiled terrain stay in the project files (the
 import report lists them) and the server does not serve them yet; a
 model's surfaces are in the database whole, not served by tile yet; a
 working set is on one model (routes of another line are their own working

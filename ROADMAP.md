@@ -62,9 +62,9 @@ from here. The owner's order of 2026-11-19:
    J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
    not approved yet; J7b, a weld's sides, not started).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
-   phase 6 built 2026-11-19, phase 7 (rights and roles) 2026-11-20, in
-   active development, not approved yet — the owner's questions under
-   O17).
+   phase 6 built 2026-11-19, phase 7 (rights and roles) and phase 9
+   (country libraries) 2026-11-20, in active development, not approved
+   yet — the owner's questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -2819,12 +2819,63 @@ or three, L four or more. The phases, in order:
   refused pending their owners' review; a merge breaking a connection is
   a conflict; OHL-Design's editable routes, notices and stale marks
   (2026-11-18).
-- [ ] 9 Country libraries (L): kinds locked for the whole server, their
+- [x] 9 Country libraries (L): kinds locked for the whole server, their
   maintainers, requests for additions (may be refused; a pending draft
   usable in the requester's own branch, blocking review and merge),
   releases, pins (built lines pinned, designs in progress following the
   latest), *Update library pins*, withdrawn entries, a use index, the
-  import's mapping of today's per-project libraries.
+  import's mapping of today's per-project libraries. **Built 2026-11-20,
+  in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-9),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server.md#country-libraries-phase-9-in-active-development),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-9-country-libraries-2026-11-20)):
+  each kind kept once for the network (its files as they are now,
+  releases kept as blobs once), a line holding the files of the release
+  it is pinned to as its own library files (the engine and the `.ohl`
+  format unchanged; an export stands alone, `network.library_pins` and
+  `network.library_withdrawn` in its meta); kinds or files locked (a
+  line's own file of a locked kind refused by the server; unlocking by
+  network admins; an emergency change by a network admin, audited);
+  maintainers as assignments (*review* and *lock* on the kind); requests
+  granted or refused by a maintainer other than the requester, seen only
+  by the requester and the maintainers (a draft only by its writer, the
+  line hidden from a maintainer who may not see it); a pending draft a
+  file `request-N.ext` in its requester's own branch only, blocking its
+  review and merge into main until granted or taken out; releases that
+  change no line; *Update library pins* (`ohl network library
+  update-pins`, the server's `UpdateLibraryPins`) as one logged command,
+  the routes using a changed entry marked out of date, a built line moved
+  only by whoever reviews it; withdrawn entries kept by the lines using
+  them, never newly used; a use index kept with every command and read
+  through the rights (no hidden entry or line); the import mapping each
+  entry (the same, added to a kind not locked, or asked for — never
+  replaced); network schema 5; `ohl network library …`. Measured on the
+  synthetic country: Update library pins of its 147 lines 3.3 s (per line
+  p50 21 ms), the use index of the wire every span uses 0.31 s (a
+  route's viewer 39 ms), moves and working sets as fast as with phase 7's
+  code (a move p50 9.1–9.7 ms against 9.1–9.8 ms). Left: Update library pins in
+  OHL-Design, notices when a release makes a line behind, the
+  engineering impact before a pin moves, a line's file filtered per
+  entry, branches' use index (phase 11), OHL-Server's Libraries page
+  (stage D).
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. A release moves no line; designs in progress follow by
+  > `update-pins --following`, shown behind? → yes, as built. 2. Unlocking
+  > by network admins only? → yes. 3. A grant by a maintainer other than
+  > the requester? → yes. 4. A draft "replaced" = taken out of the branch;
+  > a withdrawn request's draft still blocks? → yes. 5. A built line's
+  > pins moved by whoever reviews the whole line (no review flow of its
+  > own yet)? → yes for now; a library review with OHL-Server stage D.
+  > 6. Update library pins not undone by Undo (updated back to the
+  > release before)? → yes. 7. A withdrawn entry stays in releases, never
+  > newly used; results using it marked "not on the safe side" later? →
+  > yes, the marks with the app's library notices. 8. The import adds new
+  > entries of unlocked kinds, asks for the rest, keeps the model's own
+  > files until Update library pins? → yes. 9. A draft only in the
+  > requester's own branch? → yes; a team's branch with phase 11. 10. A
+  > line's library file sent whole to whoever sees it (an entry's deny
+  > holds on the network's library)? → filter per entry with OHL-Server
+  > stage D; deny the file until then.
 - [ ] 10 Scoped computations (L; an engine change and an optional plugin
   interface step, asked first): each check's own reach, neighbours pulled
   in, other lines' wires as targets, structure loads with other lines'

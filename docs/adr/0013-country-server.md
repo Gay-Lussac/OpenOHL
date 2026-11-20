@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18; phases 0–8 built — this record is not approved yet)
+  2026-11-18; phases 0–9 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -380,6 +380,31 @@ checked by the session beside the assignments.
   *not on the safe side* until the pin moves or an admin acknowledges it.
 - A **use index** answers "where is this entry used"; only changes are
   stored (entries as content-addressed blobs, releases as revisions).
+
+Built 2026-11-20 (phase 9, in active development; the
+[decision log](../development/decisions.md#2026-11-20-country-server-phase-9)):
+`ohl_store_pg::library` (network schema 5) and `ohl_session::country`.
+**A line holds the files of the release it is pinned to as its own
+library files**, so the engine and the project file are unchanged and an
+exported model stands alone (`network.library_pins`,
+`network.library_withdrawn`). An entry is a file with a top-level `id`,
+or a table of a list named by `id`, `name` or `label`; its version the
+SHA-256 of its values written canonically. Locks by kind or file
+(unlocking by network admins; an emergency change by a network admin,
+audited); maintainers hold *review* and *lock* on the kind; the
+network's library a target of the rights' one function of its own
+(`Target::CountryLibrary`, of no line). A request's draft is a file
+`request-N.ext` used only in its requester's own branch, blocking its
+review and merge into main until granted (by a maintainer other than the
+requester) or taken out. A release changes no line; *Update library
+pins* moves a line's pins as one logged command (kind `library_pins`,
+not undone by Undo), the routes using a changed entry marked out of date
+as phase 8 marks them; built lines only by whoever reviews the whole
+line. Withdrawn entries stay in later releases, never newly used. The use
+index (`lib_use`) is kept by every command of the server and read
+through the rights. The import maps each entry (the same, added to a kind
+not locked, or asked for — never replaced); the model keeps its own files
+until Update library pins.
 
 ### Export of one model as a project file
 

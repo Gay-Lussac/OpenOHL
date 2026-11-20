@@ -4455,14 +4455,18 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phase 7** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7 and 9** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 4 (schema 1: phase 4's tables; schema 2: what the server
+network schema 5 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
 `oplog.lines`, `oplog.tiles`, `stream`; schema 3, phase 6: saved working
 sets — `working_set.line_id`, `working_set.picks`; schema 4, phase 7:
 rights evaluated — `assignment.lib_kind`, `lib_file`, `lib_entry`,
-`region`, `stream.objects`, `stream.whole`, `net_meta` `rights_rev`). A country server keeps every model and model element of
+`region`, `stream.objects`, `stream.whole`, `net_meta` `rights_rev`;
+schema 5, phase 9: country libraries — `lib_kind`, `lib_file.text`,
+`hash`, `by_user`, `time`, `lib_release.n`, `lib_release_file`,
+`lib_withdrawn`, `lib_use` made again, `lib_request.text`, `line_id`,
+`branch`, `released`, `net_meta` `library_rev`). A country server keeps every model and model element of
 its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
 is **unchanged** (the session's statements and files the same, tested by
 `sqlite3 .dump`); a model exported from a server is a normal project file
@@ -4500,7 +4504,7 @@ kept; times given as the project file writes them,
 | `surface` (one blob per TIN) | `surface` (+ `line_id`); `surface_tile` | whole TINs as in the file; tiles per grid tile later |
 | `pointcloud*`, `background_*` | — (later) | stay in the project files; the import report lists them |
 | — | `line`, `working_set`, `object_ref` | the models; saved working sets (phase 6) and the reference index (written by the import and by every command of the server, phase 5) |
-| — | `lib_file`, `lib_entry`, `lib_release`, `lib_use`, `lib_request` | country libraries (phase 9) |
+| — | `lib_kind`, `lib_file`, `lib_entry`, `lib_release`, `lib_release_file`, `lib_withdrawn`, `lib_use`, `lib_request` | country libraries (phase 9, schema 5): each kind once for the network; a line holds the files of the release it is pinned to as its `library` objects |
 | — | `stale`, `notice`, `audit` | results out of date and notices (later); the audit of imports, exports and admin actions |
 
 Columns (`time` columns `timestamptz`, UTC; every text id is the name users
@@ -4647,17 +4651,53 @@ vc_review_note (seq bigserial PRIMARY KEY, line_id text REFERENCES line, review 
                 user_name text NOT NULL, time timestamptz NOT NULL,
                 verdict text NOT NULL, comment text NOT NULL)
 
--- Country libraries (phase 9): as drafted
-lib_file       (kind, name, locked, kind_locked, PRIMARY KEY (kind, name))
-lib_entry      (kind, file, entry, version, release, withdrawn, withdrawn_note,
-                PRIMARY KEY (kind, file, entry, version))
-lib_release    (kind, tag, revision, notes, by_user, time, PRIMARY KEY (kind, tag))
-lib_use        (kind, entry, line, route, branch, object_kind, object,
-                PRIMARY KEY (kind, entry, branch, object_kind, object))
-lib_request    (id bigserial PRIMARY KEY, kind, file, entry, reason, routes text[],
-                state,                                       -- draft | requested | granted
+-- Country libraries (phase 9, schema 5; `ohl_store_pg::library`,
+-- entries and uses: `ohl_session::country`)
+lib_kind       (kind text PRIMARY KEY, locked boolean NOT NULL,
+                by_user text NOT NULL, time timestamptz NOT NULL, note text NOT NULL)
+               -- a kind locked for the whole network: changed only by
+               -- requests granted and releases (unlocked: network admins)
+lib_file       (kind text, name text, locked boolean NOT NULL,   -- a file's own lock
+                text text NOT NULL, hash text NOT NULL,      -- the file as it is now (its head)
+                by_user text NOT NULL, time timestamptz NOT NULL,
+                PRIMARY KEY (kind, name))
+               -- an entry of a kind named by id (cables, structures,
+               -- insulators, objects) once across its files
+lib_release    (kind text, tag text, revision text NOT NULL,  -- revision: hash of its files
+                notes text NOT NULL, by_user text NOT NULL, time timestamptz NOT NULL,
+                n bigserial UNIQUE,                          -- the order made
+                PRIMARY KEY (kind, tag))
+lib_release_file (kind, tag, file text, hash text REFERENCES vc_blob,
+                PRIMARY KEY (kind, tag, file))               -- texts as the version store
+                                                             -- keeps blobs (zstd), once
+lib_entry      (kind text, file text, entry text, version text,  -- version: SHA-256 of
+                release text,                                -- its values, canonical; the
+                PRIMARY KEY (kind, file, entry, version))    -- release it first came in
+lib_withdrawn  (kind text, file text, entry text, note text NOT NULL,
+                by_user text NOT NULL, time timestamptz NOT NULL,
+                PRIMARY KEY (kind, file, entry))             -- kept in later releases;
+                                                             -- never newly used
+lib_use        (line_id text REFERENCES line, branch text,   -- the use index: main only
+                object_kind text, object text,               -- an element, or `library` and
+                                                             -- `kind/name` for a file a
+                                                             -- line picks as a whole
+                kind text, file text NOT NULL DEFAULT '',    -- file empty: named by id
+                entry text,
+                PRIMARY KEY (line_id, branch, object_kind, object, kind, file, entry))
+               -- INDEX on (kind, entry); routes and places joined from
+               -- object.routes and spatial
+lib_request    (id bigserial PRIMARY KEY, kind text, file text, -- file: the network's file
+                entry text, reason text, routes text[],     -- it goes into
+                state text,                                  -- draft | requested | granted
                                                              -- | refused | withdrawn
-                user_name, maintainer, note, created, decided)
+                user_name text, maintainer text, note text, created, decided,
+                text text NOT NULL,                          -- the draft: the entry alone
+                line_id text REFERENCES line, branch text,   -- where its requester uses it
+                released text)                               -- the release it came in
+line.library_pins                                            -- kind → release (jsonb)
+line.built                                                   -- pinned; moved only by who
+                                                             -- reviews the whole line
+net_meta library_rev                                         -- each library change adds one
 
 -- Terrain
 surface        (line_id text REFERENCES line, name text, time timestamptz NOT NULL,
@@ -4750,6 +4790,25 @@ Notes:
   no writer's lock needed). Tile packages are kept per rights class: the
   exact set of a tile's objects a client may not see. The decisions:
   [decision log](decisions.md#2026-11-20-country-server-phase-7).
+- **Country libraries** (phase 9, built 2026-11-20; the decisions:
+  [decision log](decisions.md#2026-11-20-country-server-phase-9)): a
+  line's `library` objects are the files of the release of each kind it
+  is pinned to (`line.library_pins`); *Update library pins* changes them
+  as one log entry of kind `library_pins` (its note names the kinds and
+  releases; the routes using a changed entry get stale marks, `ols_meta`
+  `stale_routes`) and moves the pins in the same unit of work — not
+  undone by Undo. A pending draft is a `library` object named
+  `request-N.ext` holding the request's text, in its requester's own
+  branch only; the server refuses it elsewhere, refuses the branch's
+  review and merge while it is not granted, and refuses a line's own
+  file of a locked kind. The server's operations `UpdateLibraryPins`
+  (asked by a client) and `LibraryPins` (what it carries out and
+  broadcasts; never accepted from a client). Library changes:
+  `ohl_store_pg::library::LibraryCommand` (each one transaction with its
+  audit row, `library_rev` moved on). The use index is written by the
+  import, kept by every command of the server, made again by a server
+  for a model without one; read through the rights' one function
+  (`Network::uses`).
 - **An import** (`ohl network import`, `ohl_store_pg::import`): the
   current state of the file's main project line — objects, spatial index,
   meta rows, users, edit grants, surfaces — as one transaction, **one**
@@ -4757,14 +4816,21 @@ Notes:
   revision in its note) and one revision "imported from FILE"; the file's
   history, other project lines, tags, point clouds and backgrounds stay
   in the file (listed in the report); twin towers (another model's
-  structure within 0.5 m in plan, of the same type) listed, never merged.
+  structure within 0.5 m in plan, of the same type) listed, never merged;
+  the use index of every element and (phase 9) each entry of the file's
+  library files mapped onto the network's library — the same, added (a
+  kind not locked), or asked for as a request (a locked kind, an entry
+  that differs) — the model keeping its own files.
 - **A model exported as a project file** (`ohl network export`,
   `ohl_store_pg::export`): every row of the model written through the
   store interface (`ohl_session::store::copy::copy_all`) into the normal
   tables of schema 6, with these `ols_meta` keys added —
   `network.name`, `network.line` (the model's code), `network.revision`
   (its main branch's revision), `network.library_pins` (JSON, kind →
-  release), `network.exported` (JSON: time and user). In the audit. An
+  release), `network.library_withdrawn` (phase 9: JSON, the withdrawn
+  entries it uses, `kind/entry`), `network.exported` (JSON: time and
+  user). The library entries it uses are in it: its own library files
+  are the pinned releases' files. In the audit. An
   offline working set (exported to come back as a bundle, phase 12) will
   also have `network.read_only` (JSON, the kinds and ids of the
   neighbours kept read-only; the session refuses edits to them).
@@ -4812,6 +4878,15 @@ nothing hidden, the users' presence and the soft locks (`peers`,
 and an error naming an object its user may not see is "refused: it
 touches objects you have no access to (ask a network admin)". A client
 whose rights changed gets a `notice` and is let go (it joins again).
+
+Phase 9 (2026-11-20): two operations (`op`, in `request_on` and
+`change`), no new message — `update_library_pins` (`kinds`, `release`?:
+asked by a client, planned by the server, never applied as such) and
+`library_pins` (`pins`, `changes` — `[kind, name, text or null]` —,
+`stale`, `note`: what the server carries out, broadcasts and replicas
+replay; refused from a client); a file server refuses both. A
+`library_pins` change reaches clients that may not see the whole line
+as "read these tiles again", as any library change.
 
 ## What a plugin sees
 

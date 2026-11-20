@@ -8,6 +8,227 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (country server, phase 9)
+
+**Country libraries: each library kind kept once for the network, locks
+and maintainers, requests with pending drafts, releases, pins, Update
+library pins, withdrawn entries, a use index read through the rights,
+the import's mapping** (ROADMAP O17 phase 9; the plan's answer "library
+requests as pending drafts", 2026-11-16; built, in active development,
+not approved yet;
+[ADR-0013](../adr/0013-country-server.md#country-libraries),
+[data model](data-model.md#server-database-postgresql),
+[user guide](../user-guide/server.md#country-libraries-phase-9-in-active-development),
+[measured](performance.md#synthetic-country-phase-9-country-libraries-2026-11-20)).
+
+- **A line holds the files of the release it is pinned to as its own
+  library files** (`library` objects, as a project today). The engine,
+  the solves, the packager and the desktop read them unchanged; the
+  network keeps the libraries (`lib_file`: each file's text as it is
+  now, its *head*; `lib_release`, `lib_release_file`: releases, their
+  texts as the version store keeps blobs — compressed, each text once
+  for the network, shared with the revisions holding the same text);
+  `line.library_pins` names the release of each kind. **Decided here
+  (simple, safe)**: copies per line rather than a resolution of every
+  library read through the network — the engine and the `.ohl` format
+  stay as they are, and an export stands alone. A line's copy costs its
+  files' size (the shipped wire file 3 kB; 147 lines: well under 1 MB).
+- **An entry** (`ohl_session::country`): a file with a top-level `id` is
+  one entry; else each table of a list of tables named by `id`, `name` or
+  `label` (`[[cable]]`, `[[case]]`, `[[type]]`); else the file is one
+  entry named by its file name. Its **version** is the SHA-256 of its
+  values written canonically (a comment or the order of keys makes no
+  new version). The kinds objects name by id — wires, structure types,
+  insulator assemblies, bodies' types — keep an entry's id once across
+  the kind's files (refused otherwise); the others (weather cases, rules,
+  …) are picked by file.
+- **Locks and maintainers**: a kind (or one file) locked (`lib_kind`,
+  `lib_file.locked`) changes only by requests granted and releases; a
+  line's own file of a locked kind is refused (the server decides every
+  library file a command changes: put, delete, a batch, a merge).
+  Maintainers are assignments (*review* and *lock* on the kind: the
+  shipped library maintainer role on a library kind, network admins).
+  **Decided here (conservative)**: locking needs *lock* on the kind,
+  **unlocking a network admin** (a maintainer cannot open a locked kind
+  to pass the review); granting, refusing, releasing and withdrawing need
+  *review* and *lock*; a network admin may change a locked file directly
+  only with `emergency`, in the audit. The network's library is a new
+  target of the rights' one function (`Target::CountryLibrary`), covered
+  only by scopes naming no line, route, region or object: a line's
+  designer does not see or change the network's library, only their
+  line's copy.
+- **Requests** (`lib_request`): the entry asked for as a file of its own
+  (its *draft*, the entry alone with the file's header), for a line and
+  the requester's own branch (made by them, never main); draft →
+  requested → granted, refused or withdrawn. Asking needs *request* on
+  the line's library (a designer of the line) and seeing the line, or on
+  the network's library; asking for a change of an entry the network
+  has needs *edit* on it (a maintainer). **A grant needs a maintainer who
+  is not the requester** (four eyes; the ADR's "another maintainer
+  approves"), and lays the entry into the head (a change replaces it) for
+  the next release. **Who sees a request**: its requester (drafts too)
+  and the maintainers of its entry (not a draft); a maintainer who may
+  not see the line it is for sees it without its line, branch, routes or
+  reason.
+- **A pending draft** is a library file named `request-N.ext` in the
+  requester's branch, holding the request's text exactly: put or changed
+  only by its requester, in the request's branch, while it is a draft,
+  asked or granted. **It blocks the branch**: submitting it for review,
+  merging it (or bringing it) into main are refused while it holds a
+  draft not granted; a draft reaching main is refused unless granted.
+  **"Replaced"** (the roadmap's word) **is the draft taken out of the
+  branch** (another entry used); taking a draft out is always allowed. A
+  granted draft may be merged into main (the entry is the network's then);
+  Update library pins removes it once a release holds its entry.
+- **Releases**: a maintainer freezes the kind's head under a tag; refused
+  when nothing changed since the last; each entry version noted with the
+  release it first came in (`lib_entry`); granted requests marked with
+  their release. **A release changes no line** (the task's rule): it says
+  how many lines in design follow the latest and how many built lines
+  stay pinned.
+- **Pins and Update library pins**: built lines (`line.built`, set by
+  whoever holds *lock* on the whole line) are pinned; lines in design
+  **follow the latest** — **decided here**: following means they are the
+  lines `--following` moves and the status shows behind, never that a
+  release moves them by itself (the task: "a line never changes silently
+  when a library releases; only Update library pins moves a pin"). Update
+  library pins plans each kind (the release's files put; a line's file
+  not in the release removed when the release holds every entry of it
+  the line uses, kept when it is wholly the line's own; files of the
+  kinds a line picks by name kept; refused for a kind when the line would
+  lose an entry it uses, or a file mixes such an entry with the
+  release's) and carries it out as **one log entry** (kind
+  `library_pins`) with the pins moved in the same unit of work; **the
+  routes using an entry whose version changed are marked out of date**
+  (phase 8's stale marks and notices, "library cables → R3: … changed");
+  a kind picked by file marks every route. It needs edit (create,
+  delete) of each file changed on the line, and **on a built line review
+  of the whole line** (decided here: the ADR's "through a review when
+  protected" as the reviewer's right; a review flow of its own later).
+  **Not undone by Undo** (decided here: the pin is the network's, so
+  files and pin never disagree): the pins are updated again to the
+  release before. On the server a client asks `UpdateLibraryPins`; the
+  server plans it and carries out `LibraryPins` (what the replicas
+  replay); a client's `LibraryPins` is refused. On the command line it
+  needs the network's writer (no server running).
+- **Withdrawn entries** (`lib_withdrawn`): withdrawn by a maintainer,
+  kept in the head and in later releases — **a line using one keeps
+  working and is shown it** (status, the export's
+  `network.library_withdrawn`); **no object may start using one** (the
+  server refuses a section, jumper, structure or spacer whose new uses
+  hold a withdrawn entry it did not use before; the use index says what
+  it used). **Decided here**: results using a withdrawn entry are not
+  marked out of date by the withdrawal itself (that changes a model: it
+  waits for the server's library notices in the app); the status shows
+  it.
+- **The use index** (`lib_use`): what each element of a model's main
+  branch uses (by id) and the entries of the files of the kinds picked by
+  file, written by the import, kept by every command of the server in its
+  unit of work, made again when a server starts on a model without one
+  (and `ohl network library reindex`); branches other than main are not
+  indexed (with phase 11). **Read through the rights' one function**: an
+  entry the viewer may not see is "not found" in the same words as one
+  that is not there; a use on an object (or a line's file) the viewer may
+  not see is left out without a word, no count; of an object's routes
+  only those the viewer sees as routes are named.
+- **The import's mapping**: each entry of the project's library files the
+  same as the network's, **added** to the network's file of the same name
+  (a kind not locked: the importer is a network admin), or **asked for**
+  (a locked kind; an entry that differs, as a change for a maintainer —
+  never replaced silently); in the report. **Decided here**: the model
+  keeps its own files and no pin until Update library pins (the import
+  keeps the current state, owner 2026-11-16).
+- **The export** (decided, as the task asked): the pinned entries must be
+  in the file, and are — they are the line's own library files; nothing
+  else of the network's library is copied. Its `ols_meta` gains
+  `network.library_withdrawn` beside `network.library_pins` (now
+  filled). The desktop format is unchanged.
+- **Network schema 5**: `lib_kind`; `lib_file` + `text`, `hash`,
+  `by_user`, `time` (the draft's `kind_locked` dropped: the kind's lock is
+  `lib_kind`'s); `lib_release.n`; `lib_release_file`; `lib_entry`'s
+  withdrawn columns moved to `lib_withdrawn`; `lib_use` made again (line,
+  object, kind, file, entry; places joined from `object` and `spatial`);
+  `lib_request` + `text`, `line_id`, `branch`, `released`; `net_meta`
+  `library_rev`. The draft tables were empty: a database of schema 4 is
+  brought forward when a program connects (tested).
+- **Library changes** (`ohl_store_pg::library::LibraryCommand`, `ohl
+  network library …`): each one transaction serialised by an advisory
+  lock, decided by the rights read in it, with its audit row (a file's
+  text by its hash) and `library_rev` moved on; refusals in the audit
+  (a file's text by its size). No writer's lock needed; a running server
+  reads the locks, requests and withdrawn entries again before its next
+  job.
+- **Tests**: entries, versions, uses, drafts' names, an entry laid into a
+  file and taken alone; the network's library in the rights' one function
+  (a line's designer or a kind on a line not covering it, an entry's
+  grant only that entry, an entry's deny its file and kind too, any
+  order); Update library pins in the session on both stores' code (one
+  entry, stale marks, not undone); on PostgreSQL the whole flow with the
+  security cases — **a non-maintainer (a network-wide designer, a line's
+  designer, a maintainer without emergency) cannot change a locked
+  kind**; **requests and drafts seen only by whoever should** (the
+  requester; the maintainers, a draft never, without the line they may
+  not see); **the use index leaks no hidden entry nor the lines using
+  it** (a viewer of the kind without lines sees no use; a viewer of a
+  route only its uses and that route's name; a viewer of a line's
+  structures no section; a denied entry not found, in the words of one
+  that is not there; neither in the files' list nor the status); schema
+  4 brought to 5; on the server: Update library pins planned and refused
+  as a client's carried-out form, a locked kind refused (put and batch),
+  a draft only in its requester's branch, blocking review and merge until
+  granted, then merged, a withdrawn entry kept by who uses it and never
+  newly used, the use index kept with each command, a built line moved
+  only by who reviews it, the libraries read again while the server
+  runs.
+- **Measured** on the 12 000-pylon synthetic country's 147 lines
+  ([performance](performance.md#synthetic-country-phase-9-country-libraries-2026-11-20)):
+  Update library pins of every line 3.3 s (per line p50 21 ms, planned
+  in 2.4 ms); a release 2–7 ms; the use index made again 3.7 s (93 977
+  rows); the uses of the wire every span uses 0.31 s for a network admin,
+  39 ms for a viewer of one route; moves (p50 9.1–9.7 ms against
+  9.1–9.8 ms with phase 7's code) and working sets as before; a command's
+  rights a few microseconds more.
+- **Not yet**: the OHL-Server admin app's Libraries page (stage D, its
+  plan waiting); Update library pins in OHL-Design (the server's
+  operation is there); notices to a line's users when a release makes it
+  behind (the status shows it); the impact run's engineering figures
+  before a pin moves (the plan lists the entries and routes); a file's
+  entries filtered per entry in what is sent of a line's library files
+  (phase 7 sends a line's file whole to whoever sees it; the network's
+  library is filtered per entry); branches' use index (phase 11).
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. A release changes no line; lines in design follow the latest by
+> `update-pins --following` (one command for all) and are shown behind:
+> or should a release move every line in design by itself (logged, stale
+> marks)? → as built, explicit; a setting later if wanted.
+> 2. Unlocking a kind by network admins only (maintainers may lock)? →
+> yes, as built.
+> 3. A request granted only by a maintainer other than its requester? →
+> yes, as built.
+> 4. A pending draft "replaced" means taken out of the branch (another
+> entry used); a request withdrawn still blocks while its draft is in the
+> branch? → yes, as built.
+> 5. A built line's pins moved by whoever may review the whole line, not
+> through a review of its own? → yes for now; a library review flow with
+> OHL-Server stage D.
+> 6. Update library pins not undone by Undo (moved back by updating to
+> the release before)? → yes, as built.
+> 7. A withdrawn entry stays in later releases (lines keep working) and
+> no object may start using it; results using it not marked out of date
+> by the withdrawal itself? → keep it in releases, yes; mark the using
+> routes "not on the safe side" when the app shows library notices
+> (with OHL-Server stage D).
+> 8. The import adds new entries of a kind not locked to the network's
+> library and asks for the rest; the model keeps its own files until
+> Update library pins? → yes, as built.
+> 9. A draft must be in the requester's own branch (made by them)? → yes;
+> a team's branch with phase 11.
+> 10. A line's library file is sent whole to whoever may see it (an
+> entry's deny is enforced on the network's library, not inside a line's
+> copy)? → filter a line's file per entry with OHL-Server stage D; until
+> then deny the file.
+
 ## 2026-11-20 (country server, phase 7)
 
 **Rights and roles on a network: one function deciding for the commands

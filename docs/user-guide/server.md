@@ -192,6 +192,82 @@ decide whether they may.
 - Importing lines needs a network admin (anyone while the network has
   none); exporting a line needs *export* on the whole line.
 
+### Country libraries (phase 9, in active development)
+
+*Built 2026-11-20, in active development, not approved yet
+([decisions](../development/decisions.md#2026-11-20-country-server-phase-9)).*
+
+A network keeps each library kind — wires, structure types, insulator
+assemblies, weather cases, rules, costs, … — **once for the whole
+network**. Each line still holds its own library files, as a project
+does: the files of the **release** it is **pinned** to. So a line solves
+exactly as before, and a line exported as a project file carries the
+library entries it uses.
+
+- **Locked kinds.** A network admin or a library maintainer locks a kind
+  (or one file): from then on it changes only by **requests granted**
+  and **releases**, and no line may change its own files of that kind.
+  Unlocking is for network admins only. A network admin may change a
+  locked file directly in an emergency (`--emergency`, in the audit).
+- **Maintainers** are not a list of their own: whoever holds *review* and
+  *lock* on the kind — the shipped *library maintainer* role assigned on
+  the kind (`ohl network rights assign --to user:mia --role
+  library_maintainer --library-kind cables`), and network admins.
+  `ohl network library kinds` names them.
+- **Requests.** A designer asks for an entry the network does not have
+  (`ohl network library request`), for a line and a branch of their own.
+  The request may be granted or refused by a maintainer — never by the
+  person who asked. While it is pending, the entry may be used **in the
+  requester's own branch only**, as a library file named after the
+  request (`request-12.ohlw`); that branch is **not reviewed or merged
+  into main** until the request is granted, or until the draft is taken
+  out of the branch (another entry used instead). Requests are seen by
+  whoever asked and by the kind's maintainers (a draft not yet asked:
+  only by whoever wrote it); a maintainer who may not see the line it is
+  for sees the request without its line.
+- **Releases.** A maintainer releases the kind as it is now under a tag.
+  **A release changes no line.** Lines in design **follow the latest**:
+  `ohl network library status` shows them behind, and *Update library
+  pins* moves them. **Built** lines (`ohl network library built LINE`)
+  stay pinned; their pins move only by whoever may review the whole
+  line.
+- **Update library pins** moves a line's files to the latest releases (or
+  one kind to a release named) as **one** logged command; the routes
+  whose results change are marked out of date, as when a shared tower
+  moves. It is refused for a kind when the line uses an entry the
+  release lacks. It is not undone by Undo: update the pins again, to the
+  release before.
+- **Withdrawn entries.** A maintainer withdraws an entry: lines using it
+  keep it (it stays in later releases) and are shown it in their status;
+  no object may start using it.
+- **Where is it used?** `ohl network library uses KIND ENTRY` lists the
+  lines, routes and objects using an entry — only those you may see; an
+  entry you may not see is "not found", as one that is not there.
+- **Importing a project** maps its library files onto the network's: each
+  entry the same, added (a kind not locked), or asked for (a locked kind,
+  or an entry that differs — for a maintainer; never replaced). The line
+  keeps its own files until *Update library pins*.
+
+On the command line (`--user` is who acts; their rights decide):
+
+    ohl network library lock cables --user mia
+    ohl network library put weather north.ohlwc --user dan          # a kind not locked
+    ohl network library request cables new-wire.ohlw --into acsr.ohlw \
+        --line L001 --branch my-branch --reason "new conductor" --user ben
+    ohl network library requests --user mia
+    ohl network library grant 12 --user mia
+    ohl network library release cables 2026-11 --user mia
+    ohl network library status --user ben
+    ohl network library update-pins --line L001 --dry-run --user ben
+    ohl network library update-pins --following --user ana          # every line in design
+    ohl network library withdraw cables acsr.ohlw old-wire --note "out of production" --user mia
+    ohl network library uses cables acsr-drake-26-7 --user mia
+    ohl network library built L001 --user ana
+
+*Update library pins* on the command line needs the network's writer (no
+server running); a running server carries it out when a client asks it
+through its protocol (a command for it in OHL-Design is to come).
+
 ## Roles
 
 Each user of a project has one role; admins give them (People). The

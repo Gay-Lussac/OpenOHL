@@ -860,6 +860,76 @@ Notes:
   it is done again only after a change of that model, when the user next
   acts or a change is filtered for them.
 
+## Synthetic country: phase 9, country libraries (2026-11-20)
+
+What the country libraries cost on the network
+([ADR-0013](../adr/0013-country-server.md#country-libraries),
+[decision log](decisions.md#2026-11-20-country-server-phase-9)): the 147
+line models of the 12 000-pylon country (seed 1; made in 75 s, imported
+without revisions into a throwaway cluster — 57.0 s before phase 9,
+55.8–69.5 s with it, the use index written with each line; the
+database 283 → 298 MB), measured by
+
+```bash
+ohl network bench-library --user admin --queries 20
+```
+
+As the network's writer (no server running): the shipped wire file and
+weather file put into the network's library and released; the use index
+made again from every line; **Update library pins** of every line in
+design (each line its two files put, one log entry); the wire every
+section and jumper uses changed, released, the pins updated again (the
+route using it marked out of date on every line); the use index asked;
+then the server in the bench's process, 40 moves. `bench-fast`, Apple
+M-series, 10 cores, PostgreSQL 17 on 127.0.0.1, the machine shared with
+another agent's builds (load 6–8).
+
+| Measure | Measured |
+|---|---|
+| A file put into the network's library (checked, written, audited) | 6–11 ms for two files |
+| A release (the kind's files frozen, blobs, entry versions, requests marked) | 2–7 ms |
+| **Update library pins of 147 lines**, the first (each line: its wire and weather files put, 294 files) | 3.3 s in all; per line p50 21 ms, p95 33 ms (planned p50 2.4 ms, p95 4.1 ms; the rest: a session opened on the line, the command, the pins, the use index of its files, the audit) |
+| **Update library pins of 147 lines** after the wire every line uses changed (147 files, 147 routes marked out of date) | 3.1 s in all; per line p50 20 ms, p95 32 ms (planned p50 2.0 ms) |
+| The use index made again from every line (`ohl network library reindex`) | 93 977 rows in 3.7 s |
+| **The use index asked**: the wire every section and jumper of the network uses, by a network admin | 93 977 uses, p50 311 ms, p95 319 ms (every row joined with its object and place) |
+| The same by a viewer of one route and of the wires | 1 397 uses seen, p50 39 ms, p95 41 ms (only the lines it may see objects of read; before that prefilter 342 ms) |
+| A weather case every line holds (a file's entry), by a network admin | 147 uses, p50 34 ms |
+| Every line's pins and status (`ohl network library status`) | 1.9 ms for 147 lines |
+| Server start (the use index looked at, each model's uses kept in memory) | 2.81–2.93 s (phase 7's code on the same machine and data: 2.81–2.83 s) |
+
+**Edits and working sets are not slower** — the same benches run with
+phase 7's code (the commit before phase 9) and phase 9's, each on a
+fresh database of the same 147 lines, one after the other on the same
+machine:
+
+| Measure | Phase 7's code | Phase 9's code |
+|---|---|---|
+| A move applied and broadcast, in the server (`bench-rights`, 3 runs, network admin) | p50 9.1–9.8 ms, p95 10.1–11.8 ms | p50 9.1–9.7 ms, p95 10.3 ms |
+| The same, a designer of one route | p50 9.5–9.7 ms, p95 10.4–10.8 ms | p50 9.1–10.0 ms, p95 10.0–11.0 ms |
+| A command's rights decided (now with the libraries' rules) | p50 13.5–16 µs | p50 17.5–21 µs |
+| A working set shown (`bench-working-set`): the whole route / a third / 1 km² | p50 5.9 / 9.3 / 4.2 ms | p50 5.9 / 9.2 / 4.2 ms |
+| A partial replica loaded: the third / the whole route | 0.077 s / 0.122 s | 0.078 s / 0.118 s |
+| A move's rows in the replica | p50 19.6 ms, p95 24.2 ms | p50 21.0 ms, p95 25.3 ms |
+| On the server: a move with a working set / its rows per change | p50 15.2 / 10.6 ms | p50 15.4 / 10.9 ms |
+| A replica joining again after 20 moves / a route added | 356 / 99 ms | 359 / 92 ms |
+| Memory of the server, idle | 1 282 MB | 1 309 MB |
+
+Notes:
+
+- A move writes nothing more: the use index of an element is written only
+  when what it uses changes (each model's uses are kept in memory, also
+  to tell a new use of a withdrawn entry from an old one), and the
+  rights' and libraries' revisions are read in one round trip before
+  each job. The libraries' rules add a few microseconds per command.
+- Update library pins costs what a command on a line costs (a session
+  opened on the line from the database, about 15 ms, is most of it); on
+  the server, where every line is open, it is one command each.
+- The use index of the most used entry of the network (every wire span)
+  takes a third of a second for one who sees everything; an entry used a
+  few hundred times, tens of milliseconds.
+- A line's log keeps the files Update library pins changed (the command
+  and its inverse): a few kilobytes per kind and update.
+
 ## OHL-Design: an edit taken in place (O42, 2026-11-19)
 
 Owner, 2026-11-19: "per element modified instead of validating the whole
