@@ -41,7 +41,16 @@ use crate::{Conn, Shared, db_message, lock};
 pub struct PgStore {
     conn: Shared,
     line: String,
+    /// Blobs this store put, and the count at which the version store's
+    /// statistics are read again next (phase 14: see
+    /// [`PgStore::put_blob`]).
+    blobs_put: std::sync::atomic::AtomicUsize,
+    analyse_at: std::sync::atomic::AtomicUsize,
 }
+
+/// Blobs put before the version store's statistics are first read again;
+/// then each time their number doubled.
+const ANALYSE_FIRST: usize = 2_000;
 
 impl std::fmt::Debug for PgStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -139,6 +148,8 @@ impl PgStore {
         Self {
             conn,
             line: line.to_owned(),
+            blobs_put: std::sync::atomic::AtomicUsize::new(0),
+            analyse_at: std::sync::atomic::AtomicUsize::new(ANALYSE_FIRST),
         }
     }
 
@@ -885,6 +896,23 @@ impl Store for PgStore {
             "INSERT INTO vc_blob_use (line_id, hash) VALUES ($1, $2)",
             &[&self.line, &hash],
         )?;
+        // Phase 14: a model's first revision writes every object's blob in
+        // one transaction; the planner, with the statistics of tables
+        // nearly empty, checked each new row's references by reading the
+        // rows written so far one after the other (minutes on the
+        // synthetic country as one model). The statistics are read again
+        // (ANALYZE: within the transaction, its own rows counted) after
+        // 2 000 blobs, then each time their number doubled — a few times
+        // per model, nothing else changed.
+        use std::sync::atomic::Ordering::Relaxed;
+        let n = self.blobs_put.fetch_add(1, Relaxed) + 1;
+        if n >= self.analyse_at.load(Relaxed) {
+            self.analyse_at.store(n.saturating_mul(2), Relaxed);
+            self.c()
+                .client
+                .batch_execute("ANALYZE vc_blob, vc_blob_use")
+                .map_err(err)?;
+        }
         Ok(())
     }
 
