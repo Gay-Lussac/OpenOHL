@@ -2577,6 +2577,75 @@ only where it helps):
   > it before L5a. (7) Found: a J2b bent plate's own bolts drawn outside
   > its flat after writing, its members then left (about 400 ends before
   > L6, 486 with it) → Recommended: trace and fix next (small).
+  > **Answered 2026-11-20** (the owner): (1) as built — two, or the most
+  > of one member's on the plate; follow-up: the count from SIA 263 (with
+  > O45 B; "you can try with SIA 263 later"). (2) as recommended: the short
+  > plates next, the built-up members later. (3) keep ("we need them for
+  > complex cases"). (4) keep. (5) the order as a starting point, not a
+  > fixed rule ("if it needs change to make it better it should not be a
+  > fixed decision"): changed where the measurements show a better order
+  > or approach, with why. (6) trace it. (7) fix it. (6), (7) and the first
+  > of (5) built with L7 below.
+- [x] L7. **An end seated where its member is drawn, the measured columns
+  traced, the bent flats' bolts traced, the clashes after writing**
+  (the owner's answers to L6 of 2026-11-20). **Built 2026-11-20, in active
+  development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#an-end-seated-where-its-member-is-drawn-the-measuring-traced-l7),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-an-end-seated-where-its-member-is-drawn-l7);
+  no format change). **L6's question 6 traced: a difference of the
+  measuring**, not a regression nor a merge effect — the bundled code
+  plugin (the default member check's bolt minimums) is found beside the
+  program or above the current folder; L5's later runs started where it had
+  been built, its "before" column and L6's did not. On the same footing
+  L5's moves gave +218 joints whole (not +494) and 1.0 % fewer plates (not
+  6.2 %); L5's quick "guard" effect was the plugin too. From L7 on the
+  measurements run with the bundled plugin (as the program ships). **The
+  clashes after writing, first cause found and fixed** (the owner's order a
+  starting point: the measurements showed one cause under all three
+  groups): an end lapped onto a member that is itself drawn off its work
+  line (seated on a third, shifted, its gauge line moved through the work
+  point) was drawn as if that member lay on its work line — off it, in the
+  drawings and every check; now seated on it where it is drawn (the joint
+  details; every file, not only laid-out ones; on the safe side). And a
+  flat plate's own bolts at a joint laid out like another, mirrored, name
+  the leg the map carries the other's onto (before: the other leg, off the
+  plate). On the 78 real towers (kept privately; with the bundled plugin):
+  joints laid out whole 51.9 % → 52.5 % (+413), ends 68.4 % → 69.4 %,
+  plates 67 432 → 69 154, plates' holding groups 18 269 → 21 042, clashes
+  after writing: a plate into steel 4 089 → 3 117 ends, a nut into a
+  plate 1 519 → 1 204, a member left as it is no longer fitting 1 755 →
+  1 734, a plate's own bolts outside its outline 294 → 228; joints not
+  fitting as given 28 → 35 (one tower: ends now drawn on what they bolt
+  onto where it is), as assumed 13 028 → 12 906; a run again identical
+  78/78. **L6's question 7
+  traced, not fixed**: the bent flat's member is mostly one the run named
+  what it bolts onto in its planning copy and does not lay out — written
+  without the name, it is drawn elsewhere; writing the name was tried (on
+  six towers 17 → 12 such ends) but turns those members' assumed bolts into
+  given ones (not fitting as given 34 → 102) for no more ends: not kept.
+  L5o on short plates: not reached.
+  > **Owner:** (1) An end seated on its member where that member is drawn
+  > (the joint details of every file change where such ends are) →
+  > Recommended: keep (the drawings and checks then see the steel where it
+  > lies; on the safe side). (2) The measurements from now on with the
+  > bundled code plugin, L5's figures corrected as above → Recommended:
+  > yes. (3) The bent flats (and plates, ends) on a member the run names but
+  > does not lay out: plan such a member where the file will draw it (the
+  > joints with such members in detail once more without the run's names)
+  > → Recommended: next, measured first. (4) The members left as they are
+  > no longer fitting (about 1 700; mostly the partner of a member bolting
+  > onto it, off its flange): when the plan lays out the member such a
+  > partner bolts onto, keep the partner's bolts on it — its cut no further
+  > than the partner's first bolt less the end distance, its move within
+  > them — else leave it → Recommended: try next, measured. (5) Heads and
+  > nuts against plates (about 2 300 after L7; mostly of members left for
+  > a hand detail against plates on members left as they are): keep the
+  > heads and nuts of members left for a hand detail clear in the plan, as
+  > their steel already is (J2) → Recommended: try, measured (it may lay
+  > out fewer ends where a hand detail would have moved them). (6) A plate
+  > into the steel of a piece running on as one part with another (the
+  > largest plate clash left) → Recommended: trace next. (7) L5o on short
+  > plates (L6's question 2) → Recommended: after (3).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

@@ -8,6 +8,72 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (joint layout: an end seated where its member is drawn, L7)
+
+**An end seated on its member where that member is drawn, a plate's own
+bolts named on the right leg at a joint like another, the measured columns
+traced** (roadmap O44 L7, the owner's answers to L6 of 2026-11-20; built,
+in active development, not approved yet;
+[theory](../theory/joint-layout.md#an-end-seated-where-its-member-is-drawn-the-measuring-traced-l7),
+[joint details](joint-details.md)). No format change.
+
+- **The joint details** (`joints::member_seat`, `joints::nest`): an end
+  lapped onto an angle lies on the face of that angle **as drawn** — the
+  angle's own offset (seat, shift, drawing offset) taken across the face;
+  the ends placed again with the offsets of the pass before until no
+  member some end bolts onto moves (at most four passes, the program's
+  bound); two ends bolting onto each other do not follow each other.
+  Before, the face was taken as if the angle lay on its work line: an end
+  on a member seated on a third floated off it, in the drawings, the clash
+  check and the joint checks, and the automatic layout (which plans on
+  the member as drawn) found clashes after writing. It changes the details
+  of every file with such ends (levels 3 and 4); on the safe side.
+- **A joint laid out like another** (`joint_kinds::map_hold_legs`): a flat
+  plate's own bolts name the leg the map carries the representative's leg
+  onto (under a mirror an angle's leg along its y can be the matched
+  member's leg along its z); before, the name was copied and the bolts
+  drawn on the other leg.
+- **The measuring**: L5's measured "after" column ran with the bundled code
+  plugin's bolt minimums (found from the folder the sweep started in), its
+  "before" column and L6's without — not a regression, not a merge effect.
+  From now on the measurements run with the bundled plugin, as the program
+  ships.
+- **Tried and not kept**: writing what the run named an end onto in its
+  planning copy for ends it does not lay out (so that the bent plates' flats
+  on such members agree with their bolts): those members' assumed bolts
+  then count as given (the decision of 2026-11-19 on what is given) and
+  the joints not fitting as given triple on a sample, for no more ends.
+- Measured on the 78 private real towers (with the bundled plugin): joints
+  laid out whole 51.9 % → 52.5 %, ends 68.4 % → 69.4 %, plates into steel
+  after writing 4 089 → 3 117 ends, nuts into plates 1 519 → 1 204, joints
+  not fitting as given 28 → 35, a run again identical 78/78.
+
+## 2026-11-20 (owner): joint layout L6 answers
+
+The owner, 2026-11-20, on the seven questions of the joint layout's
+[L6](#2026-11-20-joint-layout-holding-bolts-plates-on-built-up-members-l6)
+(roadmap O44):
+
+1. The flat plates' provisional holding bolts stay as built: two, or the
+   most bolts of any one member on the plate. Follow-up: their count from
+   SIA 263 (the owner: "you can try with SIA 263 later"), together with
+   O45 B, read from the standard itself.
+2. No holding bolts on plates stopping short of the work point nor on
+   built-up members yet: accepted. The short plates come next, the
+   built-up members later.
+3. J6's plates on built-up members stay (the owner: "we need them for
+   complex cases").
+4. The root radius of a built-up member's angles kept by the nuts: kept.
+5. The order for the clashes after writing (plates into steel left as it
+   is, then members left as they are no longer fitting, then heads and
+   nuts against plates) is a starting point, not a fixed rule (the owner:
+   "if it needs change to make it better it should not be a fixed
+   decision"): changed where the measurements show a better order or
+   approach, said with why.
+6. The difference between main measured again and L5's measured column:
+   traced.
+7. A bent plate's own bolts drawn outside its flat after writing: fixed.
+
 ## 2026-11-20 (joint layout: holding bolts, plates on built-up members L6)
 
 **The flat plates' own bolts onto the member running through (L5o), a

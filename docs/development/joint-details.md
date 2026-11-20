@@ -539,6 +539,20 @@ yet:
   (within 20°: a leg running on, one part or spliced, not lapped)
   without bolts or a face given: it stays on its work line. Display only,
   as before (the analysis takes the shift, not the seat).
+- **On the member where it is drawn (2026-11-20, O44 L7).** The face an
+  end is seated on is that of the member it bolts onto **as drawn**: that
+  member's own offset (its seat, shift, drawing offset) taken across the
+  face (`joints::member_seat`; a nested end: the whole offset,
+  `joints::nest`). The joint's ends are placed again with the offsets of
+  the pass before until no member some end bolts onto moves (at most
+  `joints::SEAT_PASSES`, 4); two ends bolting onto each other do not
+  follow each other. Before, the face was taken as if that member lay on
+  its work line: an end on a member seated on a third floated off it by
+  that member's seat (in the drawings, the clash check and the joint
+  checks), and the automatic layout, which plans on the member as drawn,
+  found clashes after writing. Tested: an end on a diagonal seated on a
+  leg lies on the diagonal's face as drawn
+  (`an_end_on_a_seated_member_is_drawn_on_it_where_it_is_drawn`).
 - **Onto a built-up member (2026-11-11).** The seat and the cut need an
   angle at both ends; a built-up section of angles gives its angles
   (`Shape::built_up_angles`, `Profile::part_angles`) and the end is

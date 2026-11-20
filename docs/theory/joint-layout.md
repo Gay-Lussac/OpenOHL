@@ -1724,6 +1724,106 @@ below. One was tried and left out: the steel of a member not laid out that
 sits on a member laid out, moved with it in the plan — no change on the
 sample (the clashes are not of that kind).
 
+## An end seated where its member is drawn; the measuring traced (L7)
+
+(The owner, 2026-11-20, on L6's questions: the clashes after writing next,
+the order "not a fixed decision"; trace the difference of the measured
+columns; fix the bent plate's bolts drawn off its flat. Built 2026-11-20,
+in active development, not approved yet. The code: `joints`
+(`member_seat`, `nest`, `SEAT_PASSES`) and `joint_kinds`
+(`map_hold_legs`). **No format change**.)
+
+### An end seated on a member that is itself seated (the joint details)
+
+A member end lapped onto an angle is drawn with its leg on the face of that
+angle's leg (its *seat*, 2026-11-05). The face was taken where the angle
+would lie **on its work line**. But the angle is often drawn off its work
+line itself: seated on a third member, shifted, or moved by the layout so
+that its gauge line passes through the work point. The end then floated off
+the angle by that much, in the drawings and in every check that reads
+them, while the automatic layout planned the end, its plate or a plate's
+own bolts on the angle where it is drawn.
+
+An example (invented): a redundant R bolts onto a diagonal D, and D onto a
+leg L. D is seated on L's face, 28 mm off its work line across the faces.
+R was drawn on D's face as if D lay on its work line — 28 mm off D, its leg
+through steel or in the air; a plate the layout laid on D for R's
+neighbour was planned on D as drawn, and the clash check after writing
+found the plate in R.
+
+Now each end is seated on the angle **where that angle is drawn**: the
+angle's own offset (its seat, shift and drawing offset) taken across the
+face the end lies on (only across: along the face nothing changes), nested
+ends in the angle as drawn too. The ends are worked out again with the
+offsets of the pass before until no member some end bolts onto moves
+(a chain of members each seated on the next needs one pass per link; at
+most four, `SEAT_PASSES` — the program's bound, not a standard's). Two
+ends bolting onto each other do not follow each other (they would chase).
+
+*On the safe side*: the drawings, the clash check and the joint checks
+see each end where it lies on what it bolts onto; before, clashes could be
+missed or found where there were none. It changes the details of any file
+with such ends, not only laid-out ones (files at level 3 and 4).
+
+### A plate's own bolts named on the right leg at a joint like another
+
+The layout lays out a joint once per kind and maps the plan onto the
+joints like it (J4). A flat plate's own bolts name the leg of the member
+they bolt into (`long` or `short`, L5o). Under a mirror, an angle's leg
+along its section's y can be the matched member's leg along its z: the name
+was copied, and the bolts were drawn on the other leg, off the plate. Now
+the name is the leg the map carries the representative's leg onto.
+
+### The measured columns traced (L6's question 6)
+
+L5's measured "after" column laid out 32 652 joints whole with 61 800
+plates; L6 measured the same code at 32 376 joints and 65 240 plates. The
+code did not change between them. The cause is how the sweep ran: the
+bundled code plugin (the default member check's bolt minimums: end, edge
+and spacing distances) is found beside the program or above the current
+folder. L5's later runs started in a folder where that plugin had been
+built (for its design-case bend check), its earlier ones and L6's did
+not: L5's "after" column used the code's minimums, its "before" column
+and L6's the structure's default minimums. **A difference of the
+measuring, not a regression and not a merge effect.** On the same
+footing, L5's ends moved to bolt directly gave +218 joints laid out whole
+(not +494) and 1.0 % fewer plates (not 6.2 %). The program as shipped
+always finds the bundled plugin; from L7 on the measurements run with it.
+
+### The bent plate's own bolts off its flat (L6's question 7)
+
+Traced on the private towers: in most cases the member the bent plate's
+flat lies on is **not laid out at that joint** (left for a hand detail, or
+left as it is), and the run had **named what it bolts onto** in its
+planning copy (an end bolting onto nothing named gets the member running
+through the joint, L1 d's choices too). The plan sees that member seated on
+the member named; the file does not get the name (the member is not laid
+out), so it is drawn where the details work it out — elsewhere, up to tens
+of millimetres. The flat was planned where the member was seen, its own
+bolts are drawn on the member where it is: off the flat. The joint is then
+taken back after writing (as before: no wrong part is written).
+
+Tried and left out: writing the name for such members (those something the
+plan writes lies on or bolts onto). The flats' bolts then land (on six
+towers: 17 → 12 ends left for it), but those members' own assumed bolts
+are then counted as placed by the layout (*given*: the decision of
+2026-11-19 on what is given), and the joints not fitting as given rise
+(34 → 102 on the six towers) for no more ends laid out. The fix proposed:
+plan such a member where the file will draw it (the planning copy without
+the run's names for the members it does not lay out) — in the roadmap.
+
+### What is left after writing, and in which order
+
+The owner's order of 2026-11-20 (plates into steel left as it is, members
+left as they are no longer fitting, heads and nuts against plates) was a
+starting point. Measured, the first cause of all three groups is the same:
+ends drawn off the member they bolt onto (the seat above). Fixed first,
+it removes about a third of the plates into steel and of the nuts against
+plates; the members left as they are no longer fitting barely change
+(their cause is another: a member left bolting onto one the plan cuts
+back). The rest is counted in the measured section and proposed in the
+roadmap.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -2213,6 +2313,13 @@ J7a's leg splice places confirmed, every switch before on). "Before" is the
 main build of 2026-11-20 measured again (it differs a little from L3b's
 column: the work merged since); "L5" with the moves (the default now).
 
+(Corrected with L7, 2026-11-20: the "L5" column ran with the bundled code
+plugin's bolt minimums, the "before" column with the structure's default
+minimums — a difference of the measuring, see
+[L7](#the-measured-columns-traced-l6s-question-6). On the same footing the
+moves laid out 218 more joints whole, not 494, and 1.0 % fewer plates, not
+6.2 %.)
+
 | | before | L5 |
 |---|---|---|
 | joints laid out whole | 32 158 (49.7 %) | 32 652 (50.4 %) |
@@ -2336,3 +2443,52 @@ plates off); "L6" all of it (the default now).
   with a built-up member twice more, and the holding bolts' places are
   searched 2 mm at a time. The full columns ran beside other work: their
   times are not compared.
+
+## Measured (L7, 2026-11-20)
+
+On the same 78 private tower files and settings as L6, now **with the
+bundled code plugin found** (its bolt minimums, as the program ships; L6
+measured without it — see
+[L7](#the-measured-columns-traced-l6s-question-6)). "Before" is the main
+build with L6, measured again so; "L7" with the seat and the legs mapped.
+
+| | before | L7 |
+|---|---|---|
+| joints laid out whole | 33 611 (51.9 %) | 34 024 (52.5 %) |
+| member ends laid out | 121 850 (68.4 %) | 123 412 (69.4 %) |
+| plates written | 67 432 | 69 154 |
+| … their steel (the bill of materials, 73 towers) | 105.3 t | 111.8 t |
+| bolts (the bill of materials) | 221 923 | 230 566 |
+| plates' holding groups checked | 18 269 | 21 042 |
+| plates whose holding is not checked | 20 937 | 21 270 |
+| shifts written | 2 188 | 2 112 |
+| joints that do not fit, as given / as assumed | 28 / 13 028 | 35 / 12 906 |
+| a run again identical | 78 of 78 | 78 of 78 |
+
+The member ends left at writing, by the record's reasons:
+
+| | before | L7 |
+|---|---|---|
+| a plate into steel | 4 089 | 3 117 |
+| a nut into a plate | 1 519 | 1 204 |
+| a head into a plate | 1 079 | 1 128 |
+| steel into steel | 1 588 | 1 562 |
+| a member left as it is no longer fitting | 1 755 | 1 734 |
+| a plate's own bolts outside its outline | 294 | 228 |
+| holes overlapping, bolts beyond a member's end | 141 | 249 |
+
+- **The seat**: per joint 762 more joints laid out whole, 349 fewer (mostly
+  clashes the plan still does not foresee, now found where the steel
+  lies). A plate into steel after writing falls by a quarter, a nut into a
+  plate by a fifth. The plates and bolts rise with the ends laid out. The
+  joints not fitting as given rise by seven on the one tower whose bolts
+  are given: ends now drawn on what they bolt onto where it is.
+- **The legs mapped**: about 2 800 more plates held by their own bolts
+  (holding groups); the plates whose holding is not checked rise a little
+  with the plates.
+- **What is left** (with the members' parts as the plan sees them, on six
+  of the towers): plates into the steel of pieces running on as one part
+  and of sections not single angles, the partner of a member bolting onto
+  it no longer fitting (off its flange mostly), heads and nuts of members
+  left for a hand detail against plates on members left as they are. In
+  the roadmap (O44 L7).

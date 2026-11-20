@@ -452,7 +452,11 @@ their menu or from View.
   work point — exactly as the Detail view places it (Design › Joint
   details). An end seated on a member is seated with or without bolts
   given (since 2026-11-05; before, an end without bolts lay on its work
-  line). A **built-up section** is drawn as its parts (since
+  line), on that member **where it is drawn** (since 2026-11-20: a
+  redundant on a diagonal that is itself seated on the leg lies on the
+  diagonal's face; before, it was drawn as if the diagonal lay on its work
+  line, off it by the diagonal's seat — the clash check and the joint
+  checks now see it where it lies). A **built-up section** is drawn as its parts (since
   2026-11-10): two angles in a star heel to heel with the gap between
   them open, four in a cross, two angles or two channels back to back —
   in the 3D view, the Detail view's close-up and its face view alike
