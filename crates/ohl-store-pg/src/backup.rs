@@ -15,7 +15,7 @@
 //! exactly what it holds. The backup is recorded in the database
 //! (`net_meta` `last_backup`, the `net_backup` table, the audit): a
 //! schema migration asks for one newer than the network's
-//! `backup_max_age_hours` (default 24, [`recent_backup`]).
+//! `backup_max_age_hours` (default 24, `recent_backup`).
 //!
 //! **A restore** (`ohl network restore`, [`restore`]) goes into an
 //! **empty** database only (PostGIS may be there), refuses a backup of

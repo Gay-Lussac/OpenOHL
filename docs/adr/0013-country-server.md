@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18; phases 0–9 and 11 built — this record is not approved yet)
+  2026-11-18; phases 0–13 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -558,10 +558,23 @@ Shipped deployment: a Docker Compose file (server, PostgreSQL with PostGIS,
 backup job), plain binaries as the other option — the owner's IT decides.
 Backups by base backup and WAL archiving, with a restore drill; a schema
 migration is refused when the last backup is older than a setting.
-**None of this section is built yet** (phase 13): sign-in is the personal
-invitation, the server connects with the connection string it is given,
-there are no deployment files, and backups are PostgreSQL's own tools
-until then.
+**Amendment (2026-11-20, phase 13; built, in active development, not
+approved yet)**: sign-in by OIDC is **an option** beside the personal
+invitations (which stay the default and gain a generation per user —
+reissued, the older ones refused — and an optional end); an ID token's
+subject signs in only as the user a network admin mapped it to. Backups
+are **logical** (`pg_dump` in a snapshot, with a manifest of each
+model's hash) rather than base backups with WAL archiving — an `ohl`
+command makes, records and checks them beside a running server, and the
+restore drill compares every model; base backups and WAL archiving stay
+PostgreSQL's, for the owner's IT, beside them. A migration is refused
+without a backup newer than `backup_max_age_hours` (24) unless an admin
+says they have one (audited). A database on another host needs TLS
+(`sslmode`, the owner's CA). The Compose files use a role without
+superuser for the server. Long work (checks, exports, bundles) waits
+behind the commands; since the owner's approval of the same day a check
+runs on a worker thread from a snapshot. The security review:
+[its page](../development/server-security-review.md).
 
 ### Measured first
 

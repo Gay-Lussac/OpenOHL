@@ -2867,7 +2867,9 @@ or three, L four or more. The phases, in order:
   command's rights decided p95 23 µs, a tile's rights class p50 28–39 µs
   and its package filtered p50 0.18 ms (once, then kept), a move applied
   and broadcast p95 9.8 ms (phase 5: 10.3 ms), the start 2.5 → 2.8 s.
-  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
+  > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); questions 1 and 2 built with phase 11
+  > as recommended; the recommendation after the
   > arrow) 1. A designer of a part of a route making new objects in it?
   > → yes, with phase 11; a whole route until then. 2. Branches, commits
   > and tags need edit on the whole line until phase 11? → yes. 3. Users,
@@ -2979,7 +2981,9 @@ or three, L four or more. The phases, in order:
   worker of their own (today on the authority between commands); the
   ground and points on the network; rules across weather cases; the
   field's left-out part bounded; shared towers at level 3/4.
-  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
+  > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); question 1 built with phase 13: the
+  > checks' worker thread; the recommendation after the
   > arrow) 1. Checks computed on the authority between commands (a long
   > check holds the edits)? → a worker thread of their own next. 2. The
   > field's wires beyond 500 m left out, said NOT ON THE SAFE SIDE? →
@@ -3030,7 +3034,8 @@ or three, L four or more. The phases, in order:
   towers on edits made directly on a network's main line, and a
   branch's base read along what differs (opening the country as one
   model with branches 20.8 → 4.7 s).
-  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
+  > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); the recommendation after the
   > arrow) 1. Split trees only on a network, the project file keeping flat
   > ones? → yes, as built. 2. A model exported keeps its split trees
   > (readable by this build on), or is flattened (new revision ids, the
@@ -3083,7 +3088,9 @@ or three, L four or more. The phases, in order:
   and the protocol do it); the export on a thread of its own; OHL-Design's
   check windows using a file's neighbours; a revision of main's changes
   made by the server so any designer can export.
-  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
+  > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); question 6, the export on a thread of
+  > its own, still to build: see phase 13; the recommendation after the
   > arrow) 1. Edits directly on main: a user's routes those they may edit
   > something on, narrowed to their connection's working set; who may
   > edit every route and follows none as before? → yes, as built.
@@ -3098,10 +3105,60 @@ or three, L four or more. The phases, in order:
   > one command on a new branch, the offline revisions not kept? → yes.
   > 8. A bundle twice refused, another of the same export allowed? → yes.
   > 9. Library files and settings not changed offline? → yes.
-- [ ] 13 Security, deployment, backups (M): a security review of the
+- [x] 13 Security, deployment, backups (M): a security review of the
   network server (the interest pace, tile limits, queues), Compose files,
   OIDC sign-in, a restore drill, migrations refused without a recent
-  backup, TLS to a database on another host.
+  backup, TLS to a database on another host. **Built 2026-11-20, in
+  active development, not approved yet**
+  ([the review](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/server-security-review.md),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-13),
+  [deployment](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server-deployment.md),
+  [commands](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/network-commands.md#operations-phase-13),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-13-security-backups-and-the-checks-worker-2026-11-20)):
+  **the review**, 15 findings each fixed and tested or accepted with its
+  reason — checks, exports and bundles queued behind the commands (one
+  per user, four in all), a check's reach bounded (10 km, a field 2 km),
+  new tiles per client and second bounded (64, 1 024 being made), lists
+  bounded, large messages within one 256 MB budget (a browser's 8 MB),
+  IPv6 limits by /64, no client words in paths, no secret in logs or
+  command lines; **invitations** reissued per user (older ones refused,
+  the user let go) and with an optional end (`--invite-days`);
+  **OIDC sign-in** as an option (`jsonwebtoken`, `ureq`; signature,
+  issuer, audience, times; keys fetched and kept; subjects mapped to
+  users by network admins); **backups** (`ohl network backup`: `pg_dump`
+  in an exported snapshot, a manifest with each model's hash) and
+  **restores** into an empty database with **the restore drill** (every
+  model compared); **migrations refused** without a backup newer than
+  `backup_max_age_hours` (24) unless `--i-have-a-backup` (audited);
+  **TLS** to a database on another host (`sslmode`, `sslrootcert`; refused
+  without unless `sslmode=disable`); **Compose** files (PostgreSQL with
+  PostGIS and a role without superuser, the server, a backup job,
+  healthchecks, fake example secrets); network schema 7. With it, the
+  owner's approval of 2026-11-20: **the checks' worker thread** (phase
+  10's question 1) — a check computed from a snapshot on a thread of its
+  own, its report the same as on the authority, a change landing
+  meanwhile marking it stale.
+  Measured on the synthetic country: main's code against phase 13's on fresh databases of the 147 lines (a shared machine, the quietest rounds): a move applied and broadcast p50 9.2 → 8.4 ms (a route's designer 9.5 → 8.9 ms), a replica loaded 0.076 / 0.130 → 0.074 / 0.120 s, joining again after 20 moves 358 → 355 ms, the start 3.0 → 2.8 s; a backup of the 147 lines 7.0–10.6 s (13.6 MB), a restore with its drill 13.8–14.1 s; **a move while a whole route's clearances run (12 s): on the authority the first waited 12.08 s, on the worker p50 9.6 ms, p95 27.8 ms (836 moves meanwhile)**.
+  Left: the offline export on a thread of its own (phase 12's question
+  6, approved); OHL-Design's and the web client's sign-in windows (the
+  protocol takes the token); a role per task in the database; WAL
+  archiving driven by `ohl`; OHL-Server's Operations page (stage F).
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. Long work queued behind the commands, one per user, four
+  > in all? → yes, as built. 2. A check reads at most 10 km around its
+  > working set, a field 2 km? → yes. 3. 64 new tiles a second per client,
+  > 1 024 being made at once? → yes, settings of the server. 4. Invitations
+  > reissued per user and with an optional end, the old ones valid until
+  > reissued? → yes; an end of 90 days by default once OHL-Design shows an
+  > expired invitation. 5. OIDC subjects mapped by network admins, no
+  > automatic accounts? → yes; from a group claim later if wanted.
+  > 6. Backups by `pg_dump` with a restore drill, WAL archiving the IT
+  > department's? → yes. 7. A migration refused without a backup newer
+  > than 24 h, the override audited? → yes. 8. A remote database refused
+  > without TLS unless `sslmode=disable`? → yes. 9. Compose with a role
+  > without superuser, the image on PostgreSQL's? → yes; a slimmer image
+  > later. 10. The checks' worker from a snapshot of the lines within
+  > 10 km? → yes; the export next.
 - [ ] 14 Scale validation (S): the synthetic country measured end to end;
   a real line's import measured locally only.
 

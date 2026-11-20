@@ -8,6 +8,219 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (country server, phase 13)
+
+**Security, deployment, backups: a security review of the network
+server with its fixes, OIDC sign-in as an option, invitations reissued
+and expiring, backups with a restore drill, migrations refused without
+a recent backup, TLS to a database on another host, Compose files; and
+the checks' worker thread the owner approved the same day** (ROADMAP O17
+phase 13; the plan's answer of 2026-11-16: "Compose and OIDC, the owner's
+IT deciding" — both built as options; built, in active development, not
+approved yet;
+[the review](server-security-review.md),
+[deployment](../user-guide/server-deployment.md),
+[user guide](../user-guide/server.md#security-sign-in-and-backups-phase-13-in-active-development),
+[commands](../user-guide/network-commands.md#operations-phase-13),
+[measured](performance.md#synthetic-country-phase-13-security-backups-and-the-checks-worker-2026-11-20)).
+
+- **The security review** ([its page](server-security-review.md)): 15
+  findings, each with its fix and test or "accepted" with the reason.
+  The decisions in it: **long work** (checks, exports, bundles) waits in
+  a queue and runs only when no other job waits — one per user waiting,
+  four in all (`--max-heavy-queue`), more refused with a message; **a
+  check reads at most 10 km** around its working set (a plugin's largest
+  declared reach; beyond, nothing more is read and the check is refused),
+  a field's distance at most 2 km, rules' text 256 KB, 10 000 structures;
+  **new tiles** 64 a second per client (256 at once,
+  `--tiles-per-second`), 1 024 being made at once, the rest not made
+  then and said; **lists**: 4 096 routes, 256 picks, 200 saved working
+  sets a user; **large messages** (over 1 MB) within one budget of 256 MB
+  for the server, a browser's at most 8 MB after its join; **IPv6**
+  counted by its /64 for the limits per address; temporary files named
+  by the server only; options and connections printed without the
+  connection string or password.
+- **Invitations**: a user's personal invitation has a generation (schema
+  7, `net_user.invitation`); `ohl network rights reissue-invitation`
+  (network admins, audited) makes a new one, refuses every older one and
+  lets the user go; `serve --invite-days N` gives invitations valid to the
+  end of a day (UTC). Both are inside the code (`G.UNTIL.MAC`, the MAC
+  over the name, generation and day — nothing changeable without the
+  key); invitations given before stay valid until reissued (generation 0
+  without an end is the code of before). A refused valid code says
+  "reissued" or "expired" (in the audit); a wrong one only "wrong access
+  code".
+- **OIDC sign-in**, an option (`serve --oidc-issuer --oidc-audience`):
+  an ID token in the join (`id_token`) instead of a code, checked off the
+  authority — the signature with the provider's keys (asymmetric only:
+  RS*, PS*, ES256, ES384, EdDSA; never HS* or `none`), the issuer, the
+  audience, `exp`, `nbf`, `iat` within an hour, a minute of leeway; the
+  keys from the provider's discovery document over HTTPS (its CA, or the
+  Mozilla roots; no redirect; 1 MB, 10 s), kept an hour, fetched again
+  for an unknown key at most every 30 s, or from a file. **The subject
+  is mapped to a user by a network admin** (`ohl network rights
+  map-identity`, schema 7 `net_identity`); unmapped: refused. **Crates**:
+  `jsonwebtoken` 11 (its pure-Rust crypto) and `ureq` 3 (rustls with
+  ring) — widely used and maintained. Personal invitations stay the
+  default. Tested with a key pair and a fake provider on the loopback (no
+  network).
+- **Backups**: `ohl network backup` — `pg_dump` (custom format) in a
+  snapshot its own connection exports, each model's and the network's
+  own tables' hashes read in the same snapshot, a manifest (schema, time
+  of the data, the dump's SHA-256); recorded in `net_meta` `last_backup`
+  (every schema has it), `net_backup` and the audit. **Chosen over a
+  base backup with WAL archiving** (the ADR's first idea): a logical
+  dump is what an `ohl` command can make and check alone, beside a
+  running server, and restore into another major version of PostgreSQL;
+  base backups and WAL archiving stay PostgreSQL's, for the IT
+  department, beside it. `ohl network restore`: into an empty database
+  only, of this program's schema only (another: restore it with its own
+  program, then migrate), the dump's hash checked, `pg_restore` in one
+  transaction, then **the restore drill**: every model and the network's
+  tables compared with the manifest (a difference fails, naming it).
+- **Migrations** (a program connecting, the server's start,
+  `ohl network migrate`) are refused unless a backup newer than the
+  network's `backup_max_age_hours` (24; `ohl network setting`) is
+  recorded, or `--i-have-a-backup` is given (audited with its user); an
+  empty database is made without.
+- **TLS to the database** (`ohl_store_pg::connect`): libpq's `sslmode`
+  (`disable`, `require`, `verify-ca`, `verify-full`) and `sslrootcert`
+  read from the connection string or `OHL_DATABASE_SSLMODE` /
+  `OHL_DATABASE_CA`, rustls with ring (`tokio-postgres-rustls`); **a
+  host that is not this computer is refused without TLS** unless
+  `sslmode=disable` is said (warned once); no system or bundled roots
+  (the owner's CA). The password from the string or
+  `OHL_DATABASE_PASSWORD_FILE`; the PostgreSQL tools get it in their
+  environment.
+- **Compose** (`deploy/compose/`): PostgreSQL 17 with PostGIS 3.5 (the
+  network's database owned by a role `ohl` without superuser, PostGIS
+  made once by the superuser, no published port), the server (QUIC
+  published, its key and counters in a volume), a backup job (every 6
+  hours, 28 kept), healthchecks, fake example secrets read as Compose
+  secrets; read by a test (YAML), not run here (no Docker). Not needed
+  for the desktop.
+- **The checks' worker** (owner, 2026-11-20: phase 10's question 1): a
+  scoped check runs on a thread of its own from **a snapshot** taken on
+  the authority when it starts — its working set and rights decided
+  there; the tile index within its 10 km and a copy of each model's line
+  with something there, their library, weather and load case files, the
+  network's largest span margin — through the same answers the authority
+  gives (each part `line_part`, the session's `drawing_part` of the same
+  line); its report written on the authority with the client's rights
+  when it comes back (a client whose rights changed was let go); **the
+  changes applied meanwhile are kept and checked against its watch**: a
+  result they touch is marked stale at once. Tested: every check's report
+  the same on the worker as on the authority (a user seeing everything,
+  one seeing a route); a move landing during a check either in the
+  result or marking it stale. `NetOptions::check_worker` (on by default)
+  keeps the authority's way for the measurements. **The offline export
+  on a thread of its own (phase 12's question 6) is not built yet**: it
+  records main's changes first and writes the export's record, both on
+  the authority; next.
+- **Schema 7** (both stores where it matters: the desktop's project file
+  is unchanged, no session table touched): `net_user.invitation`,
+  `net_identity`, `net_backup`, `net_meta` `backup_max_age_hours`. The
+  protocol stays 3 (`join` gets `id_token`).
+- **Measured** ([performance](performance.md#synthetic-country-phase-13-security-backups-and-the-checks-worker-2026-11-20)): main's code against phase 13's on fresh databases of the 147 lines (a shared machine, the quietest rounds): a move applied and broadcast p50 9.2 → 8.4 ms (a route's designer 9.5 → 8.9 ms), a replica loaded 0.076 / 0.130 → 0.074 / 0.120 s, joining again after 20 moves 358 → 355 ms, the start 3.0 → 2.8 s; a backup of the 147 lines 7.0–10.6 s (13.6 MB), a restore with its drill 13.8–14.1 s; **a move while a whole route's clearances run (12 s): on the authority the first waited 12.08 s, on the worker p50 9.6 ms, p95 27.8 ms (836 moves meanwhile)**.
+- **Not yet**: OHL-Design's and the web client's sign-in windows (the
+  protocol takes the token); the export on a thread of its own; a role
+  per task in the database (migrations, the server, backups); WAL
+  archiving driven by `ohl`; OHL-Server's Operations page (stage F).
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. Long work queued behind the commands, one per user, four in all? →
+> yes, as built; with the worker a check no longer holds the edits.
+> 2. A check reads at most 10 km around its working set, a field 2 km? →
+> yes, as built.
+> 3. 64 new tiles a second per client, 1 024 being made at once? → yes,
+> as built; settings of the server.
+> 4. Invitations reissued per user and with an optional end; the old
+> ones valid until reissued? → yes, as built; make `--invite-days`
+> (e.g. 90) the default once OHL-Design shows an expired invitation.
+> 5. OIDC with jsonwebtoken and ureq, subjects mapped by network admins
+> (no automatic accounts)? → yes, as built; automatic accounts from a
+> group claim later if wanted.
+> 6. Backups by `pg_dump` with a restore drill, WAL archiving left to the
+> IT department? → yes.
+> 7. A migration refused without a backup newer than 24 h, the override
+> audited? → yes, as built.
+> 8. A remote database refused without TLS unless `sslmode=disable` is
+> said? → yes, as built.
+> 9. Compose with a role without superuser, the server's image on
+> PostgreSQL's (for `pg_dump`)? → yes; a slimmer image later.
+> 10. The checks' worker: a snapshot of the lines within 10 km, the
+> report written on the authority? → yes, as built; the export next.
+
+## 2026-11-20 (owner): country server phases 7, 10, 11 and 12 — recommendations approved
+
+The owner, 2026-11-20: "Go ahead with recommendations" — the open
+questions of phases 7, 10, 11 and 12 answered as recommended. Built
+already or "later" items staying in the roadmap; two built with phase 13
+(marked).
+
+**Phase 7** ([its entry](#2026-11-20-country-server-phase-7)):
+
+1. A designer of a part of a route makes new objects in it — built with
+   phase 11 as recommended.
+2. Branches, commits and tags need edit on the whole line until phase 11
+   — built with phase 11 as recommended (a commit by what it records, a
+   branch over a working set by its routes).
+3. Users, groups and memberships by network admins only — as built.
+4. An export only of the whole line; parts as offline working sets — as
+   built (phase 12).
+5. A client whose rights change is let go — as built.
+6. Presence and locks hidden from who does not see everything — as
+   built; filtered per object with OHL-Server stage B.
+7. A project's edit grants turned into assignments at import — later;
+   both checked until then.
+8. "See as user" for whoever manages rights, within what both see — as
+   built.
+
+**Phase 10** ([its entry](#2026-11-20-country-server-phase-10)):
+
+1. Checks on a worker thread of their own — **built with phase 13**.
+2. The field's wires beyond 500 m left out, said NOT ON THE SAFE SIDE —
+   kept; a bound of what is left out later.
+3. A wire at most 1.5 times its ends' distance for the candidates — as
+   built.
+4. Several lines' sections at one point added, strings counted again —
+   as built.
+5. A plugin without `[reach]`: the whole line and every line within 2 km
+   — as built.
+6. A result stale when anything changes in its reach's tiles — as built.
+7. A hidden neighbour's distance said ("within X m") — as built.
+
+**Phase 11** ([its entry](#2026-11-20-country-server-phase-11)):
+
+1. Split trees only on a network — as built.
+2. A model exported keeps its split trees — as built.
+3. Tags, whole-line branches, rollbacks and reviews' merges need the
+   whole line — for now.
+4. A commit decided object by object — as built.
+5. A branch's stale marks written when it reaches main — as built.
+6. A merge into a protected main moving another route's tower waits for
+   a review — as built.
+7. A team named by users and groups — as built.
+8. Library files merged whole — until they merge entry by entry.
+
+**Phase 12** ([its entry](#2026-11-20-country-server-phase-12)):
+
+1. Edits on main: a user's routes those they may edit something on,
+   narrowed to their working set — as built.
+2. An export records main's changes first, by who may edit them all —
+   for now; a server-made revision next.
+3. Export on each object of the working set, see on its context — as
+   built.
+4. The line's own neighbours all left out when one is hidden — for now.
+5. The export's area: the bounds grown by the reach and three span
+   margins — as built; a corridor if files grow too big.
+6. The export on a thread of its own — **approved; not built yet** (see
+   phase 13).
+7. A bundle one command on a new branch — as built.
+8. A bundle twice refused, another of the same export allowed — as
+   built.
+9. Library files and settings not changed offline — as built.
+
 ## 2026-11-20 (country server, phase 12)
 
 **The offline working set: exported with read-only neighbours, checked
@@ -194,7 +407,7 @@ approved yet;
   clouds and terrain in an export; a server-made revision of main's
   changes so that any designer may export (now: whoever may record them).
 
-> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> **Owner:** (answered 2026-11-20: as recommended — [the owner's entry](#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); the recommendation after the arrow)
 > 1. Edits directly on main: a user's routes are those they may edit
 > something on, narrowed to the working set their connection follows; who
 > may edit every route and follows none edits as before? → yes, as built;
@@ -406,7 +619,7 @@ not approved yet;
   to a network's clients yet (the server's operations are there);
   OHL-Design has no window for branches over a working set yet.
 
-> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> **Owner:** (answered 2026-11-20: as recommended — [the owner's entry](#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); the recommendation after the arrow)
 > 1. Split trees only on a network's models, the desktop's project file
 > keeping flat trees? → yes, as built (the format unchanged).
 > 2. A model exported with split trees: readable by this build and later
@@ -549,7 +762,7 @@ development, not approved yet;
   shared towers' flexible solve (level 3/4); plugin checks run on the
   server (they run in OHL-Design).
 
-> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> **Owner:** (answered 2026-11-20: as recommended — [the owner's entry](#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); the recommendation after the arrow)
 > 1. Checks computed on the authority between commands (a long check
 > holds the edits) → a worker thread of their own next, the parts taken
 > on the authority.
@@ -960,7 +1173,7 @@ owner's "rights and roles applied to almost every element and library",
   history, diffs and reviews served to a network's clients (not served
   yet; the stream keeps each change's objects for them); OIDC (phase 13).
 
-> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> **Owner:** (answered 2026-11-20: as recommended — [the owner's entry](#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); the recommendation after the arrow)
 > 1. A designer of a part of a route may not make new objects there
 > (only a whole route, a region or the line allows it): allow them inside
 > the part as it is after the command? → yes, with branches over working

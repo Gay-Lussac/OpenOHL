@@ -1067,6 +1067,68 @@ Notes:
 - The run's other measures of the first line, for the record: opening it
   50 ms (split) and 194 ms (flat, after the split run's branches).
 
+## Synthetic country: phase 13, security, backups and the checks' worker (2026-11-20)
+
+Phase 13 ([ADR-0013](../adr/0013-country-server.md),
+[decision log](decisions.md#2026-11-20-country-server-phase-13),
+[the security review](server-security-review.md)) on the 12 000-pylon
+synthetic country (seed 1; its 147 line models imported without
+revisions into fresh databases of a throwaway cluster, 88 s with main's
+code and 91 s with phase 13's), measured by
+
+```bash
+ohl network bench-rights --user admin --users 200 --assignments 1000 --moves 40
+ohl network bench-working-set --user admin --moves 20 --idle-wait-s 0 --work DIR
+ohl network serve --bind 127.0.0.1:0 --no-idle-solve --seconds 1      # "network read in"
+ohl network backup --out DIR --user admin
+ohl network restore DIR --user admin --database "…an empty database…"
+ohl network bench-scoped --user admin --runs 2   # with moves during a check
+```
+
+`bench-fast`, Apple M-series, 10 cores, PostgreSQL 17 on 127.0.0.1.
+**The machine was shared** with other agents' builds and tests (a load
+average of 13 to 60 on 10 cores): main's code (0827ff8b) and phase 13's
+were run in turn, three rounds each, on databases of their own; the
+table gives the quietest round of each (the others' spread in
+brackets).
+
+| Measure | Main's code | Phase 13's code |
+|---|---|---|
+| A move applied and broadcast, in the server, a network admin | p50 9.2 ms, p95 10.1 ms (p50 16.9–18.7 ms in busier rounds) | p50 8.4 ms, p95 9.0 ms (9.0 / 9.7 ms; 20.4 ms in the busiest) |
+| The same, a designer of one route | p50 9.5 ms, p95 10.1 ms | p50 8.9 ms, p95 9.8 ms |
+| A partial replica loaded: a third / the whole route | 0.076 / 0.130 s | 0.074 / 0.120 s |
+| A move's rows in the replica | p50 20.2 ms | p50 21.0 ms |
+| A replica joining again after 20 moves | 358 ms (358–429) | 355 ms (355–447) |
+| Server start (`ohl network serve`, every line read, the tile index made) | best 3.0 s (3.0–10.6 s) | best 2.8 s (2.8–10.7 s) |
+| Memory of the server, idle | 1 311 MB | 1 310 MB |
+
+Phase 13 adds per command a token bucket per client and a few counts;
+the start reads the users' invitation generations once (one query).
+
+**Backup and restore of the 147 lines** (phase 13's code, the database
+308 MB on disk after the import):
+
+| Measure | Value |
+|---|---|
+| `ohl network backup` (two runs) | 10.6 s and 7.0 s: `pg_dump` 2.4 / 2.0 s, the hashes of every model and the network's tables in the same snapshot 8.1 / 4.9 s; the dump 13.6 MB (custom format, compressed) |
+| `ohl network restore` into an empty database (two runs) | 14.1 s and 13.8 s: `pg_restore` in one transaction 6.2 / 6.1 s, the restore drill (every model's and the network's hashes compared with the manifest's) 7.9 / 7.7 s — 147 lines the same as backed up |
+
+**A move while a long check runs** (`bench-scoped`): a whole route's
+clearances (the first line with a tower shared with another; 12 s on the
+loaded machine) asked by one user while another moves a structure of
+another line again and again:
+
+| | The check on the authority (as before, `check_worker` off) | The check on its worker (phase 13) |
+|---|---|---|
+| Moves while the check ran | 3 | 836 |
+| A move's latency, idle (sent → answered) | p50 8.1 ms | p50 7.7 ms |
+| **A move's latency while the check ran** | **the first waited 12.08 s** (the whole check), then p50 12.6 ms | **p50 9.6 ms, p95 27.8 ms, at most 206 ms** (the check's snapshot taken on the authority) |
+| The check | 12.1 s, its result | 12.6 s, the same result (tested) |
+
+The snapshot (the tile index within 10 km of the route and the lines
+with something there, copied) is the one part still on the authority: a
+few hundred milliseconds at most here, once per check.
+
 ## Synthetic country: phase 12, the offline working set (2026-11-20)
 
 The offline working set and phase 11's two open items — the rules of
