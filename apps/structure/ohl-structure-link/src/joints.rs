@@ -694,8 +694,18 @@ pub(crate) fn joint_details_and_model(
     // record's `own_plane` mark): their members seated on them.
     let own_plane: std::collections::BTreeSet<String> = record
         .made
-        .into_iter()
+        .iter()
         .filter(|(_, (_, f))| f.contains(crate::layout_run::OWN_PLANE))
+        .map(|(id, _)| id.clone())
+        .collect();
+    // The plates it gave an outline stopping short of the work point (L2's
+    // follow-up, 2026-11-20, its record's `short` mark): drawn round their
+    // members' legs from the flange's toe over their bolts and the flange
+    // under them (the run then writes that outline).
+    let short_plates: std::collections::BTreeSet<String> = record
+        .made
+        .into_iter()
+        .filter(|(_, (_, f))| f.contains(crate::layout_run::SHORT))
         .map(|(id, _)| id)
         .collect();
     // Level 3: the model (design data, sections) and the members' axes and
@@ -940,7 +950,8 @@ pub(crate) fn joint_details_and_model(
             .map(|p| {
                 let fu = fu_of(p.material.as_deref());
                 let rules = |a: &Arrival| rules_in(a, Some((p.thickness.si(), fu)));
-                let d = plate(p, at, &arrivals, seats.get(&p.id), &rules);
+                let short = short_plates.contains(&p.id);
+                let d = plate(p, at, &arrivals, seats.get(&p.id), &rules, short);
                 if !level3 || p.leg_bolts.is_none() {
                     return d;
                 }
@@ -951,7 +962,7 @@ pub(crate) fn joint_details_and_model(
                     Ok(a) => {
                         let mut with = arrivals.clone();
                         with.push(a.clone());
-                        let mut d = plate(p, at, &with, seats.get(&p.id), &rules);
+                        let mut d = plate(p, at, &with, seats.get(&p.id), &rules, short);
                         d.leg_bolts = Some(Box::new(a));
                         d
                     }
@@ -2846,13 +2857,19 @@ fn bolts_near_edge(outline: &[[f64; 3]], onto: &[(&Arrival, Keep)], id: &str) ->
 /// A plate's detail: its outline given (the bolts too near its edge said),
 /// else round the bolts onto it — each kept the code's end and edge
 /// distances from its edge ([`keep`]) — the legs bolted and the corner it
-/// lies on, in the plane of the bolts.
+/// lies on, in the plane of the bolts. `short` (L2's follow-up,
+/// 2026-11-20, the layout's `short` mark): not round the work point — each
+/// member's leg from where it crosses the flange's toe (or its first bolt
+/// less its end distance, the nearer the joint, not before the work point)
+/// to its last bolt plus it, its bolts' distances, and the flange under
+/// them.
 fn plate(
     p: &ohl_structures::connections::TypePlate,
     joint: [f64; 3],
     arrivals: &[Arrival],
     seat: Option<&PlateSeat>,
     rules: &dyn Fn(&Arrival) -> Option<ohl_structures_fe::bolt_rules::BoltRules>,
+    short: bool,
 ) -> PlateDetail {
     let gathered = bolted_onto(arrivals, &p.id);
     let onto: Vec<&Arrival> = gathered.iter().map(|a| a.as_ref()).collect();
@@ -2924,9 +2941,39 @@ fn plate(
     // distance to its last plus it), and the joint's leg — the corner —
     // over its own width as far along it as those reach; the plate the
     // hull of them, in the face of the bolts (the exports lay it there too).
-    let mut pts = vec![joint];
+    let leg = seat
+        .and_then(|s| s.leg.as_ref())
+        .and_then(|l| arrivals.iter().find(|a| &a.member == l));
+    // The corner's flange under the plate (its normal along the bolts'):
+    // its heel, across it and its width.
+    let flange = leg.and_then(|l| {
+        let p = l.profile.as_ref()?;
+        let g = p.angle?;
+        let n = onto.first().map_or([0.0, 0.0, 1.0], |a| a.bolt_axis);
+        let across = if dot(p.axes[2], n).abs() >= dot(p.axes[1], n).abs() {
+            (p.axes[1], g.b)
+        } else {
+            (p.axes[2], g.h)
+        };
+        let heel = add(
+            add(joint, l.offset),
+            add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
+        );
+        Some((l, heel, across))
+    });
+    // (L2's follow-up) Stopping short of the work point: each leg from
+    // where it crosses the flange's toe — the plate spans the free part
+    // between the flange and the bolts.
+    let toe = flange
+        .filter(|_| short)
+        .map(|(_, heel, across)| (heel, across.0, across.1));
+    let mut pts = if toe.is_some() {
+        Vec::new()
+    } else {
+        vec![joint]
+    };
     for a in &onto {
-        pts.extend(leg_strip(a, joint));
+        pts.extend(leg_strip(a, joint, toe));
         if a.bolt_points.is_empty() {
             pts.push(add(joint, scale(a.direction, 0.15)));
         }
@@ -2938,31 +2985,21 @@ fn plate(
             pts.extend(keep_ring(*q, axes, *k));
         }
     }
-    let leg = seat
-        .and_then(|s| s.leg.as_ref())
-        .and_then(|l| arrivals.iter().find(|a| &a.member == l));
-    if let Some(l) = leg
-        && let Some(g) = l.profile.as_ref().and_then(|p| p.angle)
-    {
-        // The corner's flange lying under the plate (its normal along the
-        // bolts'), from its heel across its width, over the stretch along
-        // the leg the members' strips reach (both ways from the joint).
-        let n = onto.first().map_or([0.0, 0.0, 1.0], |a| a.bolt_axis);
-        let p = l.profile.as_ref().expect("an angle");
-        let across = if dot(p.axes[2], n).abs() >= dot(p.axes[1], n).abs() {
-            (p.axes[1], g.b)
+    if let Some((l, heel, across)) = flange {
+        // The corner's flange lying under the plate, from its heel across
+        // its width, over the stretch along the leg the members' strips
+        // reach (both ways from the joint; stopping short: only as far as
+        // they reach).
+        let from = if toe.is_some() {
+            (f64::INFINITY, f64::NEG_INFINITY)
         } else {
-            (p.axes[2], g.h)
+            (0.0f64, 0.0f64)
         };
-        let heel = add(
-            add(joint, l.offset),
-            add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
-        );
         let reach = pts
             .iter()
             .map(|q| dot(sub(*q, joint), l.direction))
-            .fold((0.0f64, 0.0f64), |(lo, hi), s| (lo.min(s), hi.max(s)));
-        for s in [reach.0, reach.1] {
+            .fold(from, |(lo, hi), s| (lo.min(s), hi.max(s)));
+        for s in [reach.0, reach.1].into_iter().filter(|s| s.is_finite()) {
             let base = add(heel, scale(l.direction, s));
             pts.push(base);
             pts.push(add(base, scale(across.0, across.1)));
@@ -3500,7 +3537,16 @@ fn through_of(outline: &[[f64; 3]], onto: &[&Arrival]) -> Option<[f64; 3]> {
 /// The corners of `a`'s leg bolted over its bolts: from its first bolt
 /// less its end distance to its last plus it (1.5 bolt diameters when not
 /// given, for the drawing), across the leg's width (structure's axes).
-fn leg_strip(a: &Arrival, joint: [f64; 3]) -> Vec<[f64; 3]> {
+/// `toe` (a plate stopping short of the work point, L2's follow-up): the
+/// flange under the plate (its heel, across it, its width) — the strip then
+/// starts where the leg's nearer edge crosses that flange's toe where that
+/// is nearer the joint (the plate spans the free part between the flange
+/// and the bolts), not before the work point.
+fn leg_strip(
+    a: &Arrival,
+    joint: [f64; 3],
+    toe: Option<([f64; 3], [f64; 3], f64)>,
+) -> Vec<[f64; 3]> {
     let (Some(p), Some(b)) = (a.profile.as_ref(), a.bolts.value.as_ref()) else {
         return a.bolt_points.clone();
     };
@@ -3532,6 +3578,15 @@ fn leg_strip(a: &Arrival, joint: [f64; 3]) -> Vec<[f64; 3]> {
         add(joint, a.offset),
         add(scale(p.axes[1], g.heel[0]), scale(p.axes[2], g.heel[1])),
     );
+    let mut lo = lo;
+    if let Some((fh, fa, fw)) = toe {
+        let rate = dot(a.direction, fa);
+        if rate > 1e-6 {
+            for e in [heel, add(heel, scale(across, w))] {
+                lo = lo.min((fw - dot(sub(e, fh), fa)) / rate);
+            }
+        }
+    }
     let mut out = Vec::new();
     for s in [lo.max(0.0), hi] {
         let base = add(heel, scale(a.direction, s));

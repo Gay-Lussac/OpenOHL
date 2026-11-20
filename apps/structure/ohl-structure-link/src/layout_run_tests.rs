@@ -174,6 +174,41 @@ fn plates_are_made_bolted_or_welded_and_follow_a_thickness_given_by_hand() {
 }
 
 #[test]
+fn an_onto_given_by_hand_is_kept_when_the_end_goes_onto_a_plate_on_that_member() {
+    // (O44 L2's follow-up, 2026-11-20.) Where the layout puts D1 onto a
+    // plate: the member that plate lies on.
+    let text = on_a_plate();
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let t = parse(&r.text);
+    assert_eq!(t.plates.len(), 1, "{}", r.text);
+    let host = t.plates[0].on.clone().expect("the plate names its member");
+    // The same, given by hand: written onto the plate, the record keeps the
+    // hand value (not the layout's), and a run again keeps it.
+    let given =
+        format!("{text}\n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"{host}\"\n");
+    let r = run(&given, &settings(), Some(&["N2"]), false);
+    let t = parse(&r.text);
+    let plate = t.plates.first().expect("a plate").id.clone();
+    assert_eq!(
+        t.connection("D1", "N2").and_then(|c| c.onto.clone()),
+        Some(plate)
+    );
+    let key = ("D1".to_owned(), "N2".to_owned());
+    let mark = format!("{}{host}", crate::layout_run::ONTO_HAND);
+    let rec = LayoutRecord::of(&t);
+    assert!(rec.ends[&key].contains(&mark), "{:?}", rec.ends[&key]);
+    assert!(!rec.ends[&key].contains("onto"));
+    let again = run(&r.text, &settings(), Some(&["N2"]), false);
+    assert_eq!(again.text, r.text);
+    assert!(LayoutRecord::of(&parse(&again.text)).ends[&key].contains(&mark));
+    // Values given by hand replaced: the layout's own.
+    let replaced = run(&given, &settings(), Some(&["N2"]), true);
+    let rec = LayoutRecord::of(&parse(&replaced.text));
+    assert!(rec.ends[&key].contains("onto"), "{:?}", rec.ends[&key]);
+    assert!(!rec.ends[&key].contains(&mark));
+}
+
+#[test]
 fn two_faces_at_a_corner_get_a_plate_each_welded_when_asked() {
     let text = crate::joint_layout_tests::corner_text().replace(
         "design = { class = \"bracing\" }",
@@ -816,6 +851,222 @@ fn members_in_line_are_joined_first_one_part_or_nested() {
 /// The K-brace with its legs turned `deg` by hand: D1 lies off the leg's
 /// flange at N2 and flat on the bottom chord H0–H1 running through N4 —
 /// no roll lays it flat at both its ends.
+/// The value `field` of the layout's plate `id` the user's (as an edit's
+/// follow marks it).
+fn yours(doc: &mut toml_edit::DocumentMut, id: &str, field: &str) {
+    let t = parse(&doc.to_string());
+    let mut rec = LayoutRecord::of(&t);
+    if let Some(m) = rec.made.get_mut(id) {
+        m.1.remove(field);
+    }
+    rec.write(doc);
+}
+
+/// L3 (2026-11-20): an end whose leg lies a few degrees off its flange, no
+/// roll laying both its ends flat, goes onto a plate bent by as much from
+/// the flat plate on the flange (`[plate.bend]`, no weld); its member lies
+/// flat on it, nothing clashes, its bend is a row of the joint checks, its
+/// weight is the developed plate's, a run again is the same and the follow
+/// of an edit is as the whole file's (a flat plate's thickness given by
+/// hand kept).
+#[test]
+fn an_end_a_few_degrees_off_goes_onto_a_plate_bent_by_as_much() {
+    let text = d1_spoiled(10.0);
+    let r = run(&text, &settings(), Some(&["N2"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o.written, "{:?} {:?}", o.hand, r.notes);
+    let e = o
+        .plan
+        .ends
+        .iter()
+        .find(|e| e.member == "D1")
+        .unwrap_or_else(|| panic!("D1 not laid out: {:?} {:?}", o.plan, r.notes));
+    let crate::Onto::Plate(k) = e.onto else {
+        panic!("{e:?}")
+    };
+    let own = o.plan.plates[k].own.as_ref().expect("in its own plane");
+    let bend = own.bend.as_ref().expect("bent");
+    assert!(
+        bend.angle > crate::FLAT_OFF && bend.angle <= crate::joint_layout::BEND_SMALL_MAX,
+        "{bend:?}"
+    );
+    assert_eq!((own.weld_size, own.weld_length), (0.0, 0.0));
+    assert!(own.out_more.abs() <= 0.007 + 1e-9, "{own:?}");
+    // Written: bent from the flat plate, no weld, the record's marks.
+    let t = parse(&r.text);
+    let id = &o.plates[k];
+    let p = t.plates.iter().find(|p| &p.id == id).unwrap();
+    assert!(p.welds.is_empty(), "{p:?}");
+    let b = p.bend.as_ref().expect("[plate.bend]");
+    assert_eq!(b.to, o.plates[own.welded_to]);
+    assert!((b.angle.si().to_degrees() - bend.angle).abs() < 0.01);
+    let rec = LayoutRecord::of(&t);
+    assert!(rec.made[id].1.contains(crate::layout_run::OWN_PLANE));
+    assert!(rec.made[id].1.contains(crate::layout_run::BENT));
+    // D1 lies flat on it, no clash.
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let d1 = j.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    assert!(d1.flat.is_some_and(|f| f.off < 1.0), "{:?}", d1.flat);
+    assert!(!d1.misfit, "{:?}", d1.notes);
+    assert!(j.clashes.is_empty(), "{:?}", j.clashes);
+    // Its bend a row of the joint checks (no code plugin here: not
+    // checked, said NOT ON THE SAFE SIDE); no weld row.
+    let plans = crate::plate_plans(&r.text, &library(), &Default::default()).unwrap();
+    let forces: BTreeMap<String, f64> = [("D1".to_owned(), 30e3), ("D2".to_owned(), -20e3)].into();
+    let u = crate::plate_checks::plate_usage(&plans, &forces, 1.0);
+    assert!(
+        u.iter().any(|x| matches!(&x.part, crate::PlatePart::Bend)),
+        "{u:?}"
+    );
+    assert!(
+        !u.iter()
+            .any(|x| matches!(&x.part, crate::PlatePart::Weld(_)))
+    );
+    // A run again: the same; the whole tower twice: the same.
+    assert_eq!(run(&r.text, &settings(), Some(&["N2"]), false).text, r.text);
+    let all = run(&text, &settings(), None, false);
+    assert_eq!(run(&all.text, &settings(), None, false).text, all.text);
+    // An edit (the flat plate 2 mm thicker): followed as the whole file's,
+    // the thickness given so the user's, kept.
+    let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
+    let fp = &o.plates[own.welded_to];
+    let th = t
+        .plates
+        .iter()
+        .find(|p| &p.id == fp)
+        .unwrap()
+        .thickness
+        .si();
+    ohl_structure_edit::connection_edits::set_plate(&mut doc, fp, Some(th + 0.002), None).unwrap();
+    let edited = doc.to_string();
+    let a = follow(&r.text, &edited, &library(), &Default::default(), &[]).expect("followed");
+    let b = crate::layout_run::follow_whole(&r.text, &edited, &library(), &Default::default(), &[])
+        .expect("followed");
+    assert_eq!(a.text, b.text);
+    let ta = parse(&a.text);
+    let to = ta
+        .plates
+        .iter()
+        .find_map(|p| p.bend.as_ref().map(|b| b.to.clone()))
+        .expect("bent");
+    let kept = ta.plates.iter().find(|p| p.id == to).unwrap();
+    assert!(
+        (kept.thickness.si() - (th + 0.002)).abs() < 1e-9,
+        "{kept:?}"
+    );
+    // Off: the welded plate, as before L3.
+    let s = LayoutSettings {
+        small_bends: false,
+        ..settings()
+    };
+    let w = run(&text, &s, Some(&["N2"]), false);
+    let tw = parse(&w.text);
+    assert!(tw.plates.iter().all(|p| p.bend.is_none()), "{}", w.text);
+    assert!(tw.plates.iter().any(|p| !p.welds.is_empty()), "{}", w.text);
+}
+
+/// L2's follow-up (a), 2026-11-20: a plate with the layout's `short` mark
+/// is drawn stopping short of the work point — round its members' legs from
+/// the flange's toe over their bolts and the flange under them — convex,
+/// every bolt keeping its end and edge distances.
+#[test]
+fn a_plate_marked_short_is_drawn_short_of_the_work_point() {
+    // (D1 alone on its plate: D2 taken out.)
+    let one = on_a_plate().replace(
+        "[[member]]\nid = \"D2\"\nnodes = [\"N5\", \"N2\"]\nsection = \"EA-61x7\"\n\
+         orientation = \"z-y-\"\ndesign = { class = \"bracing\" }\n",
+        "",
+    );
+    assert!(!one.contains("\"D2\""));
+    let r = run(&one, &settings(), Some(&["N2"]), false);
+    let t = parse(&r.text);
+    let id = t.plates[0].id.clone();
+    let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
+    // Its written outline out (drawn again), the mark on.
+    for p in doc["plate"].as_array_of_tables_mut().unwrap().iter_mut() {
+        if p.get("id").and_then(toml_edit::Item::as_str) == Some(id.as_str()) {
+            p.remove("outline");
+        }
+    }
+    let mut rec = LayoutRecord::of(&t);
+    rec.made
+        .get_mut(&id)
+        .unwrap()
+        .1
+        .insert(crate::layout_run::SHORT.into());
+    rec.write(&mut doc);
+    let full = {
+        let mut d = doc.clone();
+        let mut rec = LayoutRecord::of(&parse(&d.to_string()));
+        rec.made
+            .get_mut(&id)
+            .unwrap()
+            .1
+            .remove(crate::layout_run::SHORT);
+        rec.write(&mut d);
+        d.to_string()
+    };
+    let lib = library();
+    let outline = |text: &str| {
+        let d = joint_details(text, &lib, &Default::default()).unwrap();
+        let j = d.joint("N2").unwrap().clone();
+        let p = j.plates.iter().find(|p| p.id == id).unwrap().clone();
+        (j, p)
+    };
+    let (j, short) = outline(&doc.to_string());
+    let (_, round) = outline(&full);
+    assert!(short.notes.is_empty(), "{:?}", short.notes);
+    // The work point (on the plate's plane) outside the short outline,
+    // inside the one round it; the short one smaller.
+    let n = crate::welds::polygon_normal(&short.outline).unwrap();
+    let inside = |poly: &[[f64; 3]], q: [f64; 3]| {
+        (0..poly.len()).all(|i| {
+            let a = poly[i];
+            let b = poly[(i + 1) % poly.len()];
+            let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let w = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
+            let c = [
+                e[1] * w[2] - e[2] * w[1],
+                e[2] * w[0] - e[0] * w[2],
+                e[0] * w[1] - e[1] * w[0],
+            ];
+            c[0] * n[0] + c[1] * n[1] + c[2] * n[2] >= -1e-9
+        })
+    };
+    let on_plane = |poly: &[[f64; 3]]| {
+        let a = poly[0];
+        let w = [
+            j.position[0] - a[0],
+            j.position[1] - a[1],
+            j.position[2] - a[2],
+        ];
+        let h = w[0] * n[0] + w[1] * n[1] + w[2] * n[2];
+        [
+            j.position[0] - h * n[0],
+            j.position[1] - h * n[1],
+            j.position[2] - h * n[2],
+        ]
+    };
+    // (Convex: every corner on the inner side of every edge.)
+    for q in &short.outline {
+        assert!(inside(&short.outline, *q), "{:?}", short.outline);
+    }
+    assert!(!inside(&short.outline, on_plane(&short.outline)));
+    assert!(inside(&round.outline, on_plane(&round.outline)));
+    let area = |poly: &[[f64; 3]]| {
+        let mut s = [0.0; 3];
+        for i in 0..poly.len() {
+            let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+            s[0] += a[1] * b[2] - a[2] * b[1];
+            s[1] += a[2] * b[0] - a[0] * b[2];
+            s[2] += a[0] * b[1] - a[1] * b[0];
+        }
+        (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt() / 2.0
+    };
+    assert!(area(&short.outline) < area(&round.outline));
+}
+
 fn d1_spoiled(deg: f64) -> String {
     format!(
         "{}\n[[node]]\nid = \"N6\"\npoint = [\"5 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
@@ -856,6 +1107,13 @@ fn a_welded_plate_that_would_move_the_member_far_out_is_a_hand_detail() {
 #[test]
 fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
     let text = d1_spoiled(10.0);
+    // (L3, 2026-11-20: a plate bent by its few degrees first; here the
+    // welded one alone. An edit's follow lays out with the default switches:
+    // the follow is tested with the bent plate, below.)
+    let settings = || LayoutSettings {
+        small_bends: false,
+        ..settings()
+    };
     let r = run(&text, &settings(), Some(&["N2"]), false);
     let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
     assert!(o.written, "{:?} {:?}", o.hand, r.notes);
@@ -913,7 +1171,7 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
     assert_eq!(run(&r.text, &settings(), Some(&["N2"]), false).text, r.text);
     let all = run(&text, &settings(), None, false);
     assert_eq!(run(&all.text, &settings(), None, false).text, all.text);
-    // An edit (the flat plate 2 mm thicker): followed as the whole file's.
+    // An edit (the flat plate 2 mm thicker), laid out again.
     let mut doc: toml_edit::DocumentMut = r.text.parse().unwrap();
     let fp = &o.plates[own.welded_to];
     let th = t
@@ -924,11 +1182,9 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
         .thickness
         .si();
     ohl_structure_edit::connection_edits::set_plate(&mut doc, fp, Some(th + 0.002), None).unwrap();
+    yours(&mut doc, fp, "thickness");
     let edited = doc.to_string();
-    let a = follow(&r.text, &edited, &library(), &Default::default(), &[]).expect("followed");
-    let b = crate::layout_run::follow_whole(&r.text, &edited, &library(), &Default::default(), &[])
-        .expect("followed");
-    assert_eq!(a.text, b.text);
+    let a = run(&edited, &settings(), Some(&["N2"]), false);
     // The flat plate's thickness given so: the user's, kept (the plate has
     // nothing bolted onto it: known by its welded plate's member).
     let ta = parse(&a.text);
@@ -949,16 +1205,9 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
         ..Default::default()
     };
     ohl_structure_edit::connection_edits::set_weld(&mut doc, &t, id, fp, edit).unwrap();
+    yours(&mut doc, id, "weld");
     let edited = doc.to_string();
-    let f = follow(&r.text, &edited, &library(), &Default::default(), &[]).unwrap_or(
-        crate::layout_run::Followed {
-            text: edited.clone(),
-            message: String::new(),
-            again: Vec::new(),
-            misfits: Vec::new(),
-        },
-    );
-    let again = run(&f.text, &settings(), Some(&["N2"]), false);
+    let again = run(&edited, &settings(), Some(&["N2"]), false);
     let t2 = parse(&again.text);
     let w2 = t2
         .plates

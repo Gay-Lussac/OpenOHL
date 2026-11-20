@@ -632,6 +632,56 @@ owner's "rights and roles applied to almost every element and library",
 > within what both may see? → yes (the OHL-Server plan's question 3
 > answered the same way).
 
+## 2026-11-20 (joint layout: L2's follow-ups, a plate bent by a few degrees L3)
+
+**O44, L2's follow-ups and L3** (built 2026-11-20, in active development,
+not approved yet; [theory](../theory/joint-layout.md#l2s-follow-ups-2026-11-20),
+[plates](../theory/joint-plates.md#a-plates-outline-as-cut),
+[user guide](../user-guide/joint-layout.md), [joint details](joint-details.md),
+[data model](data-model.md)):
+
+- **(a) A plate stopping short of what it would run into — kept, a
+  switch** (`short_plates`, on): where its outline round the work point
+  would run into steel already there, round its members' legs from the
+  flange's toe over their bolts (each bolt's end and edge distances) and the
+  flange under them, cut straight short of what it still runs into (at most
+  four cuts), kept where it then runs into nothing and lies on the flange
+  over half a square of its width (the program's value). Convex, every bolt
+  inside with its distances; checked after writing as the joint checks do.
+  The plate checks take the outline as cut (unchanged rules); the strut's
+  free length still reaches the flange's toe (less conservative than the
+  plate round the work point, *said*). No format change (the record's
+  `short` mark; the outline written).
+- **(b) The bent plate's own bolts slid clear of the holes there — kept, a
+  switch** (`slide_holds`, on): the default minimum spacing from each hole
+  through that leg (*on the safe side*: the joint checks ask only that
+  holes do not overlap).
+- **(c) An `onto` given by hand kept in the record — for every run**: the
+  record's `onto=<member>` mark; a run again keeps it.
+- **L3, a plate bent by a few degrees — kept, a switch** (`small_bends`,
+  on): an end at most 20° off its flange (the program's bound, the owner's
+  range) goes first onto a plate bent by as much from step 4's flat plate
+  — away from the flange, or towards it past the flange's toe, whichever
+  moves the member's axis least —, then welded as before. `[plate.bend]`
+  as J2b's: **no new format field**. The bend's curved part
+  (r + t) tan(θ/2) from the bend line, the member's steel half the gap
+  beyond it, its bolts their edge distance beyond it (an assumption: as
+  from a free edge). The member's axis within one plate thickness of where
+  a flat plate puts it, either way (step 4's limit; not in the analysis,
+  NOT ON THE SAFE SIDE by that offset as for every gusset). **Which end
+  takes the bend**: unchanged rules (J3, L1 a) — an end flat now stays
+  flat, else the end first bottom up, then out lies flat, so the arms' and
+  the top's end (or the higher one) takes the bend; preferring the end
+  with fewer members is not built (a question to the owner). The bend
+  check C12 applies unchanged (no contact relief; plugins unchanged).
+
+Measured on the 78 private real towers (the theory page): joints laid out
+whole 48.6 % → 49.7 %, ends 61.8 % → 64.7 % (the short plates most of
+Part 1's share), joints not fitting as given 42 → 28, the welded plates
+2 758 → 11 (4 085 bent ones written), a run again identical 78 of 78; the
+L3 bends under the strict check and one vertical case: 83 % pass (median
+usage 0.20). The owner's questions are in the roadmap (O44 L3).
+
 ## 2026-11-20 (joint layout: the bent plate's own bolts, clash-aware planning L2)
 
 **O44, the J2b follow-up of L1 and L2 with the owner's ideas of
