@@ -21,7 +21,7 @@
 //! tiles of the grid at the package level, each with its objects and its
 //! revision (the position of the last change touching it); per client its
 //! interest; bounded caches (settings): tile packages per (tile,
-//! revision, rights class — 0 until phase 7), solved section shapes and
+//! revision, rights class — phase 7), solved section shapes and
 //! resolved structures (the packagers). **Not in memory**: the log,
 //! revisions and blobs (read from the database when asked), and what
 //! PostgreSQL does not hold yet — point clouds, backgrounds and tiled
@@ -37,11 +37,21 @@
 //! then its changes, which it replays: [`crate::client::replay_change`]);
 //! a viewer follows tiles (the web client: their packages, read again when
 //! a change touched them); every client of a network gets heartbeats and
-//! may catch up from its position (`stream`) after a disconnect. Rights are
-//! not evaluated before phase 7: every user who may join sees everything,
-//! and edits by the model's roles (as a project file's).
+//! may catch up from its position (`stream`) after a disconnect.
+//!
+//! **Rights** (phase 7, [`crate::network_rights`]): only the network's
+//! users join, each with their personal invitation; every command is
+//! decided by the rights' one function before it runs (its rule) and on
+//! every object it changed (in the same unit of work, put back when
+//! refused); everything sent is filtered by the same function — the
+//! network's lines and routes, tile packages (kept per rights class),
+//! changes (a client that may not see all of one reads its tiles again),
+//! catch-ups, working sets and their rows, the users' presence and locks,
+//! error messages. The rights are read again whenever an admin changed
+//! them (their revision is looked at before each job and with each
+//! heartbeat); a client whose rights changed is let go and joins again.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc as std_mpsc;
@@ -49,6 +59,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use ohl_core::grid::{Bounds, Grid};
+use ohl_session::rights::{Permission, RightsData, Target, UserRights};
 use ohl_session::shared::User;
 use ohl_session::working_set::{Extent, WORKING_SET_KEY, WorkingSetSpec};
 use ohl_session::{Kind, Role, Session};
@@ -57,15 +68,16 @@ use ohl_store_pg::stream::{StreamRow, interest_of, interest_of_line, tile_key, t
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
+use crate::network_rights::{self as nr, Compiled, ModelRoles, Places};
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
-    Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, MAX_NEWCOMERS,
-    NetAsk, Options, Server, Snapshot, log, run,
+    Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
+    Options, Server, Snapshot, log, run,
 };
 use crate::stream::{OWN_QUEUE, Own, To, Touch, Update, View};
 use crate::{
     Change, HeldTile, ModelInfo, NetworkInfo, Op, Position, RouteInfo, RowsMsg, SavedSet,
-    ServerMsg, TileKey, execute, random_code,
+    ServerMsg, TileKey, random_code,
 };
 
 /// Broadcasts kept for slow readers (a client further behind is dropped
@@ -144,6 +156,13 @@ impl Server {
     /// writer (refused while another holds the writer's lock). Returns once
     /// it listens: every model read, the tile index made.
     pub fn start_network(options: Options, net: NetOptions) -> Result<Server, String> {
+        if options.newcomers.is_some() {
+            return Err(
+                "a network admits only its users, each with their personal invitation (no \
+                 newcomers): add users with ohl network rights add-user"
+                    .into(),
+            );
+        }
         let crate::server::Identity {
             config,
             acceptor,
@@ -227,6 +246,9 @@ struct Model {
     /// Changes of its library files in this run.
     libs_rev: u64,
     libs: Option<(u64, Arc<LibFiles>)>,
+    /// Phase 7: where each object is as of the last command (the state
+    /// before the next).
+    places: Places,
 }
 
 impl Model {
@@ -271,6 +293,8 @@ struct NetClient {
     waiting: BTreeSet<TileKey>,
     /// Phase 6: the working set it holds as a partial replica.
     ws: Option<Ws>,
+    /// Phase 7: an admin seeing as this user.
+    see_as: Option<String>,
 }
 
 /// A client's working set as its replica holds it (phase 6): the extent
@@ -368,6 +392,16 @@ struct Stats {
     solved: usize,
     shapes_cached: usize,
     start_s: f64,
+    /// Phase 7: a command's rights decided (its rule and its objects), µs.
+    rights_check_us: Vec<f64>,
+    /// Phase 7: a tile's rights class worked out for a client, µs.
+    rights_class_us: Vec<f64>,
+    /// Phase 7: a package filtered for a rights class, µs.
+    rights_filter_us: Vec<f64>,
+    /// Phase 7: the clients that may not see a change worked out, µs.
+    rights_change_us: Vec<f64>,
+    /// Phase 7: the rights compiled for a user, µs.
+    rights_compile_us: Vec<f64>,
 }
 
 fn keep(v: &mut Vec<f64>, x: f64) {
@@ -402,7 +436,7 @@ pub(crate) struct NetHost {
     placed: HashMap<Placed, Vec<TileKey>>,
     clients: HashMap<u64, NetClient>,
     /// Packages by (tile, revision, rights class).
-    packages: Lru<(TileKey, Position, u32), Arc<Utf8Bytes>>,
+    packages: Lru<(TileKey, Position, Class), Arc<Utf8Bytes>>,
     building: HashMap<TileKey, Building>,
     packager: Packager,
     copies: PathBuf,
@@ -416,6 +450,22 @@ pub(crate) struct NetHost {
     born: Instant,
     idle_todo: std::collections::VecDeque<TileKey>,
     idle_inflight: Option<TileKey>,
+    /// Phase 7: the rights as read (at their revision), the users' rights
+    /// compiled (shared with the models' sessions for their roles), the
+    /// route parts resolved (per model revision), the lines of regions.
+    rights: RightsData,
+    compiled: Compiled,
+    parts: HashMap<nr::PartKey, (u64, nr::Members)>,
+    regions: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// A tile package's rights class: the objects of the tile its client may
+/// not see, exactly (none: the whole package, shared by most).
+type Class = Arc<[Placed]>;
+
+/// The class of those who see everything of a tile.
+fn whole() -> Class {
+    Arc::from(Vec::new())
 }
 
 impl NetHost {
@@ -442,6 +492,7 @@ impl NetHost {
             &format!("{celsius} °C, no wind"),
             ohl_core::units::Temperature::from_celsius(celsius),
         ));
+        let rights = net.rights().map_err(|e| e.to_string())?;
         let copies = crate::private_temp_dir("ohl-network")?;
         let caches = Arc::new(Caches::new(o.shapes_mb, o.resolved_models));
         let packager = Packager::start(o.packagers, caches, jobs, copies.join("work"))?;
@@ -482,6 +533,10 @@ impl NetHost {
             born: started,
             idle_todo: std::collections::VecDeque::new(),
             idle_inflight: None,
+            rights,
+            compiled: Compiled::default(),
+            parts: HashMap::new(),
+            regions: BTreeMap::new(),
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -496,12 +551,16 @@ impl NetHost {
             host.idle_todo = all.into();
         }
         log(&format!(
-            "network \"{}\": {} lines, {} tiles of level {} read in {:.1} s",
+            "network \"{}\": {} lines, {} tiles of level {} read in {:.1} s; {} users, {} \
+             assignments (rights revision {})",
             host.name,
             host.models.len(),
             host.tiles.len(),
             host.level,
-            host.stats.start_s
+            host.stats.start_s,
+            host.rights.users.len(),
+            host.rights.assignments.len(),
+            host.rights.rev
         ));
         Ok(host)
     }
@@ -540,6 +599,12 @@ impl NetHost {
                 row.id.clone(),
                 session.last_seq().map_err(|x| x.to_string())?,
             );
+            // Phase 7: its users' roles from the network's rights.
+            session.set_role_source(Some(Arc::new(ModelRoles {
+                line: row.id.clone(),
+                rights: self.compiled.clone(),
+            })));
+            let places = Places::of_session(&mut session);
             self.models.insert(
                 row.id.clone(),
                 Model {
@@ -549,6 +614,7 @@ impl NetHost {
                     rev: 0,
                     libs_rev: 0,
                     libs: None,
+                    places,
                 },
             );
         }
@@ -731,35 +797,80 @@ impl NetHost {
         self.tiles.get(t).map(|s| s.rev).unwrap_or_default()
     }
 
-    /// What the network holds, for a client.
-    fn info(&self) -> NetworkInfo {
-        let mut all: Option<Bounds> = None;
+    /// What the network holds, for a client with `rights`: the lines it
+    /// may see something of, the routes it may see, their bounds.
+    fn info(&mut self, rights: &UserRights) -> NetworkInfo {
+        let all = rights.sees_everything();
+        let mut bounds: Option<Bounds> = None;
         let mut routes = Vec::new();
-        for (code, m) in &self.models {
-            let line = m.session.line();
-            let mut of_route: BTreeMap<&str, Bounds> = BTreeMap::new();
-            for a in &line.alignments {
-                if let Some(e) = m.session.spatial_entry(Kind::Alignment, &a.id) {
-                    let b = of_route.entry(a.route.as_str()).or_insert(e.bounds);
+        let mut models = Vec::new();
+        for (code, m) in self.models.iter_mut() {
+            if !all && !rights.sees_some_of_line(code) {
+                continue;
+            }
+            let Model {
+                session,
+                places,
+                name,
+                ..
+            } = m;
+            // What it may see, as drawn (an alignment with its points and
+            // the structures they are tied to: its bounds show them).
+            let alignments: Vec<(String, String)> = session
+                .line()
+                .alignments
+                .iter()
+                .map(|a| (a.id.clone(), a.route.clone()))
+                .collect();
+            let mut of_route: BTreeMap<String, Bounds> = BTreeMap::new();
+            for (id, route) in alignments {
+                if !all && !nr::visible(rights, code, session, places, Kind::Alignment, &id) {
+                    continue;
+                }
+                if let Some(e) = session.spatial_entry(Kind::Alignment, &id) {
+                    let b = of_route.entry(route).or_insert(e.bounds);
                     *b = b.union(&e.bounds);
-                    all = Some(all.map_or(e.bounds, |x| x.union(&e.bounds)));
                 }
             }
-            for r in &line.routes {
+            for r in &session.line().routes {
+                if !all
+                    && !nr::sees(
+                        rights,
+                        code,
+                        Kind::Route,
+                        &r.id,
+                        places.get(Kind::Route, &r.id),
+                    )
+                {
+                    continue;
+                }
+                let b = of_route.get(r.id.as_str()).copied();
+                if let Some(b) = b {
+                    bounds = Some(bounds.map_or(b, |x| x.union(&b)));
+                }
                 routes.push(RouteInfo {
                     id: r.id.clone(),
                     model: code.clone(),
                     name: r.name.clone(),
-                    bounds: of_route
-                        .get(r.id.as_str())
-                        .map(|b| [b.min[0], b.min[1], b.max[0], b.max[1]]),
+                    bounds: b.map(|b| [b.min[0], b.min[1], b.max[0], b.max[1]]),
                 });
             }
-            for s in &line.structures {
-                if let Some(e) = m.session.spatial_entry(Kind::Structure, &s.id) {
-                    all = Some(all.map_or(e.bounds, |x| x.union(&e.bounds)));
+            let mut structures = 0;
+            for s in &session.line().structures {
+                let place = places.get(Kind::Structure, &s.id);
+                if !all && !nr::sees(rights, code, Kind::Structure, &s.id, place) {
+                    continue;
+                }
+                structures += 1;
+                if let Some(e) = session.spatial_entry(Kind::Structure, &s.id) {
+                    bounds = Some(bounds.map_or(e.bounds, |x| x.union(&e.bounds)));
                 }
             }
+            models.push(ModelInfo {
+                code: code.clone(),
+                name: name.clone(),
+                structures,
+            });
         }
         NetworkInfo {
             name: self.name.clone(),
@@ -769,18 +880,386 @@ impl NetHost {
             context_case: self.case.name.clone(),
             at: self.position,
             heartbeat_ms: self.options.heartbeat.as_millis() as u64,
-            bounds: all.map(|b| [b.min[0], b.min[1], b.max[0], b.max[1]]),
-            models: self
-                .models
-                .iter()
-                .map(|(code, m)| ModelInfo {
-                    code: code.clone(),
-                    name: m.name.clone(),
-                    structures: m.session.line().structures.len(),
-                })
-                .collect(),
+            bounds: bounds.map(|b| [b.min[0], b.min[1], b.max[0], b.max[1]]),
+            models,
             routes,
         }
+    }
+
+    /// The rights moved on (an admin changed them; looked at before each
+    /// job and with each heartbeat): read again, every user's compiled
+    /// again when needed; a client whose rights changed is let go (it
+    /// holds what it may no longer see, or follows what it may now).
+    fn refresh_rights(&mut self) {
+        let rev = match self.net.rights_rev() {
+            Ok(r) => r,
+            Err(e) => {
+                log(&format!("the rights' revision: {e}"));
+                return;
+            }
+        };
+        if rev == self.rights.rev {
+            return;
+        }
+        let data = match self.net.rights() {
+            Ok(d) => d,
+            Err(e) => {
+                log(&format!("reading the rights again: {e}"));
+                return;
+            }
+        };
+        let old: HashMap<String, Arc<UserRights>> = std::mem::take(&mut *self.compiled_mut());
+        self.rights = data;
+        self.regions.clear();
+        let clients: Vec<(u64, String, Option<String>)> = self
+            .clients
+            .iter()
+            .map(|(id, c)| (*id, c.user.clone(), c.see_as.clone()))
+            .collect();
+        let mut let_go = 0;
+        for (id, user, see_as) in clients {
+            let changed = [Some(user), see_as].into_iter().flatten().any(|u| {
+                let new = self.rights_of(&u);
+                old.get(&u).is_none_or(|o| !o.same_as(&new))
+            });
+            if changed {
+                self.let_go(id, "your rights on this network changed: join again");
+                let_go += 1;
+            }
+        }
+        log(&format!(
+            "rights read again (revision {rev}): {} users, {} assignments; {let_go} clients let go",
+            self.rights.users.len(),
+            self.rights.assignments.len()
+        ));
+    }
+
+    fn compiled_mut(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<String, Arc<UserRights>>> {
+        self.compiled
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The rights of `user`, compiled (cached until the rights change, or
+    /// a model their route parts are on changes).
+    fn rights_of(&mut self, user: &str) -> Arc<UserRights> {
+        if let Some(r) = self
+            .compiled
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(user)
+        {
+            return r.clone();
+        }
+        let started = Instant::now();
+        let resolved = self.resolve_for(user);
+        let r = Arc::new(self.rights.compile(user, &resolved));
+        self.compiled_mut().insert(user.to_owned(), r.clone());
+        keep(
+            &mut self.stats.rights_compile_us,
+            started.elapsed().as_secs_f64() * 1e6,
+        );
+        r
+    }
+
+    /// The rights client `client` acts and sees with: its user's, or, an
+    /// admin seeing as another, what both may.
+    fn client_rights(&mut self, client: u64) -> Option<Arc<UserRights>> {
+        let (user, see_as) = self
+            .clients
+            .get(&client)
+            .map(|c| (c.user.clone(), c.see_as.clone()))?;
+        let mine = self.rights_of(&user);
+        Some(match see_as {
+            Some(other) => {
+                let theirs = self.rights_of(&other);
+                Arc::new((*mine).clone().and((*theirs).clone()))
+            }
+            None => mine,
+        })
+    }
+
+    /// The route parts and regions of `user`'s assignments, resolved on
+    /// the models as they are.
+    fn resolve_for(&mut self, user: &str) -> nr::Resolved {
+        let mut out = nr::Resolved {
+            parts: BTreeMap::new(),
+            regions: BTreeMap::new(),
+        };
+        let scopes: Vec<ohl_session::rights::Scope> = self
+            .rights
+            .assignments_of(user)
+            .into_iter()
+            .map(|a| a.scope.clone())
+            .collect();
+        for sc in scopes {
+            if let (Some(l), Some(r), Some(f), Some(t)) =
+                (&sc.line, &sc.route, &sc.from_structure, &sc.to_structure)
+            {
+                let key = (l.clone(), r.clone(), f.clone(), t.clone());
+                let rev = self.models.get(l).map_or(0, |m| m.rev);
+                let members = match self.parts.get(&key) {
+                    Some((at, m)) if *at == rev => m.clone(),
+                    _ => {
+                        let m: Arc<HashSet<(Kind, String)>> = Arc::new(
+                            self.models
+                                .get_mut(l)
+                                .and_then(|m| {
+                                    m.session
+                                        .pick_extent(&[
+                                            ohl_session::working_set::Pick::Structures {
+                                                route: r.clone(),
+                                                from: f.clone(),
+                                                to: t.clone(),
+                                            },
+                                        ])
+                                        .ok()
+                                })
+                                .map(|e| e.wanted.into_iter().collect())
+                                .unwrap_or_default(),
+                        );
+                        self.parts.insert(key.clone(), (rev, m.clone()));
+                        m
+                    }
+                };
+                out.parts.insert(key, members);
+            }
+            if let (Some(region), None) = (&sc.region, &sc.line) {
+                let k = serde_json::to_string(region).unwrap_or_default();
+                if !self.regions.contains_key(&k) {
+                    let lines = self.region_lines(region);
+                    self.regions.insert(k.clone(), lines);
+                }
+                out.regions.insert(k.clone(), self.regions[&k].clone());
+            }
+        }
+        out
+    }
+
+    /// The models with an object whose place touches `region`.
+    fn region_lines(&self, region: &[[f64; 2]]) -> BTreeSet<String> {
+        let mut out = BTreeSet::new();
+        for (code, m) in &self.models {
+            if m.places.iter().any(|(_, p)| {
+                p.bounds
+                    .is_some_and(|b| ohl_session::rights::region_touches(region, &b))
+            }) {
+                out.insert(code.clone());
+            }
+        }
+        out
+    }
+
+    /// Lets client `client` go (it joins again): told why first.
+    fn let_go(&mut self, client: u64, why: &str) {
+        self.push(
+            client,
+            None,
+            None,
+            Some(ServerMsg::Notice { text: why.into() }),
+        );
+        if let Some(c) = self.clients.remove(&client) {
+            for t in c.waiting {
+                if let Some(b) = self.building.get_mut(&t) {
+                    b.waiting.remove(&client);
+                }
+            }
+        }
+    }
+
+    /// A refusal in the audit (with what was asked, in full: the audit is
+    /// the network admins').
+    fn audit_refused(&self, user: &str, what: &str, why: &str) {
+        if let Err(e) = self.net.audit(user, "refused", what, why) {
+            log(&format!("the audit: {e}"));
+        }
+    }
+
+    /// A message for `rights`: [`HIDDEN_REFUSAL`] when it names an object
+    /// the user may not see.
+    fn sanitise(&self, rights: &UserRights, text: &str) -> String {
+        nr::sanitise(
+            rights,
+            text,
+            self.models.iter().map(|(c, m)| (c.as_str(), &m.places)),
+        )
+    }
+
+    /// What of tile `t` `rights` may not see (its rights class).
+    fn class_of(&mut self, rights: &UserRights, t: TileKey) -> Class {
+        if rights.sees_everything() {
+            return whole();
+        }
+        let started = Instant::now();
+        let objects: Vec<Placed> = self
+            .tiles
+            .get(&t)
+            .map(|s| s.objects.iter().cloned().collect())
+            .unwrap_or_default();
+        let mut hidden = Vec::new();
+        for p in objects {
+            let Some(m) = self.models.get_mut(&*p.0) else {
+                continue;
+            };
+            let Model {
+                session, places, ..
+            } = m;
+            if !nr::visible(rights, &p.0, session, places, p.1, &p.2) {
+                hidden.push(p);
+            }
+        }
+        keep(
+            &mut self.stats.rights_class_us,
+            started.elapsed().as_secs_f64() * 1e6,
+        );
+        Arc::from(hidden)
+    }
+
+    /// Package `full` without what class `hidden` may not see.
+    fn filtered(&mut self, full: &Utf8Bytes, hidden: &[Placed]) -> Arc<Utf8Bytes> {
+        let started = Instant::now();
+        let gone: HashSet<(&str, Kind, &str)> = hidden
+            .iter()
+            .map(|(m, k, id)| (&**m, *k, id.as_str()))
+            .collect();
+        let text = match serde_json::from_str::<ServerMsg>(full.as_str()) {
+            Ok(ServerMsg::Tile(mut p)) => {
+                p.structures.retain(|x| {
+                    !gone.contains(&(x.model.as_str(), Kind::Structure, x.id.as_str()))
+                });
+                p.wires.retain(|x| {
+                    !gone.contains(&(x.model.as_str(), Kind::Section, x.section.as_str()))
+                });
+                p.routes.retain(|x| {
+                    !gone.contains(&(x.model.as_str(), Kind::Alignment, x.alignment.as_str()))
+                });
+                // Names of the routes still drawn only.
+                let mut names: HashSet<String> = HashSet::new();
+                for r in &p.routes {
+                    names.insert(r.route.clone());
+                    if let Some(route) = self
+                        .models
+                        .get(&r.model)
+                        .and_then(|m| m.session.line().routes.iter().find(|x| x.id == r.route))
+                    {
+                        names.insert(route.name.clone());
+                    }
+                }
+                p.labels.retain(|l| names.contains(&l.text));
+                let ids: HashSet<&str> = hidden.iter().map(|(_, _, id)| id.as_str()).collect();
+                p.notes
+                    .retain(|n| !ohl_session::rights::words(n).any(|w| ids.contains(w)));
+                serde_json::to_string(&ServerMsg::Tile(p)).unwrap_or_default()
+            }
+            // Unreadable (never: the server wrote it): a notice, nothing of
+            // the tile.
+            _ => serde_json::to_string(&ServerMsg::Notice {
+                text: "a tile could not be filtered: not sent".into(),
+            })
+            .unwrap_or_default(),
+        };
+        keep(
+            &mut self.stats.rights_filter_us,
+            started.elapsed().as_secs_f64() * 1e6,
+        );
+        Arc::new(Utf8Bytes::from(text))
+    }
+
+    /// The package of tile `t` at `rev` for class `class`, from what is
+    /// kept (made from the whole package when that is kept).
+    fn package_for(&mut self, t: TileKey, rev: Position, class: &Class) -> Option<Arc<Utf8Bytes>> {
+        if let Some(p) = self.packages.get(&(t, rev, class.clone())) {
+            return Some(p);
+        }
+        if class.is_empty() {
+            return None;
+        }
+        let full = self.packages.get(&(t, rev, whole()))?;
+        let text = self.filtered(&full, class);
+        let bytes = text.len();
+        self.packages
+            .put((t, rev, class.clone()), text.clone(), bytes);
+        Some(text)
+    }
+
+    /// Whether `rights` may see object `kind`/`id` of model `code` as it
+    /// is now (its place `place`, or the model's own).
+    fn visible(&mut self, rights: &UserRights, code: &str, kind: Kind, id: &str) -> bool {
+        match self.models.get_mut(code) {
+            Some(m) => {
+                let Model {
+                    session, places, ..
+                } = m;
+                nr::visible(rights, code, session, places, kind, id)
+            }
+            None => false,
+        }
+    }
+
+    /// The rows `rights` may hold of model `code` (a working set's): what
+    /// it may not see left out — puts, the working set, the users of its
+    /// structures; deletes only of what it was sent (`sent`).
+    fn filter_rows(
+        &mut self,
+        rights: &UserRights,
+        code: &str,
+        rows: &mut ohl_session::working_set::Rows,
+        sent: &BTreeMap<(Kind, String), u64>,
+    ) -> usize {
+        if rights.sees_everything() {
+            return 0;
+        }
+        let before = rows.puts.len();
+        let puts = std::mem::take(&mut rows.puts);
+        rows.puts = puts
+            .into_iter()
+            .filter(|p| self.visible(rights, code, p.kind, &p.id))
+            .collect();
+        let left_out = before - rows.puts.len();
+        rows.deletes.retain(|k| sent.contains_key(k));
+        if let Some(w) = rows.wanted.take() {
+            rows.wanted = Some(
+                w.into_iter()
+                    .filter(|(k, id)| self.visible(rights, code, *k, id))
+                    .collect(),
+            );
+        }
+        if let Some(u) = rows.users.take() {
+            rows.users = Some(self.filter_users(rights, code, u));
+        }
+        left_out
+    }
+
+    /// The users of a working set's structures `rights` may see (each
+    /// with the routes it may see).
+    fn filter_users(
+        &mut self,
+        rights: &UserRights,
+        code: &str,
+        users: BTreeMap<String, Vec<User>>,
+    ) -> BTreeMap<String, Vec<User>> {
+        if rights.sees_everything() {
+            return users;
+        }
+        let mut out = BTreeMap::new();
+        for (structure, list) in users {
+            let mut kept = Vec::new();
+            for mut u in list {
+                if !self.visible(rights, code, u.kind, &u.id) {
+                    continue;
+                }
+                let routes = std::mem::take(&mut u.routes);
+                u.routes = routes
+                    .into_iter()
+                    .filter(|r| self.visible(rights, code, Kind::Route, r))
+                    .collect();
+                kept.push(u);
+            }
+            if !kept.is_empty() {
+                out.insert(structure, kept);
+            }
+        }
+        out
     }
 
     /// Queues something for client `client` alone (after the broadcasts
@@ -830,45 +1309,102 @@ impl NetHost {
         if o.model.is_some() && o.working_set.is_some() {
             return Err("follow one line whole or a working set, not both".into());
         }
-        let ws_model = o.working_set.as_ref().map(|w| w.model.clone());
-        let role = match o.model.as_ref().or(ws_model.as_ref()) {
-            Some(m) => self.role_in_model(user, m, personal)?,
-            None => {
-                let mut known: Option<Role> = None;
-                for m in self.models.values() {
-                    if let Some(r) = m.session.role(user).map_err(|e| e.to_string())? {
-                        known = known.max(Some(r));
-                    }
-                }
-                match known {
-                    Some(_) if !personal => {
-                        return Err(format!(
-                            "{user} is a user of this network: join with your personal \
-                             invitation (ask the host)"
-                        ));
-                    }
-                    Some(r) => r,
-                    None => self
-                        .common
-                        .newcomers
-                        .ok_or_else(|| format!("{user} is not a user of this network"))?,
-                }
+        // Phase 7: the network's users only, each with their personal
+        // invitation (default deny: the general one admits nobody).
+        self.refresh_rights();
+        if !personal || !self.rights.active(user) {
+            let why = if personal {
+                format!(
+                    "{user} is not a user of this network (or is disabled): ask a network admin"
+                )
+            } else {
+                format!(
+                    "{user}: a network admits its users only, each with their personal \
+                     invitation (ask a network admin)"
+                )
+            };
+            self.audit_refused(user, "join", &why);
+            return Err(why);
+        }
+        // "See as user": who manages rights, as another user (read only).
+        if let Some(other) = &o.see_as {
+            let mine = self.rights_of(user);
+            let why = if !mine.manages_anything() {
+                Some(format!(
+                    "{user} manages no rights: may not see as another user"
+                ))
+            } else if !self.rights.users.contains_key(other) {
+                Some(format!("no user {other}"))
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                self.audit_refused(user, &format!("see as {other}"), &why);
+                return Err(why);
             }
+            if let Err(e) =
+                self.net
+                    .audit(user, "see_as", &format!("user:{other}"), "joined seeing as")
+            {
+                log(&format!("the audit: {e}"));
+            }
+        }
+        let mine = self.rights_of(user);
+        let rights: Arc<UserRights> = match &o.see_as {
+            Some(other) => {
+                let theirs = self.rights_of(other);
+                Arc::new((*mine).clone().and((*theirs).clone()))
+            }
+            None => mine,
         };
-        // A working set: worked out (refused when its picks do not hold).
+        let ws_model = o.working_set.as_ref().map(|w| w.model.clone());
+        let followed = o.model.as_ref().or(ws_model.as_ref());
+        if let Some(m) = followed
+            && !self.models.contains_key(m)
+        {
+            return Err(format!("the network has no line {m}"));
+        }
+        // A model followed whole: seen whole.
+        if let Some(m) = &o.model
+            && !rights.sees_whole_line(m)
+        {
+            let why = format!(
+                "{user} may not see all of line {m}: follow a working set of what you may see"
+            );
+            self.audit_refused(user, &format!("follow line {m}"), &why);
+            return Err(why);
+        }
+        let role = followed
+            .and_then(|m| rights.model_role(m))
+            .or_else(|| {
+                self.models
+                    .keys()
+                    .filter_map(|m| rights.model_role(m))
+                    .max()
+            })
+            .unwrap_or(Role::Viewer);
+        // A working set: worked out (refused when its picks do not hold, or
+        // it reaches what the user may not see).
         let ws = match &o.working_set {
             Some(spec) => {
                 let started = Instant::now();
-                let m = self
-                    .models
-                    .get_mut(&spec.model)
-                    .ok_or_else(|| format!("the network has no line {}", spec.model))?;
+                let m = self.models.get_mut(&spec.model).expect("checked");
                 let extent = m
                     .session
                     .pick_extent(&spec.picks)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| e.to_string());
+                let extent = match extent {
+                    Ok(e) => e,
+                    Err(e) => return Err(self.sanitise(&rights, &e)),
+                };
+                if let Err(why) = self.check_extent(&rights, &spec.model, &extent) {
+                    self.audit_refused(user, &format!("working set on line {}", spec.model), &why);
+                    return Err(why);
+                }
+                let m = self.models.get_mut(&spec.model).expect("checked");
                 let users = m.session.extent_users(&extent);
                 let sent = m.session.hashes_of(&extent.keep);
+                let users = self.filter_users(&rights, &spec.model, users);
                 keep(
                     &mut self.stats.replica_ms,
                     started.elapsed().as_secs_f64() * 1e3,
@@ -879,6 +1415,7 @@ impl NetHost {
             }
             None => None,
         };
+        let restricted = !rights.sees_everything();
         let events = self.common.events.subscribe();
         let index = self.common.sent;
         let (own_tx, own_rx) = mpsc::channel(OWN_QUEUE);
@@ -892,6 +1429,7 @@ impl NetHost {
                 tiles: BTreeSet::new(),
                 waiting: BTreeSet::new(),
                 ws: None,
+                see_as: o.see_as.clone(),
             },
         );
         // In the stream's order: what it follows, what the network holds,
@@ -899,7 +1437,7 @@ impl NetHost {
         if let Some(m) = &o.model {
             self.push(client, Some(Update::Models([m.clone()].into())), None, None);
         }
-        let info = self.info();
+        let info = self.info(&rights);
         self.push(client, None, None, Some(ServerMsg::Network(Box::new(info))));
         let (copy, seq) = match (&o.model, &ws) {
             (Some(m), _) if o.copy && !o.web => {
@@ -909,9 +1447,10 @@ impl NetHost {
                     .map_err(|e| e.to_string())?;
                 (Some(self.copy_of(m)?), seq)
             }
-            (None, Some(ws)) if o.copy && !o.web => {
-                (Some(self.replica_copy(user, ws)?), self.position.seq)
-            }
+            (None, Some(ws)) if o.copy && !o.web => (
+                Some(self.replica_copy(user, &rights, ws)?),
+                self.position.seq,
+            ),
             _ => (None, self.position.seq),
         };
         if let Some(c) = self.clients.get_mut(&client) {
@@ -924,67 +1463,65 @@ impl NetHost {
             self.interest(client, o.routes, o.tiles)?;
         }
         self.common.joined(user, role);
+        let mut welcome = ServerMsg::Welcome {
+            project: if self.name.is_empty() {
+                "network".into()
+            } else {
+                self.name.clone()
+            },
+            role,
+            seq,
+            size: 0,
+            peers: self.common.peers.values().cloned().collect(),
+            locks: self.common.locks.clone(),
+        };
+        if restricted && let ServerMsg::Welcome { peers, locks, .. } = &mut welcome {
+            if let Some(ServerMsg::Peers { peers: p }) = crate::server::redact(&ServerMsg::Peers {
+                peers: std::mem::take(peers),
+            }) {
+                *peers = p;
+            }
+            locks.clear();
+        }
         Ok(Joined {
             events,
             own: Some(own_rx),
             index,
             copy,
-            welcome: ServerMsg::Welcome {
-                project: if self.name.is_empty() {
-                    "network".into()
-                } else {
-                    self.name.clone()
-                },
-                role,
-                seq,
-                size: 0,
-                peers: self.common.peers.values().cloned().collect(),
-                locks: self.common.locks.clone(),
+            welcome,
+            view: View {
+                restricted,
+                ..View::default()
             },
-            view: View::default(),
         })
     }
 
-    /// The role of `user` in model `code` (a newcomer added to it by its
-    /// admin, as a project file's server does).
-    fn role_in_model(&mut self, user: &str, code: &str, personal: bool) -> Result<Role, String> {
-        let m = self
-            .models
-            .get(code)
-            .ok_or_else(|| format!("the network has no line {code}"))?;
-        match m.session.role(user).map_err(|e| e.to_string())? {
-            Some(_) if !personal => Err(format!(
-                "{user} is a user of line {code}: join with your personal invitation (ask the \
-                 host)"
-            )),
-            Some(r) => Ok(r),
-            None => {
-                let role = self
-                    .common
-                    .newcomers
-                    .ok_or_else(|| format!("{user} is not a user of line {code}"))?;
-                if self.common.added >= MAX_NEWCOMERS {
-                    return Err(format!(
-                        "{MAX_NEWCOMERS} newcomers joined since the server started: ask the \
-                         host for a personal invitation"
-                    ));
-                }
-                let users = m.session.users().map_err(|e| e.to_string())?;
-                crate::check_look_alike(user, users.iter().map(|(n, _)| n.as_str()))?;
-                let admin = users
-                    .into_iter()
-                    .find(|(_, r)| *r == Role::Admin)
-                    .map(|(n, _)| n)
-                    .ok_or_else(|| format!("line {code} has no admin"))?;
-                let op = Op::SetUser {
-                    name: user.to_owned(),
-                    role,
-                };
-                self.apply(None, &admin, code, ohl_session::versions::MAIN, op)?;
-                self.common.added += 1;
-                Ok(role)
+    /// Refuses a working set reaching what `rights` may not see (its
+    /// objects and what its replica holds beside them); the refusal names
+    /// none of them.
+    fn check_extent(
+        &mut self,
+        rights: &UserRights,
+        code: &str,
+        extent: &Extent,
+    ) -> Result<(), String> {
+        if rights.sees_everything() {
+            return Ok(());
+        }
+        let mut hidden = 0usize;
+        for (k, id) in extent.keep.iter().chain(&extent.wanted) {
+            if !self.visible(rights, code, *k, id) {
+                hidden += 1;
             }
         }
+        if hidden > 0 {
+            return Err(format!(
+                "{}: this working set reaches objects you have no access to — pick less (whole \
+                 tension sections of what you may see) or ask a network admin",
+                rights.user()
+            ));
+        }
+        Ok(())
     }
 
     /// A copy of model `code` for a joining client, written by a reader at
@@ -1046,7 +1583,12 @@ impl NetHost {
     /// A partial replica of working set `ws` for joining user `user`: its
     /// rows taken now (between two commands; the extent's objects only),
     /// written into a project file by a thread of its own.
-    fn replica_copy(&mut self, user: &str, ws: &Ws) -> Result<CopyWait, String> {
+    fn replica_copy(
+        &mut self,
+        user: &str,
+        rights: &UserRights,
+        ws: &Ws,
+    ) -> Result<CopyWait, String> {
         if self.live.load(Ordering::SeqCst) >= MAX_COPIES {
             return Err(format!(
                 "the server is sending lines to {MAX_COPIES} others: join again in a minute"
@@ -1058,7 +1600,8 @@ impl NetHost {
             .models
             .get_mut(&code)
             .ok_or_else(|| format!("the network has no line {code}"))?;
-        let replica = m.session.replica_of(&ws.extent);
+        let mut replica = m.session.replica_of(&ws.extent);
+        replica.users = self.filter_users(rights, &code, std::mem::take(&mut replica.users));
         keep(
             &mut self.stats.replica_ms,
             started.elapsed().as_secs_f64() * 1e3,
@@ -1145,25 +1688,43 @@ impl NetHost {
         }
         let mut out = Vec::new();
         for id in ids {
-            let Some(ws) = self.clients.get_mut(&id).and_then(|c| c.ws.as_mut()) else {
+            // Taken out while its rows are worked out (put back below).
+            let Some(mut ws) = self.clients.get_mut(&id).and_then(|c| c.ws.take()) else {
                 continue;
             };
             let touches = all
                 || ws.area
                 || routes.iter().any(|r| ws.routes.contains(r))
                 || changed.iter().any(|k| ws.extent.keep.contains(k));
-            if !touches {
+            if !touches || !self.models.contains_key(code) {
+                if let Some(c) = self.clients.get_mut(&id) {
+                    c.ws = Some(ws);
+                }
                 continue;
             }
-            let Some(m) = self.models.get_mut(code) else {
-                continue;
+            let (new, mut rows) = {
+                let m = self.models.get_mut(code).expect("checked");
+                let new = m.session.extent_of(&ws.spec.picks);
+                let rows = if all {
+                    m.session.rows_against(&ws.sent, &new)
+                } else {
+                    m.session.rows_for(&ws.extent, &ws.users, &new, changed)
+                };
+                (new, rows)
             };
-            let new = m.session.extent_of(&ws.spec.picks);
-            let mut rows = if all {
-                m.session.rows_against(&ws.sent, &new)
-            } else {
-                m.session.rows_for(&ws.extent, &ws.users, &new, changed)
-            };
+            // Phase 7: only what its user may see (what came into its
+            // extent that the user may not see is left out of the replica).
+            if let Some(rights) = self.client_rights(id) {
+                let left = self.filter_rows(&rights, code, &mut rows, &ws.sent);
+                if left > 0 {
+                    log(&format!(
+                        "client {id}: {left} objects left out of its working set's rows (no access)"
+                    ));
+                }
+            }
+            if rows.users.as_ref() == Some(&ws.users) {
+                rows.users = None;
+            }
             if all {
                 // Sent always by `rows_against`: only when they differ.
                 if rows.wanted.as_ref().is_some_and(|w| {
@@ -1182,6 +1743,9 @@ impl NetHost {
             ws.note_sent(&rows);
             ws.extent = new;
             ws.note_routes();
+            if let Some(c) = self.clients.get_mut(&id) {
+                c.ws = Some(ws);
+            }
             if !rows.is_empty() {
                 out.push((id, rows));
             }
@@ -1210,48 +1774,90 @@ impl NetHost {
     /// A question of client `client` about working sets (phase 6); its
     /// answer on the client's own queue.
     fn net_ask(&mut self, client: u64, user: &str, ask: NetAsk) -> Result<(), String> {
+        // A client let go (its rights changed) asks no more.
+        let rights = self
+            .client_rights(client)
+            .ok_or("not joined (let go): join again")?;
         let msg = match ask {
             NetAsk::Pick { id, model, picks } => {
                 let result = match self.models.get_mut(&model) {
-                    Some(m) => m
-                        .session
-                        .pick_extent(&picks)
-                        .map(|e| e.summary)
-                        .map_err(|e| e.to_string()),
+                    Some(m) => m.session.pick_extent(&picks).map_err(|e| e.to_string()),
                     None => Err(format!("the network has no line {model}")),
                 };
+                let result = match result {
+                    Ok(e) => self.check_extent(&rights, &model, &e).map(|()| e.summary),
+                    Err(e) => Err(e),
+                };
+                let result = result.map_err(|e| self.sanitise(&rights, &e));
                 ServerMsg::Extent { id, model, result }
             }
             NetAsk::RouteDetail { model, route } => {
-                let result = match self.models.get_mut(&model) {
-                    Some(m) => m.session.route_detail(&route).map_err(|e| e.to_string()),
-                    None => Err(format!("the network has no line {model}")),
+                let result = if self.visible(&rights, &model, Kind::Route, &route) {
+                    match self.models.get_mut(&model) {
+                        Some(m) => m.session.route_detail(&route).map_err(|e| e.to_string()),
+                        None => Err(format!("the network has no line {model}")),
+                    }
+                } else {
+                    Err(format!("no route {route} you may see on line {model}"))
                 };
+                // A route's structures and alignments: those it may see.
+                let result = result.map(|mut d| {
+                    d.structures
+                        .retain(|x| self.visible(&rights, &model, Kind::Structure, &x.id));
+                    d.alignments
+                        .retain(|x| self.visible(&rights, &model, Kind::Alignment, &x.id));
+                    d
+                });
+                let result = result.map_err(|e| self.sanitise(&rights, &e));
                 ServerMsg::RouteDetail { model, result }
             }
             NetAsk::Set { spec } => {
                 let started = Instant::now();
-                let c = self.clients.get_mut(&client).ok_or("not joined")?;
-                let ws =
-                    c.ws.as_mut()
-                        .ok_or("join with a working set first: this connection holds none")?;
-                if spec.model != ws.spec.model {
-                    return Err(format!(
-                        "a working set is on one line: this one is on {}; open {} on its own",
-                        ws.spec.model, spec.model
-                    ));
+                {
+                    let c = self.clients.get(&client).ok_or("not joined")?;
+                    let ws =
+                        c.ws.as_ref()
+                            .ok_or("join with a working set first: this connection holds none")?;
+                    if spec.model != ws.spec.model {
+                        return Err(format!(
+                            "a working set is on one line: this one is on {}; open {} on its own",
+                            ws.spec.model, spec.model
+                        ));
+                    }
                 }
-                let m = self
+                let new = {
+                    let m = self
+                        .models
+                        .get_mut(&spec.model)
+                        .ok_or_else(|| format!("the network has no line {}", spec.model))?;
+                    m.session
+                        .pick_extent(&spec.picks)
+                        .map_err(|e| e.to_string())
+                };
+                let new = new.map_err(|e| self.sanitise(&rights, &e))?;
+                if let Err(why) = self.check_extent(&rights, &spec.model, &new) {
+                    self.audit_refused(user, &format!("working set on line {}", spec.model), &why);
+                    return Err(why);
+                }
+                let (old_extent, old_users, sent) = {
+                    let ws = self.clients[&client].ws.as_ref().expect("checked");
+                    (ws.extent.clone(), ws.users.clone(), ws.sent.clone())
+                };
+                let mut rows = self
                     .models
                     .get_mut(&spec.model)
-                    .ok_or_else(|| format!("the network has no line {}", spec.model))?;
-                let new = m
+                    .expect("checked")
                     .session
-                    .pick_extent(&spec.picks)
-                    .map_err(|e| e.to_string())?;
-                let rows = m
-                    .session
-                    .rows_for(&ws.extent, &ws.users, &new, &BTreeSet::new());
+                    .rows_for(&old_extent, &old_users, &new, &BTreeSet::new());
+                self.filter_rows(&rights, &spec.model, &mut rows, &sent);
+                if rows.users.as_ref() == Some(&old_users) {
+                    rows.users = None;
+                }
+                let ws = self
+                    .clients
+                    .get_mut(&client)
+                    .and_then(|c| c.ws.as_mut())
+                    .ok_or("not joined")?;
                 if let Some(u) = &rows.users {
                     ws.users = u.clone();
                 }
@@ -1281,17 +1887,28 @@ impl NetHost {
             }
             NetAsk::Hold { objects } => {
                 let started = Instant::now();
-                let c = self.clients.get_mut(&client).ok_or("not joined")?;
-                let ws =
-                    c.ws.as_mut()
-                        .ok_or("join with a working set first: this connection holds none")?;
+                let (model, extent) = {
+                    let c = self.clients.get(&client).ok_or("not joined")?;
+                    let ws =
+                        c.ws.as_ref()
+                            .ok_or("join with a working set first: this connection holds none")?;
+                    (ws.spec.model.clone(), ws.extent.clone())
+                };
                 let held: BTreeMap<(Kind, String), u64> =
                     objects.into_iter().map(|(k, id, h)| ((k, id), h)).collect();
-                let m = self
+                let mut rows = self
                     .models
-                    .get_mut(&ws.spec.model)
-                    .ok_or_else(|| format!("the network has no line {}", ws.spec.model))?;
-                let rows = m.session.rows_against(&held, &ws.extent);
+                    .get_mut(&model)
+                    .ok_or_else(|| format!("the network has no line {model}"))?
+                    .session
+                    .rows_against(&held, &extent);
+                // What it holds, as it says: deletes only of those.
+                self.filter_rows(&rights, &model, &mut rows, &held);
+                let ws = self
+                    .clients
+                    .get_mut(&client)
+                    .and_then(|c| c.ws.as_mut())
+                    .ok_or("not joined")?;
                 ws.sent = held;
                 ws.note_sent(&rows);
                 keep(
@@ -1308,14 +1925,17 @@ impl NetHost {
                 }))
             }
             NetAsk::Save { spec } => {
-                let m = self
-                    .models
-                    .get_mut(&spec.model)
-                    .ok_or_else(|| format!("the network has no line {}", spec.model))?;
-                let extent = m
-                    .session
-                    .pick_extent(&spec.picks)
-                    .map_err(|e| e.to_string())?;
+                let extent = {
+                    let m = self
+                        .models
+                        .get_mut(&spec.model)
+                        .ok_or_else(|| format!("the network has no line {}", spec.model))?;
+                    m.session
+                        .pick_extent(&spec.picks)
+                        .map_err(|e| e.to_string())
+                };
+                let extent = extent.map_err(|e| self.sanitise(&rights, &e))?;
+                self.check_extent(&rights, &spec.model, &extent)?;
                 let routes: Vec<String> = extent
                     .summary
                     .routes
@@ -1366,9 +1986,19 @@ impl NetHost {
         line: String,
         model: Option<String>,
     ) -> Result<(), String> {
+        // A client let go (its rights changed) asks no more.
+        let Some(c) = self.clients.get(&client) else {
+            return Err("not joined (let go): join again".into());
+        };
+        if c.see_as.is_some() {
+            return Err(
+                "seeing as another user: nothing is changed so (join as yourself to edit)".into(),
+            );
+        }
         let model = model
-            .or_else(|| self.clients.get(&client).and_then(|c| c.model.clone()))
+            .or_else(|| c.model.clone())
             .ok_or("name the line (model) of the network the edit is on")?;
+        let rights = self.rights_of(user);
         let m = self
             .models
             .get(&model)
@@ -1380,10 +2010,14 @@ impl NetHost {
             self.common.locked(user, &line, targets)?;
         }
         self.apply(Some((client, id)), user, &model, &line, op)
+            .map_err(|e| self.sanitise(&rights, &e))
     }
 
     /// Applies `op` of `user` on project line `line` of model `code` as one
-    /// transaction with what the stream needs, then broadcasts it.
+    /// transaction with what the stream needs, then broadcasts it. Phase
+    /// 7: decided by the rights — the operation's rule before it runs,
+    /// every object it changed after (in the same unit: refused, nothing
+    /// stays).
     fn apply(
         &mut self,
         answers: Option<(u64, u64)>,
@@ -1397,15 +2031,41 @@ impl NetHost {
         if !self.models.contains_key(code) {
             return Err(format!("the network has no line {code}"));
         }
+        let rights = self.rights_of(user);
+        let checking = Instant::now();
+        if let Err(why) = nr::check_need(&rights, code, &op, &self.models[code].session) {
+            self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
+            return Err(format!("refused: {why}"));
+        }
+        let mut check_us = checking.elapsed().as_secs_f64() * 1e6;
         self.net.begin_unit().map_err(|e| e.to_string())?;
         let m = self.models.get_mut(code).expect("checked");
-        let applied = match execute(&mut m.session, user, line, &op) {
+        let Model {
+            session, places, ..
+        } = m;
+        let mut refusal: Option<String> = None;
+        let mut objects_us = 0.0;
+        let executed = crate::execute_checked(session, user, line, &op, |s, a| {
+            let t = Instant::now();
+            let decided = nr::check_objects(&rights, code, s, places, &a.objects);
+            objects_us = t.elapsed().as_secs_f64() * 1e6;
+            decided.map_err(|why| {
+                refusal = Some(why.clone());
+                ohl_session::SessionError::Refused(why)
+            })
+        });
+        let applied = match executed {
             Ok(a) => a,
             Err(e) => {
                 let _ = self.net.roll_back_unit();
+                if let Some(why) = refusal {
+                    self.audit_refused(user, &format!("{code}/{line}: {}", op.describe()), &why);
+                }
                 return Err(e.to_string());
             }
         };
+        check_us += objects_us;
+        keep(&mut self.stats.rights_check_us, check_us);
         let written = self.written(user, code, line, &op, applied.as_ref(), before);
         let (change, touch) = match written.and_then(|w| {
             self.net.commit_unit().map_err(|e| e.to_string())?;
@@ -1610,6 +2270,17 @@ impl NetHost {
             self.idle_todo.extend(touched.iter().copied());
         }
         let keys: Vec<i64> = touched.iter().filter_map(|t| tile_key(&t.tile())).collect();
+        // Phase 7: what it touched, for the outgoing filter.
+        let mut touched_objects: Vec<(Kind, String)> = applied
+            .map(|a| {
+                let mut v = a.objects.clone();
+                v.extend(a.sections.iter().map(|s| (Kind::Section, s.clone())));
+                v
+            })
+            .unwrap_or_default();
+        touched_objects.extend(op.targets().unwrap_or_default());
+        touched_objects.sort();
+        touched_objects.dedup();
         if logged {
             self.net
                 .set_entry_interest(code, before.seq + 1, last, &[code.to_owned()], &keys)
@@ -1628,8 +2299,15 @@ impl NetHost {
                 log_seq: applied.map(|a| a.seq),
                 tiles: keys,
                 routes: routes.clone(),
+                objects: Some(nr::object_keys(&touched_objects)),
+                whole: whole || library,
             })
             .map_err(e)?;
+        // Who may not see it (on what it touched as it is now, and as it
+        // was for what went), then the places moved on.
+        let restricted =
+            self.restricted_clients(code, line, op, &touched_objects, &routes, whole || library);
+        self.update_places(code, line, op, whole, &objects);
         let tiles: Vec<TileKey> = touched.into_iter().collect();
         let large = whole || tiles.len() > self.options.large_tiles;
         Ok((
@@ -1650,8 +2328,153 @@ impl NetHost {
                 routes,
                 at,
                 large,
+                restricted: Arc::new(restricted),
             },
         ))
+    }
+
+    /// The connected clients that may not see a change of model `code`
+    /// (project line `line`) touching `objects` and `routes` (`at_large`:
+    /// a merge, a library file, …): they read the tiles it touched again,
+    /// through the filter. Worked out once per user.
+    fn restricted_clients(
+        &mut self,
+        code: &str,
+        line: &str,
+        op: &Op,
+        objects: &[(Kind, String)],
+        routes: &[String],
+        at_large: bool,
+    ) -> HashSet<u64> {
+        let started = Instant::now();
+        let mut out = HashSet::new();
+        let ids: Vec<(u64, String, Option<String>)> = self
+            .clients
+            .iter()
+            .map(|(id, c)| (*id, c.user.clone(), c.see_as.clone()))
+            .collect();
+        let mut by_user: HashMap<(String, Option<String>), bool> = HashMap::new();
+        for (id, user, see_as) in ids {
+            let key = (user, see_as);
+            let hidden = match by_user.get(&key) {
+                Some(h) => *h,
+                None => {
+                    let h = match self.client_rights(id) {
+                        Some(r) => {
+                            !self.may_see_change(&r, code, line, op, objects, routes, at_large)
+                        }
+                        None => true,
+                    };
+                    by_user.insert(key, h);
+                    h
+                }
+            };
+            if hidden {
+                out.insert(id);
+            }
+        }
+        keep(
+            &mut self.stats.rights_change_us,
+            started.elapsed().as_secs_f64() * 1e6,
+        );
+        out
+    }
+
+    /// Whether `rights` may see a change (see [`NetHost::restricted_clients`]).
+    #[allow(clippy::too_many_arguments)]
+    fn may_see_change(
+        &mut self,
+        rights: &UserRights,
+        code: &str,
+        line: &str,
+        op: &Op,
+        objects: &[(Kind, String)],
+        routes: &[String],
+        at_large: bool,
+    ) -> bool {
+        if rights.sees_everything() {
+            return true;
+        }
+        if at_large || line != ohl_session::versions::MAIN {
+            return rights.sees_whole_line(code);
+        }
+        match op {
+            Op::Do { .. } | Op::Undo | Op::Redo => {
+                for (k, id) in objects {
+                    let exists = self
+                        .models
+                        .get(code)
+                        .is_some_and(|m| m.session.has_object(*k, id));
+                    let seen = if exists {
+                        self.visible(rights, code, *k, id)
+                    } else {
+                        // Gone: as it was.
+                        self.models
+                            .get(code)
+                            .is_some_and(|m| nr::sees(rights, code, *k, id, m.places.get(*k, id)))
+                    };
+                    if !seen {
+                        return false;
+                    }
+                }
+                routes
+                    .iter()
+                    .all(|r| self.visible(rights, code, Kind::Route, r))
+            }
+            Op::SetSetting { .. } => {
+                rights.allows(Permission::See, &nr::target(code, Kind::Meta, "line", None))
+            }
+            Op::PutLibrary { kind, name, .. } | Op::DeleteLibrary { kind, name } => rights.allows(
+                Permission::See,
+                &Target::Library {
+                    line: code,
+                    kind,
+                    file: name,
+                    entry: None,
+                },
+            ),
+            _ => rights.sees_whole_line(code),
+        }
+    }
+
+    /// The places of model `code` after a command: of what it changed in
+    /// the main branch (and what moved with a structure), of everything
+    /// after a change at large.
+    fn update_places(
+        &mut self,
+        code: &str,
+        line: &str,
+        op: &Op,
+        whole: bool,
+        objects: &BTreeSet<(Kind, String)>,
+    ) {
+        let Some(m) = self.models.get_mut(code) else {
+            return;
+        };
+        if whole {
+            m.places = Places::of_session(&mut m.session);
+            return;
+        }
+        if line != ohl_session::versions::MAIN {
+            return;
+        }
+        let mut list: Vec<(Kind, String)> = objects.iter().cloned().collect();
+        for (k, id) in objects {
+            if *k == Kind::Structure || *k == Kind::AlignmentPoint {
+                list.extend(m.session.object_referrers(*k, id));
+            }
+        }
+        if let Op::PutLibrary { kind, name, .. } | Op::DeleteLibrary { kind, name } = op {
+            list.push((Kind::Library, format!("{kind}/{name}")));
+        }
+        list.sort();
+        list.dedup();
+        let Model {
+            session, places, ..
+        } = m;
+        places.update(session, &list);
+        // Route parts on this model: resolved again when next asked.
+        self.compiled_mut().retain(|_, r| !r.has_route_parts(code));
     }
 
     /// Model `code` read again from the database (after a command not
@@ -1667,6 +2490,11 @@ impl NetHost {
                 let before = self.model_tiles(code);
                 if let Some(m) = self.models.get_mut(code) {
                     m.session = session;
+                    m.session.set_role_source(Some(Arc::new(ModelRoles {
+                        line: code.to_owned(),
+                        rights: self.compiled.clone(),
+                    })));
+                    m.places = Places::of_session(&mut m.session);
                     m.rev += 1;
                     m.libs_rev += 1;
                 }
@@ -1749,6 +2577,10 @@ impl NetHost {
         for u in updates {
             self.push(client, Some(u), None, None);
         }
+        // Phase 7: each tile in the client's rights class.
+        let rights = self
+            .client_rights(client)
+            .ok_or("not joined (let go): join again")?;
         let mut held = Vec::new();
         for (t, have, holding) in new {
             let rev = self.tile_rev(&t);
@@ -1759,7 +2591,8 @@ impl NetHost {
                 continue;
             }
             let started = Instant::now();
-            if let Some(text) = self.packages.get(&(t, rev, 0)) {
+            let class = self.class_of(&rights, t);
+            if let Some(text) = self.package_for(t, rev, &class) {
                 if let Some(c) = self.clients.get_mut(&client) {
                     c.tiles.insert(t);
                 }
@@ -1909,7 +2742,7 @@ impl NetHost {
             !waiting.is_empty() || self.packages.bytes() < (self.options.packages_mb << 20) / 2;
         if made_at == rev && kept {
             let bytes = text.len();
-            self.packages.put((t, rev, 0), text.clone(), bytes);
+            self.packages.put((t, rev, whole()), text.clone(), bytes);
         }
         for client in waiting {
             let wanted = self
@@ -1919,15 +2752,23 @@ impl NetHost {
             if !wanted {
                 continue;
             }
+            // Phase 7: in the client's rights class.
+            let Some(rights) = self.client_rights(client) else {
+                continue;
+            };
+            let class = self.class_of(&rights, t);
+            let text = if class.is_empty() {
+                text.clone()
+            } else {
+                match self.package_for(t, rev, &class) {
+                    Some(p) if made_at == rev => p,
+                    _ => self.filtered(&text, &class),
+                }
+            };
             if let Some(c) = self.clients.get_mut(&client) {
                 c.tiles.insert(t);
             }
-            self.push(
-                client,
-                Some(Update::AddTiles(vec![t])),
-                Some(text.clone()),
-                None,
-            );
+            self.push(client, Some(Update::AddTiles(vec![t])), Some(text), None);
             if made_at != rev {
                 self.push(
                     client,
@@ -1976,7 +2817,27 @@ impl NetHost {
             .map_err(|e| e.to_string())?;
         let incomplete = rows.len() > limit;
         let mut changes = Vec::new();
+        // Phase 7: a change is caught up as it is only by a client seeing
+        // its whole line (its operation may name, or have moved, what the
+        // client may not see — then or now); the others read their tiles
+        // it touched again (through the filter).
+        let rights = self.client_rights(client).ok_or("not joined")?;
+        let held: BTreeSet<TileKey> = self
+            .clients
+            .get(&client)
+            .map(|c| c.tiles.clone())
+            .unwrap_or_default();
+        let mut again: BTreeSet<TileKey> = BTreeSet::new();
         for r in rows.into_iter().take(limit) {
+            if !rights.sees_everything() && !rights.sees_whole_line(&r.line) {
+                for k in &r.tiles {
+                    let t = TileKey::of(&ohl_store_pg::stream::tile_of_key(*k));
+                    if held.contains(&t) {
+                        again.insert(t);
+                    }
+                }
+                continue;
+            }
             changes.push(Change {
                 model: r.line,
                 user: r.user,
@@ -2008,6 +2869,18 @@ impl NetHost {
                 incomplete,
             }),
         );
+        if !again.is_empty() {
+            self.push(
+                client,
+                Some(Update::Seen(self.position)),
+                None,
+                Some(ServerMsg::TilesChanged {
+                    tiles: again.into_iter().collect(),
+                    at: self.position,
+                    reason: "changed while you were away: read these tiles again".into(),
+                }),
+            );
+        }
         Ok(())
     }
 
@@ -2057,7 +2930,7 @@ impl NetHost {
         }
         while let Some(t) = self.idle_todo.pop_front() {
             let rev = self.tile_rev(&t);
-            if self.packages.contains(&(t, rev, 0))
+            if self.packages.contains(&(t, rev, whole()))
                 || self.tiles.get(&t).is_none_or(|s| s.objects.is_empty())
             {
                 continue;
@@ -2113,6 +2986,15 @@ impl NetHost {
                     "idle_done_s": self.stats.idle_done,
                     "idle_full": self.stats.idle_full,
                     "idle_left": self.idle_todo.len(),
+                    "rights_rev": self.rights.rev,
+                    "rights_users": self.rights.users.len(),
+                    "rights_assignments": self.rights.assignments.len(),
+                    "rights_check_us": self.stats.rights_check_us,
+                    "rights_class_us": self.stats.rights_class_us,
+                    "rights_filter_us": self.stats.rights_filter_us,
+                    "rights_change_us": self.stats.rights_change_us,
+                    "rights_compile_us": self.stats.rights_compile_us,
+                    "places": self.models.values().map(|m| m.places.len()).sum::<usize>(),
                 })
                 .to_string())
             }
@@ -2177,6 +3059,10 @@ impl Host for NetHost {
     fn handle(&mut self, job: Job) {
         if !matches!(job, Job::Built(_) | Job::Probe { .. }) {
             self.last_busy = Instant::now();
+            // Phase 7: rights an admin changed hold from the next job on.
+            if !matches!(job, Job::Leave { .. }) {
+                self.refresh_rights();
+            }
         }
         match job {
             Job::Join {
@@ -2264,6 +3150,9 @@ impl Host for NetHost {
 
     fn tick(&mut self) {
         if Instant::now() >= self.heartbeat_due {
+            // Phase 7: rights changed while nobody asked anything (clients
+            // let go within a heartbeat).
+            self.refresh_rights();
             let at = self.position;
             self.common.send(Event::to(
                 None,

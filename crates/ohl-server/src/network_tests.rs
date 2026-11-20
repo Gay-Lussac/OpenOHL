@@ -32,7 +32,8 @@ use crate::{
 };
 
 /// A network of a small synthetic country, one model per route line;
-/// `admin` its admin, `bob` and `carol` designers of every model.
+/// `admin` its network admin, `bob` and `carol` designers of the whole
+/// network, `vic` and `wendy` its viewers (phase 7: assignments).
 pub(crate) struct TestNet {
     pub(crate) _cluster: Cluster,
     pub(crate) url: String,
@@ -63,6 +64,23 @@ pub(crate) fn test_network(name: &str, pylons: usize) -> Option<TestNet> {
         s.set_user("admin", "carol", Role::Designer).unwrap();
         codes.push(code);
     }
+    // Phase 7: the network's users and their rights.
+    use ohl_store_pg::rights::RightsCommand as R;
+    net.rights_command(
+        "admin",
+        &R::Bootstrap {
+            user: "admin".into(),
+        },
+    )
+    .unwrap();
+    for (u, role) in [
+        ("bob", "designer"),
+        ("carol", "designer"),
+        ("vic", "viewer"),
+        ("wendy", "viewer"),
+    ] {
+        add_user(&net, u, role, ohl_session::rights::Scope::network());
+    }
     drop(net);
     // The import's writer's lock gone with its connection before a
     // server takes it (a moment after the drop: waited for).
@@ -75,13 +93,37 @@ pub(crate) fn test_network(name: &str, pylons: usize) -> Option<TestNet> {
     })
 }
 
+/// Adds user `u` with `role` on `scope` (by the network admin).
+pub(crate) fn add_user(net: &Network, u: &str, role: &str, scope: ohl_session::rights::Scope) {
+    use ohl_store_pg::rights::RightsCommand as R;
+    net.rights_command(
+        "admin",
+        &R::AddUser {
+            name: u.into(),
+            display: None,
+        },
+    )
+    .unwrap();
+    net.rights_command(
+        "admin",
+        &R::Assign {
+            subject: ohl_session::rights::Subject::User(u.into()),
+            role: Some(role.into()),
+            deny: false,
+            scope,
+            note: String::new(),
+        },
+    )
+    .unwrap();
+}
+
 pub(crate) fn local(code: &str) -> Options {
     Options {
         bind: "127.0.0.1:0".parse().unwrap(),
         advertise: None,
         code: Some(code.into()),
         keys: None,
-        newcomers: Some(Role::Viewer),
+        newcomers: None,
         web: None,
         ..Default::default()
     }
@@ -420,11 +462,11 @@ fn a_network_serves_by_interest() {
     assert_eq!(info.models.len(), t.codes.len());
     assert_eq!(info.tile_level, 2);
     same_as_server(&d, &t, &a, 0);
-    // Vic views the tiles around a structure of B (a newcomer: a viewer).
+    // Vic views the tiles around a structure of B (a viewer).
     let (sb, pb) = structure_of(&t, &b, 3);
     let vtiles = tiles_around(pb, 1);
     let mut v = C::join(
-        &server.invitation,
+        &server.invitation_for("vic"),
         "vic",
         NetJoin {
             tiles: held(&vtiles, &BTreeMap::new()),
@@ -746,9 +788,9 @@ fn a_network_keeps_roles_and_locks() {
     let server = Server::start_network(local("abcd2345"), net_options(&t.url)).unwrap();
     let a = t.codes[0].clone();
     let (id, p) = structure_of(&t, &a, 1);
-    let mut vic = C::join(&server.invitation, "vic", NetJoin::default()).unwrap();
+    let mut vic = C::join(&server.invitation_for("vic"), "vic", NetJoin::default()).unwrap();
     let e = vic.edit(&a, moved(&id, p)).unwrap_err();
-    assert!(e.contains("unknown user vic"), "{e}");
+    assert!(e.contains("vic") && e.contains("viewer"), "{e}");
     let mut bob = C::join(&server.invitation_for("bob"), "bob", NetJoin::default()).unwrap();
     let e = bob.edit("NOPE", moved(&id, p)).unwrap_err();
     assert!(e.contains("no line NOPE"), "{e}");

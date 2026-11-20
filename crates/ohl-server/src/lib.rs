@@ -52,6 +52,8 @@ pub mod client;
 #[cfg(feature = "network")]
 pub mod network;
 #[cfg(feature = "network")]
+pub(crate) mod network_rights;
+#[cfg(feature = "network")]
 pub(crate) mod packager;
 pub mod server;
 pub mod stream;
@@ -452,6 +454,28 @@ pub fn execute(
     session.with_line(line, |s| run(s, user, op))
 }
 
+/// [`execute`], with `check` deciding what it changed (on the project line
+/// it acted on, as it is after it) — all of it kept, or (a refusal, an
+/// error) nothing: a network's server deciding each command's objects by
+/// the rights (phase 7).
+pub fn execute_checked(
+    session: &mut Session,
+    user: &str,
+    line: &str,
+    op: &Op,
+    check: impl FnOnce(&mut Session, &Applied) -> Result<(), SessionError>,
+) -> Result<Option<Applied>, SessionError> {
+    session.atomically(|s| {
+        s.with_line(line, |s| {
+            let applied = run(s, user, op)?;
+            if let Some(a) = &applied {
+                check(s, a)?;
+            }
+            Ok(applied)
+        })
+    })
+}
+
 fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, SessionError> {
     Ok(match op {
         Op::Do { command } => Some(session.apply(user, command.clone())?),
@@ -689,6 +713,10 @@ pub enum ClientMsg {
         /// then the rows that change ([`ServerMsg::Rows`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         working_set: Option<WorkingSetSpec>,
+        /// Phase 7: an admin sees as this user (what both may see; nothing
+        /// is changed so; in the audit).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        see_as: Option<String>,
     },
     /// The routes and tiles a client of a network follows from now on (in
     /// place of the last ones): tiles new to it come as packages at their
@@ -1427,6 +1455,8 @@ pub fn random_code(n: usize) -> String {
 mod network_tests;
 #[cfg(test)]
 mod points_tests;
+#[cfg(all(test, feature = "network"))]
+mod rights_tests;
 #[cfg(test)]
 mod security_tests;
 #[cfg(test)]

@@ -290,6 +290,9 @@ pub(crate) struct Touch {
     /// Too large to follow change by change for a client viewing tiles
     /// only: it reads its tiles again.
     pub(crate) large: bool,
+    /// Phase 7: the clients that may not see all of it: they read their
+    /// tiles it touched again (filtered), nothing more.
+    pub(crate) restricted: Arc<HashSet<u64>>,
 }
 
 /// Who a broadcast is for.
@@ -351,6 +354,9 @@ pub(crate) struct View {
     pub(crate) tiles: HashSet<TileKey>,
     /// The last change passed on.
     pub(crate) last: Option<Position>,
+    /// Phase 7: its user does not see everything (the users' presence and
+    /// the soft locks taken out of the broadcasts).
+    pub(crate) restricted: bool,
 }
 
 impl View {
@@ -377,7 +383,7 @@ impl View {
     }
 
     /// What of broadcast `to` (its encoding `text`) goes to this client.
-    pub(crate) fn broadcast(&mut self, to: &To, text: &Utf8Bytes) -> Option<Deliver> {
+    pub(crate) fn broadcast(&mut self, to: &To, text: &Utf8Bytes, client: u64) -> Option<Deliver> {
         match to {
             To::All => Some(Deliver::Shared(text.clone())),
             To::Heartbeat(at) => (!self.all).then(|| {
@@ -400,6 +406,19 @@ impl View {
                     .collect();
                 if !model && !route && tiles.is_empty() {
                     return None;
+                }
+                if t.restricted.contains(&client) {
+                    // Not all of it may be seen: its tiles read again
+                    // (through the filter), never the change.
+                    if tiles.is_empty() {
+                        return None;
+                    }
+                    self.last = self.last.max(Some(t.at));
+                    return Some(Deliver::Own(Box::new(ServerMsg::TilesChanged {
+                        tiles,
+                        at: t.at,
+                        reason: "changed: read these tiles again".into(),
+                    })));
                 }
                 self.last = self.last.max(Some(t.at));
                 if t.large && !model && !route {
@@ -437,6 +456,9 @@ pub(crate) enum Item {
 pub(crate) enum FeedEnd {
     /// The client fell too far behind the broadcasts.
     Lagged,
+    /// The authority let the client go (its own queue full, or its rights
+    /// changed): what was queued for it delivered first.
+    LetGo,
     /// The server stopped.
     Closed,
 }
@@ -450,6 +472,9 @@ pub(crate) struct Feed {
     held_event: Option<crate::server::Event>,
     /// The last broadcast passed on.
     index: u64,
+    /// The authority let the client go: what is held is delivered, then
+    /// the feed ends.
+    let_go: bool,
 }
 
 impl Feed {
@@ -464,6 +489,7 @@ impl Feed {
             held: VecDeque::new(),
             held_event: None,
             index,
+            let_go: false,
         }
     }
 
@@ -478,6 +504,12 @@ impl Feed {
     /// The next item, in order.
     pub(crate) async fn next(&mut self) -> Result<Item, FeedEnd> {
         loop {
+            if self.let_go {
+                return match self.held.pop_front() {
+                    Some(o) => Ok(Item::Own(o)),
+                    None => Err(FeedEnd::LetGo),
+                };
+            }
             let index = self.index;
             if let Some(o) = self.held.pop_front_if(|o| o.after <= index) {
                 return Ok(Item::Own(o));
@@ -504,8 +536,12 @@ impl Feed {
                 },
                 o = async { self.own.as_mut().expect("open").recv().await }, if own_open => match o {
                     Some(o) => self.held.push_back(o),
-                    // The authority let the client go (too far behind).
-                    None => return Err(FeedEnd::Lagged),
+                    // The authority let the client go (too far behind, or
+                    // its rights changed): what it queued first.
+                    None => {
+                        self.own = None;
+                        self.let_go = true;
+                    }
                 },
             }
         }
@@ -531,6 +567,7 @@ mod tests {
                 routes: routes.iter().map(|r| (*r).to_owned()).collect(),
                 at,
                 large,
+                restricted: Arc::new(HashSet::new()),
             }))
         };
         let (t1, t2, t3) = (TileKey(2, 1, 1), TileKey(2, 1, 2), TileKey(2, 9, 9));
@@ -544,21 +581,21 @@ mod tests {
         // A change of model B in tile t1 on route R7.
         let c = touch("B", vec![t1, t3], &["R7"], p(5), false);
         assert!(matches!(
-            viewer.broadcast(&c, &text),
+            viewer.broadcast(&c, &text, 1),
             Some(Deliver::Shared(_))
         ));
-        assert!(desktop.broadcast(&c, &text).is_none());
+        assert!(desktop.broadcast(&c, &text, 1).is_none());
         assert!(matches!(
-            worker.broadcast(&c, &text),
+            worker.broadcast(&c, &text, 1),
             Some(Deliver::Shared(_))
         ));
         assert!(matches!(
-            file.broadcast(&c, &text),
+            file.broadcast(&c, &text, 1),
             Some(Deliver::Shared(_))
         ));
         // A large change of model A in tiles t2 and t3.
         let big = touch("A", vec![t2, t3], &[], p(6), true);
-        match viewer.broadcast(&big, &text) {
+        match viewer.broadcast(&big, &text, 1) {
             Some(Deliver::Own(m)) => match *m {
                 ServerMsg::TilesChanged { tiles, at, .. } => {
                     assert_eq!((tiles, at), (vec![t2], p(6)));
@@ -568,14 +605,14 @@ mod tests {
             other => panic!("{other:?}"),
         }
         assert!(matches!(
-            desktop.broadcast(&big, &text),
+            desktop.broadcast(&big, &text, 1),
             Some(Deliver::Shared(_))
         ));
-        assert!(worker.broadcast(&big, &text).is_none());
+        assert!(worker.broadcast(&big, &text, 1).is_none());
         // Tiles left: nothing more of them; the heartbeat tells the last.
         viewer.apply(Update::RemoveTiles(vec![t1, t2]));
-        assert!(viewer.broadcast(&c, &text).is_none());
-        match viewer.broadcast(&To::Heartbeat(p(9)), &text) {
+        assert!(viewer.broadcast(&c, &text, 1).is_none());
+        match viewer.broadcast(&To::Heartbeat(p(9)), &text, 1) {
             Some(Deliver::Own(m)) => {
                 assert_eq!(
                     *m,
@@ -587,10 +624,47 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-        assert!(file.broadcast(&To::Heartbeat(p(9)), &text).is_none());
+        assert!(file.broadcast(&To::Heartbeat(p(9)), &text, 1).is_none());
         // A catch-up seen.
         desktop.apply(Update::Seen(p(8)));
         assert_eq!(desktop.last, Some(p(8)));
+    }
+
+    /// Phase 7: a client that may not see all of a change gets its tiles
+    /// to read again, never the change (and nothing when it views none of
+    /// them, even following its model or routes).
+    #[test]
+    fn a_restricted_client_reads_its_tiles_again() {
+        let p = |seq| Position { seq, step: 0 };
+        let text = Utf8Bytes::from("{}");
+        let (t1, t2) = (TileKey(2, 1, 1), TileKey(2, 5, 5));
+        let to = To::Touching(Arc::new(Touch {
+            model: "A".into(),
+            tiles: vec![t1, t2],
+            routes: vec!["R1".into()],
+            at: p(4),
+            large: false,
+            restricted: Arc::new([7u64].into()),
+        }));
+        let mut viewer = View::default();
+        viewer.apply(Update::AddTiles(vec![t1]));
+        match viewer.broadcast(&to, &text, 7) {
+            Some(Deliver::Own(m)) => match *m {
+                ServerMsg::TilesChanged { tiles, at, .. } => {
+                    assert_eq!((tiles, at), (vec![t1], p(4)))
+                }
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+        // Another client, not restricted: the change itself.
+        assert!(matches!(
+            viewer.broadcast(&to, &text, 8),
+            Some(Deliver::Shared(_))
+        ));
+        let mut worker = View::default();
+        worker.apply(Update::Routes(["R1".to_owned()].into()));
+        assert!(worker.broadcast(&to, &text, 7).is_none());
     }
 
     #[test]

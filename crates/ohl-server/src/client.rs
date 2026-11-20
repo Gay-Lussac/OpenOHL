@@ -241,6 +241,8 @@ pub struct NetJoin {
     /// of `model`): its replica is written to `file` (unless `held`: then
     /// send [`hold`] of the replica and take the rows that come).
     pub working_set: Option<WorkingSetSpec>,
+    /// Phase 7: an admin sees as this user (what both may see, read only).
+    pub see_as: Option<String>,
 }
 
 /// Joins the network's server of `invitation` as `user` (protocol 3's
@@ -265,6 +267,7 @@ pub fn join_network(
         tiles: how.tiles.clone(),
         held: how.held,
         working_set: how.working_set.clone(),
+        see_as: how.see_as.clone(),
     };
     join_with(invitation, user, hello, how.file.clone(), progress)
 }

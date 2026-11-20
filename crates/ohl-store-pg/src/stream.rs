@@ -122,6 +122,11 @@ pub struct StreamRow {
     pub tiles: Vec<i64>,
     /// The routes it touched.
     pub routes: Vec<String>,
+    /// The objects it touched (`kind/id`; phase 7, for the outgoing filter
+    /// of a catch-up; `None`: not kept, before schema 4).
+    pub objects: Option<Vec<String>>,
+    /// It touched its model at large (a merge, a library file).
+    pub whole: bool,
 }
 
 /// What each element of a model's main branch is on and refers to, as
@@ -289,8 +294,8 @@ impl Network {
         self.require_writer()?;
         lock(&self.shared()).execute(
             "INSERT INTO stream (seq, step, line_id, branch, user_name, op, first_seq, log_seq,
-                 tiles, routes)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+                 tiles, routes, objects, whole)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
             &[
                 &r.seq,
                 &r.step,
@@ -302,6 +307,8 @@ impl Network {
                 &r.log_seq,
                 &r.tiles,
                 &r.routes,
+                &r.objects,
+                &r.whole,
             ],
         )?;
         Ok(())
@@ -338,7 +345,7 @@ impl Network {
         Ok(lock(&self.shared())
             .query(
                 "SELECT seq, step, line_id, branch, user_name, op, first_seq, log_seq, tiles,
-                     routes
+                     routes, objects, whole
                  FROM stream
                  WHERE (seq, step) > ($1, $2)
                    AND (line_id = ANY($3) OR routes && $4 OR tiles && $5)
@@ -358,6 +365,8 @@ impl Network {
                 log_seq: r.get(7),
                 tiles: r.get(8),
                 routes: r.get(9),
+                objects: r.get(10),
+                whole: r.get(11),
             })
             .collect())
     }

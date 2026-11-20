@@ -24,8 +24,9 @@
 //!
 //! Ids are unique in the network: a unique index refuses an element of a
 //! model's main branch with the id of another model's
-//! ([`schema`]). Rights are kept (roles, assignments) but not evaluated
-//! before phase 7; point clouds and backgrounds stay in the project files
+//! ([`schema`]). Rights (users, groups, roles, assignments) are kept and
+//! changed by [`rights`] (phase 7), evaluated by the session's one
+//! function ([`ohl_session::rights`]); point clouds and backgrounds stay in the project files
 //! for now (said in the import report).
 //!
 //! Only the server (and the admin's command line) talks to the database;
@@ -39,6 +40,7 @@ use postgres::{Client, NoTls, Row, Statement};
 
 pub mod export;
 pub mod import;
+pub mod rights;
 pub mod schema;
 mod store;
 pub mod stream;

@@ -208,11 +208,7 @@ fn count_rows(path: &Path, table: &str) -> usize {
 
 /// The shipped network role of a project role.
 fn network_role(role: Role) -> &'static str {
-    match role {
-        Role::Viewer => "viewer",
-        Role::Designer => "designer",
-        Role::Admin => "line_admin",
-    }
+    ohl_session::rights::network_role(role)
 }
 
 /// Imports the project file at `path` as a new model of `net` (the
@@ -475,6 +471,12 @@ pub fn import(
                 ],
             )?;
         }
+        // Users and assignments added: the rights moved on.
+        lock(&net.shared()).execute(
+            "INSERT INTO net_meta (key, value) VALUES ('rights_rev', '1')
+             ON CONFLICT (key) DO UPDATE SET value = (net_meta.value::bigint + 1)::text",
+            &[],
+        )?;
         for g in &grants {
             store.put_grant_row(g)?;
         }

@@ -149,6 +149,10 @@ pub(crate) struct Event {
     /// The message's JSON (or why it could not be written).
     pub(crate) text: Result<Utf8Bytes, String>,
     pub(crate) to: To,
+    /// Network, phase 7: what a client that does not see everything gets
+    /// instead (the users without their presence — a selection names
+    /// objects, a camera a place —, no soft locks).
+    pub(crate) redacted: Option<Result<Utf8Bytes, String>>,
 }
 
 impl Event {
@@ -159,15 +163,51 @@ impl Event {
 
     /// The broadcast of `msg` to `to`, encoded.
     pub(crate) fn to(answers: Option<(u64, u64)>, msg: ServerMsg, to: To) -> Self {
-        let text = serde_json::to_string(&msg)
-            .map(Utf8Bytes::from)
-            .map_err(|e| e.to_string());
+        let encode = |m: &ServerMsg| {
+            serde_json::to_string(m)
+                .map(Utf8Bytes::from)
+                .map_err(|e| e.to_string())
+        };
+        let text = encode(&msg);
+        let redacted = redact(&msg).map(|m| encode(&m));
         Self {
             index: 0,
             answers,
             msg: Arc::new(msg),
             text,
             to,
+            redacted,
+        }
+    }
+}
+
+/// What a client of a network that does not see everything gets of a
+/// message for everyone (phase 7): the users without their presence, no
+/// soft locks (their targets name objects). `None`: the message as it is.
+pub(crate) fn redact(msg: &ServerMsg) -> Option<ServerMsg> {
+    match msg {
+        ServerMsg::Peers { peers } => Some(ServerMsg::Peers {
+            peers: peers
+                .iter()
+                .map(|p| Peer {
+                    presence: Presence::default(),
+                    ..p.clone()
+                })
+                .collect(),
+        }),
+        ServerMsg::Locks { .. } => Some(ServerMsg::Locks {
+            locks: BTreeMap::new(),
+        }),
+        _ => None,
+    }
+}
+
+impl Event {
+    /// The text client `restricted` (or not) gets.
+    fn text_for(&self, restricted: bool) -> &Result<Utf8Bytes, String> {
+        match (&self.redacted, restricted) {
+            (Some(r), true) => r,
+            _ => &self.text,
         }
     }
 }
@@ -246,6 +286,8 @@ pub(crate) struct JoinOptions {
     pub(crate) tiles: Vec<crate::HeldTile>,
     /// Network, phase 6: the working set it follows as a partial replica.
     pub(crate) working_set: Option<ohl_session::working_set::WorkingSetSpec>,
+    /// Network, phase 7: an admin seeing as this user.
+    pub(crate) see_as: Option<String>,
 }
 
 /// Network, phase 6: what a client asks about working sets.
@@ -1550,6 +1592,7 @@ async fn connection(
             tiles,
             held,
             working_set,
+            see_as,
         }) => (
             protocol,
             user,
@@ -1562,6 +1605,7 @@ async fn connection(
                 routes,
                 tiles,
                 working_set,
+                see_as,
             },
         ),
         _ => return Err("no hello".into()),
@@ -1683,6 +1727,14 @@ async fn serve(
                         // A client that reads gets the notice first.
                         tokio::time::sleep(Duration::from_secs(5)).await;
                         conn.close(0u32.into(), b"too far behind");
+                        break;
+                    }
+                    Err(FeedEnd::LetGo) => {
+                        let _ = out.try_send(Out::Own(ServerMsg::Notice {
+                            text: "the server let this connection go: join again".into(),
+                        }));
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        conn.close(0u32.into(), b"let go");
                         break;
                     }
                     Err(FeedEnd::Closed) => break,
@@ -1908,13 +1960,11 @@ pub(crate) fn deliver(
 ) -> (Option<Deliver>, Option<ServerMsg>) {
     match item {
         Item::Own(own) => (view.own(own), None),
-        Item::Event(Event {
-            answers,
-            msg,
-            text,
-            to,
-            ..
-        }) => {
+        Item::Event(ev) => {
+            let text = ev.text_for(view.restricted).clone();
+            let Event {
+                answers, msg, to, ..
+            } = ev;
             let answer = match (&*msg, answers) {
                 (ServerMsg::Applied { op, .. }, Some((c, id))) if c == client => {
                     Some(ServerMsg::Response {
@@ -1931,7 +1981,7 @@ pub(crate) fn deliver(
                 _ => None,
             };
             let deliver = match text {
-                Ok(text) => view.broadcast(&to, &text),
+                Ok(text) => view.broadcast(&to, &text, client),
                 Err(e) => Some(Deliver::Own(Box::new(ServerMsg::Notice {
                     text: format!("a message the server could not write: {e}"),
                 }))),

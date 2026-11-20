@@ -1119,6 +1119,18 @@ pub struct Session {
     /// ([`EMPTY_COMMAND`]; a working set's replica, 2026-11-19): its
     /// objects are in the object rows only, not again in the log.
     lean_import: std::sync::atomic::AtomicBool,
+    /// On a network (phase 7): where users' roles come from instead of the
+    /// project's users ([`Session::set_role_source`]).
+    role_source: Option<Arc<dyn RoleSource>>,
+}
+
+/// Where a session on a network takes its users' roles from (the
+/// network's rights, [`rights::UserRights::model_role`]) instead of the
+/// project's own users. The objects a command changes are decided by the
+/// server after it ran ([`Session::atomically`]).
+pub trait RoleSource: Send + Sync {
+    /// The role of `user` (`None`: not a user of this model).
+    fn role(&self, user: &str) -> Option<Role>;
 }
 
 /// The command (and inverse) of an import logged without its objects: an
@@ -1854,6 +1866,7 @@ impl Session {
             shared_pending: std::sync::Mutex::new(None),
             next_seq: std::sync::Mutex::new(None),
             lean_import: std::sync::atomic::AtomicBool::new(false),
+            role_source: None,
         };
         session.load_lines(by_line, gone, placed)?;
         session.read_part()?;
@@ -1886,6 +1899,36 @@ impl Session {
     #[doc(hidden)]
     pub fn set_whole_only(&mut self, whole: bool) {
         self.whole_only = whole;
+    }
+
+    /// On a network (phase 7): the users' roles from `source` (the
+    /// network's rights) instead of the project's users; `None`: the
+    /// project's users again.
+    pub fn set_role_source(&mut self, source: Option<Arc<dyn RoleSource>>) {
+        self.role_source = source;
+    }
+
+    /// Runs `f` as one unit of work: what it writes and changes in memory
+    /// stays, or — when it fails — nothing does (the store's savepoint
+    /// rolled back, the line put back as it was). The network's server
+    /// runs each command so, deciding its objects' rights after it ran.
+    pub fn atomically<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, SessionError>,
+    ) -> Result<T, SessionError> {
+        self.unit(f)
+    }
+
+    /// Whether object `kind`/`id` exists in the line worked on (a library
+    /// file by `kind/name`).
+    pub fn has_object(&self, kind: Kind, id: &str) -> bool {
+        self.objects.contains_key(&(kind, id.to_owned()))
+    }
+
+    /// Every object of the line worked on, by kind and id (line
+    /// elements, settings, library files, reports, annotations).
+    pub fn object_keys(&self) -> impl Iterator<Item = &(Kind, String)> {
+        self.objects.keys()
     }
 
     /// The project's chunk grid.
@@ -2155,6 +2198,9 @@ impl Session {
 
     /// A user's role (`None`: unknown user).
     pub fn role(&self, user: &str) -> Result<Option<Role>, SessionError> {
+        if let Some(source) = &self.role_source {
+            return Ok(source.role(user));
+        }
         let r: Option<String> = self.conn.user_role(user)?;
         r.map(|r| Role::parse(&r)).transpose()
     }
@@ -4126,6 +4172,9 @@ pub mod points;
 pub mod replace;
 pub mod reports;
 pub mod reproject;
+pub mod rights;
+#[cfg(test)]
+mod rights_tests;
 pub mod shared;
 #[cfg(test)]
 mod shared_tests;

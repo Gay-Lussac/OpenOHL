@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later (GNU Affero General Public
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
-//! `ohl network …`: a country server's database (ADR-0013, phases 4–5) —
+//! `ohl network …`: a country server's database (ADR-0013, phases 4–7) —
 //! project files imported, one model exported, the models listed, the
 //! PostgreSQL store measured; the server on the network hosted and
-//! measured (`serve`, `bench`).
+//! measured (`serve`, `bench`); the rights for admins (`rights …`).
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -71,6 +71,12 @@ pub enum NetworkCommand {
         #[arg(long)]
         user: String,
     },
+    /// The network's users, groups, roles and assignments (admins; every
+    /// change through the rights' one function and into the audit).
+    Rights {
+        #[command(subcommand)]
+        command: crate::network_rights_run::RightsCommandArgs,
+    },
     /// The network's lines, its schema and size.
     Lines {
         /// Database (default: OHL_DATABASE_URL).
@@ -125,9 +131,10 @@ pub enum NetworkCommand {
         /// this run).
         #[arg(long, value_name = "FILE")]
         keys: Option<PathBuf>,
-        /// Role of users the network does not know: viewer, designer, or
-        /// none (refused).
-        #[arg(long, default_value = "viewer")]
+        /// Role of users the network does not know: none (a network admits
+        /// only its users, each with their personal invitation, since
+        /// phase 7; another value is refused).
+        #[arg(long, default_value = "none")]
         newcomers: String,
         /// Print the personal invitation of this user (repeatable).
         #[arg(long)]
@@ -206,6 +213,30 @@ pub enum NetworkCommand {
         #[arg(long)]
         work: PathBuf,
     },
+    /// Measure phase 7 on the network: the rights' cost with many users
+    /// (USERS users, ASSIGNMENTS assignments made by --user, the network
+    /// admin): a command's rights decided, a tile's rights class and its
+    /// package filtered, the clients that may not see a change worked out.
+    /// Runs the server in this process; prints JSON. Edits the network
+    /// (structures moved back and forth) and adds users and assignments
+    /// (named rb-…; made once).
+    BenchRights {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// The network admin (made one when the network has none).
+        #[arg(long)]
+        user: String,
+        /// Users made.
+        #[arg(long, default_value_t = 200)]
+        users: usize,
+        /// Assignments made.
+        #[arg(long, default_value_t = 1000)]
+        assignments: usize,
+        /// Moves timed (each user).
+        #[arg(long, default_value_t = 40)]
+        moves: usize,
+    },
     /// Measure phase 6 on the network: working sets picked (shown before
     /// they are confirmed), a partial replica loaded, the rows of edits
     /// arriving in it, a replica joining again after edits, a route
@@ -236,7 +267,7 @@ pub enum NetworkCommand {
     },
 }
 
-fn database(given: Option<String>) -> Result<String, String> {
+pub(crate) fn database(given: Option<String>) -> Result<String, String> {
     given
         .or_else(|| std::env::var(DATABASE_ENV).ok())
         .ok_or_else(|| format!("no database: give --database or set {DATABASE_ENV}"))
@@ -244,6 +275,7 @@ fn database(given: Option<String>) -> Result<String, String> {
 
 pub fn run(command: NetworkCommand) -> Result<(), String> {
     match command {
+        NetworkCommand::Rights { command } => crate::network_rights_run::run(command),
         NetworkCommand::Serve {
             database: db,
             bind,
@@ -332,6 +364,27 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             );
             Ok(())
         }
+        NetworkCommand::BenchRights {
+            database: db,
+            user,
+            users,
+            assignments,
+            moves,
+        } => {
+            let report =
+                crate::network_bench_rights::bench(&crate::network_bench_rights::RightsBench {
+                    database: database(db)?,
+                    user,
+                    users,
+                    assignments,
+                    moves,
+                })?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         NetworkCommand::BenchWorkingSet {
             database: db,
             user,
@@ -368,6 +421,15 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                 return Err("--line and --name go with one file only".into());
             }
             let net = Network::connect_writer(&database(db)?).map_err(|e| e.to_string())?;
+            // Phase 7: network admins import (any user while the network
+            // has none yet: it is being set up).
+            let rights = net.rights().map_err(|e| e.to_string())?;
+            let admins = rights.network_admins();
+            if !admins.is_empty() && !admins.contains(&user) {
+                let why = format!("{user} may not import lines: network admins only");
+                let _ = net.audit(&user, "refused", "import", &why);
+                return Err(why);
+            }
             if let Some(dir) = &report {
                 std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             }
@@ -419,6 +481,19 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             user,
         } => {
             let net = Network::connect(&database(db)?).map_err(|e| e.to_string())?;
+            // Phase 7: the export permission on the line whole (a model
+            // exported is every row of it).
+            let rights = net
+                .rights()
+                .map_err(|e| e.to_string())?
+                .compile(&user, &ohl_store_pg::rights::DbResolve(&net));
+            let line_whole = ohl_session::rights::Target::Line(&line);
+            if !rights.allows(ohl_session::rights::Permission::Export, &line_whole) {
+                let why =
+                    format!("{user} may not export line {line}: it needs export on the whole line");
+                let _ = net.audit(&user, "refused", &format!("export {line}"), &why);
+                return Err(why);
+            }
             let r = ohl_store_pg::export::export(&net, &line, &out, &user)
                 .map_err(|e| e.to_string())?;
             println!(

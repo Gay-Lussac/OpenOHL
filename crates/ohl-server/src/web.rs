@@ -474,6 +474,7 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
             since,
             routes,
             tiles,
+            see_as,
             ..
         } => (
             protocol,
@@ -483,6 +484,7 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
                 since,
                 routes,
                 tiles,
+                see_as,
                 ..JoinOptions::default()
             },
         ),
@@ -586,6 +588,12 @@ async fn joined_session<S: AsyncRead + AsyncWrite + Unpin>(
                     let _ = send(&mut ws, &ServerMsg::Notice { text }).await;
                     let _ = ws.close(None).await;
                     return Err("client too far behind".into());
+                }
+                Err(FeedEnd::LetGo) => {
+                    let text = "the server let this connection go: join again".to_owned();
+                    let _ = send(&mut ws, &ServerMsg::Notice { text }).await;
+                    let _ = ws.close(None).await;
+                    return Err("client let go".into());
                 }
                 Err(FeedEnd::Closed) => return Ok(()),
             },
