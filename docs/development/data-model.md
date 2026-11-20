@@ -3847,7 +3847,10 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 | `working_sets` | only while a user has one (phase 8): the routes each user edits, JSON `{user: [route, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 | `stale_routes` | only while a route's results are out of date (phase 8): JSON `{route: Stale}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 | `branch_scopes` | only while a project line is a branch over a working set (phase 11, 2026-11-20; made on a network's server, kept by an exported model): JSON `{line: {"by": user, "routes": [route, …], "team": [user or group, …]}}` — the rules of shared towers apply to its commands with these routes, its stale marks are written when its changes reach another line |
-| `network.name`, `network.line`, `network.position`, `network.working_set` | a working set's replica only (phase 6, 2026-11-19): the network's name, the model, the stream's position it holds (JSON `{seq, step}`, moved by each rows taken), its picks (JSON `WorkingSetSpec`) ([below](#a-working-sets-replica-phase-6-2026-11-19)) |
+| `network.name`, `network.line`, `network.position`, `network.working_set` | a working set's replica only (phase 6, 2026-11-19): the network's name, the model, the stream's position it holds (JSON `{seq, step}`, moved by each rows taken), its picks (JSON `WorkingSetSpec`) ([below](#a-working-sets-replica-phase-6-2026-11-19)); an offline working set has them too (phase 12) |
+| `network.offline` | an offline working set only (phase 12, 2026-11-20): JSON `OfflineMeta` — `network`, `model`, `user` (its exporter: the bundle comes back from them), `time`, `base` (the server's revision of the model's main line it was taken from), `export` (the file's first revision: a bundle's base), `spec` (its picks), `routes`, `reach_m` (the checks' reach its neighbours were taken within), `area` (`[x0, y0, x1, y1]`: what its neighbours cover — the working set's bounds grown by the reach and three times the network's largest span margin; a check asking for more says NOT ALL CHECKED), `max_margin` (the network's largest span margin, m), `library_pins` (kind → release), `left_out` (`other_lines`, `this_line`: what its user may not see, counted), `neighbour_lines`, `neighbour_sections` ([below](#an-offline-working-set-phase-12-2026-11-20)) |
+| `network.neighbours` | an offline working set only (phase 12): JSON list of `NeighbourLine` — `model`, `line` (another line's part: what solving its sections within the area reads, structure types resolved — a line JSON as `.ohl.json` holds it), `libraries` (`{kind: {file: text}}`: its wire, weather and load case files) |
+| `network.library_pins` | an exported model (phase 9) and an offline working set (phase 12): JSON, kind → release |
 
 #### The applications' settings (`setting.<key>`)
 
@@ -4020,6 +4023,27 @@ and `part_users`. A replica joining again says what it holds with a hash
 of each object's JSON (`object_hash`: 64-bit FNV-1a of the text serde
 writes) and gets only what differs. A program that does not know these
 keys opens the file as a part of a line.
+
+#### An offline working set (phase 12, 2026-11-20)
+
+(`ohl_session::offline`, [ADR-0013](../adr/0013-country-server.md#offline-working-sets);
+built, in active development, not approved yet.) A project file of
+today's format written by a network's server: a part of the line
+([above](#a-part-of-a-line-ols_meta-key-part-2026-11-18)) — `part` the
+working set (editable), every other object read-only: its context (as a
+replica's) and the line's own sections within the export's area with
+what solving each reads; `part_users` as a replica's (filtered by the
+rights). Its first revision is the **export's revision** (`network.offline`
+`export`, by its exporter, message "Offline working set N of USER: … (from
+revision R, TIME)"), the exported state; the server keeps its tree's text
+(`offline_export.tree`). Other lines' neighbours are not objects of the
+file: they are in `network.neighbours` (read by `ohl network
+check-offline`; OHL-Design's checks on the file say NOT ALL CHECKED as on
+a replica). The work comes back as a **bundle** (the bundle format,
+`ohl_session::versions::Bundle`) holding only the main line's revisions
+since the export's and the blobs they need that the export does not hold
+(an object as exported stays behind) — `Session::offline_bundle`;
+uncommitted changes refuse it.
 
 #### Towers shared by several routes (2026-11-18)
 
@@ -4465,9 +4489,9 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9 and 11** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9, 11 and 12** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 5 (schema 1: phase 4's tables; schema 2: what the server
+network schema 6 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
 `oplog.lines`, `oplog.tiles`, `stream`; schema 3, phase 6: saved working
 sets — `working_set.line_id`, `working_set.picks`; schema 4, phase 7:
@@ -4476,7 +4500,8 @@ rights evaluated — `assignment.lib_kind`, `lib_file`, `lib_entry`,
 schema 5, phase 9: country libraries — `lib_kind`, `lib_file.text`,
 `hash`, `by_user`, `time`, `lib_release.n`, `lib_release_file`,
 `lib_withdrawn`, `lib_use` made again, `lib_request.text`, `line_id`,
-`branch`, `released`, `net_meta` `library_rev`). A country server keeps every model and model element of
+`branch`, `released`, `net_meta` `library_rev`; schema 6, phase 12:
+offline working sets — `offline_export`). A country server keeps every model and model element of
 its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
 is **unchanged** (the session's statements and files the same, tested by
 `sqlite3 .dump`); a model exported from a server is a normal project file
@@ -4515,6 +4540,7 @@ kept; times given as the project file writes them,
 | `pointcloud*`, `background_*` | — (later) | stay in the project files; the import report lists them |
 | — | `line`, `working_set`, `object_ref` | the models; saved working sets (phase 6) and the reference index (written by the import and by every command of the server, phase 5) |
 | — | `lib_kind`, `lib_file`, `lib_entry`, `lib_release`, `lib_release_file`, `lib_withdrawn`, `lib_use`, `lib_request` | country libraries (phase 9, schema 5): each kind once for the network; a line holds the files of the release it is pinned to as its `library` objects |
+| — | `offline_export` | the offline working sets exported (phase 12, schema 6): each export's record, a bundle's base checked against it |
 | — | `stale`, `notice`, `audit` | `stale` and `notice` made, still empty: a model's stale marks are its `line_meta` row `stale_routes` (phase 8, as a project file's), the notices sent to connected users (phase 11); the audit of imports, exports, rights and library changes and refusals |
 
 Columns (`time` columns `timestamptz`, UTC; every text id is the name users
@@ -4719,6 +4745,21 @@ surface        (line_id text REFERENCES line, name text, time timestamptz NOT NU
 surface_tile   (name text, level integer, tx bigint, ty bigint, data bytea NOT NULL,
                 PRIMARY KEY (name, level, tx, ty))           -- later: a TIN cut per tile
 
+-- Offline working sets (phase 12, schema 6; `ohl_store_pg::offline`)
+offline_export (id bigserial PRIMARY KEY, line_id text REFERENCES line ON DELETE CASCADE,
+                user_name text NOT NULL,                     -- its exporter
+                time timestamptz NOT NULL,
+                base text NOT NULL,                          -- the main line's revision taken
+                export text NOT NULL UNIQUE,                 -- the file's first revision
+                tree text NOT NULL,                          -- that revision's (flat) tree: each
+                                                             -- object by the hash of its JSON
+                wanted text NOT NULL,                        -- JSON [[kind, id], …]: editable
+                routes text NOT NULL, spec text NOT NULL,    -- JSON: its routes, its picks
+                reach double precision NOT NULL,             -- m
+                brought_back text NOT NULL DEFAULT '[]')     -- JSON [[head, branch], …]
+               -- an export is in the audit (`export working set`), a bundle
+               -- brought back too (`import bundle`); refusals as `refused`
+
 -- Staleness, notices, audit
 stale          (result_key text PRIMARY KEY, cause text NOT NULL, since timestamptz NOT NULL)
 notice         (id bigserial PRIMARY KEY, user_name text NOT NULL, time timestamptz NOT NULL,
@@ -4734,7 +4775,9 @@ audit          (id bigserial PRIMARY KEY, time timestamptz NOT NULL, user_name t
                                                              -- changes, see as, exports, imports);
                                                              -- see_as, explain; library changes
                                                              -- (phase 9: lock, put, request, grant,
-                                                             -- refuse, release, withdraw, pins)
+                                                             -- refuse, release, withdraw, pins);
+                                                             -- phase 12: export working set,
+                                                             -- import bundle
                 target text NOT NULL, before jsonb, after jsonb, detail text NOT NULL DEFAULT '')
                -- append only: a trigger refuses every UPDATE, DELETE and TRUNCATE
 ```
@@ -4859,10 +4902,23 @@ Notes:
   release), `network.library_withdrawn` (phase 9: JSON, the withdrawn
   entries it uses, `kind/entry`), `network.exported` (JSON: time and
   user). The library entries it uses are in it: its own library files
-  are the pinned releases' files. In the audit. An
-  offline working set (exported to come back as a bundle, phase 12) will
-  also have `network.read_only` (JSON, the kinds and ids of the
-  neighbours kept read-only; the session refuses edits to them).
+  are the pinned releases' files. In the audit.
+- **An offline working set** (phase 12, 2026-11-20;
+  `ohl network export-working-set`, the server's `export_working_set`):
+  a part of the model (`ols_meta` `part`, the working set; the rest
+  read-only) with `network.offline` and `network.neighbours`
+  ([above](#an-offline-working-set-phase-12-2026-11-20)), its export
+  recorded in `offline_export`. Its bundle comes back
+  (`ohl network import-bundle`, the server's `import_bundle`) onto a new
+  branch over the working set (`CreateWorkingSetBranch` from the export's
+  base revision, phase 11's `branch_scopes`), its changes one logged
+  command, then a revision on that branch — never on main; the offline
+  revisions themselves are not kept (they hold a part of the line).
+- **Commands made directly on main** (phase 12's first item, 2026-11-20;
+  nothing stored): checked by the rules of shared towers against the
+  routes that are their user's (`Session::with_command_routes`): their
+  stale marks are the model's `line_meta` `stale_routes`, their owners
+  told (`notice`).
 
 ### The server's messages (protocol 3)
 
@@ -4938,6 +4994,16 @@ metres), `Neighbour` (`model`, `kind`: section / jumper / structure,
 bound of its wire, its top). `ohl_clearance::CaseTargets` gained
 `min_reach` (the wire-to-wire checks look at least this far; 0: as
 before).
+
+Phase 12 (2026-11-20): two messages each way, and `create_working_set_branch`'s
+`from` may be a revision of the model (its whole id) —
+
+| Message | Fields | Meaning |
+|---|---|---|
+| client `export_working_set` | `id`, `working_set` (`spec`), `reach`? (m, default 500, at most 10 000) | an offline working set of `working_set` (needs see on everything it holds, export on each object of the working set, and something editable on each of its routes); paced as the working-set requests |
+| server `working_set_exported` | `id`, `result` (`Ok`: `report` — `model`, `number`, `bytes`, `wanted`, `context`, `neighbour_lines`, `neighbour_sections`, `left_out` (`other_lines`, `this_line`), `base`, `export`, `recorded_first`, `seconds` — and `file`, the project file in base64 (at most what a message carries, 64 MB); `Err`: why, naming nothing its user may not see) | the file written and recorded; the main line's changes recorded first when it had some (by the exporter, by phase 11's rule) |
+| client `import_bundle` | `id`, `bundle` (the bundle format), `branch`? (default `offline-USER-N-K`) | an offline working set's work brought back |
+| server `bundle_imported` | `id`, `result` (`Ok`: `model`, `branch`, `revisions`, `puts`, `deletes`, `conflicts` (the objects it changes that changed on main since the export, as its user may see them), `context_changed`, `seconds`; `Err`: why) | applied on a new branch over the working set made from the export's base, committed; or refused, nothing kept |
 
 Phase 11 (2026-11-20): one operation, no new message —
 `create_working_set_branch` (`name`, `from`: a project line, `routes`,

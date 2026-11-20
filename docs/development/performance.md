@@ -1062,10 +1062,87 @@ Notes:
   once is to come ([running it](postgresql.md#what-is-not-there-yet)).
 - Opening a model reads each branch's base revision whole (lines kept as
   differences, schema 6): the country as one model with the bench's
-  branches opened in 20 s instead of 1.8 s — a base read along what its
-  branch changed is to come.
+  branches opened in 20 s instead of 1.8 s — read along what differs
+  since phase 12 (4.7 s: [below](#synthetic-country-phase-12-the-offline-working-set-2026-11-20)).
 - The run's other measures of the first line, for the record: opening it
   50 ms (split) and 194 ms (flat, after the split run's branches).
+
+## Synthetic country: phase 12, the offline working set (2026-11-20)
+
+The offline working set and phase 11's two open items — the rules of
+shared towers on edits made directly on a network's main line, a
+branch's base read along what differs
+([ADR-0013](../adr/0013-country-server.md#offline-working-sets),
+[decision log](decisions.md#2026-11-20-country-server-phase-12)), on the
+12 000-pylon synthetic country (seed 1), measured by
+
+```bash
+ohl network bench-offline --user admin --rounds 3 --work DIR   # the 147 lines
+ohl network bench-versions --user admin --line CH --rounds 2 --trees split,flat   # its second run opens with the first's branches
+```
+
+`bench-fast`, Apple M-series, 10 cores, PostgreSQL 17 on 127.0.0.1, the
+machine shared with another agent's builds.
+
+**An offline working set** — the whole route of the first line with a
+tower shared with another line (145 structures, 1 576 objects of the
+working set), its neighbours within 500 m:
+
+| Measure | Value |
+|---|---|
+| The export, on the server (3 runs) | first 0.93 s, then p50 0.25 s |
+| What it holds | 1 576 objects editable, 12 read-only (the line's settings and library files: the route is the whole line); 15 other lines with 3 222 sections near, in `network.neighbours` |
+| The file | 7.7 MB |
+| A bundle of 20 changes (20 structures moved, one revision; 25 objects changed with their tied alignment points) | made in 62 ms, 0.32 MB; brought back (checked, a branch made from the base, one command, a revision) in 0.29 s |
+| A bundle of 500 changes (the route's structures moved again and again, five revisions; 177 objects changed) | made in 90 ms, 4.9 MB; brought back in 0.66 s |
+
+A bundle's size is mostly its revisions' trees: an offline file keeps
+flat trees (as every project file), each listing the file's objects
+once (about 0.3 MB for this one); the objects themselves travel only
+when they changed.
+
+**Not slower** — the same benches with main's code (a7827878) and phase
+12's, each on a fresh database of the same 147 lines (imported without
+revisions in 58.0 s both), one after the other:
+
+| Measure | Main's code | Phase 12's code |
+|---|---|---|
+| A move applied and broadcast, in the server (`bench-rights`, 2 runs, network admin) | p50 9.1 / 9.3 ms, p95 10.3 / 10.3 ms | p50 8.6 / 8.5 ms, p95 9.5 / 12.7 ms |
+| The same, a designer of one route (her routes worked out for the rules of shared towers) | p50 9.6 / 9.5 ms, p95 10.6 / 10.9 ms | p50 8.9 / 8.6 ms, p95 9.7 / 10.4 ms |
+| On the server: a move by a user following a working set (the rules of shared towers checked on main) / its rows per change | p50 15.0 / 10.8 ms, p95 22.0 ms | p50 15.0 / 10.6 ms, p95 21.5 ms |
+| A partial replica loaded: a third / the whole route | 0.079 / 0.119 s | 0.078 / 0.125 s |
+| A move's rows in the replica | p50 19.1 ms, p95 25.2 ms | p50 19.9 ms, p95 24.2 ms |
+| A replica joining again after 20 moves | 358 ms | 360 ms |
+| Server start (`ohl network serve` on one database of the 147 lines, in turn: 3 and 4 runs) | 2.7–2.8 s | 2.7–2.8 s |
+| Memory of the server, idle | 1 309 MB | 1 310 MB |
+
+**Opening a model with branches** — the country as one model (CH,
+108 785 objects) with the branches `bench-versions` makes (two branches
+over a route, merged), opened again:
+
+| Measure | Main's code | Phase 12's code |
+|---|---|---|
+| Opened without branches (the bench's first run) | 1.85 s | 1.85 s |
+| **Opened again with its two branches** (each a base revision of its own) | **20.8 s** (each base read whole) | **4.7 s** (each base read along what differs from the main line) |
+| The first revision of the model (every object hashed and written) | 24.0 s | 23.8 s |
+| A commit of one changed route (split trees) | p50 187 ms | p50 167 ms |
+| A branch's merge (split trees) | 128 ms | 123 ms |
+
+Of the 4.7 s, about 2.9 s is the main line's objects hashed once — kept
+as a commit keeps them: the model's first commit after opening then
+costs only what changed — and each further base costs what differs (a
+few nodes and objects here) instead of 9–10 s.
+
+Notes:
+
+- The first export of a model after the server started asks whether the
+  main line has changes not recorded (every object of the line hashed
+  once, kept for its next commit): 0.93 s here, then 0.25 s.
+- Found while measuring (there before phase 12): importing the country as
+  one model into a network already holding five of its lines (their ids
+  taken, so about 4 000 of its ids renamed) ran for more than four
+  minutes before it was stopped; the other way round (the country first,
+  then the five lines: 4 173 ids renamed) takes 17 s and 40 s.
 
 ## OHL-Design: an edit taken in place (O42, 2026-11-19)
 

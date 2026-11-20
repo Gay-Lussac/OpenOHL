@@ -24,6 +24,15 @@ the network's writer: no `ohl network serve` running on the database
 | `lines` | The network's lines, its schema and size. | anyone reaching the database | `ohl network lines` |
 | `measure --line CODE [--edits N] [--seconds S] [--export FILE]` | Times opening a line, edits (structures moved 1 m), undo and redo through the store; JSON. Edits the line (moved back). *Writer.* | a user who may edit the line | `ohl network measure --line L001 --user ana` |
 
+## Offline working sets (phase 12)
+
+| Command | What it does | Who may | Example |
+|---|---|---|---|
+| `export-working-set --line CODE --route ID… [--from A --to B \| --stations X:Y] [--reach M] OUT` | Your working set (whole routes, or a part of one route) as a project file of today's format: the working set editable, its context and the line's neighbours within `--reach` (500 m by default, at most 10 000) read-only, other lines' neighbours kept for the checks; what you may not see left out and counted. The main line's unrecorded changes recorded first (by the rule of a branch over a working set). Recorded on the server and in the audit; no reservation. Prints its report (JSON). *Writer* (hosts the network in this process: refused while its server runs — its clients send `export_working_set`). | see on everything it holds, *export* on each object of the working set, edit on something of each of its routes | `ohl network export-working-set --line L001 --route R7 --from T3 --to T9 --user ben ws.ohl` |
+| `offline-bundle FILE --out BUNDLE` | The bundle of an offline working set's work: its revisions since the export and only what they changed (the bundle format). Uncommitted changes refuse it. No database. | anyone holding the file | `ohl network offline-bundle ws.ohl --out work.bundle` |
+| `import-bundle BUNDLE [--branch NAME]` | Brings the work back: the bundle checked against the export the network recorded, its changes applied on a new branch over the working set made from the export's base (default name `offline-USER-N-K`), checked by your rights now and the rules of shared towers, committed; conflicts with main listed, never settled. Refused, nothing kept: read-only neighbours or library files changed, a bundle changed by hand, an unknown base, another user's export, a bundle brought back already. In the audit. Prints its report (JSON). *Writer* (as `export-working-set`; clients send `import_bundle`). | the export's user, with their rights as they are now | `ohl network import-bundle work.bundle --user ben` |
+| `check-offline FILE --check clearances\|fields\|loads [--case NAME] [--rules FILE] [--structure ID]… [--distance M] [--amps A] [--limit-ut B]` | A check of the network's (clearances between wires, the magnetic field, the loads on towers shared with other lines) run on an offline working set with the neighbours it holds: the server's report, or NOT ALL CHECKED where the file cannot give it. No database; prints JSON. | anyone holding the file | `ohl network check-offline ws.ohl --check clearances --case "10 °C" --rules rules.ohlr` |
+
 ## The server
 
 | Command | What it does | Who may | Example |
@@ -75,6 +84,7 @@ client whose rights changed.
 | `bench-rights [--users N] [--assignments N] [--moves N]` | Phase 7: the rights' cost with many users and assignments. | `ohl network bench-rights --user ana` |
 | `bench-library [--queries N]` | Phase 9: releases, Update library pins of every line, the use index. *Writer.* | `ohl network bench-library --user ana` |
 | `bench-versions [--line CODE]… [--rounds N] [--trees split,flat]` | Phase 11: a commit of one changed route, a branch over a working set (diff, ahead and behind, merge), a merge at a shared tower — split and flat trees on the same model. *Writer.* | `ohl network bench-versions --user ana --line L001` |
+| `bench-offline --work DIR [--line CODE] [--rounds N]` | Phase 12: a whole route's offline working set exported (size and time), bundles of 20 and 500 changes made and brought back (each onto a branch). Hosts the network in this process. *Writer.* | `ohl network bench-offline --user ana --work /tmp/o` |
 | `bench-scoped [--runs N]` | Phase 10: checks on a working set with their neighbours pulled in, computed by the server in the bench's process — a whole route's clearances between wires, its magnetic field with the lines within 500 m, the loads on a tower shared with another line; each `--runs` times. Changes nothing (a user who sees the whole network). | `ohl network bench-scoped --user ana` |
 
 The numbers: [performance](../development/performance.md).
@@ -93,7 +103,9 @@ or restore command (phase 13: base backups, WAL archiving, a restore
 drill, migrations refused without a recent backup — until then use
 PostgreSQL's own tools), no command for branches over a working set
 (the server's operation `create_working_set_branch`; OHL-Design's window
-to come), no OIDC sign-in (phase 13), no command for the checks with their
+to come; `import-bundle` makes one), no OHL-Design menu for offline
+working sets (the commands above and the server's messages
+`export_working_set`, `import_bundle`), no OIDC sign-in (phase 13), no command for the checks with their
 neighbours (phase 10: the server's messages `check`, answered with
 `check_result` and later, once, `check_stale` —
 [the server's messages](../development/data-model.md#the-servers-messages-protocol-3);

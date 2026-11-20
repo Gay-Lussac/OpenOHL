@@ -96,11 +96,11 @@ yet** ([ADR-0013](../adr/0013-country-server.md),
 | The server on the database: tiles, changes by interest, catch-up, heartbeats, the web client by tile (phase 5) | built, in active development |
 | Working sets and context in OHL-Design (phase 6) | built, in active development |
 | Rights and roles on (almost) every element and library, the audit, see as user (phase 7) | built, in active development; managed on the command line |
-| Towers shared by several routes (phase 8) | built, in active development: in the session and on branches over a working set; not yet on edits made directly on a network's main line |
+| Towers shared by several routes (phase 8) | built, in active development: in the session, on branches over a working set and (since 2026-11-20) on edits made directly on a network's main line |
 | Country libraries: locks, requests, releases, pins, withdrawn entries, the use index (phase 9) | built, in active development; Update library pins on the command line and the server's protocol |
 | Scoped computations: checks pulling in their neighbours — clearances between wires, the magnetic field, shared towers' loads — hidden neighbours counted, results marked stale (phase 10) | built, in active development; through the server's protocol (OHL-Design's check windows run on the working set's file and say what they did not pull in) |
 | Version control at scale: split trees, branches over a working set, merges at shared towers (phase 11) | built, in active development; through the server's protocol |
-| Offline working sets (phase 12) | not yet |
+| Offline working sets: exported with read-only neighbours, checked offline, back as a bundle onto a branch (phase 12) | built, in active development; on the command line and the server's protocol (OHL-Design's Offline copy menu for a network not yet) |
 | Security review, deployment files, **backups and restore**, OIDC sign-in, TLS to a remote database (phase 13) | not yet — back up the database with PostgreSQL's own tools meanwhile |
 | The admin app OHL-Server | a plan waiting for the owner |
 | Point clouds, terrain tiles and backgrounds served by the network | not yet (they stay in project files) |
@@ -371,6 +371,65 @@ route takes a tenth of a second instead of seven seconds, a branch's
 merge a tenth of a second instead of half a minute). A project
 file on the desktop keeps its revisions as before; a model exported from
 a network keeps its split revisions, which this version and later read.
+
+**Edits made directly on main** (since 2026-11-20) follow the same rules
+of shared towers: the routes that are yours — those your rights let you
+edit something on, and of them only your connection's working set if it
+follows one — are your working set. Deleting or changing what another
+route's sections hang on is refused, naming the route; moving a shared
+tower is allowed, the other routes are marked out of date and their
+connected owners told; on a protected main such a move waits for a
+review. Someone who may edit every route of the line and follows no
+working set edits as before.
+
+### Offline working sets (phase 12, in active development)
+
+*Built 2026-11-20, in active development, not approved yet
+([decisions](../development/decisions.md#2026-11-20-country-server-phase-12)).*
+
+Take your working set with you where there is no connection, and bring
+the work back:
+
+1. **Export it** — `ohl network export-working-set --line L001 --route R7
+   --user ben ws.ohl` (or a part: `--from T3 --to T9`, `--stations
+   1200:4800`; the server's message `export_working_set`). You get a
+   project file of today's format: your working set editable; its
+   context and your line's neighbours within the checks' reach (500 m
+   by default, `--reach`) read-only; other lines' wires within that reach
+   kept for the checks. You need to see everything it holds, *export* on
+   each object of your working set, and to be able to edit something of
+   each of its routes. Anything you may not see is **left out and only
+   counted**. If the main line has changes not recorded in a revision,
+   they are recorded first — only by someone who may edit them all (as
+   for a branch over a working set): otherwise ask for a commit of main.
+   The export is recorded on the server and in the audit; nothing is
+   reserved for you.
+2. **Work offline** in OHL-Design or on the command line, and **commit**
+   your work. The read-only neighbours cannot be changed. `ohl network
+   check-offline ws.ohl --check clearances --case "10 °C" --rules
+   rules.ohlr` runs the network's checks on the file with the neighbours
+   it holds — the same report as the server's, or **NOT ALL CHECKED**
+   where the file cannot give it (neighbours you may not see were left
+   out; the check reaches beyond what was exported, for example after
+   you moved the working set far).
+3. **Make the bundle** — `ohl network offline-bundle ws.ohl --out
+   work.bundle` holds only your revisions since the export and what they
+   changed (uncommitted changes refuse it: commit first).
+4. **Bring it back** — `ohl network import-bundle work.bundle --user ben`
+   (the server's message `import_bundle`). The server checks the bundle
+   against the export it recorded and applies your changes on **a new
+   branch over your working set** made from the export's base — never on
+   main — checked by your rights **as they are now** and the rules of
+   shared towers, then committed. Objects you changed that also changed
+   on main since your export are **listed as conflicts**: merging the
+   branch into main asks you to settle them (nothing is settled for
+   you). Refused, with nothing kept: a bundle changing a read-only
+   neighbour or a library file, changed by hand, of an export the network
+   does not know or of another user's, or brought back already.
+
+Then merge the branch into main as any branch over a working set
+(above). OHL-Design's Offline copy menu does not do this for a network
+yet: use the command line.
 
 ## Roles
 

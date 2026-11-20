@@ -219,7 +219,7 @@ pub fn bench(
         .map_or(0, |d| d.as_secs());
     let mut out = Vec::new();
     for code in &codes {
-        for mode in modes {
+        for (k, mode) in modes.iter().enumerate() {
             let split = match mode.as_str() {
                 "split" => true,
                 "flat" => false,
@@ -232,7 +232,9 @@ pub fn bench(
                 user,
                 rounds,
                 split,
-                &format!("{mode}-{stamp}"),
+                // The same mode twice (opening with the first run's
+                // branches): a tag of its own each.
+                &format!("{mode}-{stamp}-{k}"),
             )?);
         }
     }

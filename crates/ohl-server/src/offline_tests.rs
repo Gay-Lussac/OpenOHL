@@ -189,7 +189,7 @@ fn same_report(a: &ScopedReport, b: &ScopedReport) {
             .iter()
             .map(|f| {
                 format!(
-                    "{} | {} | {:?} | {} | {:.9} | {:?} | {}",
+                    "{} | {} | {:?} | {} | {:?} | {:?} | {}",
                     f.what, f.on, f.against, f.measure, f.value, f.required, f.violates
                 )
             })

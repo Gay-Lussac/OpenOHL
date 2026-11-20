@@ -8,6 +8,218 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (country server, phase 12)
+
+**The offline working set: exported with read-only neighbours, checked
+offline, back as a bundle onto a branch over the working set; and phase
+11's two open items — the rules of shared towers on edits made directly
+on a network's main line, a branch's base read along what differs**
+(ROADMAP O17 phase 12; the plan's answer of 2026-11-16: offline working
+sets without reservations at first; built, in active development, not
+approved yet;
+[ADR-0013](../adr/0013-country-server.md#offline-working-sets),
+[data model](data-model.md#an-offline-working-set-phase-12-2026-11-20),
+[user guide](../user-guide/server.md#offline-working-sets-phase-12-in-active-development),
+[measured](performance.md#synthetic-country-phase-12-the-offline-working-set-2026-11-20)).
+
+**Phase 11's open items, first:**
+
+- **Edits made directly on main** (a safety gap: the rules of shared
+  towers applied on branches only): a command on a network's main line
+  (do, undo, redo, rollback) is checked by phase 8's rules against **the
+  routes that are its user's** — through the same code path as a branch
+  over a working set (`Session::with_command_routes`, then the session's
+  own check of every command): a broken connection refused, naming the
+  other route; a move allowed, the other routes marked stale (the model's
+  `stale_routes`) and their connected owners told (`notice`); a protected
+  main refusing it pending its owners' review (even a line admin's, as
+  phase 11 decided for merges). **Decided here**: a user's routes are
+  those the rights let them edit something on (from the assignments when
+  they name routes, parts of routes, the line or the network — a route
+  list's cost; from every object's place when a grant is on a region or
+  an object, or a deny touches the line), narrowed to the working set
+  their connection follows on that model, if any; a user who may edit
+  every route of the line and follows no working set has no rule (as a
+  project without working sets — the owner's question 1). Tested on both
+  stores (the store suite's `shared_towers_on_main`) and on the server
+  (a route's designer refused deleting the tower another route uses,
+  naming it; her move marking the other route stale, its designer told;
+  a network admin following a working set of one route refused on a
+  protected main, without one allowed).
+- **Opening a model with branches** read each branch's base revision
+  whole. A base kept as a split tree is now **read along what differs
+  from the main line**: the main line's tree kept as a commit keeps it
+  (each object hashed once — the same work the first commit after
+  opening did, which then costs nothing more), only the nodes whose
+  hashes differ and the objects in them that differ read from the store,
+  the rest taken from the main line's objects (their JSON shared); a
+  flat base is read whole as before. The same for a line made from a
+  revision (a bundle's branch). Tested: the same objects (places,
+  versions, JSON, library files) as the revision read whole, every line
+  the same after opening again. Measured below.
+
+**Phase 12:**
+
+- **The export** (`ohl network export-working-set`, the server's
+  `export_working_set`): the working set picked as a join picks it,
+  written by the server as a project file of today's format — a part of
+  the line (`part`: the working set, editable; the rest read-only, the
+  session's part refusing edits to it), with:
+  - its **context** as a replica's (what solving its sections alone
+    reads, what it refers to, its routes' alignments, the line's
+    settings and library files);
+  - **the line's own neighbours** within the export's area (every
+    section with a span in it and what solving each reads), read-only;
+  - **other lines' neighbours** in the meta key `network.neighbours`:
+    for each line with sections in the area, what solving them reads
+    (`Session::drawing_part`, structure types resolved, as the server's
+    checks take it) with its wire, weather and load case files.
+  **Decided here: the area** is the working set's bounds grown by the
+  reach and three times the network's largest span margin — a rectangle,
+  because a scoped check asks for exactly that shape (its wires' bounds
+  grown by its reach and twice the margin), so what the server reads the
+  file holds; **the reach** is 500 m by default (the field distance, the
+  largest of the shipped checks'; `--reach` up to 10 000 m, a plugin
+  reach's bound).
+- **Its rights** (the one function): everything it holds seen (refused
+  as a join is when the working set reaches what its user may not see);
+  **export on each object of the working set** and something editable
+  on each of its routes (a branch over them is made when it comes back);
+  its context and neighbours seen only, as a join's replica holds them
+  (the owner's question 3). **What its user may not see is left out and
+  counted, never written**: another line's section whose solve reads a
+  hidden object (section by section), a neighbour line's library file it
+  may not see, and — **decided as conservative** — the line's own
+  neighbours all left out when one of them is hidden.
+- **Its base** is the model's main revision; **the main line's changes
+  not recorded in a revision are recorded first, by the exporter, by
+  phase 11's rule for a branch over a working set** (a commit records
+  only what its user may edit: otherwise refused, "ask whoever may edit
+  them all to commit the main line" — the owner's question 2).
+- **Recorded**: the file's first revision is the **export's revision**
+  (by the exporter, its message naming the export's number and the base);
+  the server keeps a row per export (`offline_export`, **network schema
+  6**, with its migration tested on PostgreSQL): its model, user, base,
+  export revision and that revision's tree text — each exported object by
+  the hash of its JSON, no object copied —, the working set's objects,
+  routes and picks, the reach, the bundles brought back. In the audit
+  (`export working set`). **No reservation** (the plan's answer).
+- **Written on the authority** between two commands (synchronously: the
+  owner's question 6), into the requester's file (the command line) or
+  sent in the answer (the protocol: base64, within a message's 64 MB).
+- **Meta keys added** (the desktop's format unchanged): `network.offline`
+  (the export's record: network, model, user, time, base, export, picks,
+  routes, reach, area, the network's largest span margin, library pins,
+  what was left out, the neighbours' counts), `network.neighbours`, and as
+  a replica `network.name`, `network.line`, `network.position`,
+  `network.working_set`, `network.library_pins`.
+- **Checks offline** (`ohl network check-offline`,
+  `ohl_server::offline_checks`): the scoped checks of phase 10 run on the
+  file with the neighbours it holds, through **the server's own code**
+  (the check's run and its report moved into one module both use:
+  `scoped_report`; nothing of the computation changed) — the same report
+  as the server's for a user who sees what the file holds (tested to the
+  bit: clearances between wires and shared towers' loads on the
+  synthetic country, the counts and every violation equal). **NOT ALL
+  CHECKED** where the file cannot give the server's result: neighbours
+  left out (computed on the server only), a check asking for an area
+  beyond the export's (its working set moved or grown offline, a larger
+  reach).
+- **The bundle** (`ohl network offline-bundle`,
+  `Session::offline_bundle`): the existing bundle format, holding the
+  main line's revisions since the export's and only the blobs they need
+  that the export does not hold (an object as exported stays behind) —
+  never the exported state again. Uncommitted changes refuse it (they
+  would not come back).
+- **Bringing it back** (`ohl network import-bundle`, the server's
+  `import_bundle`):
+  - its base is the one revision its revisions come from; a base the
+    network did not record is refused, as is another user's export;
+  - verified as any bundle (every blob against its hash, every revision
+    against its id, every parent the export or in the bundle, every tree
+    whole: `ohl_session::offline::offline_changes`); what it changes is
+    the difference between the export's revision and its head — objects
+    put or deleted (a place among a kind changed alone is not a change);
+  - **refused, nothing applied**: a library file changed (library files
+    change on the network: requests); an object that was read-only in
+    the file changed (its context, its neighbours, the line's settings);
+    a bundle brought back already (its head recorded with the branch);
+  - applied on **a new branch over the working set made from the
+    export's base revision** (`CreateWorkingSetBranch`, whose `from` may
+    now be a revision of the model: phase 11's rights, team and rules) —
+    **never on main** — as **one command** (its puts and deletes, no
+    cascade) decided by **the user's rights as they are now** and the
+    rules of shared towers with the working set's routes, validated
+    where it changes, then **committed** (its message naming the export
+    and listing the offline revisions; the offline revisions themselves
+    are not kept: they hold a part of the line). A refusal at any step
+    takes the branch away again and is audited, naming nothing hidden;
+  - **conflicts with main listed, never settled**: the objects it
+    changes that changed on main since the export (named only when its
+    user may see them; "an object you may not see" else) — merging the
+    branch into main asks to settle them; and how many of the read-only
+    neighbours changed since (checks made offline are out of date). In
+    the audit (`import bundle`).
+- **OHL-Design**: its Offline copy menu for a joined network is **not
+  built** (the size of the work: the export, the file's transfer, the
+  bundle's way back and the branch's window together); the command line
+  and the server's messages do it. OHL-Design shows a note if such an
+  answer comes.
+- **Tests**: the session (a bundle holding only the changes; a bundle
+  changed by hand, cut short, from another base, with nothing after the
+  export: refused; the context read-only offline); the store
+  (`schema_5_brought_to_6`: an export recorded, found, a bundle noted, the
+  same export twice refused); the server: an export through the protocol
+  and the command line's way (a user seeing everything: nothing left out;
+  a route's designer: the other lines left out, counted, never written,
+  her checks offline NOT ALL CHECKED); the checks offline equal to the
+  server's; a bundle brought back onto a branch from the base, main
+  unchanged; a conflict listed; refused, nothing applied, audited: a
+  value changed by hand, an unknown base, another user's export, a
+  read-only neighbour changed (the file's part opened by hand), the same
+  bundle twice, an edit to an object the user may not see (a new object
+  of a hidden id, refused without naming it), a bundle after the user's
+  rights were taken away; **the property that no message holds a hidden
+  id or place extended to exports**: each round's export asked (refused
+  or written) and brought back, the file's objects, neighbours, record,
+  users and working set scanned as the messages are, and a last round
+  sure to export (a route's designer with hidden lines near).
+- **Measured** ([performance](performance.md#synthetic-country-phase-12-the-offline-working-set-2026-11-20)):
+  the whole route of a line (145 structures, 1 576 objects) exported with 15 other lines' 3 222 sections near in 0.25 s (the first 0.93 s), a file of 7.7 MB; bundles of 20 and 500 changes made in 62 / 90 ms (0.32 / 4.9 MB) and brought back in 0.29 / 0.66 s; the country as one model opened with its two branches 20.8 s → 4.7 s; main's code against phase 12's on fresh databases of the 147 lines: a move applied and broadcast p50 9.1–9.3 → 8.5–8.6 ms (a route's designer 9.5–9.6 → 8.6–8.9 ms), a move with a working set followed 15.0 → 15.0 ms, a replica loaded 0.079 / 0.119 → 0.078 / 0.125 s, joining again after 20 moves 358 → 360 ms, the start 2.7–2.8 s both.
+- **Not yet**: OHL-Design's Offline copy menu for a network; the export
+  written on a thread of its own; OHL-Design's check windows using the
+  neighbours a file holds (the command line's `check-offline` does);
+  plugin checks offline with their neighbours; the line's own neighbours
+  left out section by section (now: all when one is hidden); point
+  clouds and terrain in an export; a server-made revision of main's
+  changes so that any designer may export (now: whoever may record them).
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. Edits directly on main: a user's routes are those they may edit
+> something on, narrowed to the working set their connection follows; who
+> may edit every route and follows none edits as before? → yes, as built;
+> OHL-Design's View › Editable routes sent as the working set later.
+> 2. An export records the main line's unrecorded changes first, only by
+> who may edit them all (else refused, as for a branch over a working
+> set)? → yes for now; a revision of main made by the server itself
+> (audited) when someone exports, next — so any designer can export.
+> 3. Export on each object of the working set, see only on its context
+> and neighbours? → yes, as built.
+> 4. The line's own neighbours all left out when one is hidden (other
+> lines' section by section)? → yes for now; section by section later.
+> 5. The export's area the working set's bounds grown by the reach (500 m)
+> and three span margins, a rectangle (the checks' own query)? → yes; a
+> corridor if files get too big on long diagonal routes.
+> 6. The export written on the authority between commands? → a thread of
+> its own next, as a replica's copy.
+> 7. A bundle applied as one command on a new branch from the export's
+> base, the offline revisions not kept (named in the commit's message)?
+> → yes, as built.
+> 8. A bundle brought back twice refused; another bundle of the same
+> export (more work) allowed, onto another branch? → yes, as built.
+> 9. Library files and settings not changed offline (requests on the
+> network)? → yes, as built.
+
 ## 2026-11-20 (owner): country server phase 9's 10 recommendations approved
 
 The owner, 2026-11-20: "go ahead with recommendations" — the ten

@@ -5,7 +5,7 @@
 //! Checks on an offline working set (ADR-0013, phase 12): the scoped
 //! checks of phase 10 run on the file alone, with the neighbours the
 //! export wrote into it — **the same code** as the network's server
-//! ([`crate::scoped_report`]), so the same check on the same neighbours
+//! (the crate's `scoped_report` module), so the same check on the same neighbours
 //! gives the same report.
 //!
 //! **Safe side**: the file holds the neighbours within the export's area

@@ -3025,7 +3025,11 @@ or three, L four or more. The phases, in order:
   Left: a branch's line in memory is a whole line (its JSON shared:
   a branch the size of its working set with phase 12); reverts and
   rollbacks read whole states; history, diffs and reviews served to a
-  network's clients and OHL-Design's window for these branches.
+  network's clients and OHL-Design's window for these branches. Its two
+  open items **done with phase 12** (2026-11-20): the rules of shared
+  towers on edits made directly on a network's main line, and a
+  branch's base read along what differs (opening the country as one
+  model with branches 20.8 → 4.7 s).
   > **Owner:** (to answer, 2026-11-20; the recommendation after the
   > arrow) 1. Split trees only on a network, the project file keeping flat
   > ones? → yes, as built. 2. A model exported keeps its split trees
@@ -3040,8 +3044,60 @@ or three, L four or more. The phases, in order:
   > rule). 7. A team named by users and groups, a draft's requester named
   > in it? → yes, as built. 8. Merges changing library files the whole
   > way? → yes, until library files merge entry by entry on the trees.
-- [ ] 12 The offline working set (M): exported with read-only
-  neighbours, back as a bundle.
+- [x] 12 The offline working set (M): exported with read-only
+  neighbours, back as a bundle. **Built 2026-11-20, in active
+  development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-12),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server.md#offline-working-sets-phase-12-in-active-development),
+  [commands](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/network-commands.md#offline-working-sets-phase-12),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-12-the-offline-working-set-2026-11-20)):
+  `ohl network export-working-set` (the server's `export_working_set`)
+  writes a working set as a project file of today's format — the working
+  set editable, its context and the line's own neighbours within the
+  checks' reach read-only, other lines' neighbours (what solving their
+  sections there reads, with their wire and case files) in
+  `network.neighbours` — filtered by the rights (the working set seen
+  whole, export on each of its objects; what its user may not see left
+  out and counted, never written), its base the main revision (the main
+  line's changes recorded first by phase 11's rule), the export recorded
+  (`offline_export`, network schema 6: its tree's hashes, no object
+  copied) and audited, no reservation; `ohl network check-offline` runs
+  the scoped checks on the file with the server's own code (the same
+  report, tested to the bit, or NOT ALL CHECKED where the file cannot
+  give it); `ohl network offline-bundle` makes a bundle of only the
+  changes; `ohl network import-bundle` (the server's `import_bundle`)
+  verifies it against the recorded export and applies it on a new branch
+  over the working set made from the export's base — never on main — as
+  one command decided by the user's current rights and the rules of
+  shared towers, then committed; conflicts with main listed, never
+  settled; read-only neighbours, library files, a bundle changed by hand,
+  of an unknown base, another user's or brought back twice refused,
+  nothing kept. With it, **phase 11's two open items done**: the rules of
+  shared towers on commands made directly on a network's main line (the
+  routes its user may edit something on, narrowed to the working set its
+  connection follows; the same code path as a branch), and a branch's
+  base read along what differs from the main line (opening a model with
+  branches, a line made from a revision). Measured on the synthetic
+  country: a whole route exported in 0.25 s (7.7 MB, 15 other lines near), bundles of 20 / 500 changes brought back in 0.29 / 0.66 s, the country as one model opened with its branches 20.8 → 4.7 s; moves, replicas, joining again and the start as with main's code.
+  Left: OHL-Design's Offline copy menu for a network (the command line
+  and the protocol do it); the export on a thread of its own; OHL-Design's
+  check windows using a file's neighbours; a revision of main's changes
+  made by the server so any designer can export.
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. Edits directly on main: a user's routes those they may edit
+  > something on, narrowed to their connection's working set; who may
+  > edit every route and follows none as before? → yes, as built.
+  > 2. An export records main's unrecorded changes first, only by who
+  > may edit them all? → yes for now; a server-made revision next.
+  > 3. Export on each object of the working set, see on its context and
+  > neighbours? → yes. 4. The line's own neighbours all left out when one
+  > is hidden? → yes for now; section by section later. 5. The area the
+  > working set's bounds grown by the reach (500 m) and three span
+  > margins? → yes; a corridor if files grow too big. 6. The export on the
+  > authority between commands? → a thread of its own next. 7. A bundle
+  > one command on a new branch, the offline revisions not kept? → yes.
+  > 8. A bundle twice refused, another of the same export allowed? → yes.
+  > 9. Library files and settings not changed offline? → yes.
 - [ ] 13 Security, deployment, backups (M): a security review of the
   network server (the interest pace, tile limits, queues), Compose files,
   OIDC sign-in, a restore drill, migrations refused without a recent

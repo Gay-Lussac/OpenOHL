@@ -301,12 +301,17 @@ stand for rights until phase 7; stale marks with notices in the project
 file; a protected project line stands for a built line, its review the
 existing one; a project without working sets unchanged (the
 [decision log](../development/decisions.md#2026-11-18-country-server-phase-8)).
-On a network's server (since phases 7 and 11): the rights decide every
+On a network's server (since phases 7, 11 and 12): the rights decide every
 object a command changes; the rules of this section apply to the
-commands on a branch over a working set (its routes the working set) and
-to its merge where it lands (stale marks, the other routes' connected
-owners told, a protected line waiting for a review) — not yet to edits
-made directly on a network's main line.
+commands on a branch over a working set (its routes the working set), to
+its merge where it lands (stale marks, the other routes' connected
+owners told, a protected line waiting for a review) and, since 2026-11-20
+(phase 12's first item), to commands made directly on a network's main
+line — checked against the routes that are their user's (those the rights
+let them edit something on, narrowed to the working set their connection
+follows; a user who may edit every route and follows no working set:
+no rule, as a project without working sets), through the same code path
+([decision log](../development/decisions.md#2026-11-20-country-server-phase-12)).
 
 ### Rights and roles on (almost) every element and library
 
@@ -444,8 +449,8 @@ format from the server".
 - Rights-filtered (only what the exporter may see) and only with the
   *export* permission; every export is in the audit.
 - Distinct from an **offline working set** (exported with read-only
-  neighbours, brought back as a bundle and merged like a branch). An
-  exported model can be imported again as a new model.
+  neighbours, brought back as a bundle and merged like a branch; below).
+  An exported model can be imported again as a new model.
 - Built in phase 4 (PostgreSQL → SQLite writer through the store
   interface), with a round-trip test: a project imported into the network
   and exported back has the same objects (dump compared, ids mapped).
@@ -454,6 +459,39 @@ format from the server".
   one snapshot; the same object, index, meta, user and grant rows as the
   file imported, on the example line and on the 12 000-pylon synthetic
   country.
+
+### Offline working sets
+
+A user takes their working set away with no connection and brings the
+work back (plan of 2026-11-16: no reservations at first). Built
+2026-11-20 (phase 12, in active development, not approved yet;
+[decision log](../development/decisions.md#2026-11-20-country-server-phase-12)):
+
+- **Out**: the working set (picked as a join picks it) written by the
+  server as a project file of today's format — a part of the line, the
+  working set editable, its context and the line's own neighbours within
+  the checks' reach read-only, other lines' neighbours (what solving their
+  sections there reads, types resolved, with their wire and case files)
+  in a meta key; everything filtered by the rights' one function (the
+  working set seen whole; a neighbour its user may not see left out and
+  counted, never written). Its base is the model's main revision (the
+  main line's changes recorded first, by phase 11's rule for a branch);
+  the file's first revision — the export's — is recorded on the server
+  (`offline_export`, network schema 6: its tree's list of hashes, no
+  object again) and the export audited.
+- **Offline**: the scoped checks of phase 10 run on the file with the
+  server's own code and the neighbours it holds — the same report, or NOT
+  ALL CHECKED where the file cannot give it (a hidden neighbour left out,
+  a check reaching beyond what was exported).
+- **Back**: a bundle of only the changes (the existing bundle format and
+  verification), checked against the export the network recorded; its
+  changes applied on a **branch over the working set made from the
+  export's base** — never on main — as one command decided by the user's
+  current rights and the rules of shared towers, then committed. Changes
+  to read-only neighbours and library files are refused; conflicts with
+  what changed on main meanwhile are listed (its merge asks to settle
+  them), never settled; a bundle of an unknown base, of another user's
+  export, changed by hand or brought back twice is refused.
 
 ### Import of existing projects
 
