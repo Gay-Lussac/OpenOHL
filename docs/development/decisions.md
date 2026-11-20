@@ -632,6 +632,50 @@ owner's "rights and roles applied to almost every element and library",
 > within what both may see? → yes (the OHL-Server plan's question 3
 > answered the same way).
 
+## 2026-11-20 (joint layout: the bent end's turn, the end running back to its bend L3b)
+
+**O44, L3b** (built 2026-11-20, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-bent-ends-turn-and-the-end-running-back-to-its-bend-l3b),
+[user guide](../user-guide/joint-layout.md), [joint details](joint-details.md);
+no format change):
+
+- **The flat end's turn chosen for the bent end — the other leg kept, a
+  switch** (`bend_facing`, on): after step 2b's half turns, an equal-leg
+  angle the half turn did not help, left at an end at most 20° off with its
+  outstanding leg towards the flange, is tried with its other leg bolted —
+  the quarter turn that faces that end's leg away from the flange (from the
+  geometry) — in one more planning pass, kept as the half turns are (more
+  of its ends planned laid out, its joints no fewer). The order of the ends
+  (L1 a: bottom up, then out) unchanged. **Left out**: choosing the half
+  turn (or the other leg) from the geometry alone wherever it predicts more
+  ends flat or bent (measured: fewer ends laid out — the bent end then
+  mostly fails the axis limit, the flat end needs the flange's other face).
+- **An end running back towards its bend — kept, a switch** (`bend_back`,
+  on): bent away from the flange, its steel kept clear of the bend only
+  over the flange (to half the gap past its toe), not to half its length;
+  beyond, its steel may pass the plane of the flat plate's face (*an
+  assumption of the tool*, the clash check after writing checks it). Its
+  bolts their edge distance from the bend, its axis within one plate
+  thickness — L3's limits unchanged. The flap on the joint's side of the
+  bend line is not built (the flat plate would no longer cover the work
+  point).
+- **The holding bolts over a hole after writing** (131 ends left on the
+  real towers): looked into, not fixed — the hole is the end of the very
+  member the plate is held to, not laid out at that joint, drawn after
+  writing where the plan did not see it (its `onto` named only in the
+  planning copy, or its end off its flange); not a simple fix (a question
+  to the owner).
+- Unchanged: the bend check C12, the plugins, the 2° / 5° tolerances, the
+  20° bound and the edge-distance rule (L3's questions 4–6 open), C10 (the
+  tilted inner-face ends not laid out).
+
+Measured on the 78 private real towers (the theory page): joints laid out
+whole 49.71 % → 49.78 %, ends 64.66 % → 64.85 % ((1) +39 joints whole and
++199 ends alone, (2) +8 and +132), joints not fitting as given 28 → 28, the
+L3 bends 4 085 → 4 398 (84 % pass the strict check under one vertical case),
+a run again identical 78 of 78, the time per tower 3–6 % more. The owner's
+questions are in the roadmap (O44 L3b).
+
 ## 2026-11-20 (joint layout: L2's follow-ups, a plate bent by a few degrees L3)
 
 **O44, L2's follow-ups and L3** (built 2026-11-20, in active development,

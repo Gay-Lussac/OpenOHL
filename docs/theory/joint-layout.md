@@ -1468,6 +1468,62 @@ brace lies flat on it.
   drawn in the 3D view, close-up, sheets and IFC as J2b's bent plates (the
   bend's angle any).
 
+## The bent end's turn and the end running back to its bend (L3b)
+
+(Owner, 2026-11-20, L3's question 5 and its follow-ups. Built 2026-11-20,
+in active development, not approved yet. The code: `layout_run` (step 2b's
+quarter turns), `joint_layout` (`turned_end`, `own_geometry`'s `back`),
+switches `LayoutSettings::bend_facing` and `LayoutSettings::bend_back`, on
+by default, both with `small_bends`. No format change.)
+
+- **Which way round the flat end lies.** A member whose ends need rolls a
+  few degrees apart lies flat at one end; turned half a turn more it still
+  lies flat there (its outstanding leg the other way), and an equal-leg
+  angle a quarter turn more too (its other leg on the flange — mirrored
+  about the heel). At the other end the turn decides whether the
+  outstanding leg points away from the flange (a plate bent by as much
+  takes it) or towards it (it would stand on the plate). The half turn was
+  already tried for such ends (step 2b, kept for a member only where more
+  of its ends are planned laid out and its joints lay out no fewer). Looked
+  into on the real towers: the two ends' flanges lie within the few degrees
+  of each other but on opposite sides of the member, so whichever turn
+  faces the bent end's leg the right way faces the flat end's the wrong way
+  (it then needs the flange's other face), and half turned about half of
+  them (on a sample of the towers) then lie with their axis more than a
+  plate's thickness out (step 4's limit: the leg's far edge lowest from the
+  bend) — why most such ends stay left. **Built:** for an equal-leg angle
+  the half turn did not help, the
+  quarter turn that faces its bent end's leg away from the flange (worked
+  out from the geometry, `turned_end`: the leg lying flatter there, how far
+  off, which way its outstanding leg points on either of the flange's
+  faces) is tried in one more planning pass and kept as the half turn is.
+  A turn chosen from the geometry alone, without planning (the half turn
+  or the other leg wherever it predicts more ends flat or bent), was
+  measured and left out: fewer ends laid out (the predicted bent end still
+  failing the axis limit and the flat end lost).
+- **An end running back towards its bend.** Bent away from the flange,
+  the flap rises from the bend line; an end whose member runs back down
+  towards that line going away from the joint was refused (its steel would
+  cross the line). It now takes the plate bent away too where its steel
+  keeps clear of the bend — the curved part and half the gap beyond it, as
+  every L3 bend — **wherever it lies over the flange**, to half the gap past
+  the flange's toe (or heel); beyond, no flange or flat plate lies under it,
+  and its steel may pass the plane of the flat plate's face there (*an
+  assumption of the tool*; the clash check checks every solid after
+  writing). Its bolts their edge distance beyond the curved part, its axis
+  within one plate thickness of where a flat plate puts it — L3's limits,
+  unchanged. Bent towards the flange (the other way) was tried already;
+  it fails on the axis limit (the member lowered 5–20 mm, more than the
+  plate's thickness) for nearly all of these ends. The flap on the joint's
+  side of the bend line with the flat plate beyond it is **not built**: the
+  flat plate would no longer cover the work point and the other ends on
+  it, the flap standing over them.
+- **Unchanged:** the bend check (C12, the plugins' strict check), the 20°
+  bound (`BEND_SMALL_MAX`), the edge distance from a bend as from a free
+  edge, the 2° and 5° tolerances; the tilted ends on an inner face running
+  towards the other leg are not laid out (J2b's bent plate is not for
+  tilted ends).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -1897,3 +1953,54 @@ same as before on every thirteenth tower.
   plates' tries), the largest 24.1 and 24.3 s before, 21.4 and 22.0 s
   after. The full columns ran four at a time on a shared machine: their
   times are not compared.
+
+## Measured (L3b, 2026-11-20)
+
+On the same 78 tower files and settings as L3 (kept privately; J9's
+proposals and J7a's leg splice places confirmed in every column, L1's (a),
+(b), (d), L2's three parts, L2's follow-ups and L3 on). "Before" is L3's
+result (measured again: the same to the unit); "(1)" the other leg tried
+for the bent end alone, "(2)" the end running back to its bend alone,
+"both" the two (the default now).
+
+| | before | (1) | (2) | both |
+|---|---|---|---|---|
+| joints laid out whole | 32 193 (49.71 %) | 32 232 (49.77 %) | 32 201 (49.72 %) | 32 240 (49.78 %) |
+| … of the body | 17 991 (49.5 %) | 18 027 (49.6 %) | 17 991 (49.5 %) | 18 027 (49.6 %) |
+| … of the arms and the top | 14 202 (50.0 %) | 14 205 (50.0 %) | 14 210 (50.0 %) | 14 213 (50.0 %) |
+| member ends laid out | 115 225 (64.66 %) | 115 424 (64.77 %) | 115 357 (64.74 %) | 115 556 (64.85 %) |
+| joints that do not fit, as assumed / as given | 12 932 / 28 | 12 934 / 28 | 12 932 / 28 | 12 934 / 28 |
+| plates written | 62 936 | 63 287 | 63 145 | 63 497 |
+| ends 5°–20° off left | 11 260 | 11 086 | 11 211 | 11 037 |
+| … their outstanding leg towards the flange | 4 100 | 3 948 | 4 108 | 3 955 |
+| … running back towards the bend | 1 600 | 1 604 | 1 525 | 1 529 |
+| L3 bends written; passing the bend check | 4 085; 83 % | 4 281; 83 % | 4 202; 84 % | 4 398; 84 % |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+
+- **(1)**: about 2 700 equal-leg members tried with their other leg, about
+  250 kept: +39 joints whole, +199 ends, the ends with their outstanding
+  leg towards the flange 4 100 → 3 948. The rest stay left for the reason
+  found above (the axis more than a plate's thickness out, or the flat end
+  on the flange's other face). The turn picked from the geometry alone
+  (left out): on every thirteenth tower one joint whole fewer and 25 ends
+  fewer than before.
+- **(2)**: alone, the ends running back to their bend 5°–20° off left
+  1 600 → 1 525, +8 joints whole (on the arms and the top), +132 ends, 117
+  more L3 bends; on top of (1) the same again. Of the ends still left so,
+  most now fail the axis limit by a few millimetres (their steel kept
+  clear of the bend to the flange's toe lifts them).
+- **The bend check (C12, unchanged)** under the comparison's one vertical
+  case: the L3 bends 83 % → 84 % pass (median usage 0.20 → 0.22, the
+  largest 6.97 as before); J2b's 50 % as before.
+- **The holding bolts over a hole after writing**: 132 → 131 ends left so.
+  Looked into: in every case seen the hole is the end of the member the
+  plate is held to, not laid out at that joint, drawn after writing
+  where the plan did not see it — its `onto` named only in the planning
+  copy (about six in ten), or its end off its flange (about a third). Not
+  fixed (no simple fix: the plan would need that end as it will be drawn
+  without the run's values; a question to the owner).
+- **Time**: every thirteenth tower, six, laid out back to back twice: the
+  median per tower 19.3 and 19.7 s before, 20.0 and 21.0 s with both on
+  (about 3–6 % more: the quarter turns' planning pass), the largest 21.0 and
+  21.4 s before, 21.9 and 22.8 s after. The full columns ran up to eight at
+  a time on a shared machine: their times are not compared.

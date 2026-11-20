@@ -192,12 +192,13 @@ pub struct LayoutSettings {
     /// the flange's toe — before a welded plate (step 4). On by default;
     /// off: as before.
     pub small_bends: bool,
-    /// L3b, 2026-11-20: where a member's one end lies flat whichever of
-    /// its turns that lay it flat is taken (a half turn, or an equal-leg
-    /// angle's other leg), the one leaving more of its other ends flat or
-    /// for a plate bent by a few degrees (their outstanding leg away from
-    /// the flange). With [`Self::small_bends`]. On by default; off: as
-    /// before.
+    /// L3b, 2026-11-20: an equal-leg angle the half turn (the layout's step
+    /// 2b) did not help, left at an end at most [`BEND_SMALL_MAX`] off its
+    /// flange with its outstanding leg towards it, tried with its other leg
+    /// bolted — the quarter turn that faces that end's leg away from the
+    /// flange (its end lying flat stays flat) —, kept where more of its
+    /// ends are planned laid out and its joints lay out no fewer. With
+    /// [`Self::small_bends`]. On by default; off: as before.
     pub bend_facing: bool,
     /// L3b, 2026-11-20: an end at most [`BEND_SMALL_MAX`] off its flange
     /// that runs towards the bend line going away from the joint also on a

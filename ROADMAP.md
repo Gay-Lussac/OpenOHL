@@ -2320,6 +2320,53 @@ only where it helps):
   > is bent (`BEND_SMALL_MAX`) and a bolt's edge distance from a bend's
   > curved part as from a free edge: keep? Recommended: yes, until a shop
   > gives its rules.
+- [x] L3b. **The bent end's turn, the end running back to its bend, L3's
+  small things.** **Built 2026-11-20, in active development, not approved
+  yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-bent-ends-turn-and-the-end-running-back-to-its-bend-l3b),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-joint-layout-the-bent-ends-turn-the-end-running-back-to-its-bend-l3b);
+  no format change). (1) **The flat end's turn chosen for the bent end**:
+  looked into on the real towers — the half turn was already tried (step
+  2b) and mostly leaves the bent end's axis more than a plate's thickness
+  out, or the flat end on the flange's other face; built: an equal-leg
+  angle the half turn did not help tried with its other leg bolted (the
+  quarter turn facing its bent end's leg away from the flange), kept as
+  the half turns are (`bend_facing`, on); a turn picked from the geometry
+  alone measured and left out (fewer ends). (2) **An end running back
+  towards its bend** bent away from the flange, its steel kept clear of the
+  bend only over the flange (to half the gap past its toe) — within L3's
+  limits otherwise (`bend_back`, on); bent the other way was tried already
+  (fails the axis limit), the flap on the joint's side of the bend line not
+  built (the flat plate would leave the work point). (3) The holding bolts'
+  slide unit-tested; the 131 ends left for a holding bolt over a hole
+  looked into, not fixed (below); the user guide's picture of a
+  few-degree bend. On the 78 real towers (kept privately; L3's result
+  49.7 % whole, 64.7 % of the ends): joints laid out whole 49.71 % → 49.78 %
+  (body 49.5 % → 49.6 %, arms and top 50.0 %), ends 64.66 % → 64.85 % ((1)
+  alone +39 joints whole, +199 ends; (2) alone +8 and +132), joints not
+  fitting as given 28 → 28, the ends 5°–20° off left 11 260 → 11 037 (their
+  outstanding leg towards the flange 4 100 → 3 955, running back to their
+  bend 1 600 → 1 529), L3 bends written 4 085 → 4 398 (the strict bend check
+  under the one vertical case: 83 % → 84 % pass), a run again identical
+  78/78; the time per tower (six back to back, twice) median 19.3–19.7 s →
+  20.0–21.0 s, the largest 21.0–21.4 s → 21.9–22.8 s.
+  > **Owner:** (1) Keep the other leg tried for the bent end (one more
+  > planning pass)? → Recommended: yes (+39 joints whole, +199 ends; the
+  > pass costs a few per cent of the time). (2) Keep an end running back to
+  > its bend bent away from the flange, its steel past the bend's plane
+  > beyond the flange's toe (the clash check checks it)? → Recommended:
+  > yes (+8 joints whole, +132 ends; nothing of the joint lies there, and
+  > what is written is checked for clashes). (3) The ends left for a holding
+  > bolt over a hole (131): the
+  > hole is the end of the member the plate is held to, not laid out at that
+  > joint and drawn after writing where the plan did not see it (its `onto`
+  > named only while planning, or its end off its flange). Write that end's
+  > `onto` when a plate is held to it, or leave such ends? → Recommended:
+  > leave them for now (a hand detail, said); look again with L4.
+  > (4) Most of the bent ends with their outstanding leg towards the flange
+  > (3 955 left) cannot be laid out within one plate thickness either way
+  > round: allow a filler (a packing plate) under the bent flap? →
+  > Recommended: not before the owner's answers to L3's questions 4–6.
 - [ ] L4. **A joint's detail copied to the other towers of the line**
   (laid out or done by hand) onto their matching joints, not only within
   one tower.
