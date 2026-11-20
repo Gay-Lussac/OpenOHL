@@ -13,7 +13,7 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 5;
+pub const SCHEMA: i32 = 6;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
@@ -370,6 +370,33 @@ CREATE INDEX lib_request_user ON lib_request (user_name);
 -- The libraries' revision: each change adds one; the server reads the
 -- locks, requests and withdrawn entries again when it moved.
 INSERT INTO net_meta (key, value) VALUES ('library_rev', '0') ON CONFLICT (key) DO NOTHING;
+"#,
+    ),
+    (
+        6,
+        "offline working sets (phase 12)",
+        r#"
+-- An offline working set exported: by whom, of which model, from which
+-- revision of its main line (base), the export's own revision (the
+-- file's first: a bundle's base is checked against it) and its tree's
+-- text (what the export holds, each object by the hash of its JSON — no
+-- object again), the working set's objects (editable), its routes and
+-- picks, the checks' reach, the bundles brought back (their heads and
+-- branches: one is brought back once).
+CREATE TABLE offline_export (
+  id bigserial PRIMARY KEY,
+  line_id text NOT NULL REFERENCES line ON DELETE CASCADE,
+  user_name text NOT NULL,
+  time timestamptz NOT NULL DEFAULT clock_timestamp(),
+  base text NOT NULL,
+  export text NOT NULL UNIQUE,
+  tree text NOT NULL,
+  wanted text NOT NULL,
+  routes text NOT NULL,
+  spec text NOT NULL,
+  reach double precision NOT NULL,
+  brought_back text NOT NULL DEFAULT '[]');
+CREATE INDEX offline_export_user ON offline_export (user_name);
 "#,
     ),
 ];

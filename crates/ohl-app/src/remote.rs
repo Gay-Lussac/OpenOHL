@@ -367,6 +367,29 @@ impl Model {
             | ServerMsg::CatchUp { .. }
             | ServerMsg::Extent { .. }
             | ServerMsg::RouteDetail { .. } => None,
+            // Phase 12: offline working sets are exported and brought back
+            // with the command line for now (OHL-Design's Offline copy
+            // menu for a network comes later); said if one comes anyway.
+            ServerMsg::WorkingSetExported { result, .. } => {
+                others.push(match result {
+                    Ok(f) => format!(
+                        "an offline working set of line {} was exported (export {})",
+                        f.report.model, f.report.number
+                    ),
+                    Err(e) => format!("the offline working set refused: {e}"),
+                });
+                None
+            }
+            ServerMsg::BundleImported { result, .. } => {
+                others.push(match result {
+                    Ok(b) => format!(
+                        "offline work brought back onto branch {} of line {}",
+                        b.branch, b.model
+                    ),
+                    Err(e) => format!("the bundle refused: {e}"),
+                });
+                None
+            }
         }
     }
 

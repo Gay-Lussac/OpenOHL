@@ -71,6 +71,108 @@ pub enum NetworkCommand {
         #[arg(long)]
         user: String,
     },
+    /// Export a working set for offline work (phase 12): a project file of
+    /// today's format holding the working set editable, its context and
+    /// its neighbours within the checks' reach read-only (other lines' in
+    /// the meta), filtered by the user's rights (what they may not see
+    /// left out, counted), the export recorded and audited. Needs see and
+    /// export on the working set's routes and edit on something of each.
+    /// Hosts the network in this process (refused while its server runs).
+    ExportWorkingSet {
+        #[command(flatten)]
+        pick: crate::network_offline_run::PickArgs,
+        /// The checks' reach the neighbours are taken within, m (default
+        /// the field distance, 500 m; at most 10 000).
+        #[arg(long)]
+        reach: Option<f64>,
+        /// Project file to write (must not exist).
+        out: PathBuf,
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Who exports (the bundle comes back from them).
+        #[arg(long)]
+        user: String,
+    },
+    /// The bundle of an offline working set's work (phase 12): the main
+    /// line's revisions since the export and only the changes they need
+    /// (the bundle format); uncommitted changes refuse it. No database.
+    OfflineBundle {
+        /// The offline working set (a project file exported).
+        file: PathBuf,
+        /// Bundle to write (must not exist).
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Bring an offline working set's bundle back (phase 12): verified
+    /// against the export the network recorded, applied on a new branch
+    /// over the working set made from the export's base (never on main),
+    /// checked by the user's current rights and the rules of shared
+    /// towers, committed; conflicts with main listed, never settled.
+    /// Hosts the network in this process (refused while its server runs).
+    ImportBundle {
+        /// The bundle.
+        bundle: PathBuf,
+        /// The branch's name (default offline-USER-N-K).
+        #[arg(long)]
+        branch: Option<String>,
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Who brings it back (its exporter).
+        #[arg(long)]
+        user: String,
+    },
+    /// A check on an offline working set with the neighbours its export
+    /// holds (phase 12): the network's server's report, or NOT ALL CHECKED
+    /// where the file cannot give it. No database; prints JSON.
+    CheckOffline {
+        /// The offline working set.
+        file: PathBuf,
+        /// clearances, fields or loads (structure loads on towers shared
+        /// with other lines).
+        #[arg(long)]
+        check: String,
+        /// The weather case (clearances, fields).
+        #[arg(long)]
+        case: Option<String>,
+        /// The clearance rules (a rules file).
+        #[arg(long)]
+        rules: Option<PathBuf>,
+        /// Structures of the loads (default: those with a twin).
+        #[arg(long = "structure")]
+        structures: Vec<String>,
+        /// The field distance, m (default 500).
+        #[arg(long)]
+        distance: Option<f64>,
+        /// The current in every circuit, A (fields).
+        #[arg(long)]
+        amps: Option<f64>,
+        /// The field's limit, µT.
+        #[arg(long)]
+        limit_ut: Option<f64>,
+    },
+    /// Measure phase 12 on the network: a whole route's offline working
+    /// set exported (size and time), bundles of 20 and of 500 changes made
+    /// and brought back. Hosts the network in this process; prints JSON.
+    /// Adds exports and branches.
+    BenchOffline {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// A user who may export and edit the route (the network admin).
+        #[arg(long)]
+        user: String,
+        /// The line (default: the first with a tower shared with another).
+        #[arg(long)]
+        line: Option<String>,
+        /// Exports timed.
+        #[arg(long, default_value_t = 3)]
+        rounds: usize,
+        /// Folder for the files.
+        #[arg(long)]
+        work: PathBuf,
+    },
     /// The network's users, groups, roles and assignments (admins; every
     /// change through the rights' one function and into the audit).
     Rights {
@@ -341,6 +443,122 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
     match command {
         NetworkCommand::Rights { command } => crate::network_rights_run::run(command),
         NetworkCommand::Library { command } => crate::network_library_run::run(command),
+        NetworkCommand::ExportWorkingSet {
+            pick,
+            reach,
+            out,
+            database: db,
+            user,
+        } => {
+            let spec = pick.spec()?;
+            let server = crate::network_offline_run::host(&database(db)?)?;
+            let r = crate::network_offline_run::export(&server, &user, spec, reach, &out);
+            server.stop();
+            let r = r?;
+            eprintln!(
+                "offline working set {} of line {} written to {} ({:.1} MB, {:.2} s): {} objects                  editable, {} read-only, {} other line(s) with {} section(s) near{}",
+                r.number,
+                r.model,
+                out.display(),
+                r.bytes as f64 / 1e6,
+                r.seconds,
+                r.wanted,
+                r.context,
+                r.neighbour_lines,
+                r.neighbour_sections,
+                if r.left_out.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "; left out (you may not see them): {} of other lines, {} of this line                          — checks offline say NOT ALL CHECKED",
+                        r.left_out.other_lines, r.left_out.this_line
+                    )
+                }
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        NetworkCommand::OfflineBundle { file, out } => {
+            let b = crate::network_offline_run::make_bundle(&file, &out)?;
+            println!(
+                "bundle of {} revision(s) written to {} ({} blobs)",
+                b.revisions.len(),
+                out.display(),
+                b.blobs.len()
+            );
+            Ok(())
+        }
+        NetworkCommand::ImportBundle {
+            bundle,
+            branch,
+            database: db,
+            user,
+        } => {
+            let b = crate::network_offline_run::read_bundle(&bundle)?;
+            let server = crate::network_offline_run::host(&database(db)?)?;
+            let r = crate::network_offline_run::bring_back(&server, &user, b, branch);
+            server.stop();
+            let r = r?;
+            eprintln!(
+                "brought back onto branch {} of line {}: {} object(s) put, {} deleted; {}",
+                r.branch,
+                r.model,
+                r.puts,
+                r.deletes,
+                if r.conflicts.is_empty() {
+                    "no conflict with main".to_owned()
+                } else {
+                    format!(
+                        "{} changed on main since the export — its merge asks to settle them: {}",
+                        r.conflicts.len(),
+                        r.conflicts.join(", ")
+                    )
+                }
+            );
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        NetworkCommand::CheckOffline {
+            file,
+            check,
+            case,
+            rules,
+            structures,
+            distance,
+            amps,
+            limit_ut,
+        } => {
+            let c = crate::network_offline_run::scoped_check(
+                &check, case, rules, structures, distance, amps, limit_ut,
+            )?;
+            let r = ohl_server::offline_checks::check_offline(&file, &c)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&r).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
+        NetworkCommand::BenchOffline {
+            database: db,
+            user,
+            line,
+            rounds,
+            work,
+        } => {
+            let report =
+                crate::network_offline_run::bench(&database(db)?, &user, line, rounds, &work)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         NetworkCommand::BenchScoped {
             database: db,
             user,

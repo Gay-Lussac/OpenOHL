@@ -74,6 +74,10 @@ use crate::network_rights::{self as nr, Compiled, ModelRoles, Places};
 // authority's models and tile index).
 #[path = "network_scoped.rs"]
 mod scoped;
+// Phase 12: offline working sets (a child module: it reads the
+// authority's models and tile index).
+#[path = "network_offline.rs"]
+mod offline;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
@@ -197,6 +201,26 @@ impl Server {
                 authority_thread,
             },
         )
+    }
+
+    /// Phase 12: an offline working set exported or brought back for
+    /// `user`, a user of the network (the command line hosting it); its
+    /// report as JSON ([`crate::OfflineExported`], [`crate::BroughtBack`]).
+    pub fn offline(
+        &self,
+        user: &str,
+        what: crate::server::OfflineJob,
+    ) -> Result<serde_json::Value, String> {
+        let (tx, rx) = std_mpsc::channel();
+        self.jobs
+            .send(Job::Offline {
+                user: user.to_owned(),
+                what,
+                reply: tx,
+            })
+            .map_err(|_| "server stopped")?;
+        rx.recv_timeout(Duration::from_secs(3600))
+            .map_err(|_| "no answer in an hour".to_owned())?
     }
 
     /// A measurement of the authority's own work (a network's server).
@@ -2021,6 +2045,62 @@ impl NetHost {
                     },
                 }
             }
+            NetAsk::Export {
+                id,
+                working_set,
+                reach,
+            } => {
+                if self
+                    .clients
+                    .get(&client)
+                    .is_some_and(|c| c.see_as.is_some())
+                {
+                    return Err("seeing as another user: nothing is exported so".into());
+                }
+                let path = self.copies.join(format!(
+                    "offline-{}-{}.ohl",
+                    working_set.model,
+                    random_code(8)
+                ));
+                let made = self.offline_export(user, &rights, working_set, reach, &path);
+                let result = made.and_then(|report| {
+                    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                    if bytes.len() * 4 / 3 + 4096 > crate::MAX_MESSAGE {
+                        return Err(format!(
+                            "the offline working set is {:.0} MB: more than a message carries \
+                             (pick less, or ask for it with the command line on the server)",
+                            bytes.len() as f64 / 1e6
+                        ));
+                    }
+                    Ok(Box::new(crate::OfflineFile {
+                        report,
+                        file: crate::base64::encode(&bytes),
+                    }))
+                });
+                for ext in ["", "-wal", "-shm"] {
+                    let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+                }
+                ServerMsg::WorkingSetExported {
+                    id,
+                    result: result.map_err(|e| self.sanitise(&rights, &e)),
+                }
+            }
+            NetAsk::Import { id, bundle, branch } => {
+                if self
+                    .clients
+                    .get(&client)
+                    .is_some_and(|c| c.see_as.is_some())
+                {
+                    return Err("seeing as another user: nothing is changed so".into());
+                }
+                let result = self
+                    .offline_import(user, &rights, *bundle, branch)
+                    .map(Box::new);
+                ServerMsg::BundleImported {
+                    id,
+                    result: result.map_err(|e| self.sanitise(&rights, &e)),
+                }
+            }
         };
         let at = self.position;
         let seen = matches!(msg, ServerMsg::Rows(_)).then_some(Update::Seen(at));
@@ -2229,7 +2309,9 @@ impl NetHost {
         // first: the same rule.
         let recorded_line = match (&need, &op) {
             (nr::Need::Recorded, _) => Some(line.to_owned()),
-            (nr::Need::WorkingSet, Op::CreateWorkingSetBranch { from, .. }) => {
+            (nr::Need::WorkingSet, Op::CreateWorkingSetBranch { from, .. })
+                if session.is_line(from.trim()) =>
+            {
                 Some(from.trim().to_owned())
             }
             _ => None,
@@ -3628,6 +3710,28 @@ impl Host for NetHost {
                     reply.send(self.guarded("the working set", |h| h.net_ask(client, &user, ask)));
             }
             Job::Built(b) => self.built(*b),
+            Job::Offline { user, what, reply } => {
+                let done = self.guarded("the offline working set", |h| {
+                    let rights = h.rights_of(&user);
+                    if !h.rights.active(&user) {
+                        return Err(format!("{user} is not a user of this network"));
+                    }
+                    match what {
+                        crate::server::OfflineJob::Export {
+                            working_set,
+                            reach,
+                            out,
+                        } => h
+                            .offline_export(&user, &rights, working_set, reach, &out)
+                            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+                        crate::server::OfflineJob::Import { bundle, branch } => h
+                            .offline_import(&user, &rights, *bundle, branch)
+                            .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
+                    }
+                    .map_err(|e| h.sanitise(&rights, &e))
+                });
+                let _ = reply.send(done);
+            }
             Job::Probe { what, reply } => {
                 let _ = reply.send(self.probe(what));
             }

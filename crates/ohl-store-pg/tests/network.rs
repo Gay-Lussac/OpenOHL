@@ -848,3 +848,79 @@ fn schema_3_brought_to_4() {
     let rights = d.compile("old", &ohl_session::rights::NoModels);
     assert_eq!(rights.model_role("A"), Some(Role::Designer));
 }
+
+/// A network of schema 5 (phase 9) brought to 6 when a program connects
+/// (phase 12): an offline working set's export kept and found by its
+/// revision, a bundle's coming back noted; an unknown revision: none.
+#[test]
+fn schema_5_brought_to_6() {
+    let Some(cluster) = Cluster::start("schema5") else {
+        return;
+    };
+    cluster.create_db("old");
+    let url = cluster.url("old");
+    {
+        let mut c = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+        c.batch_execute(
+            "CREATE TABLE net_schema (version integer PRIMARY KEY,
+                 time timestamptz NOT NULL DEFAULT clock_timestamp(), note text NOT NULL)",
+        )
+        .unwrap();
+        for (version, note, sql) in &ohl_store_pg::schema::MIGRATIONS[..5] {
+            c.batch_execute(sql).unwrap();
+            c.execute(
+                "INSERT INTO net_schema (version, note) VALUES ($1, $2)",
+                &[version, note],
+            )
+            .unwrap();
+        }
+        c.batch_execute("INSERT INTO line (id, name) VALUES ('A', 'a')")
+            .unwrap();
+    }
+    let net = Network::connect_writer(&url).unwrap();
+    assert_eq!(net.schema().unwrap(), ohl_store_pg::schema::SCHEMA);
+    assert_eq!(ohl_store_pg::schema::SCHEMA, 6);
+    let id = net.next_offline_export().unwrap();
+    let e = ohl_store_pg::offline::OfflineExport {
+        id,
+        model: "A".into(),
+        user: "ben".into(),
+        time: String::new(),
+        base: "b".repeat(64),
+        export: "e".repeat(64),
+        tree: "{}".into(),
+        wanted: vec![(ohl_session::Kind::Structure, "T1".into())],
+        routes: vec!["main".into()],
+        spec: ohl_session::working_set::WorkingSetSpec {
+            name: String::new(),
+            model: "A".into(),
+            picks: vec![ohl_session::working_set::Pick::Route {
+                route: "main".into(),
+            }],
+        },
+        reach: 500.0,
+        brought_back: Vec::new(),
+    };
+    net.record_offline_export(&e).unwrap();
+    let found = net.offline_export(&"e".repeat(64)).unwrap().unwrap();
+    assert_eq!(found.time.len(), 24);
+    assert_eq!(
+        ohl_store_pg::offline::OfflineExport {
+            time: String::new(),
+            ..found
+        },
+        e
+    );
+    net.note_brought_back(id, &"h".repeat(64), "offline-ben-1-1")
+        .unwrap();
+    assert_eq!(
+        net.offline_export(&"e".repeat(64))
+            .unwrap()
+            .unwrap()
+            .brought_back,
+        vec![("h".repeat(64), "offline-ben-1-1".to_owned())]
+    );
+    assert!(net.offline_export(&"f".repeat(64)).unwrap().is_none());
+    // The same export twice: refused (its revision is unique).
+    assert!(net.record_offline_export(&e).is_err());
+}

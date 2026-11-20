@@ -689,6 +689,9 @@ pub(crate) enum Side<'a> {
     Line(&'a str),
 }
 
+/// A line's objects.
+type Objects = BTreeMap<(Kind, String), Object>;
+
 /// What differs between two sides.
 #[derive(Debug, Default)]
 pub(crate) struct Differs {
@@ -985,7 +988,7 @@ impl crate::Session {
         rev: &str,
         name: &str,
         objects: &BTreeMap<(Kind, String), Object>,
-    ) -> Result<Option<BTreeMap<(Kind, String), Object>>, SessionError> {
+    ) -> Result<Option<Objects>, SessionError> {
         let tree = self.stored_tree(&self.revision(rev)?.tree)?;
         let TreeBlob::Split {
             objects: top,

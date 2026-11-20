@@ -598,7 +598,7 @@ pub(crate) fn state_hash(state: &State) -> String {
     hash(&tree_text(&tree_of(state).0))
 }
 
-fn revision_id(tree: &str, parents: &[String], author: &str, message: &str) -> String {
+pub(crate) fn revision_id(tree: &str, parents: &[String], author: &str, message: &str) -> String {
     hash(&canonical(&serde_json::json!({
         "tree": tree,
         "parents": parents,

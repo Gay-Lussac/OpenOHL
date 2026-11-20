@@ -273,6 +273,53 @@ pub(crate) fn no_leak(log: &[ServerMsg], a: &Hidden, b: &Hidden, what: &str) {
     }
 }
 
+/// Phase 12: no part of an offline working set's file — its objects,
+/// the other lines' neighbours, its record, the users of its structures,
+/// its working set — holds an id of `hidden` (hidden before and after) or
+/// a hidden structure's place.
+pub(crate) fn no_leak_in_file(path: &std::path::Path, a: &Hidden, b: &Hidden, what: &str) {
+    let ids: BTreeSet<&String> = a.ids.intersection(&b.ids).collect();
+    let places: Vec<&(i64, i64)> = a.places.iter().filter(|p| b.places.contains(p)).collect();
+    let s = Session::open(path).unwrap();
+    let mut parts: Vec<(&str, serde_json::Value)> = vec![
+        ("its objects", serde_json::to_value(s.line()).unwrap()),
+        (
+            "the other lines' neighbours",
+            serde_json::to_value(s.offline_neighbours().unwrap()).unwrap(),
+        ),
+        (
+            "its record",
+            serde_json::to_value(s.offline_meta().unwrap()).unwrap(),
+        ),
+    ];
+    for key in [
+        ohl_session::shared::PART_USERS_KEY,
+        ohl_session::working_set::WORKING_SET_KEY,
+        ohl_session::part::PART_KEY,
+        "network.library_pins",
+    ] {
+        if let Some(t) = s.file_meta(key).unwrap() {
+            parts.push((key, serde_json::from_str(&t).unwrap()));
+        }
+    }
+    for (part, v) in &parts {
+        let (mut words, mut numbers) = (HashSet::new(), HashSet::new());
+        tokens(v, &mut words, &mut numbers);
+        for id in &ids {
+            assert!(
+                !words.contains(*id),
+                "{what}: hidden {id} in the export's {part}"
+            );
+        }
+        for (x, y) in &places {
+            assert!(
+                !(numbers.contains(x) && numbers.contains(y)),
+                "{what}: a hidden structure's place ({x}, {y}) mm in the export's {part}"
+            );
+        }
+    }
+}
+
 fn held(tiles: &[TileKey]) -> Vec<HeldTile> {
     tiles
         .iter()
@@ -911,6 +958,10 @@ fn property_no_message_holds_a_hidden_id_or_place() {
     let mut next_id = 100;
     // Phase 10: scoped checks computed (not refused) over the rounds.
     let mut computed = 0;
+    // Phase 12: offline working sets exported over the rounds (and why
+    // not).
+    let mut exported = 0;
+    let mut not_exported: Vec<String> = Vec::new();
     for round in 0..6 {
         // Pat's rights this round.
         for id in ids.drain(..) {
@@ -1136,6 +1187,67 @@ fn property_no_message_holds_a_hidden_id_or_place() {
                 Some(ServerMsg::CheckResult { result: Ok(_), .. })
             ));
         }
+        // Phase 12: her offline working set of the round's area (refused
+        // when it reaches what she may not see; else written without what
+        // she may not see), worked on and brought back.
+        next_id += 1;
+        let want = next_id;
+        pat.link
+            .send(ClientMsg::ExportWorkingSet {
+                id: want,
+                working_set: ws.clone(),
+                reach: Some(300.0),
+            })
+            .unwrap();
+        let got = pump_for(&pat, &mut log, Duration::from_secs(120), |m| {
+            matches!(m, ServerMsg::WorkingSetExported { id, .. } if *id == want)
+                || matches!(m, ServerMsg::Notice { .. })
+        });
+        let file = t.dir.join(format!("pat-{round}.ohl"));
+        if let Some(ServerMsg::WorkingSetExported { result: Err(e), .. }) = got.last() {
+            not_exported.push(format!("round {round} ({role}): {e}"));
+        }
+        if let Some(ServerMsg::WorkingSetExported { result: Ok(f), .. }) = got.last() {
+            std::fs::write(&file, crate::base64::decode(&f.file).unwrap()).unwrap();
+            exported += 1;
+            let bundle = {
+                let mut s = Session::open(&file).unwrap();
+                let mine = s
+                    .part()
+                    .unwrap()
+                    .iter()
+                    .find(|(k, _)| *k == Kind::Structure)
+                    .map(|(_, id)| id.clone());
+                mine.and_then(|id| {
+                    let p = s.line().structure(&id)?.position;
+                    s.apply(
+                        "pat",
+                        ohl_session::Command::MoveStructure {
+                            id,
+                            position: [p[0] + 0.2, p[1], p[2]],
+                        },
+                    )
+                    .ok()?;
+                    s.commit("pat", "offline").ok()?;
+                    s.offline_bundle().ok()
+                })
+            };
+            if let Some(b) = bundle {
+                next_id += 1;
+                let want = next_id;
+                pat.link
+                    .send(ClientMsg::ImportBundle {
+                        id: want,
+                        bundle: Box::new(b),
+                        branch: None,
+                    })
+                    .unwrap();
+                pump_for(&pat, &mut log, Duration::from_secs(120), |m| {
+                    matches!(m, ServerMsg::BundleImported { id, .. } if *id == want)
+                        || matches!(m, ServerMsg::Notice { .. })
+                });
+            }
+        }
         next_id += 1;
         let _ = edit(
             &bob,
@@ -1148,6 +1260,9 @@ fn property_no_message_holds_a_hidden_id_or_place() {
         idle(&pat, &mut log, 300);
         let after = hidden_for(&t, "pat");
         no_leak(&log, &before, &after, &format!("round {round}"));
+        if file.exists() {
+            no_leak_in_file(&file, &before, &after, &format!("round {round}"));
+        }
         drop(pat);
         let peers = Instant::now();
         while server.peers().iter().any(|p| p.user == "pat") {
@@ -1155,7 +1270,71 @@ fn property_no_message_holds_a_hidden_id_or_place() {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+    // A last round, sure to export: Pat a designer of one route — the
+    // other lines near her working set she may not see are left out of
+    // her file (counted), never written.
+    for id in ids.drain(..) {
+        admin(&t, R::Unassign { id }).unwrap();
+    }
+    let code = t.codes[0].clone();
+    let (route, _, _) = route_of(&t, &code);
+    ids.push(assign(
+        &t,
+        "user:pat",
+        Some("designer"),
+        false,
+        Scope {
+            route: Some(route.clone()),
+            ..Scope::default()
+        },
+    ));
+    let before = hidden_for(&t, "pat");
+    let pat = join_network(
+        &server.invitation_for("pat"),
+        "pat",
+        &NetJoin::default(),
+        &mut |_| {},
+    )
+    .unwrap();
+    let mut log = Vec::new();
+    next_id += 1;
+    let want = next_id;
+    pat.link
+        .send(ClientMsg::ExportWorkingSet {
+            id: want,
+            working_set: ohl_session::working_set::WorkingSetSpec {
+                name: String::new(),
+                model: code.clone(),
+                picks: vec![ohl_session::working_set::Pick::Route {
+                    route: route.clone(),
+                }],
+            },
+            reach: Some(1000.0),
+        })
+        .unwrap();
+    let got = pump_for(&pat, &mut log, Duration::from_secs(120), |m| {
+        matches!(m, ServerMsg::WorkingSetExported { id, .. } if *id == want)
+            || matches!(m, ServerMsg::Notice { .. })
+    });
+    let file = t.dir.join("pat-last.ohl");
+    match got.last() {
+        Some(ServerMsg::WorkingSetExported { result: Ok(f), .. }) => {
+            std::fs::write(&file, crate::base64::decode(&f.file).unwrap()).unwrap();
+            exported += 1;
+        }
+        other => not_exported.push(format!("the last round: {other:?}")),
+    }
+    let after = hidden_for(&t, "pat");
+    no_leak(&log, &before, &after, "the last round");
+    if file.exists() {
+        no_leak_in_file(&file, &before, &after, "the last round");
+    }
+    drop(pat);
     assert!(computed > 0, "no scoped check computed in six rounds");
+    assert!(
+        exported > 0,
+        "no offline working set exported: {not_exported:#?}"
+    );
     drop(bob);
     server.stop();
 }

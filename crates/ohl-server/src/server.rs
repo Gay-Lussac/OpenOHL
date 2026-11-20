@@ -322,6 +322,43 @@ pub(crate) enum NetAsk {
         working_set: Option<ohl_session::working_set::WorkingSetSpec>,
         check: crate::ScopedCheck,
     },
+    /// Phase 12: an offline working set exported.
+    Export {
+        id: u64,
+        working_set: ohl_session::working_set::WorkingSetSpec,
+        reach: Option<f64>,
+    },
+    /// Phase 12: an offline working set's bundle brought back.
+    Import {
+        id: u64,
+        bundle: Box<ohl_session::versions::Bundle>,
+        branch: Option<String>,
+    },
+}
+
+/// Phase 12: what a program hosting a network asks of its authority for
+/// a user of the network (the command line: `ohl network
+/// export-working-set`, `import-bundle`).
+#[cfg(feature = "network")]
+#[derive(Debug, Clone)]
+pub enum OfflineJob {
+    /// Export working set `working_set` into the new file `out`.
+    Export {
+        /// The working set.
+        working_set: ohl_session::working_set::WorkingSetSpec,
+        /// The checks' reach its neighbours are taken within, m (default
+        /// 500 m).
+        reach: Option<f64>,
+        /// The project file to write (must not exist).
+        out: std::path::PathBuf,
+    },
+    /// Bring `bundle` back (onto branch `branch`, default named).
+    Import {
+        /// The bundle.
+        bundle: Box<ohl_session::versions::Bundle>,
+        /// The branch's name.
+        branch: Option<String>,
+    },
 }
 
 #[cfg_attr(not(feature = "network"), allow(dead_code))]
@@ -392,6 +429,14 @@ pub(crate) enum Job {
     /// Network: a tile package built by a packager.
     #[cfg(feature = "network")]
     Built(Box<crate::packager::Built>),
+    /// Network, phase 12: an offline working set exported or brought
+    /// back for a user of the network (its report as JSON).
+    #[cfg(feature = "network")]
+    Offline {
+        user: String,
+        what: OfflineJob,
+        reply: std_mpsc::Sender<Result<serde_json::Value, String>>,
+    },
     /// Network: a measurement of the authority's own work (the bench).
     #[cfg(feature = "network")]
     Probe {
@@ -982,6 +1027,10 @@ impl Host for Authority {
             Job::Built(_) => {}
             #[cfg(feature = "network")]
             Job::Probe { reply, .. } => {
+                let _ = reply.send(Err(FILE_MODE.into()));
+            }
+            #[cfg(feature = "network")]
+            Job::Offline { reply, .. } => {
                 let _ = reply.send(Err(FILE_MODE.into()));
             }
             #[cfg(test)]
@@ -1850,6 +1899,8 @@ pub(crate) async fn dispatch(
         | ClientMsg::WorkingSets
         | ClientMsg::RouteDetail { .. }
         | ClientMsg::Check { .. }
+        | ClientMsg::ExportWorkingSet { .. }
+        | ClientMsg::ImportBundle { .. }
             if !pace.interest.take() =>
         {
             Some(ServerMsg::Notice {
@@ -1891,6 +1942,26 @@ pub(crate) async fn dispatch(
                 },
             )
             .await?
+        }
+        ClientMsg::ExportWorkingSet {
+            id,
+            working_set,
+            reach,
+        } => {
+            net_ask(
+                jobs,
+                client,
+                user,
+                NetAsk::Export {
+                    id,
+                    working_set,
+                    reach,
+                },
+            )
+            .await?
+        }
+        ClientMsg::ImportBundle { id, bundle, branch } => {
+            net_ask(jobs, client, user, NetAsk::Import { id, bundle, branch }).await?
         }
         ClientMsg::Request { id, op, line } => {
             request(jobs, client, user, id, op, line, None).await?

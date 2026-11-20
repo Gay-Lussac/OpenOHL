@@ -48,13 +48,18 @@
 //! protocol 2 (the alpha) are refused with a message saying so; a file
 //! server speaks it too, its messages unchanged.
 
+pub mod base64;
 pub mod client;
 #[cfg(feature = "network")]
 pub mod network;
 #[cfg(feature = "network")]
 pub(crate) mod network_rights;
 #[cfg(feature = "network")]
+pub mod offline_checks;
+#[cfg(feature = "network")]
 pub(crate) mod packager;
+#[cfg(feature = "network")]
+pub(crate) mod scoped_report;
 pub mod server;
 pub mod stream;
 pub mod web;
@@ -222,7 +227,8 @@ pub enum Op {
     CreateWorkingSetBranch {
         /// Name.
         name: String,
-        /// The project line it starts from.
+        /// The project line it starts from (or a revision of the model, by
+        /// its whole id: phase 12).
         from: String,
         /// The routes it works on.
         routes: Vec<String>,
@@ -565,9 +571,12 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
             team,
         } => {
             let from = from.trim();
-            if !session.is_line(from) {
+            // A project line, or (phase 12: an offline working set brought
+            // back) a revision of the model, by its whole id.
+            let of_line = session.is_line(from);
+            if !of_line && (from.len() != 64 || session.revision(from).is_err()) {
                 return Err(SessionError::Refused(format!(
-                    "a branch over a working set starts from a project line, not \"{from}\""
+                    "a branch over a working set starts from a project line or a revision, not \"{from}\""
                 )));
             }
             if routes.is_empty() {
@@ -575,7 +584,13 @@ fn run(session: &mut Session, user: &str, op: &Op) -> Result<Option<Applied>, Se
                     "a working set holds at least one route".into(),
                 ));
             }
-            let known = &session.line_named(from)?.routes;
+            let known = &session
+                .line_named(if of_line {
+                    from
+                } else {
+                    ohl_session::versions::MAIN
+                })?
+                .routes;
             if let Some(r) = routes.iter().find(|r| !known.iter().any(|x| &x.id == *r)) {
                 return Err(SessionError::Refused(format!("no route {r}")));
             }
@@ -916,6 +931,95 @@ pub enum ClientMsg {
         /// The check.
         check: ScopedCheck,
     },
+    /// Phase 12: exports working set `working_set` as an offline working
+    /// set (a project file with its read-only neighbours, the export
+    /// recorded); answered with [`ServerMsg::WorkingSetExported`] of the
+    /// same id.
+    ExportWorkingSet {
+        /// Chosen by the client.
+        id: u64,
+        /// The working set.
+        working_set: WorkingSetSpec,
+        /// The checks' reach its neighbours are taken within, m (default
+        /// the field distance, 500 m).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reach: Option<f64>,
+    },
+    /// Phase 12: brings an offline working set's work back (its bundle of
+    /// only the changes): applied on a branch over the working set made
+    /// from the export's base; answered with [`ServerMsg::BundleImported`]
+    /// of the same id.
+    ImportBundle {
+        /// Chosen by the client.
+        id: u64,
+        /// The bundle.
+        bundle: Box<ohl_session::versions::Bundle>,
+        /// The branch's name (default `offline-USER-N-K`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+    },
+}
+
+/// What an offline working set's export wrote (phase 12).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OfflineExported {
+    /// The model.
+    pub model: String,
+    /// The export's number on the server.
+    pub number: i64,
+    /// The file's size, bytes.
+    pub bytes: u64,
+    /// Objects of the working set (editable).
+    pub wanted: usize,
+    /// Objects of its context and of the line's neighbours (read-only).
+    pub context: usize,
+    /// Other lines' neighbours: lines, sections.
+    pub neighbour_lines: usize,
+    /// See `neighbour_lines`.
+    pub neighbour_sections: usize,
+    /// What its user may not see, left out (counted).
+    pub left_out: ohl_session::offline::LeftOut,
+    /// The server's base revision.
+    pub base: String,
+    /// The export's own revision.
+    pub export: String,
+    /// The main line's changes were recorded first (a revision made).
+    pub recorded_first: bool,
+    /// Seconds on the server.
+    pub seconds: f64,
+}
+
+/// An offline working set's file as the server sends it (phase 12).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OfflineFile {
+    /// What it holds.
+    pub report: OfflineExported,
+    /// The project file, base64.
+    pub file: String,
+}
+
+/// What a bundle brought back did (phase 12).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BroughtBack {
+    /// The model.
+    pub model: String,
+    /// The branch over the working set made for it.
+    pub branch: String,
+    /// The offline revisions it carried.
+    pub revisions: usize,
+    /// Objects put and deleted.
+    pub puts: usize,
+    /// See `puts`.
+    pub deletes: usize,
+    /// Objects it changes that changed on the main line since the export
+    /// (as the user may see them): conflicts its merge into main asks to
+    /// settle — never settled here.
+    pub conflicts: Vec<String>,
+    /// Read-only neighbours (the context) changed on the server since the
+    /// export: checks made offline are out of date.
+    pub context_changed: usize,
+    /// Seconds on the server.
+    pub seconds: f64,
 }
 
 /// A check a network's server runs on a working set (phase 10).
@@ -1212,6 +1316,22 @@ pub enum ServerMsg {
         id: u64,
         /// What changed, as the user may see it.
         reason: String,
+    },
+    /// Phase 12: an offline working set exported, for
+    /// [`ClientMsg::ExportWorkingSet`] of the same id.
+    WorkingSetExported {
+        /// The request's id.
+        id: u64,
+        /// The file, or why not.
+        result: Result<Box<OfflineFile>, String>,
+    },
+    /// Phase 12: a bundle brought back, for [`ClientMsg::ImportBundle`] of
+    /// the same id.
+    BundleImported {
+        /// The request's id.
+        id: u64,
+        /// What it did, or why not.
+        result: Result<Box<BroughtBack>, String>,
     },
 }
 
@@ -1711,6 +1831,8 @@ pub fn random_code(n: usize) -> String {
 mod library_tests;
 #[cfg(all(test, feature = "network"))]
 mod network_tests;
+#[cfg(all(test, feature = "network"))]
+mod offline_tests;
 #[cfg(test)]
 mod points_tests;
 #[cfg(all(test, feature = "network"))]

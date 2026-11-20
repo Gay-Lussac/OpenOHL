@@ -29,6 +29,7 @@ mod network_bench_scoped;
 mod network_bench_versions;
 mod network_bench_ws;
 mod network_library_run;
+mod network_offline_run;
 mod network_rights_run;
 mod network_run;
 mod project;

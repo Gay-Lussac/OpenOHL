@@ -23,7 +23,7 @@
 use std::collections::BTreeSet;
 
 use ohl_core::grid::Bounds;
-use ohl_line::index::Of;
+use ohl_line::index::{LineIndex, Of};
 use ohl_line::{JumperEnd, Line, Tap};
 
 use ohl_line::index::Target;
@@ -122,7 +122,42 @@ impl Session {
     ) -> Line {
         self.line_index();
         let index = self.index.as_ref().expect("made above");
-        let line = &self.line;
+        part_of(&self.line, index, structures, sections, alignments, near)
+    }
+
+    /// Whether a structure of the line worked on has a type (its drawing
+    /// then needs the structure libraries).
+    pub fn any_typed(&self) -> bool {
+        self.line
+            .structures
+            .iter()
+            .any(|s| s.structure_type.is_some())
+    }
+}
+
+/// [`Session::drawing_part`] of any line (phase 12: an offline working
+/// set's neighbours, taken again from the part the server wrote — the
+/// same sub-line for the sections it holds whole).
+pub fn line_part(
+    line: &Line,
+    structures: &[String],
+    sections: &[String],
+    alignments: &[String],
+    near: f64,
+) -> Line {
+    let index = LineIndex::of(line);
+    part_of(line, &index, structures, sections, alignments, near)
+}
+
+fn part_of(
+    line: &Line,
+    index: &LineIndex,
+    structures: &[String],
+    sections: &[String],
+    alignments: &[String],
+    near: f64,
+) -> Line {
+    {
         let keep = solve_reads(line, index, structures, sections, alignments, near);
         let mut out = line.settings_only();
         out.alignment = line.alignment.clone();
@@ -165,15 +200,6 @@ impl Session {
             .map(|k| line.spacers[k].clone())
             .collect();
         out
-    }
-
-    /// Whether a structure of the line worked on has a type (its drawing
-    /// then needs the structure libraries).
-    pub fn any_typed(&self) -> bool {
-        self.line
-            .structures
-            .iter()
-            .any(|s| s.structure_type.is_some())
     }
 }
 

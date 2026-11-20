@@ -4324,6 +4324,9 @@ pub mod interest;
 pub mod library_merge;
 pub mod lines;
 pub mod live;
+pub mod offline;
+#[cfg(test)]
+mod offline_tests;
 pub mod packing;
 pub mod part;
 #[cfg(test)]

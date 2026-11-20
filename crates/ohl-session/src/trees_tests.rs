@@ -441,7 +441,8 @@ fn a_branchs_base_is_read_along_what_differs() {
             );
         }
     }
-    let held = |s: &Session| -> BTreeMap<String, Vec<((Kind, String), i64, Value)>> {
+    type Held = BTreeMap<String, Vec<((Kind, String), i64, Value)>>;
+    let held = |s: &Session| -> Held {
         ["main", "a", "b", "c"]
             .iter()
             .map(|n| {
