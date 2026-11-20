@@ -13,7 +13,8 @@
 //!
 //! - a member and what it bolts onto (`onto`, `other_onto`: a member, a
 //!   plate, a splice's covers), the member it runs on into as one part;
-//! - a plate and the joint's leg it lies on (and a leg running on in line
+//! - a plate and the member it lies on (its `on`, else the joint's leg;
+//!   and a member running on in line
 //!   through the joint, within 20°), the plates of one welded plate;
 //! - a bolt and its own member (it passes through it, its head on it); a
 //!   bolt's shank and what its member bolts onto (it passes through: the

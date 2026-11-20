@@ -1123,15 +1123,188 @@ as the joint checks do (as for an end laid onto a member, J9 and D16):
   J2b) outside its outline, or beyond the end of that member's steel
   where it ends at the joint (before its cut), as written: the members on
   the plate (and on what is bent or welded to it) left as they were, said.
-  The planner places a bent plate's own bolts on the other leg without
-  that member's cut (a follow-up of J2b).
+  (The planner placed a bent plate's own bolts without that member's cut:
+  placed on its steel since 2026-11-20, [below](#the-bent-plates-own-bolts-j2b-fix).)
 
 The joint is planned again without them, as for a clash. Before, such
 joints were written and the joint checks said them *does not fit, as
-given*. A question to look into (not changed): on some members the bent
-plate's own bolts are drawn a few millimetres outside the flat's outline,
-near the heel (where the flat is laid out and where its bolts are drawn
-disagree) — the layout now leaves such ends rather than write them.
+given*. The bent plate's own bolts drawn a few millimetres outside the
+flat's outline on some members (where the flat is laid out and where its
+bolts are drawn disagreed): looked into with L2 — the member under the
+plate was drawn bolted by its other leg (its plate taken to lie on the
+joint's leg), [below](#each-plate-on-the-member-it-lies-on-a); the check
+stays.
+
+## Clash-aware planning (L2)
+
+(Owner, 2026-11-19: the real 3D shapes while planning, not boxes; before
+an end is given up for a clash, the other face or the plate's other side
+tried — approved with the other ideas of that day; built 2026-11-20, in
+active development, not approved yet. The code: `joint_layout`,
+`layout_run`, `joints`.) Before L2 the members left after the clash
+rounds were the biggest group of reasons on the private real towers
+(about 36 800). Sorted by the two parts of each clash: a plate with a
+member's steel about half of them, a bolt's head, nut or shank with a
+plate a fifth, a member with a member an eighth, a plate with a plate a
+tenth, and the bent plate's own bolts about 1 450 ([measured](#measured-the-bent-plates-own-bolts-and-l2-2026-11-20)).
+Looking into them found two things the planner and the drawing did not
+agree on, before any shape: a plate's member and a moved member. Three
+parts, each a switch (`LayoutSettings::plate_on`, `exact_plan`,
+`clash_tries`), on by default; measured alone and together.
+
+### The bent plate's own bolts (J2b fix)
+
+The two bolts holding a bent plate's flat on the other leg
+([above](#a-bent-plate-round-the-other-leg-j2b)) were placed about the
+middle of the ends' bolts, without looking at the member they bolt onto.
+Now:
+
+- **On that member's steel**: where it ends at the joint (not one part
+  through it), past where its steel starts by the end distance (the
+  code's, else the default minimum) — its cut as laid out in this plan,
+  else as given or worked out, else the work point (*conservative*: a cut
+  not known is taken at the work point); the pair moved out along it where
+  needed, the flat with them.
+- **Where that member will be drawn**: where its own end is laid out at
+  the same joint, the plate is laid out where it will lie (moved across by
+  its move and lifted onto its plate), so that the flat's outline and its
+  bolts (drawn from that member) agree. On a member laid out on a welded
+  plate in its own plane (step 4): not followed — the bent plate is not
+  laid out there, said.
+- **Not through a hole** of that member's own end or of an end bolted
+  onto it, as written (the joint checks' rule): else the members on the
+  plate left as they were, said.
+
+Most of the bolts drawn outside the flat's outline (the question of L1)
+came from the next point: the member under the plate drawn bolted by its
+other leg.
+
+### Each plate on the member it lies on (a)
+
+The joint details took every plate to lie on the **joint's leg** (the
+joint details' rule for a plate given by hand: the leg by class, else the
+largest member near the vertical): its plane with one member on it
+spanned by that member and the leg, the flange under its worked-out
+outline the leg's, and in the clash check the plate and the leg (not
+tested against each other). The layout lays plates on the flange of the
+member an end bolts onto — at a bracing joint, a diagonal, a horizontal,
+a chord of an arm. There the plate was drawn in another plane (its one
+member drawn bolted by its other leg), with the leg's flange in its
+outline, its clash with its own member reported and its clash with the
+leg hidden. Now each plate the layout makes **names the member whose
+flange it lies on** (`on`, structure file version 23,
+[data model](../development/data-model.md)): drawn, seated, tested in the
+clash check and in its own axes for corrections by hand on that
+member. A plate given by hand without it: the joint's leg, as before.
+
+Clashes hidden before are now seen — a plate on a member reaching over
+the leg at the work point (*on the safe side*: such ends are now left,
+said). The joint checks take the plate as it is now drawn (its plane,
+its outline over the flange of the member it lies on); their rules are
+unchanged.
+
+### What the clash check sees, while planning (b)
+
+The plan of a plane ([pulled back](#pulled-back-the-cut), [searched](#the-search-per-joint-j1))
+kept each end clear of the fixed steel in a slab over its face: its leg
+and its bolts' heads. Now, as the clash check after writing sees it:
+
+- **Its outstanding leg to its full height**, over the leg's own band
+  across the end: the fixed steel and what the planes before laid out, up
+  to the leg's width over the face (and the thicker of the two legs
+  more); the angle as its two legs, each a box (the root's fillet left
+  out: more steel than the angle has — *on the safe side for the fit*).
+- **Its bolts' nuts and the shanks beyond them behind the face**: each
+  bolt's disc of the nut's corner radius, from the face to the thicker of
+  its leg and the flange behind it and the nut and the shank's end (the
+  drawing's proportions) — the deeper of the two cases, directly on the
+  flange and on a plate (*an assumption on the safe side for the fit*).
+- **Each plate's outline as it will be drawn** (the joint details' rule,
+  [plates](joint-plates.md)): round the work point, each member's leg over
+  its bolts (from its first bolt less the end distance, not before the work
+  point, to its last plus it), each bolt's distances in the plate (its
+  end and edge distances in a plate of the member's leg's thickness; the
+  plate is as thick as the thickest — *on the safe side*: the outline at
+  least as large as drawn), and the flange under it across its width as
+  far along as those reach; cut at the heel as the run cuts it. Tested in
+  its thickness against the fixed steel (not a member on it, the member it
+  lies on or one in line with that, nor a member left for a hand detail —
+  the run lets a plate lie under those), the plates and covers given by
+  hand and what the planes before laid out. A plate that would run into
+  something is not laid out: its members whose bolts land on the flange
+  bolted directly (c, below), the others left for a hand detail, said
+  ("… on a plate on N1, the plate would run into D4 …").
+- **What the planes before laid out**, for the planes after: each end's
+  legs, its bolts' heads and now their nuts and shanks behind the flange
+  or plate, and its plate as drawn (before: the hull of its bolts).
+- **A member laid out at the same joint is planned where it will be
+  drawn**: the planes on it (their ends bolting onto it, a plate on it)
+  come after its own plane (as for its cut, J9) and are now taken where it
+  will lie — moved across by its move (its gauge line through the work
+  point, a shift) and lifted onto its plate. Before, they were planned
+  where it lay before the run, and the bolts and plates on it were drawn
+  elsewhere than planned.
+
+Each piece is the clash check's own: its corners, convex, clipped to the
+slab and seen from above as a convex polygon; two convex polygons tested by
+separating axes in the plane (exact for convex pieces), overlapping by more
+than the clash check's tolerance. **Deterministic and bounded**: no new
+search (the same placings per joint), the same order and tie-breaks; a run
+again identical. **Not followed** (as before, left to the clash rounds
+after writing): an end on a welded plate in its own plane (step 4) and
+its plate, a bent plate's flat in the members' plane, a member on a
+welded plate in its own plane as what others bolt onto.
+
+### Tries before an end is left for a clash (c)
+
+- **Bolted directly instead of on its plate**, where its bolts land on the
+  flange: in the plan, where the plate would run into something (above);
+  after writing, an end on a plate that would be left as it was for a
+  clash, once per end while a round is left, kept where the plan then lays
+  it out.
+- **The other face of the flange (the half turn)**: an end the
+  clash-aware plan leaves for what it, or its plate, would run into is
+  tried half a turn round (its outstanding leg to the other side, so that
+  it lies on the flange's other face), with the ends the run already
+  turns so (an end on an inner face running towards the angle's other
+  leg) — kept for a member only where more of its ends are laid out and
+  no joint of it loses one, as those.
+- **Not built**: the clashing end on a plate of its own on the same face.
+  A plate reaches the work point and the flange under it whatever ends are
+  on it: a second plate on the face would run into the first and into what
+  the first ran into there.
+
+### Two more of the joint checks' rules checked after writing
+
+Found measuring L2 (for every run, as the three of L1,
+[above](#three-more-of-the-joint-checks-rules-checked-after-writing-2026-11-20)):
+the layout laid out more, and some joints were written that the joint
+checks said *does not fit, as given*. Now the run also checks, as written:
+
+- **the bolts of each member on a plate the layout made within the
+  plate's outline** (a plate in its member's own plane and a bent plate's
+  flat have their outlines laid out in the plan; a member drawn elsewhere
+  than planned lies off them): else that member left as it was, said
+  ("laid out, its bolts on a plate on N1 would lie outside the plate's
+  outline (left as it was)");
+- **a member not laid out at the joint bolting onto one that is**: its
+  bolts, where they are, still within that member's flange and on its
+  steel past its cut (the rule an end laid onto a member left as it was is
+  checked by, J9 and D16, the other way round) — else the member laid out
+  is left as it was, said ("laid out, D4 (as it is) would then not fit
+  onto it: …"). Not asked of a member left for a hand detail: its hand
+  detail places its bolts (J2).
+
+The joint is planned again without them, as for a clash. *On the safe
+side*: what does not fit is not written.
+
+### Redundants and the body's diagonals bolted directly (L1 c), again
+
+L1 (c) ([above](#redundants-and-the-bodys-diagonals-bolted-directly-c-tried-left-out))
+was left out because the members bolted directly ran into the plate of
+the others on the same flange — the plan did not see that plate. With the
+plate's outline in the plan it does; built again as
+`LayoutSettings::direct_first` and measured on top of L2 (below).
 
 ## The clash check
 
@@ -1191,6 +1364,8 @@ the same towers:
 | Pulled back past a clash | 3 times per end, 6 rounds | 0 (4 rounds): 33.9 % of the joints laid out whole instead of 44.1 %, 53.9 % of the ends instead of 62.8 %; 2 (5 rounds): on two towers the same joints whole, about 1 % fewer ends, about 10 % quicker |
 | Faces bolted directly tried on a plate per joint (L1 b) | 4 | a bound on the extra work; the plate rarely lays out more in the plan (the planner does not see the nuts behind a flange) |
 | Passes of other members an end could bolt onto (L1 d) | 2 | a bound on the extra work |
+| An end on a plate bolted directly instead, after writing (L2 c) | once per end | a bound on the extra work; the half turn for a clash once per member, with the half turns already tried |
+| How deep behind a face an end's nuts are kept clear of steel (L2 b) | the thicker of its leg and the flange, and 1.1 bolt diameters | the drawing's nut (0.8 d) and the shank beyond it (0.3 d), not a standard's: the deeper of bolting directly and on a plate |
 
 ## Measured (J1 and J2, 2026-11-19)
 
@@ -1408,3 +1583,81 @@ The gains stay small: the two big groups left are untouched by L1 — the
 members left after the clash rounds (about 36 000 hand-detail reasons)
 and the ends off their flange that need rolls 5°–20° apart at their two
 ends (about 29 000): L2 and L3.
+
+## Measured (the bent plate's own bolts and L2, 2026-11-20)
+
+On the same 78 tower files and settings as L1 (kept privately; J9's
+proposals and J7a's leg splice places confirmed in every column, L1's (a),
+(b) and (d) on). "Before" is L1's result; "bolts" the bent plate's own
+bolts placed on the host's steel alone (measured before the two
+after-writing checks of L2); "+ checks" with them (every column after it
+has them); "(a)", "(b)", "(c)" each L2 part alone on top of that, "(a),
+(b)" the two without the tries; "L2" the three together (the default
+now); "+ L1 (c)" with L1 (c) on top:
+
+| | before | bolts | + checks | (a) | (b) | (c) | (a), (b) | L2 | + L1 (c) |
+|---|---|---|---|---|---|---|---|---|---|
+| joints laid out whole | 42.7 % | 44.1 % | 43.7 % | 45.6 % | 44.7 % | 43.7 % | 48.3 % | 48.6 % | 48.2 % |
+| … of the body | 45.2 % | 47.3 % | 47.3 % | 46.6 % | 48.8 % | 47.3 % | 48.1 % | 48.2 % | 47.9 % |
+| … of the arms and the top | 39.5 % | 40.1 % | 39.0 % | 44.3 % | 39.4 % | 39.0 % | 48.6 % | 49.0 % | 48.7 % |
+| joints with a hand detail | 49.5 % | 48.0 % | 48.4 % | 46.5 % | 47.5 % | 48.4 % | 43.8 % | 43.5 % | 43.9 % |
+| member ends laid out | 56.5 % | 57.2 % | 55.9 % | 59.7 % | 56.3 % | 55.8 % | 61.4 % | 61.8 % | 61.9 % |
+| joints that do not fit | 29.7 % | 29.3 % | 29.3 % | 26.3 % | 29.7 % | 29.3 % | 24.8 % | 24.7 % | 24.8 % |
+| … of them as given | 41 | 39 | 39 | 35 | 38 | 39 | 46 | 42 | 42 |
+| plates written | 50 756 | 53 238 | 50 135 | 54 571 | 51 245 | 50 022 | 57 715 | 58 424 | 59 576 |
+| members left for a clash (reasons) | 36 837 | 35 943 | 39 652 | 30 447 | 32 845 | 39 561 | 23 730 | 22 960 | 22 990 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+
+The clash-kind reasons before L2, by the two parts named (36 837): a
+plate with a member's steel 18 968 (51 %), a bolt's head, nut or shank
+with a plate 6 942 (19 %), a member with a member 4 627 (13 %), a plate
+with a plate 3 412 (9 %), the bent plate's own bolts 1 456 (4 %), a bolt
+with a member's steel 965, a cover with a plate 362. With L2: after
+writing, a plate with steel 3 991, a bolt with a plate 3 439, a member with
+a member 1 618, a plate with a plate 495, a bolt with steel 876, the
+bent plate's own bolts 1 047; said in the plan (a plate that would run
+into something, not written) 8 945; the after-writing checks of joint
+rules 2 522.
+
+- **The bent plate's own bolts** lay out 949 more joints whole and 1 392
+  more ends; the ends left for those bolts 1 456 → 872 (686 of them now for
+  a hole of another member there, found once the bolts lie on the steel).
+- **The two after-writing checks** (for every run) take 2 384 ends back
+  out — joints that would have been written not fitting (most of them
+  said *does not fit, as assumed* before): *on the safe side*.
+- **(a) Plates on their member**: +1 253 joints whole, +6 753 ends against
+  "+ checks", most on the arms and the top (39.0 % → 44.3 %), where the
+  plates lie on chords and bracing rather than on the legs; 4 436 plates
+  more; the joints not fitting 29.3 % → 26.3 %. A body joint's plates lie
+  mostly on the leg: little change there.
+- **(b) Clash-aware planning alone** (without (a)): +638 joints whole,
+  +699 ends, the body most (47.3 % → 48.8 %); 9 568 ends said in the plan
+  (their plate would run into something) rather than written and taken
+  back.
+- **(c) The tries alone**: nothing (their half turn and their in-plan part
+  need (b); after writing alone: 1 joint more whole, 195 ends fewer).
+- **Together** (L2) more than the sum: joints whole 42.7 % → 48.6 %
+  (+3 834; the arms and the top 39.5 % → 49.0 %), ends 56.5 % → 61.8 %
+  (+9 811), the joints that do not fit 29.7 % → 24.7 %, as given 41 → 42
+  (members left for a hand detail whose bolts no longer fit the member laid
+  out under them, said; their hand detail places them), plates +15 %, a run
+  again identical 78 of 78. The tries (c) on top of (a) and (b): 170
+  joints more whole, 938 ends more, 4 fewer not fitting as given — kept.
+- **L1 (c) on top**: 231 joints fewer whole, 31 ends more, 1 152 plates
+  more — left out again (the members bolted directly now keep clear of the
+  plate in the plan, but bolting them directly does not lay out more).
+- **Time** (every thirteenth tower, six, laid out back to back twice under
+  the same load, as L1's times were taken): the median per tower 19.3 s
+  before, 18.2 and 16.9 s with L2 — about the same or a little quicker
+  (fewer clash rounds: the plan sees what they would find) —, the largest
+  21.9 and 21.5 s before, 24.8 and 23.0 s with L2 (about a tenth more).
+  The full columns ran several at a time on a shared machine: their times
+  are not compared.
+
+What is left: the ends off their flange needing rolls 5°–20° apart (about
+29 000, L3); the plates that would run into something at the work point
+(about 9 000 said in the plan: on a face with fixed steel at the work
+point — a plate always reaches it); the bolts with a plate after writing
+(about 3 400: mostly the nuts of members bolted through the flange behind a
+plate on its other face); built-up members (about 8 300, J6); the bent
+plate's own bolts through another member's hole (about 670).

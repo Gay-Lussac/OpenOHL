@@ -170,9 +170,18 @@ fn an_end_over_the_heel_goes_onto_a_bent_plate_round_the_other_leg() {
     // beyond H's other leg, its bolts their edge distance more.
     assert!(e.cut.unwrap() > 0.007 + 0.014 + 0.005, "{e:?}");
 
-    // Written: the bend and the holding bolts, the file at version 22.
+    // Written: the bend and the holding bolts, each plate on the member it
+    // lies on (L2, version 23).
     let t = parse(&r.text);
-    assert!(r.text.contains("version = 22"), "{}", &r.text[..60]);
+    assert!(r.text.contains("version = 23"), "{}", &r.text[..60]);
+    assert!(
+        t.plates
+            .iter()
+            .filter(|q| q.bend.is_none())
+            .all(|q| q.on.as_deref().is_some_and(|m| m.starts_with('H'))),
+        "{:?}",
+        t.plates
+    );
     let pairs = t.bent_pairs("N2");
     assert_eq!(pairs.len(), 1, "{pairs:?}");
     let flat_id = &pairs[0].1;
@@ -390,4 +399,48 @@ fn the_bend_is_checked_by_the_code_plugins() {
         b.usage.is_none() && b.governs.contains("NOT ON THE SAFE SIDE"),
         "{b:?}"
     );
+}
+
+/// (J2b fix, 2026-11-20) The bent plate's own bolts lie on the steel of the
+/// member they bolt onto where it ends at the joint: past where its steel
+/// starts by the end distance (here H1 ends at N2, its cut not known: the
+/// work point; the default minimum end distance, 1.5 × 16 mm) — before,
+/// they were placed about P1's bolts, one of them beyond H1's end.
+#[test]
+fn the_bent_plates_own_bolts_lie_on_the_steel_of_a_member_ending_at_the_joint() {
+    let text = OVER
+        .replace(
+            "[[member]]\nid = \"H2\"\nnodes = [\"N2\", \"N3\"]\nsection = \"EA-100x10\"\n\
+             orientation = \"y+z-\"\ndesign = { class = \"bracing\" }\n",
+            "",
+        )
+        .replace("face = \"inside\"", "face = \"inside\"\nonto = \"H1\"");
+    assert!(!text.contains("\"H2\""), "{text}");
+    let r = run(&text, &settings());
+    let n2 = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+    let hold = n2
+        .plan
+        .plates
+        .iter()
+        .find_map(|p| p.hold.as_ref())
+        .expect("a bent plate's flat held on H1");
+    assert_eq!(hold.member, "H1");
+    for q in &hold.points {
+        assert!(q[0] >= 0.024 - 1e-9, "{hold:?}");
+    }
+    // As written: on H1's steel and within the flat's outline (the joint
+    // checks' rules); the flat seated on H1 (its `on`).
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let flat = j.plates.iter().find(|q| q.leg_bolts.is_some()).unwrap();
+    let lb = flat.leg_bolts.as_deref().unwrap();
+    for at in &lb.bolt_points {
+        assert!(
+            crate::plate_checks::ray_to_outline(&flat.outline, *at, lb.direction).is_some(),
+            "{at:?} {:?}",
+            flat.outline
+        );
+    }
+    assert_eq!(flat.leg.as_deref(), Some("H1"));
 }

@@ -1313,6 +1313,66 @@ that order; "plan ideas to get the automatic layout working"):
   the other diagonal; holes overlapping as the checks say; the 8° strut
   with `bottom_up` off as before), `joint_layout_tests` (a face put onto a
   plate though its bolts land; the candidates' order).
+- **The bent plate's own bolts (J2b fix) and L2, clash-aware planning**
+  (2026-11-20; in active development, not approved yet;
+  [theory](../theory/joint-layout.md#clash-aware-planning-l2)). J2b fix, for
+  every run: `joint_layout::bent_over(.., laid_cut, ..)` places the two
+  holding bolts (`HoldPlan::points`) on the steel of the member they bolt
+  onto where it ends at the joint — past its cut as laid out in the plan
+  (`laid_cut`), else as given or worked out, else the work point, by the
+  end distance (`Strip::host_end`) —, the pair moved out along it, the flat
+  with them; where that member's own end is laid out in the plan, the
+  flats laid out where it will be drawn (with `exact_plan` the plane is
+  shifted already, below; without, `moved3` in `bent_over`; a member on a
+  welded plate in its own plane: the bent plate refused, said);
+  `write_rounds` also leaves the members on a plate whose own bolts would
+  overlap a hole of that member's own end or of an end bolted onto its run
+  (`holes_overlap`), and (found measuring L2) the bolts of each member on
+  a plate it made outside the plate's outline (`ray_to_outline`, the joint
+  checks' rule) and a member not laid out (nor left for a hand detail)
+  bolting onto one laid out that would then not fit onto it (`misfit_on`,
+  the other way round): such members, or the member laid out, left as they
+  were. L2, three switches of `LayoutSettings`, on by
+  default (not in the window): `plate_on` (a) — `write_plan` writes each
+  plate's `on` (structure file version 23, `PLATE_ON_VERSION`, the member
+  whose flange it lies on; not for a plate in its member's own plane) and
+  `joints::plate_seats` takes it as the plate's `leg` (its seat's plane,
+  the flange under its worked-out outline, the clash check's leg and
+  `PlateDetail::leg`); `exact_plan` (b) — per strip, besides `fixed`
+  (its bolted leg's slab), `fixed_out` (the fixed steel up to its
+  outstanding leg's height, `out_w` + the thicker of its leg and the
+  flange, tested over `out_band`) and `fixed_far` (behind the face, to the
+  thicker of the two plus `BOLT_DRAWN` nut and beyond, tested over each
+  bolt's disc of the nut's corner radius) from `fixed_slab` /
+  `footprint_in`; `place` keeps clear of both; `solids_of` adds each bolt's
+  nut and shank beyond behind the flange or plate and draws a plate as
+  `plate_outline2` (the outline `joints::plate` works out: the work point,
+  each leg over its bolts from its first bolt less the end distance — not
+  before the work point — to its last plus it, each bolt's ring of its end
+  and edge distances in a plate of the end's leg's thickness, `keep_plate`,
+  the flange under it across its width as far as those reach; cut at the
+  heel as the run cuts it); `plate_hits` tests that outline in the plate's
+  thickness against the fixed steel (not a member on it, the member it
+  lies on or one in line with that, nor a member left for a hand detail),
+  the plates and covers given by hand and what the planes before laid out
+  (2D separating axes, `sat2`, above `CLASH_TOLERANCE`); a plane on a
+  member laid out in the plan (its planes first) is shifted where that
+  member will be drawn (`heel3`, `face3`, `heel`, `w`, `obstacles`: its
+  move across, `v3 · moved`, and the plate under it). `clash_tries` (c) —
+  `PlanCtx::direct`: on a face going onto a plate, those members (their
+  bolts landing) bolted directly; `write_rounds` puts an end on a plate
+  that would be left as it was there once (`directed`, `Checked::directed`
+  in the memo; the replan closure takes the set), kept where the plan lays
+  it out; in the plan, where the plate hits, the ends whose bolts land
+  bolted directly, the others left, said ("on a plate on …, the plate
+  would run into …"). L1 (c) rebuilt as `LayoutSettings::direct_first`
+  (`PlanCtx::body` from `joint_order`), off by default (measured again).
+  Tests: `bent_plate_tests` (the holding bolts past the work point on a
+  member ending at the joint, within the flat's outline, the flat seated
+  on it; the plates' `on` and version 23), `joint_layout_tests` (an end
+  asked bolted directly leaves its plate, with clash-aware planning off and
+  on), `layout_run_tests` (the end laid onto another member left when its
+  plate, seated on that member, would run into the leg).
 
 ## Detail levels
 

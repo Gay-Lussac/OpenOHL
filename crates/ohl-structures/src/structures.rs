@@ -288,8 +288,12 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// (2026-11-19, the automatic joint layout's bent plate, J2b) adds a plate
 /// bent from another (`[plate.bend]`: [`crate::connections::TypeBend`],
 /// [`crate::connections::PLATE_BEND_VERSION`]); a file is written at 22
-/// only when a plate is bent.
-pub const STRUCTURE_FILE_VERSION: u32 = 22;
+/// only when a plate is bent. Version 23 (2026-11-20, the automatic joint
+/// layout's L2) adds the member a plate lies on (a plate's `on`:
+/// [`crate::connections::TypePlate::on`],
+/// [`crate::connections::PLATE_ON_VERSION`]); a file is written at 23 only
+/// when a plate names one.
+pub const STRUCTURE_FILE_VERSION: u32 = 23;
 
 /// The structure file version of the bolt grades (`[[bolt_grade]]`, a
 /// member's `bolt_grade`; owner 2026-11-19).

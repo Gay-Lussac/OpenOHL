@@ -1527,7 +1527,16 @@ fn plate_seats(
                     .or_else(|| crate::joint_layout::through_of(all, a).map(|b| b.member.clone()))
             })
         };
-        let leg = if on.is_empty() {
+        // The member it lies on given (2026-11-20, version 23, the
+        // automatic layout's plates on a bracing member's flange): that
+        // one; else the joint's leg as before.
+        let given_on =
+            p.on.as_ref()
+                .filter(|m| all.iter().any(|a| &a.member == *m))
+                .cloned();
+        let leg = if given_on.is_some() {
+            given_on
+        } else if on.is_empty() {
             partners(p).iter().find_map(|q| leg_for(&on_of(q)))
         } else {
             leg_for(&on)

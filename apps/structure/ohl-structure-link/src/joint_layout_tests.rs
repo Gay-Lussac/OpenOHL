@@ -790,6 +790,51 @@ fn a_face_put_onto_a_plate_goes_onto_one_though_its_bolts_land() {
     assert!(p.ends.iter().all(|e| e.onto == Onto::Plate(0)), "{p:?}");
 }
 
+/// L2 (c), 2026-11-20: an end on a plate the run's clash rounds ask bolted
+/// directly instead (its bolts landing on the flange) is bolted directly,
+/// the others of its face staying on the plate; with clash-aware planning
+/// off and on alike.
+#[test]
+fn an_end_asked_bolted_directly_leaves_its_plate() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let (lib, text) = wide_main();
+    let j = joint_details(&text, &lib, &Default::default())
+        .unwrap()
+        .joint("N2")
+        .unwrap()
+        .clone();
+    for exact in [false, true] {
+        let s = LayoutSettings {
+            exact_plan: exact,
+            ..settings()
+        };
+        let ctx = crate::joint_layout::PlanCtx {
+            plated: BTreeSet::from(["D1".to_owned()]),
+            direct: BTreeSet::from(["D2".to_owned()]),
+            ..Default::default()
+        };
+        let p = crate::joint_layout::plan_joint_ctx(
+            &j,
+            &s,
+            &|_, _| None,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            crate::joint_layout::NODE_LIMIT,
+            &ctx,
+        );
+        let onto = |m: &str| {
+            p.ends
+                .iter()
+                .find(|e| e.member == m)
+                .map(|e| e.onto.clone())
+        };
+        assert!(matches!(onto("D2"), Some(Onto::Member(_))), "{p:?}");
+        assert_eq!(onto("D1"), Some(Onto::Plate(0)), "{p:?}");
+        assert_eq!(p.plates.len(), 1, "{p:?}");
+        assert_eq!(p.plates[0].members, vec!["D1".to_owned()], "{p:?}");
+    }
+}
+
 /// The K-brace on a wide main angle running through N2 (an invented
 /// 160 mm angle added to the example sections; its star of two, built
 /// up, too), the diagonals with two 12 mm bolts each.
