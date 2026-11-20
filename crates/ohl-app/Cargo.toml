@@ -29,6 +29,7 @@ ohl-clearance.workspace = true
 ohl-io.workspace = true
 ohl-server.workspace = true
 ohl-loads.workspace = true
+ohl-scope.workspace = true
 ohl-structures-fe.workspace = true
 # The edits of a structure file, shared with the structure application.
 ohl-structure-edit.workspace = true

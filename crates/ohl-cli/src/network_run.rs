@@ -101,6 +101,23 @@ pub enum NetworkCommand {
         #[arg(long, default_value_t = 20)]
         queries: usize,
     },
+    /// Measure phase 10 on the network: checks on a working set with
+    /// their neighbours pulled in, computed on the server (in this
+    /// process) — a whole route's clearances with the other lines' wires
+    /// as targets, its field with the lines within 500 m, the loads on a
+    /// tower shared with another line under each line's cases; prints
+    /// JSON. Changes nothing.
+    BenchScoped {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// A user who may see the whole network.
+        #[arg(long)]
+        user: String,
+        /// Runs of each check.
+        #[arg(long, default_value_t = 3)]
+        runs: usize,
+    },
     /// The network's lines, its schema and size.
     Lines {
         /// Database (default: OHL_DATABASE_URL).
@@ -301,6 +318,18 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
     match command {
         NetworkCommand::Rights { command } => crate::network_rights_run::run(command),
         NetworkCommand::Library { command } => crate::network_library_run::run(command),
+        NetworkCommand::BenchScoped {
+            database: db,
+            user,
+            runs,
+        } => {
+            let report = crate::network_bench_scoped::bench(&database(db)?, &user, runs)?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?
+            );
+            Ok(())
+        }
         NetworkCommand::BenchLibrary {
             database: db,
             user,

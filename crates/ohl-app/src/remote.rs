@@ -125,6 +125,17 @@ impl Model {
         self.remote = Some(remote);
     }
 
+    /// Whether the project is a network's working set (its partial
+    /// replica, phase 6): a check run here alone pulls no neighbours in
+    /// (phase 10: said with its results, never passing on that account).
+    pub fn network_replica(&self) -> bool {
+        let session = match &self.editing {
+            Ok(e) => Some(&e.session),
+            Err(_) => self.viewer_session.as_ref(),
+        };
+        session.is_some_and(|s| s.working_set_spec().ok().flatten().is_some())
+    }
+
     /// The project's session: the editing one, else the one kept for a
     /// read-only replica.
     fn replica(&mut self) -> Option<&mut ohl_session::Session> {
@@ -303,6 +314,46 @@ impl Model {
                     n.note = Some((format!("{} working sets saved", sets.len()), false));
                     n.saved = sets;
                 }
+                None
+            }
+            // Phase 10: a check computed on the network with its
+            // neighbours (its result in the status line), and a result
+            // gone stale: the working set's routes marked out of date in
+            // the replica, as a shared tower's move marks them.
+            ServerMsg::CheckResult { result, .. } => {
+                let text = match &result {
+                    Ok(r) => format!(
+                        "{} on the network: {} — {} result(s), {} below what is required; \
+                         pulled in {} object(s) of {} line(s){}",
+                        r.check,
+                        r.status,
+                        r.results,
+                        r.violations,
+                        r.pulled.objects.len() + r.pulled.hidden,
+                        r.pulled.lines.len(),
+                        if r.pulled.hidden > 0 {
+                            format!(", {} you may not see", r.pulled.hidden)
+                        } else {
+                            String::new()
+                        }
+                    ),
+                    Err(e) => format!("check refused: {e}"),
+                };
+                if let Some(n) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    n.note = Some((text.clone(), result.is_err()));
+                }
+                others.push(text);
+                None
+            }
+            ServerMsg::CheckStale { reason, .. } => {
+                let me = self.remote.as_ref().map(|r| r.link.user.clone());
+                if let (Some(me), Some(session)) = (me, self.replica())
+                    && let Err(e) =
+                        ohl_server::client::take_check_stale(session, &me, "network check", &reason)
+                {
+                    others.push(format!("the stale mark not written: {e}"));
+                }
+                others.push(reason);
                 None
             }
             // The scene is the web client's; a working set's replica

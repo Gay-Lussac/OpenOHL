@@ -337,6 +337,7 @@ fn swing_findings(
                 point_classes: &[],
                 points: None,
                 other_wires: &[],
+                min_reach: 0.0,
             },
         )
     };
@@ -698,6 +699,7 @@ pub fn run(input: &Input) -> Result<Report, String> {
                     point_classes: &point_classes,
                     points: input.cloud.is_some().then_some(&mut feed as _),
                     other_wires: &[],
+                    min_reach: 0.0,
                 },
             )?;
             for c in &checks {
@@ -932,6 +934,9 @@ struct Running {
 /// check running.
 #[derive(Default)]
 pub struct Clearances {
+    /// On a network's working set (phase 10): what its wire rules did not
+    /// pull in, said with every report run here.
+    pub replica_note: Option<String>,
     /// The window is open (Checks › Wire clearances › Show results, View ›
     /// Clearances; a page until 2026-10-27).
     pub open: bool,
@@ -1102,6 +1107,10 @@ impl Clearances {
                         rep.took
                     ),
                     Err(e) => log::warn!("clearances: {e}"),
+                }
+                let mut r = r;
+                if let (Ok(rep), Some(n)) = (&mut r, &self.replica_note) {
+                    rep.notes.insert(0, n.clone());
                 }
                 self.report = Some(r);
                 self.running = None;

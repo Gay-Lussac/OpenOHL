@@ -734,6 +734,34 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     // worked on (View › Work on route).
     let on = check.wires_on(&m.line).map(|(s, _)| s);
     let worked = m.scope().map(|s| s.sections);
+    // On a network's working set: the wire rules' neighbours are not
+    // pulled in here (phase 10), said with the report.
+    r.clearances.replica_note = match &r.clearances.rules {
+        Some(Ok(rules)) if m.network_replica() => {
+            let voltages = ohl_clearance::case::voltages_of(&m.line).unwrap_or_default();
+            let top = m
+                .line
+                .structures
+                .iter()
+                .flat_map(|s| s.points.iter().map(|p| p.position[2]))
+                .fold(0.0, f64::max);
+            let reach = rules
+                .iter()
+                .filter(|x| {
+                    matches!(
+                        x.target,
+                        ohl_clearance::Target::SameLine { .. } | ohl_clearance::Target::OtherLines
+                    )
+                })
+                .map(|x| x.reach_in_plan(&voltages, &voltages, top))
+                .fold(0.0, f64::max);
+            ohl_scope::reach::replica_note(
+                "the clearances between wires",
+                &ohl_scope::reach_of(&ohl_scope::CheckKind::Clearances { wire_rules: reach }),
+            )
+        }
+        _ => None,
+    };
     let sections: Vec<String> = m
         .line
         .sections

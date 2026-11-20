@@ -432,6 +432,32 @@ fn moving_a_shared_tower_marks_the_other_route_stale() {
     assert!(a.notice.unwrap().contains("route branch's results"));
 }
 
+/// Phase 10: a check's pulled-in neighbours changed on the network — the
+/// replica's routes marked out of date as phase 8 marks them (the same
+/// key and form), then marked up to date by their users.
+#[test]
+fn a_neighbours_change_marks_the_routes_stale() {
+    let (_, s) = on_main("stale-check");
+    s.mark_stale("ana", &[], "nothing").unwrap();
+    assert!(s.stale_routes().unwrap().is_empty());
+    s.mark_stale(
+        "ana",
+        &["branch".to_owned()],
+        "clearances: a neighbour changed (line B: section S1)",
+    )
+    .unwrap();
+    let stale = s.stale_routes().unwrap();
+    assert_eq!(stale["branch"].count, 1);
+    assert_eq!(stale["branch"].notices[0].user, "ana");
+    assert!(
+        stale["branch"].notices[0]
+            .what
+            .contains("a neighbour changed")
+    );
+    s.clear_stale("ben", "branch").unwrap();
+    assert!(s.stale_routes().unwrap().is_empty());
+}
+
 #[test]
 fn hardware_only_the_other_route_uses_is_its_own() {
     let (_, mut s) = on_main("theirs");

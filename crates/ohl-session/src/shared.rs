@@ -1032,6 +1032,28 @@ impl Session {
         })
     }
 
+    /// Marks `routes` out of date with notice `what` by `user` (country
+    /// server, phase 10: a check on a network's working set whose
+    /// pulled-in neighbours changed, written into its replica as phase 8
+    /// writes a shared tower's move — the same marks, the same key; the
+    /// file's format unchanged). Its entry: the log's last (0 when empty).
+    pub fn mark_stale(
+        &self,
+        user: &str,
+        routes: &[String],
+        what: &str,
+    ) -> Result<(), SessionError> {
+        if routes.is_empty() {
+            return Ok(());
+        }
+        let seq = self.last_seq()?;
+        let notices: BTreeMap<String, String> = routes
+            .iter()
+            .map(|r| (r.clone(), what.to_owned()))
+            .collect();
+        Self::write_stale(&*self.conn, seq, user, &notices)
+    }
+
     /// `user` marks route `route`'s results up to date (after checking
     /// it again). Refused: a user whose working set does not hold it.
     pub fn clear_stale(&self, user: &str, route: &str) -> Result<(), SessionError> {

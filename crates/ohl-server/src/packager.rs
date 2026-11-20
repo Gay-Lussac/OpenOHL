@@ -206,8 +206,8 @@ pub(crate) struct Built {
 }
 
 /// A model's libraries read, and its structures merged with their types.
-struct Libs {
-    cables: ohl_cables::Library,
+pub(crate) struct Libs {
+    pub(crate) cables: ohl_cables::Library,
     types: Option<(
         ohl_structures::StructureLibrary,
         ohl_structures::InsulatorLibrary,
@@ -560,8 +560,57 @@ pub(crate) fn build(job: &BuildJob, caches: &Caches, work: &std::path::Path) -> 
 }
 
 /// The model's libraries at its library revision (read once).
+/// A model's libraries as a package reads them (kept per model and
+/// library revision): for the scoped checks (phase 10).
+pub(crate) fn model_libs(
+    model: &str,
+    typed: bool,
+    libs_rev: u64,
+    libs: Arc<LibFiles>,
+    caches: &Caches,
+    work: &std::path::Path,
+) -> Arc<Libs> {
+    libs_for(model, libs_rev, typed, &libs, caches, work)
+}
+
+/// A part of a model's line resolved as a package resolves it (its
+/// structures merged with their types; as drawn when they cannot be),
+/// with what could not be done.
+pub(crate) fn resolve_part(line: Line, libs: &Libs) -> (Line, Vec<String>) {
+    match &libs.types {
+        Some((structures, insulators)) => {
+            match line.resolve_with(structures, insulators, Some(&libs.cache)) {
+                Ok(l) => (l, Vec::new()),
+                Err(e) => (
+                    line,
+                    vec![format!("structure types: {e} (structures as drawn)")],
+                ),
+            }
+        }
+        None => (line, Vec::new()),
+    }
+}
+
 fn libs_of(part: &Part, caches: &Caches, work: &std::path::Path) -> Arc<Libs> {
-    let k = (part.model.clone(), part.libs_rev, part.typed);
+    libs_for(
+        &part.model,
+        part.libs_rev,
+        part.typed,
+        &part.libs,
+        caches,
+        work,
+    )
+}
+
+fn libs_for(
+    model: &str,
+    libs_rev: u64,
+    typed: bool,
+    files: &LibFiles,
+    caches: &Caches,
+    work: &std::path::Path,
+) -> Arc<Libs> {
+    let k = (model.to_owned(), libs_rev, typed);
     if let Some(l) = caches
         .libs
         .lock()
@@ -572,7 +621,7 @@ fn libs_of(part: &Part, caches: &Caches, work: &std::path::Path) -> Arc<Libs> {
     }
     use ohl_core::files::shipped_library;
     let mut notes = Vec::new();
-    let project = |kind: &str| part.libs.files.get(kind).filter(|f| !f.is_empty());
+    let project = |kind: &str| files.files.get(kind).filter(|f| !f.is_empty());
     let mut cables = ohl_cables::Library::default();
     match project("cables") {
         Some(files) => {
@@ -594,13 +643,11 @@ fn libs_of(part: &Part, caches: &Caches, work: &std::path::Path) -> Arc<Libs> {
             }
         }
     }
-    let types = if part.typed {
+    let types = if typed {
         let read = (|| -> Result<_, String> {
             let dir = |kind: &str| -> Result<PathBuf, String> {
-                Ok(
-                    crate::web::library_dir(part.libs.files.get(kind), work, kind)?
-                        .unwrap_or_else(|| shipped_library(kind)),
-                )
+                Ok(crate::web::library_dir(files.files.get(kind), work, kind)?
+                    .unwrap_or_else(|| shipped_library(kind)))
             };
             let structures = ohl_structures::StructureLibrary::load_dir(&dir("structures")?)
                 .map_err(|e| e.to_string())?;

@@ -806,6 +806,9 @@ pub struct LoadsPage {
     /// The last run's notes (Use local conditions, the weather groups no
     /// longer read).
     pub notes: Vec<String>,
+    /// On a network's working set (phase 10): the other lines' sections
+    /// on shared towers not pulled in here, said with every run.
+    pub replica_note: Option<String>,
     /// The load case shown.
     pub case: usize,
     /// Structures shown (id contains this text).
@@ -1034,6 +1037,13 @@ impl LoadsPage {
     /// Computes the loads of the model as it is now (in the background),
     /// for the plan of the setup.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
+        self.replica_note = model.network_replica().then(|| {
+            ohl_scope::reach::replica_note(
+                "the structure loads",
+                &ohl_scope::reach_of(&ohl_scope::CheckKind::StructureLoads),
+            )
+            .unwrap_or_default()
+        });
         let Some(path) = model.sources.load_cases.clone() else {
             self.results = Some(Err(
                 "no load case file: Line › Structures › Load cases… (the project's own, or a \
@@ -1153,6 +1163,9 @@ impl LoadsPage {
                 self.failed = run.failed;
                 self.given = run.given;
                 self.notes = notes;
+                if let Some(n) = &self.replica_note {
+                    self.notes.insert(0, n.clone());
+                }
                 Some(run.loads)
             }
             // Stopped: the previous results stay.

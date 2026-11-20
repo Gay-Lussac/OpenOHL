@@ -201,6 +201,43 @@ pub fn take_rows(
     Ok(applied)
 }
 
+/// A check's result gone stale on the network (phase 10,
+/// [`crate::ServerMsg::CheckStale`]): the working set's routes in the
+/// replica marked out of date with the reason, as phase 8 marks a shared
+/// tower's move (the replica's users mark them up to date when they have
+/// checked again).
+pub fn take_check_stale(
+    session: &Session,
+    user: &str,
+    check: &str,
+    reason: &str,
+) -> Result<(), String> {
+    let routes: Vec<String> = match session.working_set_spec().map_err(|e| e.to_string())? {
+        Some(spec) => {
+            let mut r: Vec<String> = spec
+                .picks
+                .iter()
+                .filter_map(|p| match p {
+                    ohl_session::working_set::Pick::Route { route }
+                    | ohl_session::working_set::Pick::Stations { route, .. }
+                    | ohl_session::working_set::Pick::Structures { route, .. } => {
+                        Some(route.clone())
+                    }
+                    ohl_session::working_set::Pick::Area { .. } => None,
+                })
+                .collect();
+            if r.is_empty() {
+                r = session.line().routes.iter().map(|x| x.id.clone()).collect();
+            }
+            r
+        }
+        None => session.line().routes.iter().map(|x| x.id.clone()).collect(),
+    };
+    session
+        .mark_stale(user, &routes, &format!("{check}: {reason}"))
+        .map_err(|e| e.to_string())
+}
+
 /// What a partial replica joining again says it holds (phase 6).
 pub fn hold(session: &Session) -> ClientMsg {
     ClientMsg::Hold {

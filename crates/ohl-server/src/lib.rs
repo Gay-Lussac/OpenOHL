@@ -847,6 +847,139 @@ pub enum ClientMsg {
         /// The route.
         route: String,
     },
+    /// Phase 10: a check on a working set, its neighbours pulled in by the
+    /// check's reach and computed on the server (answered with
+    /// [`ServerMsg::CheckResult`] of the same id; later, once, with
+    /// [`ServerMsg::CheckStale`] when what it used changed).
+    Check {
+        /// Chosen by the client.
+        id: u64,
+        /// The working set (none: the one this connection follows).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        working_set: Option<WorkingSetSpec>,
+        /// The check.
+        check: ScopedCheck,
+    },
+}
+
+/// A check a network's server runs on a working set (phase 10).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScopedCheck {
+    /// Clearances by rule: the line's own wires beyond the working set and
+    /// other lines' wires within the rules' reach as targets.
+    Clearances {
+        /// The weather case (of the working set's line).
+        case: String,
+        /// The rules (a rule file, `ohl-clearance-rules`).
+        rules: String,
+    },
+    /// The magnetic field with the lines within the field distance.
+    Fields {
+        /// The weather case.
+        case: String,
+        /// The field distance, m (none: 500 m).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<f64>,
+        /// The current of every circuit without its own, A.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        amps: Option<f64>,
+        /// A limit, µT.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit_ut: Option<f64>,
+    },
+    /// The loads on the working set's shared towers (every line's
+    /// sections on them, under each line's cases, the worst kept).
+    StructureLoads {
+        /// The structures (none: every structure of the working set with
+        /// a twin in another line).
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        structures: Vec<String>,
+    },
+}
+
+impl ScopedCheck {
+    /// Its name in words.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ScopedCheck::Clearances { .. } => "clearances",
+            ScopedCheck::Fields { .. } => "magnetic field",
+            ScopedCheck::StructureLoads { .. } => "structure loads",
+        }
+    }
+}
+
+/// One thing a scoped check found, as its user may see it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Finding {
+    /// The rule, profile or load.
+    pub what: String,
+    /// On what of the working set (a wire's span, a profile, a tower's
+    /// point).
+    pub on: String,
+    /// Against what (another wire, a line's case); a neighbour the user
+    /// may not see is never named: "a hidden object of another line".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub against: Option<String>,
+    /// The measure (radial, vertical, B, factored transverse, …).
+    pub measure: String,
+    /// Its value (m, µT, N).
+    pub value: f64,
+    /// What is required, when a rule or a limit says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<f64>,
+    /// Below what is required (or above a limit).
+    pub violates: bool,
+    /// Where on the working set's wire (none when a neighbour the user
+    /// may not see is involved).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[f64; 3]>,
+    /// The result is limited by a neighbour the user may not see.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
+}
+
+/// What a scoped check pulled in, as its user may see it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PulledReport {
+    /// The lines (models) used, those the user may see something of.
+    pub lines: Vec<String>,
+    /// Their routes the user may see.
+    pub routes: Vec<String>,
+    /// The objects used the user may see ("line L: section S").
+    pub objects: Vec<String>,
+    /// Objects used the user may not see: counted, never named.
+    pub hidden: usize,
+    /// Objects read beside the working set (within its reach or not).
+    pub read: usize,
+}
+
+/// A scoped check's result (phase 10), filtered by the user's rights.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ScopedReport {
+    /// The check.
+    pub check: String,
+    /// The working set's model.
+    pub model: String,
+    /// Its reach, in words.
+    pub reach: String,
+    /// Every part checked, or "NOT ALL CHECKED".
+    pub status: String,
+    /// What it found (each violation, and per rule or profile the
+    /// lowest or highest).
+    pub findings: Vec<Finding>,
+    /// Results in all (pairs, points, loads).
+    pub results: usize,
+    /// Of them, below what is required.
+    pub violations: usize,
+    /// What it pulled in.
+    pub pulled: PulledReport,
+    /// What it could not do (each makes it not all checked).
+    pub not_all_checked: Vec<String>,
+    /// What it assumed (NOT ON THE SAFE SIDE where it is not).
+    pub notes: Vec<String>,
+    /// Seconds on the server.
+    pub seconds: f64,
 }
 
 /// Rows a partial replica takes to follow its model (phase 6).
@@ -1007,6 +1140,22 @@ pub enum ServerMsg {
         model: String,
         /// The route, or why not.
         result: Result<RouteDetail, String>,
+    },
+    /// Phase 10: a scoped check's result, for [`ClientMsg::Check`] of the
+    /// same id.
+    CheckResult {
+        /// The check's id.
+        id: u64,
+        /// What it found, or why not.
+        result: Result<Box<ScopedReport>, String>,
+    },
+    /// Phase 10: what check `id` used changed: its result is stale (sent
+    /// once; check again).
+    CheckStale {
+        /// The check's id.
+        id: u64,
+        /// What changed, as the user may see it.
+        reason: String,
     },
 }
 
@@ -1510,6 +1659,8 @@ mod network_tests;
 mod points_tests;
 #[cfg(all(test, feature = "network"))]
 mod rights_tests;
+#[cfg(all(test, feature = "network"))]
+mod scoped_tests;
 #[cfg(test)]
 mod security_tests;
 #[cfg(test)]

@@ -28,11 +28,15 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = ["h
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 # A server on a network (feature `network`): the country server's database.
 ohl-store-pg = { workspace = true, optional = true }
+# Phase 10: the scoped checks the network's server computes.
+ohl-scope = { workspace = true, optional = true }
+ohl-clearance = { workspace = true, optional = true }
+ohl-loads = { workspace = true, optional = true }
 
 [features]
 # A server on a country server's database (PostgreSQL, ADR-0013 phase 5):
 # the command line enables it; the desktop application does not need it.
-network = ["dep:ohl-store-pg"]
+network = ["dep:ohl-store-pg", "dep:ohl-scope", "dep:ohl-clearance", "dep:ohl-loads"]
 
 [dev-dependencies]
 ohl-pointcloud.workspace = true

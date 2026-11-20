@@ -30,7 +30,7 @@ use crate::{ClientMsg, HeldTile, Op, ServerMsg, TileKey};
 
 /// Takes messages until `until` (10 s at most); every message kept in
 /// `log`.
-fn pump(
+pub(crate) fn pump(
     j: &Joined,
     log: &mut Vec<ServerMsg>,
     mut until: impl FnMut(&ServerMsg) -> bool,
@@ -125,12 +125,12 @@ fn assign(t: &TestNet, who: &str, role: Option<&str>, deny: bool, scope: Scope) 
 
 /// What `user` may not see right now: ids and plan positions (mm) of the
 /// structures, sections, routes and alignments of every model.
-struct Hidden {
+pub(crate) struct Hidden {
     ids: BTreeSet<String>,
     places: Vec<(i64, i64)>,
 }
 
-fn hidden_for(t: &TestNet, user: &str) -> Hidden {
+pub(crate) fn hidden_for(t: &TestNet, user: &str) -> Hidden {
     let net = Network::connect(&t.url).unwrap();
     let rights = net.rights().unwrap().compile(user, &DbResolve(&net));
     let mut ids = BTreeSet::new();
@@ -217,7 +217,7 @@ fn tokens(v: &serde_json::Value, words: &mut HashSet<String>, numbers: &mut Hash
 
 /// No message of `log` holds an id of `hidden` (hidden before and after:
 /// both given) or a hidden structure's place (x and y together).
-fn no_leak(log: &[ServerMsg], a: &Hidden, b: &Hidden, what: &str) {
+pub(crate) fn no_leak(log: &[ServerMsg], a: &Hidden, b: &Hidden, what: &str) {
     let ids: BTreeSet<&String> = a.ids.intersection(&b.ids).collect();
     let places: Vec<&(i64, i64)> = a.places.iter().filter(|p| b.places.contains(p)).collect();
     for m in log {
@@ -886,6 +886,8 @@ fn property_no_message_holds_a_hidden_id_or_place() {
     let mut r = Rng(0x7a7e_1eaf);
     let mut ids: Vec<i64> = Vec::new();
     let mut next_id = 100;
+    // Phase 10: scoped checks computed (not refused) over the rounds.
+    let mut computed = 0;
     for round in 0..6 {
         // Pat's rights this round.
         for id in ids.drain(..) {
@@ -1009,6 +1011,50 @@ fn property_no_message_holds_a_hidden_id_or_place() {
             })
             .unwrap();
         pump(&pat, &mut log, |m| matches!(m, ServerMsg::Extent { .. }));
+        // Phase 10: scoped checks on the round's route (refused when it
+        // reaches what she may not see; else computed with every
+        // neighbour, the hidden ones not named nor placed), then a move
+        // making them stale.
+        let ws = ohl_session::working_set::WorkingSetSpec {
+            name: String::new(),
+            model: code.clone(),
+            picks: vec![crate::scoped_tests::area(px, 300.0)],
+        };
+        for check in [
+            crate::ScopedCheck::Clearances {
+                case: "10 °C".into(),
+                rules: crate::scoped_tests::RULES.into(),
+            },
+            crate::ScopedCheck::StructureLoads {
+                structures: Vec::new(),
+            },
+        ] {
+            next_id += 1;
+            let want = next_id;
+            pat.link
+                .send(ClientMsg::Check {
+                    id: want,
+                    working_set: Some(ws.clone()),
+                    check,
+                })
+                .unwrap();
+            let got = pump(&pat, &mut log, |m| {
+                matches!(m, ServerMsg::CheckResult { id, .. } if *id == want)
+                    || matches!(m, ServerMsg::Notice { .. })
+            });
+            computed += usize::from(matches!(
+                got.last(),
+                Some(ServerMsg::CheckResult { result: Ok(_), .. })
+            ));
+        }
+        next_id += 1;
+        let _ = edit(
+            &bob,
+            &mut bob_log,
+            next_id,
+            &code,
+            moved(&sx, [px[0] + 0.1, px[1], px[2]]),
+        );
         // The tiles read again (at what she holds).
         idle(&pat, &mut log, 300);
         let after = hidden_for(&t, "pat");
@@ -1020,6 +1066,7 @@ fn property_no_message_holds_a_hidden_id_or_place() {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+    assert!(computed > 0, "no scoped check computed in six rounds");
     drop(bob);
     server.stop();
 }

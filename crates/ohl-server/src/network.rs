@@ -69,6 +69,11 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
 use crate::network_rights::{self as nr, Compiled, ModelRoles, Places};
+
+// Phase 10: scoped computations (a child module: it reads the
+// authority's models and tile index).
+#[path = "network_scoped.rs"]
+mod scoped;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
@@ -464,6 +469,8 @@ pub(crate) struct NetHost {
     /// Phase 9: the libraries' locks, requests and withdrawn entries as
     /// read (at their revision).
     lib: Arc<ohl_store_pg::library::LibraryState>,
+    /// Phase 10: the scoped checks' state (results watched, bounds kept).
+    scoped: scoped::ScopedState,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -546,6 +553,7 @@ impl NetHost {
             parts: HashMap::new(),
             regions: BTreeMap::new(),
             lib,
+            scoped: scoped::ScopedState::default(),
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -1999,6 +2007,20 @@ impl NetHost {
                 self.saved_sets(user)?
             }
             NetAsk::List => self.saved_sets(user)?,
+            NetAsk::Check {
+                id,
+                working_set,
+                check,
+            } => {
+                let r = self.scoped_check(client, &rights, id, working_set, check);
+                match r {
+                    Ok(m) => m,
+                    Err(e) => ServerMsg::CheckResult {
+                        id,
+                        result: Err(self.sanitise(&rights, &e)),
+                    },
+                }
+            }
         };
         let at = self.position;
         let seen = matches!(msg, ServerMsg::Rows(_)).then_some(Update::Seen(at));
@@ -2464,6 +2486,10 @@ impl NetHost {
         // was for what went), then the places moved on.
         let restricted =
             self.restricted_clients(code, line, op, &touched_objects, &routes, whole || library);
+        // Phase 10: the results using what it touched are stale.
+        if line == main {
+            self.stale_checks(code, user, &touched_objects, &touched, whole || library);
+        }
         self.update_places(code, line, op, whole, &objects);
         let tiles: Vec<TileKey> = touched.into_iter().collect();
         let large = whole || tiles.len() > self.options.large_tiles;
@@ -3043,6 +3069,7 @@ impl NetHost {
     }
 
     fn leave(&mut self, client: u64, user: &str) {
+        self.forget_checks(client);
         if let Some(c) = self.clients.remove(&client) {
             for t in c.waiting {
                 if let Some(b) = self.building.get_mut(&t) {
@@ -3153,6 +3180,7 @@ impl NetHost {
                     "rights_change_us": self.stats.rights_change_us,
                     "rights_compile_us": self.stats.rights_compile_us,
                     "places": self.models.values().map(|m| m.places.len()).sum::<usize>(),
+                    "scoped_ms": self.scoped.ms,
                 })
                 .to_string())
             }

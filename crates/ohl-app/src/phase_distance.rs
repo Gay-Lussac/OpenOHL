@@ -1247,9 +1247,24 @@ impl PhaseDistanceWindow {
         self.progress = progress.clone();
         // The routes chosen: the pairs with a span on them only.
         let keep = self.scope.keeps(&model.line);
+        // On a network's working set (phase 10): the plugin's reach (its
+        // manifest's `[reach]`; none: the most conservative default) not
+        // pulled in here — said, never passing on that account.
+        let replica_note = if model.network_replica() {
+            let declared = ohl_plugins::Manifest::load(&check.dir)
+                .ok()
+                .and_then(|m| m.check_reach(kind.check_id()));
+            ohl_scope::reach::replica_note(
+                &format!("the plugin's check {}", kind.check_id()),
+                &ohl_scope::reach_of(&ohl_scope::CheckKind::Plugin { declared }),
+            )
+        } else {
+            None
+        };
         self.job.start_at(ctx, model.revision(), move || {
             let started = std::time::Instant::now();
             let mut notes = local.rigid_notes();
+            notes.extend(replica_note);
             let mut rows = Vec::new();
             if kind == Kind::UnequalWind
                 && let Some((solved, _)) = cases.first()

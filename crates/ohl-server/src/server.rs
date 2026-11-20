@@ -316,6 +316,12 @@ pub(crate) enum NetAsk {
         model: String,
         route: String,
     },
+    /// Phase 10: a check on a working set, its neighbours pulled in.
+    Check {
+        id: u64,
+        working_set: Option<ohl_session::working_set::WorkingSetSpec>,
+        check: crate::ScopedCheck,
+    },
 }
 
 #[cfg_attr(not(feature = "network"), allow(dead_code))]
@@ -1843,6 +1849,7 @@ pub(crate) async fn dispatch(
         | ClientMsg::DeleteWorkingSet { .. }
         | ClientMsg::WorkingSets
         | ClientMsg::RouteDetail { .. }
+        | ClientMsg::Check { .. }
             if !pace.interest.take() =>
         {
             Some(ServerMsg::Notice {
@@ -1867,6 +1874,23 @@ pub(crate) async fn dispatch(
         ClientMsg::WorkingSets => net_ask(jobs, client, user, NetAsk::List).await?,
         ClientMsg::RouteDetail { model, route } => {
             net_ask(jobs, client, user, NetAsk::RouteDetail { model, route }).await?
+        }
+        ClientMsg::Check {
+            id,
+            working_set,
+            check,
+        } => {
+            net_ask(
+                jobs,
+                client,
+                user,
+                NetAsk::Check {
+                    id,
+                    working_set,
+                    check,
+                },
+            )
+            .await?
         }
         ClientMsg::Request { id, op, line } => {
             request(jobs, client, user, id, op, line, None).await?
