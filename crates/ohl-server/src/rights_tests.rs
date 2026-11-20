@@ -932,7 +932,10 @@ impl Rng {
 /// route, a part of one, a region, a kind on a line, with a deny now and
 /// then), random edits by others and the user's own, tiles, catch-ups,
 /// route details and picks — no message to the user holds the id or the
-/// place of an object the user may not see.
+/// place of an object the user may not see. Phase 13: she signs in with
+/// an OIDC token every other round, and her refused checks (a field
+/// distance too far, rules reaching farther than 10 km, two at once) say
+/// nothing hidden either.
 #[test]
 fn property_no_message_holds_a_hidden_id_or_place() {
     let Some(t) = test_network("leak", 200) else {
@@ -944,7 +947,28 @@ fn property_no_message_holds_a_hidden_id_or_place() {
         "viewer",
         Scope::line(&t.codes[0]),
     );
-    let server = Server::start_network(local("abcd2345"), net_options(&t.url)).unwrap();
+    // Phase 13: a sign-in provider; pat's subject mapped to her.
+    let idp = crate::oidc::tests::FakeIssuer::start();
+    admin(
+        &t,
+        R::MapIdentity {
+            issuer: idp.issuer.clone(),
+            subject: "00u-pat".into(),
+            user: "pat".into(),
+        },
+    )
+    .unwrap();
+    let oidc = std::sync::Arc::new(
+        crate::oidc::Oidc::new(crate::oidc::OidcConfig::new(&idp.issuer, "ohl-server")).unwrap(),
+    );
+    let server = Server::start_network(
+        local("abcd2345"),
+        crate::network::NetOptions {
+            oidc: Some(oidc),
+            ..net_options(&t.url)
+        },
+    )
+    .unwrap();
     let bob = join_network(
         &server.invitation_for("bob"),
         "bob",
@@ -1029,11 +1053,20 @@ fn property_no_message_holds_a_hidden_id_or_place() {
         tiles.sort();
         tiles.dedup();
         let mut log = Vec::new();
+        // Phase 13: every other round with a sign-in token, no code.
+        let (invitation, id_token) = if round % 2 == 1 {
+            let mut bare = server.invitation.clone();
+            bare.code = "0".into();
+            (bare, Some(idp.token("00u-pat", "ohl-server", 2, 600)))
+        } else {
+            (server.invitation_for("pat"), None)
+        };
         let pat = join_network(
-            &server.invitation_for("pat"),
+            &invitation,
             "pat",
             &NetJoin {
                 tiles: held(&tiles),
+                id_token,
                 ..NetJoin::default()
             },
             &mut |_| {},
@@ -1186,6 +1219,35 @@ fn property_no_message_holds_a_hidden_id_or_place() {
                 got.last(),
                 Some(ServerMsg::CheckResult { result: Ok(_), .. })
             ));
+        }
+        // Phase 13: checks refused — a field too far (before it waits),
+        // rules reaching farther than 10 km (after its reading was cut).
+        let far = "[[rule]]\nname = \"far\"\ntarget = \"other_lines\"\nradial = \"50000 m\"\n";
+        for check in [
+            crate::ScopedCheck::Fields {
+                case: "10 °C".into(),
+                distance: Some(1e7),
+                amps: None,
+                limit_ut: None,
+            },
+            crate::ScopedCheck::Clearances {
+                case: "10 °C".into(),
+                rules: far.into(),
+            },
+        ] {
+            next_id += 1;
+            let want = next_id;
+            pat.link
+                .send(ClientMsg::Check {
+                    id: want,
+                    working_set: Some(ws.clone()),
+                    check,
+                })
+                .unwrap();
+            pump_for(&pat, &mut log, Duration::from_secs(120), |m| {
+                matches!(m, ServerMsg::CheckResult { id, .. } if *id == want)
+                    || matches!(m, ServerMsg::Notice { .. })
+            });
         }
         // Phase 12: her offline working set of the round's area (refused
         // when it reaches what she may not see; else written without what

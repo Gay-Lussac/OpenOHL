@@ -264,6 +264,60 @@ pub enum RightsCommandArgs {
         #[arg(long)]
         user: String,
     },
+    /// Phase 13: make a user's personal invitation again (network
+    /// admins): every older invitation of theirs is refused from now on,
+    /// and they are let go if connected; the running server gives the new
+    /// one (`ohl network serve --invite NAME`).
+    ReissueInvitation {
+        /// The user.
+        name: String,
+        #[arg(long)]
+        database: Option<String>,
+        /// Who acts (a network admin).
+        #[arg(long)]
+        user: String,
+    },
+    /// Phase 13: an identity provider's subject signs in as a user (OIDC;
+    /// network admins).
+    MapIdentity {
+        /// The issuer, exactly as the server's --oidc-issuer.
+        #[arg(long)]
+        issuer: String,
+        /// The subject (the ID token's `sub`).
+        #[arg(long)]
+        subject: String,
+        /// The network user it signs in as.
+        #[arg(long = "to")]
+        to: String,
+        #[arg(long)]
+        database: Option<String>,
+        /// Who acts (a network admin).
+        #[arg(long)]
+        user: String,
+    },
+    /// Phase 13: an identity provider's subject no longer signs in.
+    UnmapIdentity {
+        /// The issuer.
+        #[arg(long)]
+        issuer: String,
+        /// The subject.
+        #[arg(long)]
+        subject: String,
+        #[arg(long)]
+        database: Option<String>,
+        /// Who acts (a network admin).
+        #[arg(long)]
+        user: String,
+    },
+    /// Phase 13: the identities mapped (issuer, subject, user; network
+    /// admins).
+    Identities {
+        #[arg(long)]
+        database: Option<String>,
+        /// Who asks (a network admin).
+        #[arg(long)]
+        user: String,
+    },
     /// The audit (network admins): rights changes, refusals, exports,
     /// imports.
     Audit {
@@ -539,6 +593,49 @@ pub fn run(command: RightsCommandArgs) -> Result<(), String> {
                         .collect::<Vec<_>>()
                         .join(", ")
                 );
+            }
+            Ok(())
+        }
+        RightsCommandArgs::ReissueInvitation {
+            name,
+            database,
+            user,
+        } => change(database, &user, RightsCommand::ReissueInvitation { name }),
+        RightsCommandArgs::MapIdentity {
+            issuer,
+            subject,
+            to,
+            database,
+            user,
+        } => change(
+            database,
+            &user,
+            RightsCommand::MapIdentity {
+                issuer,
+                subject,
+                user: to,
+            },
+        ),
+        RightsCommandArgs::UnmapIdentity {
+            issuer,
+            subject,
+            database,
+            user,
+        } => change(
+            database,
+            &user,
+            RightsCommand::UnmapIdentity { issuer, subject },
+        ),
+        RightsCommandArgs::Identities { database, user } => {
+            let net = connect(database)?;
+            let me = compiled(&net, &user)?;
+            if !me.allows(Permission::ManageRights, &Target::Network) {
+                let why = format!("{user} may not list identities: network admins only");
+                let _ = net.audit(&user, "refused", "identities", &why);
+                return Err(why);
+            }
+            for [issuer, subject, who] in net.identities().map_err(|e| e.to_string())? {
+                println!("{issuer}\t{subject}\t{who}");
             }
             Ok(())
         }

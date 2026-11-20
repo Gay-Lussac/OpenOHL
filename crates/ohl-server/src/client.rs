@@ -280,6 +280,9 @@ pub struct NetJoin {
     pub working_set: Option<WorkingSetSpec>,
     /// Phase 7: an admin sees as this user (what both may see, read only).
     pub see_as: Option<String>,
+    /// Phase 13: an ID token of the network's identity provider in place
+    /// of the invitation's access code (OIDC sign-in).
+    pub id_token: Option<String>,
 }
 
 /// Joins the network's server of `invitation` as `user` (protocol 3's
@@ -297,7 +300,12 @@ pub fn join_network(
     let hello = ClientMsg::Join {
         protocol: PROTOCOL,
         user: user.to_owned(),
-        code: invitation.code.clone(),
+        // Signed in with a token: no access code beside it.
+        code: if how.id_token.is_some() {
+            String::new()
+        } else {
+            invitation.code.clone()
+        },
         model: how.model.clone(),
         since: how.since,
         routes: how.routes.clone(),
@@ -305,6 +313,7 @@ pub fn join_network(
         held: how.held,
         working_set: how.working_set.clone(),
         see_as: how.see_as.clone(),
+        id_token: how.id_token.clone(),
     };
     join_with(invitation, user, hello, how.file.clone(), progress)
 }

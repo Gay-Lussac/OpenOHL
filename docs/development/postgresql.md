@@ -1,6 +1,6 @@
 # The country server's database: running it and its tests locally
 
-*In active development (ADR-0013, phases 4–6, 2026-11-19, phases 7, 9 and 11 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.* Every command: [A network on the command line](../user-guide/network-commands.md).
+*In active development (ADR-0013, phases 4–6, 2026-11-19, phases 7, 9, 11 and 13 2026-11-20; the tests' scheme O46, 2026-11-19); not approved yet.* Every command: [A network on the command line](../user-guide/network-commands.md).
 
 A country server keeps every model of its network in one PostgreSQL
 database with PostGIS ([ADR-0013](../adr/0013-country-server.md); the
@@ -121,6 +121,52 @@ About 8 s for the seven tests (two programs, `network` and `library`):
   pinned files and meta; the audit.
 - `schema_4_brought_to_5` (phase 9) — a database of phase 7 brought
   forward, the libraries' tables made.
+
+- `tests/operations.rs` (phase 13, a program of its own): the **restore
+  drill** (`backup_and_the_restore_drill`: a network of two models
+  edited, committed and branched, backed up by `pg_dump` in a snapshot,
+  restored into an empty database, each model's rows the same byte for
+  byte, the manifest's hashes checked by the restore; refused: a database
+  not empty, a dump changed, another schema, a manifest naming another
+  file, rows differing from the manifest), **migrations after a backup**
+  (`migrations_wait_for_a_recent_backup`: none, too old, the setting, a
+  real backup, `--i-have-a-backup` audited, an empty database made
+  without), `invitations_and_identities`, and **TLS**
+  (`tls_to_the_database`: the test cluster given a certificate of a CA
+  made by the test — `ALTER SYSTEM SET ssl = on`, reset at the end —;
+  `verify-full`, `verify-ca` and `require` encrypted, another CA and a
+  name the certificate is not for refused). They need `pg_dump` and
+  `pg_restore` beside `initdb`.
+
+## Backups, restores and TLS (phase 13)
+
+Built 2026-11-20, in active development, not approved yet
+([decisions](decisions.md#2026-11-20-country-server-phase-13),
+[deployment](../user-guide/server-deployment.md)):
+
+- `ohl network backup --out DIR` runs `pg_dump --format=custom
+  --snapshot=…` in a snapshot its own connection exports, and reads in
+  the same snapshot each model's rows (every table with a `line_id`,
+  each row's JSON in the order of the table's key, times in UTC) and the
+  network's own tables (the rest), hashed into `manifest.json` with the
+  dump's SHA-256. Recorded in `net_meta` `last_backup` (every schema has
+  it), `net_backup` and the audit.
+- `ohl network restore DIR` into an empty database (PostGIS's own tables
+  allowed): the manifest of this program's schema only, the dump's hash
+  checked, `pg_restore --single-transaction --exit-on-error --no-owner
+  --no-privileges --no-comments`, then the hashes compared (the restore
+  drill).
+- A migration (`Network::connect` on an older schema, the server's
+  start, `ohl network migrate`) needs `last_backup` newer than
+  `backup_max_age_hours` (24), else `--i-have-a-backup` (audited); a new
+  database is made without.
+- **TLS** (`ohl_store_pg::connect`): libpq's `sslmode` and `sslrootcert`
+  read from the connection string (key/value or URL), rustls with ring;
+  a host that is not this computer is refused without TLS unless
+  `sslmode=disable` is said; the password from the string or from
+  `OHL_DATABASE_PASSWORD_FILE`. `pg_dump` and `pg_restore` get the TLS
+  settings and the password in their environment (`PGSSLMODE`,
+  `PGSSLROOTCERT`, `PGPASSWORD`), never on their command line.
 
 ## The server's tests on a network
 
@@ -271,11 +317,9 @@ model's surfaces are in the database whole, not served by tile yet; a
 working set is on one model (routes of another line are their own working
 set); checks on a working set pull no neighbours in yet (phase 10);
 branches over a working set and split trees (phase 11) are made through
-the server's protocol, no command line yet; **backups and a restore drill
-are not built** (phase 13: base backups and WAL archiving, a migration
-refused without a recent backup) — until then back the database up with
-PostgreSQL's own tools (`pg_dump`, or a base backup); TLS to a database
-on another host and the deployment files are phase 13 too.
+the server's protocol, no command line yet. Backups are `pg_dump`'s
+(phase 13, above); WAL archiving and point-in-time recovery are
+PostgreSQL's own, beside them, not driven by `ohl`.
 
 **A big model's first revision in an empty network** (found 2026-11-20,
 phase 11's measurements): while the version store's tables have no rows

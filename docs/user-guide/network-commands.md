@@ -15,6 +15,16 @@ and refusals and changes go into the audit. Commands marked *writer* need
 the network's writer: no `ohl network serve` running on the database
 (one writer per database; a second is refused).
 
+**The database's connection (phase 13).** A database on another host
+needs TLS: `sslmode=verify-full sslrootcert=/etc/ohl/ca.pem` in the
+connection string (or `OHL_DATABASE_SSLMODE` and `OHL_DATABASE_CA` in the
+environment); `sslmode=require` encrypts without checking the
+certificate, `verify-ca` checks its chain but not its name; without any,
+a host that is not this computer is refused, and `sslmode=disable` is the
+explicit choice of none (a network you trust). The password may come
+from a file: `OHL_DATABASE_PASSWORD_FILE` (a Compose secret). A schema
+migration needs a recent backup ([operations](#operations-phase-13)).
+
 ## Lines: import, export, list
 
 | Command | What it does | Who may | Example |
@@ -37,7 +47,16 @@ the network's writer: no `ohl network serve` running on the database
 
 | Command | What it does | Who may | Example |
 |---|---|---|---|
-| `serve [--bind ADDR] [--advertise HOST] [--code SECRET] [--keys FILE] [--invite NAME]… [--web PORT] [--seconds N] [--readers N] [--packagers N] [--solve-threads N] [--packages-mb N] [--shapes-mb N] [--heartbeat-ms N] [--no-idle-solve] [--stats FILE] [--max-connections N] [--max-per-address N]` | Hosts the network (protocol 3): every line read once, each edit one transaction written before it is sent, clients served by interest (a desktop's working set, a browser's tiles), the context solved ahead while idle. Prints the personal invitations asked for. `--newcomers` exists for the file server's options: on a network only `none` is accepted (only the network's users join). *Writer.* | whoever runs it on the database; joining needs a network user's personal invitation | `ohl network serve --bind 0.0.0.0:4433 --web 8443 --invite ana --invite ben` |
+| `serve [--bind ADDR] [--advertise HOST] [--code SECRET] [--keys FILE] [--invite NAME]… [--invite-days N] [--web PORT] [--seconds N] [--readers N] [--packagers N] [--solve-threads N] [--packages-mb N] [--shapes-mb N] [--heartbeat-ms N] [--no-idle-solve] [--stats FILE] [--max-connections N] [--max-per-address N] [--max-heavy-queue N] [--tiles-per-second X] [--oidc-issuer URL --oidc-audience ID [--oidc-jwks-url URL \| --oidc-jwks-file FILE] [--oidc-ca FILE] [--oidc-max-age-s S]]` | Hosts the network (protocol 3): every line read once, each edit one transaction written before it is sent, clients served by interest (a desktop's working set, a browser's tiles), the context solved ahead while idle. Prints the personal invitations asked for — each of the user's current generation, valid `--invite-days` days if given (else until reissued). Phase 13: checks, exports and bundles wait behind the commands (`--max-heavy-queue`, 4, one per user); each client may have `--tiles-per-second` (64) new tiles made, 4 times as many at once; OIDC sign-in with the owner's identity provider when `--oidc-issuer` and `--oidc-audience` are given (its keys from its discovery document, a URL or a file; its CA; tokens issued within `--oidc-max-age-s`, 3 600) — personal invitations still work. `--newcomers` exists for the file server's options: on a network only `none` is accepted (only the network's users join). *Writer.* | whoever runs it on the database; joining needs a network user's personal invitation or a sign-in mapped to one | `ohl network serve --bind 0.0.0.0:4433 --web 8443 --invite ana --invite-days 30 --keys /var/lib/ohl/server-key` |
+
+## Operations (phase 13)
+
+| Command | What it does | Who may | Example |
+|---|---|---|---|
+| `backup --out DIR` | Backs the network up into a new (or empty) folder: `network.dump` (PostgreSQL's dump, custom format) and `manifest.json` (the schema, the time of the data, the dump's SHA-256, a hash of each line and of the network's own tables — read in the dump's own snapshot). Runs beside the server (nothing waits). Recorded in the network and the audit. Needs `pg_dump` (`OHL_PG_BIN`, Homebrew's `postgresql@17` or the `PATH`). | a network admin (anyone while the network has none) | `ohl network backup --out /backups/ohl-20261120 --user ana` |
+| `restore DIR` | Restores a backup into an **empty** database (PostGIS may be in it), of this program's schema only, in one transaction; then the restore drill: every line and the network's tables compared with the manifest's hashes (a difference fails it, naming what differs). A dump changed since the backup is refused. In the restored network's audit. Needs `pg_restore`. | whoever reaches the empty database | `ohl network restore /backups/ohl-20261120 --database "host=db2 dbname=network sslmode=verify-full sslrootcert=ca.pem" --user ana` |
+| `migrate [--i-have-a-backup]` | Brings the network's schema forward to this program's (7): only with a backup newer than the network's `backup_max_age_hours` (24) recorded; `--i-have-a-backup` migrates without one (you made one another way) and says so in the audit. An empty database is made without a backup. The server refuses to start on an older schema without a backup the same way. *Writer.* | whoever holds the database's credentials (in the audit under `--user`) | `ohl network migrate --user ana` |
+| `setting KEY [VALUE]` | Shows or sets a network setting: `backup_max_age_hours` (more than 0, at most 8 760). In the audit. | network admins (to set) | `ohl network setting backup_max_age_hours 48 --user ana` |
 
 ## Rights (`ohl network rights …`)
 
@@ -52,7 +71,9 @@ the network's writer: no `ohl network serve` running on the database
 | `unassign ID` | Takes an assignment away. | as `assign` | `ohl network rights unassign 12 --user ana` |
 | `explain --as USER --permission P [--line CODE [--kind K --id ID]]` | Whether a user may do something on a target, and the assignments granting and denying it (no `--line`: the network; `--line` alone: the line whole; `--kind library --id KIND/FILE`: a library file). In the audit. | whoever manages rights somewhere | `ohl network rights explain --as ben --permission edit --line L001 --kind structure --id T5 --user ana` |
 | `see-as --as USER [--line CODE]` | What a user may see of each line, as the server decides it (within what the asker may see). In the audit. | whoever manages rights somewhere | `ohl network rights see-as --as ben --user ana` |
-| `audit [--after N] [--limit N]` | The audit: rights changes (what was and is), refusals, imports, exports, library changes. | network admins | `ohl network rights audit --user ana` |
+| `audit [--after N] [--limit N]` | The audit: rights changes (what was and is), refusals, imports, exports, library changes, backups, restores, migrations, settings. | network admins | `ohl network rights audit --user ana` |
+| `reissue-invitation NAME` | Phase 13: makes a user's personal invitation again: every older one of theirs is refused from now on (they are let go if connected); the server prints the new one (`serve --invite NAME`). | network admins | `ohl network rights reissue-invitation ben --user ana` |
+| `map-identity --issuer URL --subject SUB --to NAME`, `unmap-identity --issuer URL --subject SUB`, `identities` | Phase 13: an identity provider's subject (the ID token's `sub`; the issuer exactly as `serve --oidc-issuer`) signs in as a network user, or no longer; `identities` lists them. | network admins | `ohl network rights map-identity --issuer https://id.example.org/realms/grid --subject 00u1ab --to ben --user ana` |
 
 Rights changes need no writer: a running server reads them again before
 its next job (at the latest with its next heartbeat) and lets go every
@@ -98,14 +119,15 @@ The numbers: [performance](../development/performance.md).
 
 ## Not there yet
 
-No `ohl network init` (the first connection makes the schema), no backup
-or restore command (phase 13: base backups, WAL archiving, a restore
-drill, migrations refused without a recent backup — until then use
-PostgreSQL's own tools), no command for branches over a working set
+No `ohl network init` (the first connection, or `migrate`, makes the
+schema), no WAL archiving or point-in-time recovery (the backups are
+`pg_dump`'s; PostgreSQL's own base backups and WAL archiving work beside
+them), no sign-in flow in OHL-Design or the web client yet (the protocol
+takes an ID token: `id_token` in the join), no command for branches over a working set
 (the server's operation `create_working_set_branch`; OHL-Design's window
 to come; `import-bundle` makes one), no OHL-Design menu for offline
 working sets (the commands above and the server's messages
-`export_working_set`, `import_bundle`), no OIDC sign-in (phase 13), no command for the checks with their
+`export_working_set`, `import_bundle`), no command for the checks with their
 neighbours (phase 10: the server's messages `check`, answered with
 `check_result` and later, once, `check_stale` —
 [the server's messages](../development/data-model.md#the-servers-messages-protocol-3);

@@ -25,3 +25,6 @@ local-data/
 
 # Server key files (personal invitations; ohl serve --keys)
 *.server-key
+
+# Compose deployment secrets (deploy/compose/secrets.example is the fake example)
+deploy/compose/secrets/

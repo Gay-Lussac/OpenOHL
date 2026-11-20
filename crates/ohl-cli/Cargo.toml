@@ -56,6 +56,8 @@ clap.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
 # The building-cuts plugin's SVG files parsed in its test.
 roxmltree = "0.21"
+# Phase 13: the Compose files parsed in their test (deploy/compose).
+yaml-rust2 = { version = "0.13", default-features = false }
 
 [lints]
 workspace = true

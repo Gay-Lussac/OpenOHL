@@ -46,6 +46,20 @@ pub(super) struct ScopedState {
     watches: Vec<Watch>,
     /// Timings (the bench): per check, ms.
     pub(super) ms: BTreeMap<String, Vec<f64>>,
+    /// Phase 13: the changes applied while a check runs on the worker
+    /// (checked against its watch when it comes back).
+    in_flight: Option<Vec<StaleEvent>>,
+}
+
+/// A change as the stale marks read it: its model, user, objects, tiles,
+/// at large.
+#[derive(Clone)]
+pub(super) struct StaleEvent {
+    code: String,
+    user: String,
+    objects: Vec<(Kind, String)>,
+    tiles: BTreeSet<TileKey>,
+    at_large: bool,
 }
 
 /// A result watched: what it used.
@@ -73,10 +87,121 @@ fn kind_of(k: NeighbourKind) -> Kind {
 /// tile index.
 struct HostNet<'a> {
     host: &'a mut NetHost,
+    /// Phase 13: what a check may read at most (the working set's bounds
+    /// grown by [`MAX_CHECK_REACH`] and the spans' margins): an area
+    /// asked beyond it reads nothing more, and the check is refused after
+    /// (`clipped`) — a check's reach comes from what its client sent (the
+    /// rules' distances, the field's distance).
+    limit: Option<Bounds>,
+    clipped: bool,
+}
+
+impl<'a> HostNet<'a> {
+    fn new(host: &'a mut NetHost) -> Self {
+        Self {
+            host,
+            limit: None,
+            clipped: false,
+        }
+    }
+}
+
+/// Phase 13: the farthest a check run on the server reads around its
+/// working set, m (a plugin's declared reach at most, `ohl_scope`).
+pub(crate) const MAX_CHECK_REACH: f64 = ohl_scope::reach::MAX_DECLARED_REACH;
+
+/// Phase 13: the field distance a client may ask, m.
+pub(crate) const MAX_FIELD_DISTANCE: f64 = 2_000.0;
+
+/// Phase 13: the clearance rules' text a client may send, bytes.
+pub(crate) const MAX_RULES: usize = 256 << 10;
+
+/// Phase 13: structures a check of loads may name.
+pub(crate) const MAX_CHECK_STRUCTURES: usize = 10_000;
+
+/// Phase 13: a check's parameters as a client sent them, refused before
+/// it waits for its turn (what it would make the server read or compute
+/// beyond the limits).
+pub(crate) fn check_parameters(check: &ScopedCheck) -> Result<(), String> {
+    match check {
+        ScopedCheck::Clearances { case, rules } => {
+            if rules.len() > MAX_RULES || case.len() > 256 {
+                return Err(format!(
+                    "clearance rules of {} KB: at most {} KB",
+                    rules.len() >> 10,
+                    MAX_RULES >> 10
+                ));
+            }
+        }
+        ScopedCheck::Fields {
+            case,
+            distance,
+            amps,
+            limit_ut,
+        } => {
+            if let Some(d) = distance
+                && !(d.is_finite() && *d > 0.0 && *d <= MAX_FIELD_DISTANCE)
+            {
+                return Err(format!(
+                    "the field distance: more than 0 m and at most {MAX_FIELD_DISTANCE} m"
+                ));
+            }
+            if amps.is_some_and(|a| !(a.is_finite() && a >= 0.0))
+                || limit_ut.is_some_and(|l| !(l.is_finite() && l >= 0.0))
+                || case.len() > 256
+            {
+                return Err("the field's current and limit: finite, not negative".into());
+            }
+        }
+        ScopedCheck::StructureLoads { structures } => {
+            if structures.len() > MAX_CHECK_STRUCTURES {
+                return Err(format!(
+                    "{} structures: a check of loads takes at most {MAX_CHECK_STRUCTURES}",
+                    structures.len()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A model's cases from its weather and load case files (the defaults
+/// where it has none) — the authority's and the checks' worker's.
+pub(super) fn cases_of(
+    model: &str,
+    weather: &[(String, String)],
+    loads: &[(String, String)],
+) -> Result<Arc<Cases>, String> {
+    let mut cases = ohl_scope::default_cases()?;
+    if !weather.is_empty() {
+        cases.weather.clear();
+        for (name, text) in weather {
+            let w = ohl_weather::WeatherCases::parse(text)
+                .map_err(|e| format!("weather file {name}: {e}"))?;
+            cases.weather.extend(w.cases);
+        }
+        cases.source = format!("line {model}'s own library");
+    }
+    if !loads.is_empty() {
+        cases.loads.clear();
+        for (name, text) in loads {
+            let l = ohl_loads::LoadCases::parse(text)
+                .map_err(|e| format!("load case file {name}: {e}"))?;
+            cases.loads.extend(l.cases);
+        }
+        cases.source = format!("line {model}'s own library");
+    }
+    Ok(Arc::new(cases))
 }
 
 impl HostNet<'_> {
-    fn objects_in(&self, area: &Bounds, kind: Kind) -> Vec<(String, String)> {
+    fn objects_in(&mut self, area: &Bounds, kind: Kind) -> Vec<(String, String)> {
+        // Beyond the limit: nothing more is read (the check is refused
+        // after, its little work done on nothing).
+        if self.clipped || self.limit.is_some_and(|l| !l.contains(area)) {
+            self.clipped = true;
+            return Vec::new();
+        }
         let mut out = BTreeSet::new();
         for t in self.host.tiles_of(area) {
             if let Some(s) = self.host.tiles.get(&t) {
@@ -216,34 +341,15 @@ impl Neighbourhood for HostNet<'_> {
             .models
             .get(model)
             .ok_or_else(|| format!("the network has no line {model}"))?;
-        let mut cases = ohl_scope::default_cases()?;
         let weather = m
             .session
             .library_files("weather")
             .map_err(|e| e.to_string())?;
-        if !weather.is_empty() {
-            cases.weather.clear();
-            for (name, text) in weather {
-                let w = ohl_weather::WeatherCases::parse(&text)
-                    .map_err(|e| format!("weather file {name}: {e}"))?;
-                cases.weather.extend(w.cases);
-            }
-            cases.source = format!("line {model}'s own library");
-        }
         let loads = m
             .session
             .library_files("loadcases")
             .map_err(|e| e.to_string())?;
-        if !loads.is_empty() {
-            cases.loads.clear();
-            for (name, text) in loads {
-                let l = ohl_loads::LoadCases::parse(&text)
-                    .map_err(|e| format!("load case file {name}: {e}"))?;
-                cases.loads.extend(l.cases);
-            }
-            cases.source = format!("line {model}'s own library");
-        }
-        Ok(Arc::new(cases))
+        cases_of(model, &weather, &loads)
     }
 
     fn max_margin(&mut self) -> f64 {
@@ -280,6 +386,52 @@ impl NetHost {
         check: ScopedCheck,
     ) -> Result<ServerMsg, String> {
         let started = Instant::now();
+        let name = check.name().to_owned();
+        check_parameters(&check)?;
+        let (mut ws, extent) = self.check_working_set(client, rights, spec)?;
+        let raw = {
+            let mut net = HostNet::new(self);
+            let margin = net.max_margin();
+            net.limit = extent.summary.bounds.map(|b| {
+                Bounds::new([b[0], b[1]], [b[2], b[3]]).grown(MAX_CHECK_REACH + 2.0 * margin)
+            });
+            let raw =
+                crate::scoped_report::run(&mut net, &mut ws, &check, |n, m, s| n.has_twin(m, s))?;
+            if net.clipped {
+                return Err(format!(
+                    "{name}: its reach is more than {MAX_CHECK_REACH} m around the working set \
+                     (the rules' or the field's distances): refused"
+                ));
+            }
+            raw
+        };
+        let seconds = started.elapsed().as_secs_f64();
+        keep(
+            self.scoped.ms.entry(name.clone()).or_default(),
+            seconds * 1e3,
+        );
+        let report = crate::scoped_report::report(
+            &mut HostViewer { host: self, rights },
+            &ws,
+            &name,
+            &raw,
+            seconds,
+        );
+        self.watch(client, id, &name, &ws, &extent, &raw);
+        Ok(ServerMsg::CheckResult {
+            id,
+            result: Ok(Box::new(report)),
+        })
+    }
+
+    /// A check's working set (given, or the one `client` follows): its
+    /// extent seen whole by `rights` (refused naming nothing hidden).
+    pub(super) fn check_working_set(
+        &mut self,
+        client: u64,
+        rights: &UserRights,
+        spec: Option<WorkingSetSpec>,
+    ) -> Result<(WorkingSet, Extent), String> {
         let (model, extent): (String, Extent) = match spec {
             Some(spec) => {
                 let extent = {
@@ -311,34 +463,79 @@ impl NetHost {
                 .map(|(_, id)| id.clone())
                 .collect()
         };
-        let mut ws = WorkingSet {
+        let ws = WorkingSet {
             model: model.clone(),
             sections: of(Kind::Section),
             jumpers: of(Kind::Jumper),
             structures: of(Kind::Structure),
         };
-        let name = check.name().to_owned();
-        let raw = {
-            let mut net = HostNet { host: self };
-            crate::scoped_report::run(&mut net, &mut ws, &check, |n, m, s| n.has_twin(m, s))?
+        Ok((ws, extent))
+    }
+
+    /// Phase 13: a check runs on the worker (`on`), or came back: the
+    /// changes applied meanwhile.
+    pub(super) fn scoped_in_flight(&mut self, on: bool) -> Vec<StaleEvent> {
+        let events = self.scoped.in_flight.take().unwrap_or_default();
+        if on {
+            self.scoped.in_flight = Some(Vec::new());
+        }
+        events
+    }
+
+    /// Phase 13: watch `k` (a check back from the worker) against the
+    /// changes applied while it ran — the same test as [`stale_checks`],
+    /// for it alone.
+    ///
+    /// [`stale_checks`]: NetHost::stale_checks
+    pub(super) fn stale_one(&mut self, k: usize, events: &[StaleEvent]) {
+        if k >= self.scoped.watches.len() || events.is_empty() {
+            return;
+        }
+        let others: Vec<Watch> = {
+            let mine = self.scoped.watches.remove(k);
+            let others = std::mem::take(&mut self.scoped.watches);
+            self.scoped.watches.push(mine);
+            others
         };
-        let seconds = started.elapsed().as_secs_f64();
-        keep(
-            self.scoped.ms.entry(name.clone()).or_default(),
-            seconds * 1e3,
-        );
-        let report = crate::scoped_report::report(
-            &mut HostViewer { host: self, rights },
-            &ws,
-            &name,
-            &raw,
-            seconds,
-        );
-        self.watch(client, id, &name, &ws, &extent, &raw);
-        Ok(ServerMsg::CheckResult {
-            id,
-            result: Ok(Box::new(report)),
-        })
+        let kept = self.scoped.in_flight.take();
+        for e in events {
+            if self.scoped.watches.is_empty() {
+                break;
+            }
+            self.stale_checks(&e.code, &e.user, &e.objects, &e.tiles, e.at_large);
+        }
+        self.scoped.in_flight = kept;
+        let mine = std::mem::take(&mut self.scoped.watches);
+        self.scoped.watches = others;
+        self.scoped.watches.extend(mine);
+    }
+
+    /// Phase 13: the wire library of `code` made already, at its
+    /// library revision.
+    pub(super) fn scoped_library(&self, code: &str) -> Option<&Arc<ohl_cables::Library>> {
+        let rev = self.models.get(code)?.libs_rev;
+        match self.scoped.libraries.get(code) {
+            Some((r, l)) if *r == rev => Some(l),
+            _ => None,
+        }
+    }
+
+    /// Phase 13: a wire library the worker made, kept (if still of the
+    /// model's library revision).
+    pub(super) fn keep_scoped_library(
+        &mut self,
+        code: &str,
+        rev: u64,
+        l: Arc<ohl_cables::Library>,
+    ) {
+        if self.models.get(code).is_some_and(|m| m.libs_rev == rev) {
+            self.scoped.libraries.insert(code.to_owned(), (rev, l));
+        }
+    }
+
+    /// Phase 13: a check's timings.
+    pub(super) fn scoped_ms(&mut self, name: &str) -> &mut Vec<f64> {
+        self.scoped.ms.entry(name.to_owned()).or_default()
     }
 
     /// Whether `text` names something `rights` may not see: an object, or
@@ -359,8 +556,8 @@ impl NetHost {
     }
 
     /// Watches `raw`'s result for `client`: what it used, the tiles its
-    /// reach covers.
-    fn watch(
+    /// reach covers. Returns its place among the watches.
+    pub(super) fn watch(
         &mut self,
         client: u64,
         id: u64,
@@ -368,7 +565,7 @@ impl NetHost {
         ws: &WorkingSet,
         extent: &Extent,
         raw: &Raw,
-    ) {
+    ) -> usize {
         let mut objects: BTreeSet<(String, Kind, String)> = extent
             .wanted
             .iter()
@@ -381,7 +578,7 @@ impl NetHost {
         }
         let grow = match raw.reach() {
             ohl_scope::Reach::Wires { metres } | ohl_scope::Reach::Lines { metres } => {
-                metres + 2.0 * HostNet { host: self }.max_margin()
+                metres + 2.0 * HostNet::new(self).max_margin()
             }
             _ => ohl_scope::reach::TWIN_TOLERANCE,
         };
@@ -415,6 +612,7 @@ impl NetHost {
             tiles,
             models,
         });
+        self.scoped.watches.len() - 1
     }
 
     /// A change of model `code` by `user` touching `objects` and `tiles`
@@ -428,6 +626,15 @@ impl NetHost {
         tiles: &BTreeSet<TileKey>,
         at_large: bool,
     ) {
+        if let Some(events) = &mut self.scoped.in_flight {
+            events.push(StaleEvent {
+                code: code.to_owned(),
+                user: user.to_owned(),
+                objects: objects.to_vec(),
+                tiles: tiles.clone(),
+                at_large,
+            });
+        }
         if self.scoped.watches.is_empty() {
             return;
         }
@@ -484,7 +691,7 @@ impl NetHost {
     /// search takes it; phase 12: an offline working set's checks take
     /// the same).
     pub(super) fn network_max_margin(&mut self) -> f64 {
-        HostNet { host: self }.max_margin()
+        HostNet::new(self).max_margin()
     }
 
     /// A client gone: its results no longer watched.
@@ -512,9 +719,9 @@ impl HostNet<'_> {
 }
 
 /// The server's reader of a report: a user's rights.
-struct HostViewer<'a> {
-    host: &'a mut NetHost,
-    rights: &'a UserRights,
+pub(super) struct HostViewer<'a> {
+    pub(super) host: &'a mut NetHost,
+    pub(super) rights: &'a UserRights,
 }
 
 impl crate::scoped_report::Viewer for HostViewer<'_> {

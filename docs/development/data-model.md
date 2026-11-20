@@ -4489,9 +4489,9 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9, 11 and 12** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9, 11, 12 and 13** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 6 (schema 1: phase 4's tables; schema 2: what the server
+network schema 7 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
 `oplog.lines`, `oplog.tiles`, `stream`; schema 3, phase 6: saved working
 sets — `working_set.line_id`, `working_set.picks`; schema 4, phase 7:
@@ -4501,7 +4501,12 @@ schema 5, phase 9: country libraries — `lib_kind`, `lib_file.text`,
 `hash`, `by_user`, `time`, `lib_release.n`, `lib_release_file`,
 `lib_withdrawn`, `lib_use` made again, `lib_request.text`, `line_id`,
 `branch`, `released`, `net_meta` `library_rev`; schema 6, phase 12:
-offline working sets — `offline_export`). A country server keeps every model and model element of
+offline working sets — `offline_export`; schema 7, phase 13: security
+and operations — `net_user.invitation`, `net_identity`, `net_backup`,
+`net_meta` `backup_max_age_hours` and `last_backup`). A schema migration
+needs a backup newer than `backup_max_age_hours` recorded (`last_backup`,
+which every schema's `net_meta` holds), or an admin's
+`--i-have-a-backup` (in the audit). A country server keeps every model and model element of
 its network in one PostgreSQL database with PostGIS. The desktop's project file (above)
 is **unchanged** (the session's statements and files the same, tested by
 `sqlite3 .dump`); a model exported from a server is a normal project file
@@ -4760,6 +4765,25 @@ offline_export (id bigserial PRIMARY KEY, line_id text REFERENCES line ON DELETE
                -- an export is in the audit (`export working set`), a bundle
                -- brought back too (`import bundle`); refusals as `refused`
 
+-- Security and operations (phase 13, schema 7; `ohl_store_pg::backup`,
+-- `ohl_store_pg::rights`)
+net_user.invitation integer NOT NULL DEFAULT 0              -- the personal invitation's
+                                                             -- generation: reissued, the
+                                                             -- older codes are refused
+net_identity   (issuer text, subject text,                   -- OIDC: the provider's subject
+                user_name text REFERENCES net_user ON DELETE CASCADE,
+                by_user text NOT NULL, time timestamptz NOT NULL,
+                PRIMARY KEY (issuer, subject))               -- signs in as this user
+net_backup     (id bigserial PRIMARY KEY,
+                kind text NOT NULL,                          -- backup | restore
+                time timestamptz NOT NULL, user_name text NOT NULL, schema integer NOT NULL,
+                sha256 text NOT NULL, bytes bigint NOT NULL, -- the dump's
+                models integer NOT NULL, seconds double precision NOT NULL,
+                note text NOT NULL DEFAULT '')               -- "data of TIME"
+net_meta 'backup_max_age_hours' = '24'                       -- a setting (ohl network setting)
+net_meta 'last_backup' = '{"epoch":…,"time":…,"schema":…,"sha256":…,"user":…}'
+                                                             -- read by a migration (any schema)
+
 -- Staleness, notices, audit
 stale          (result_key text PRIMARY KEY, cause text NOT NULL, since timestamptz NOT NULL)
 notice         (id bigserial PRIMARY KEY, user_name text NOT NULL, time timestamptz NOT NULL,
@@ -4777,7 +4801,11 @@ audit          (id bigserial PRIMARY KEY, time timestamptz NOT NULL, user_name t
                                                              -- (phase 9: lock, put, request, grant,
                                                              -- refuse, release, withdraw, pins);
                                                              -- phase 12: export working set,
-                                                             -- import bundle
+                                                             -- import bundle; phase 13: backup,
+                                                             -- restore, migrate, setting,
+                                                             -- rights.reissue_invitation,
+                                                             -- rights.map_identity,
+                                                             -- rights.unmap_identity
                 target text NOT NULL, before jsonb, after jsonb, detail text NOT NULL DEFAULT '')
                -- append only: a trigger refuses every UPDATE, DELETE and TRUNCATE
 ```
@@ -4933,7 +4961,7 @@ alone (a network's messages sent to it get a notice).
 
 | Message | Fields | Meaning |
 |---|---|---|
-| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`?, `see_as`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows`; phase 7: only the network's users join, each with their personal invitation (the general one admits nobody); `model` needs see on the whole line, a `working_set` see on everything its replica holds; `see_as` (whoever manages rights): what both users may see, nothing changed, in the audit |
+| client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`?, `see_as`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows`; phase 7: only the network's users join, each with their personal invitation (the general one admits nobody); `model` needs see on the whole line, a `working_set` see on everything its replica holds; `see_as` (whoever manages rights): what both users may see, nothing changed, in the audit; phase 13: `id_token`? — an OIDC ID token in place of the code (`code` empty), its subject mapped to `user` by a network admin; a personal code may be `G.UNTIL.MAC` (its generation and last day) |
 | client `interest` | `routes`, `tiles` (`{tile: [level, x, y], rev?}`) | what it follows from now on, in place of the last: a tile new to it, or held at another revision, comes as a package |
 | client `catch` | `since` | every change of its interest after `since` |
 | client `pick` | `id`, `model`, `picks` | phase 6: the working set of `picks` worked out and snapped, answered with `extent` of the same id (nothing kept) |

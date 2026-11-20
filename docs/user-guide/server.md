@@ -101,7 +101,7 @@ yet** ([ADR-0013](../adr/0013-country-server.md),
 | Scoped computations: checks pulling in their neighbours — clearances between wires, the magnetic field, shared towers' loads — hidden neighbours counted, results marked stale (phase 10) | built, in active development; through the server's protocol (OHL-Design's check windows run on the working set's file and say what they did not pull in) |
 | Version control at scale: split trees, branches over a working set, merges at shared towers (phase 11) | built, in active development; through the server's protocol |
 | Offline working sets: exported with read-only neighbours, checked offline, back as a bundle onto a branch (phase 12) | built, in active development; on the command line and the server's protocol (OHL-Design's Offline copy menu for a network not yet) |
-| Security review, deployment files, **backups and restore**, OIDC sign-in, TLS to a remote database (phase 13) | not yet — back up the database with PostgreSQL's own tools meanwhile |
+| Security review and its fixes, deployment files (Compose), **backups, restores and the restore drill**, migrations only after a backup, OIDC sign-in, invitations reissued and expiring, TLS to a database on another host (phase 13) | built, in active development: on the command line ([below](#security-sign-in-and-backups-phase-13-in-active-development), [deployment](server-deployment.md), [the review](../development/server-security-review.md)); a sign-in window in OHL-Design and the web client not yet |
 | The admin app OHL-Server | a plan waiting for the owner |
 | Point clouds, terrain tiles and backgrounds served by the network | not yet (they stay in project files) |
 
@@ -431,6 +431,46 @@ Then merge the branch into main as any branch over a working set
 (above). OHL-Design's Offline copy menu does not do this for a network
 yet: use the command line.
 
+### Security, sign-in and backups (phase 13, in active development)
+
+*Built 2026-11-20, in active development, not approved yet*
+([decisions](../development/decisions.md#2026-11-20-country-server-phase-13),
+[the security review](../development/server-security-review.md),
+[deploying a server](server-deployment.md),
+[commands](network-commands.md#operations-phase-13)).
+
+- **Checks, exports and bundles wait behind the edits.** They are long
+  work: the server does them one at a time, only when no edit, view or
+  join is waiting, at most one per user waiting and four in all ("the
+  server is busy … try again in a minute" beyond). A check reads at most
+  10 km around its working set; a field's distance is at most 2 km.
+- **New tiles**: each user may have 64 new tiles made a second (256 at
+  once); the server makes at most 1 024 at once; tiles beyond are not
+  made then, and a notice says to ask again (moving the view does).
+- **Invitations reissued and expiring.** A network admin makes a user's
+  invitation again (`ohl network rights reissue-invitation NAME`): every
+  older one of that user is refused, and they are let go if connected.
+  `ohl network serve --invite NAME --invite-days 30` prints invitations
+  valid to the end of that day (UTC). Invitations given before stay valid
+  until reissued.
+- **Signing in with the organisation's account (OIDC)**, if the owner's
+  IT wants it: the server takes an ID token of the identity provider
+  instead of an access code, checks its signature, issuer, audience and
+  times, and lets the token's subject in as the network user a network
+  admin mapped it to (`ohl network rights map-identity`). Personal
+  invitations stay the default and keep working. OHL-Design and the web
+  client have no sign-in window yet: the protocol and the command-line
+  client take the token.
+- **Backups** (`ohl network backup`) beside the running server, **a
+  restore** (`ohl network restore`) into an empty database that checks
+  every line against the backup (the restore drill), and **schema
+  migrations refused** unless a backup newer than a day (the network's
+  `backup_max_age_hours`) is recorded — or an admin says they have one
+  (`ohl network migrate --i-have-a-backup`, in the audit).
+- **A database on another host** is reached with TLS only
+  (`sslmode=verify-full` and the owner's CA), unless `sslmode=disable` is
+  said.
+
 ## Roles
 
 *A project file's server.* On a network's server the roles are the
@@ -467,7 +507,7 @@ Somebody holding an invitation must not be able to stop the others (security rev
 - A request that fails inside the server (a bug) is refused to its sender ("an internal error of the server"); the server reads the project from its file again and keeps running for everyone.
 - **Joining:** at most 12 joins a minute from one address; after a **wrong access code** the address waits 1 s, then 2 s, 4 s … up to 5 minutes (a right code resets it); at most 8 connections of one address that have not joined yet (application and browser each), at most 256 application connections in all — both are the host's parameters (`ohl serve --max-per-address N --max-connections N`, or **Connections at most** and **Per address at most** in File › Host this project) and hold for this computer's own connections too: behind a reverse proxy every user comes from `127.0.0.1`, so raise the per-address limit there. A copy of the project is shared by everyone joining while nothing changed, at most 8 copies exist at once (more joins are asked to try again in a minute), and a copy not taken within a minute (plus 1 s per 256 KiB) is dropped. The general invitation adds at most 200 new users in one run of the server. The join rate and the waits after wrong codes leave the computer itself (`127.0.0.1`) out.
 - **Presence and locks:** a connection's presence updates beyond 10 a second (20 at once) are dropped, its lock requests beyond 20 a second refused; the list of users is sent to everyone at most 10 times a second.
-- **Messages** are read as their bytes arrive (an announced size alone allocates nothing), at most 64 MiB each.
+- **Messages** are read as their bytes arrive (an announced size alone allocates nothing), at most 64 MiB each; on a network's server (phase 13) messages over 1 MiB share one budget of 256 MiB at once, and a browser's messages are at most 8 MiB after it joined. The limits per address count an IPv6 address by its /64.
 - **Every edit is written once** for everyone (2026-10-27): the server encodes each edit, lock change and users' list once and sends the same bytes to every application and browser, so many users cost the server little more than one.
 - **Names:** a user name has no invisible characters (zero-width spaces, direction marks), and a newcomer whose name looks like a user's (`Аdmin` with a Cyrillic A beside `admin`; letter case, `0`/`o`, `1`/`l`/`i`, spaces, `-`, `_` and `.` ignored; Cyrillic and Greek look-alikes, full-width letters) is refused.
 - **Reviews:** approved or rejected only by designers or admins, never by the review's author ([Versions, branches and reviews](versions.md#reviews)).
@@ -479,5 +519,5 @@ Somebody holding an invitation must not be able to stop the others (security rev
 - Joining a project file's server copies the whole project; joining a network's server sends a working set and the tiles around the view (above).
 - The application speaks QUIC only (UDP). Browsers use the web client's WebSocket (TCP); the application cannot use it yet, for networks that block UDP.
 - The web client: a viewer of the main line (of the tiles around the view, on a network's server); one weather case, no terrain, point clouds or backgrounds.
-- A user's name and the access code are the only identity. Sign-in through an organisation (OIDC / SSO) is to come (phase 13).
+- On a project file's server a user's name and the access code are the only identity. A network's server may also take sign-ins of the organisation's identity provider (OIDC, phase 13: [above](#security-sign-in-and-backups-phase-13-in-active-development)); OHL-Design's sign-in window is to come.
 - If the connection drops, the project turns read-only. Join again to continue.

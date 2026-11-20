@@ -18,6 +18,12 @@ use ohl_store_pg::import::{ImportOptions, TWIN_TOLERANCE, import};
 /// not given (keeps a password out of the command line).
 const DATABASE_ENV: &str = "OHL_DATABASE_URL";
 
+/// Phase 13: TLS to the database from the environment (added to the
+/// connection string unless it says them): `sslmode` (disable, require,
+/// verify-ca, verify-full) and the CA file.
+const SSLMODE_ENV: &str = "OHL_DATABASE_SSLMODE";
+const CA_ENV: &str = "OHL_DATABASE_CA";
+
 #[derive(Subcommand)]
 pub enum NetworkCommand {
     /// Import project files (.ohl) into the network, each as a new line
@@ -243,6 +249,66 @@ pub enum NetworkCommand {
         #[arg(long, value_delimiter = ',', default_value = "split,flat")]
         trees: Vec<String>,
     },
+    /// Phase 13: back the network up into a new folder (network admins;
+    /// runs beside the server): PostgreSQL's dump (custom format) in one
+    /// snapshot, a manifest with the schema, the time and the hashes of the
+    /// dump, of each line and of the network's own tables; recorded (a
+    /// schema migration asks for a recent one).
+    Backup {
+        /// The folder (new, or empty).
+        #[arg(long)]
+        out: PathBuf,
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Who backs up (in the audit).
+        #[arg(long)]
+        user: String,
+    },
+    /// Phase 13: restore a backup into an empty database (of this
+    /// program's schema only), in one transaction, then the restore drill:
+    /// every line and the network's tables compared with the manifest's
+    /// hashes.
+    Restore {
+        /// The backup's folder.
+        dir: PathBuf,
+        /// The empty database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Who restores (in the restored network's audit).
+        #[arg(long)]
+        user: String,
+    },
+    /// Phase 13: bring the network's schema forward to this program's
+    /// (refused without a backup newer than the network's
+    /// backup_max_age_hours, default 24, unless --i-have-a-backup; in the
+    /// audit). The server is not running meanwhile.
+    Migrate {
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Who migrates (in the audit).
+        #[arg(long)]
+        user: String,
+        /// Migrate without a backup recorded (you made one another way;
+        /// in the audit).
+        #[arg(long)]
+        i_have_a_backup: bool,
+    },
+    /// Phase 13: a network setting shown, or set (network admins; in the
+    /// audit). Settings: backup_max_age_hours.
+    Setting {
+        /// The setting.
+        key: String,
+        /// Its new value (none: shown).
+        value: Option<String>,
+        /// Database (default: OHL_DATABASE_URL).
+        #[arg(long)]
+        database: Option<String>,
+        /// Who changes it.
+        #[arg(long)]
+        user: Option<String>,
+    },
     /// The network's lines, its schema and size.
     Lines {
         /// Database (default: OHL_DATABASE_URL).
@@ -344,6 +410,39 @@ pub enum NetworkCommand {
         /// Connections of one address not joined yet.
         #[arg(long, default_value_t = ohl_server::server::MAX_PENDING)]
         max_per_address: usize,
+        /// Phase 13: the personal invitations printed are valid this many
+        /// days (default: until reissued).
+        #[arg(long)]
+        invite_days: Option<u32>,
+        /// Phase 13: checks, exports and bundles waiting at most (one per
+        /// user), done when no other job waits.
+        #[arg(long, default_value_t = 4)]
+        max_heavy_queue: usize,
+        /// Phase 13: new tiles made for one client a second (and 4 times
+        /// as many at once).
+        #[arg(long, default_value_t = 64.0)]
+        tiles_per_second: f64,
+        /// Phase 13: OIDC sign-in — the identity provider's issuer
+        /// (https://…); with --oidc-audience. Personal invitations still
+        /// work.
+        #[arg(long)]
+        oidc_issuer: Option<String>,
+        /// The client id the ID tokens are for.
+        #[arg(long)]
+        oidc_audience: Option<String>,
+        /// The provider's keys' URL (default: from its discovery
+        /// document).
+        #[arg(long)]
+        oidc_jwks_url: Option<String>,
+        /// The provider's keys from a file instead (no fetching).
+        #[arg(long)]
+        oidc_jwks_file: Option<PathBuf>,
+        /// The provider's CA (PEM; default: the Mozilla roots).
+        #[arg(long)]
+        oidc_ca: Option<PathBuf>,
+        /// The oldest ID token taken, s.
+        #[arg(long, default_value_t = 3600)]
+        oidc_max_age_s: u64,
     },
     /// Measure the server on the network (the plan's targets): start,
     /// memory idle and per client, join to first view, tile packages made
@@ -434,9 +533,21 @@ pub enum NetworkCommand {
 }
 
 pub(crate) fn database(given: Option<String>) -> Result<String, String> {
-    given
+    let url = given
         .or_else(|| std::env::var(DATABASE_ENV).ok())
-        .ok_or_else(|| format!("no database: give --database or set {DATABASE_ENV}"))
+        .ok_or_else(|| format!("no database: give --database or set {DATABASE_ENV}"))?;
+    // Phase 13: TLS from the environment, unless the string says it.
+    let mode = std::env::var(SSLMODE_ENV)
+        .ok()
+        .filter(|_| !url.contains("sslmode"));
+    let ca = std::env::var_os(CA_ENV)
+        .map(std::path::PathBuf::from)
+        .filter(|_| !url.contains("sslrootcert"));
+    Ok(ohl_store_pg::connect::with_tls(
+        &url,
+        mode.as_deref(),
+        ca.as_deref(),
+    ))
 }
 
 pub fn run(command: NetworkCommand) -> Result<(), String> {
@@ -623,7 +734,28 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             stats,
             max_connections,
             max_per_address,
+            invite_days,
+            max_heavy_queue,
+            tiles_per_second,
+            oidc_issuer,
+            oidc_audience,
+            oidc_jwks_url,
+            oidc_jwks_file,
+            oidc_ca,
+            oidc_max_age_s,
         } => {
+            let oidc = match (oidc_issuer, oidc_audience) {
+                (Some(issuer), Some(audience)) => {
+                    let mut c = ohl_server::oidc::OidcConfig::new(&issuer, &audience);
+                    c.jwks_url = oidc_jwks_url;
+                    c.jwks_file = oidc_jwks_file;
+                    c.ca_file = oidc_ca;
+                    c.max_age = Duration::from_secs(oidc_max_age_s);
+                    Some(std::sync::Arc::new(ohl_server::oidc::Oidc::new(c)?))
+                }
+                (None, None) => None,
+                _ => return Err("OIDC: give both --oidc-issuer and --oidc-audience".into()),
+            };
             let newcomers = match newcomers.as_str() {
                 "none" => None,
                 r => Some(ohl_session::Role::parse(r).map_err(|e| e.to_string())?),
@@ -649,6 +781,11 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                     shapes_mb,
                     heartbeat: Duration::from_millis(heartbeat_ms.max(10)),
                     idle_solve: !no_idle_solve,
+                    invite_days,
+                    max_heavy_queue,
+                    tiles_per_second: tiles_per_second.max(0.001),
+                    tiles_burst: (4.0 * tiles_per_second).max(1.0),
+                    oidc,
                     ..Default::default()
                 },
             )?;
@@ -834,6 +971,84 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                 r.revisions,
                 r.structures
             );
+            Ok(())
+        }
+        NetworkCommand::Backup {
+            out,
+            database: db,
+            user,
+        } => {
+            let r = ohl_store_pg::backup::backup(&database(db)?, &user, &out)
+                .map_err(|e| e.to_string())?;
+            let m = &r.manifest;
+            println!(
+                "network backed up into {} in {:.1} s (dump {:.1} s, hashes {:.1} s): schema {}, \
+                 {} lines, {:.1} MB, SHA-256 {}, data of {}",
+                out.display(),
+                r.seconds,
+                r.dump_seconds,
+                r.hash_seconds,
+                m.schema,
+                m.models.len(),
+                m.bytes as f64 / 1e6,
+                m.sha256,
+                m.time
+            );
+            Ok(())
+        }
+        NetworkCommand::Restore {
+            dir,
+            database: db,
+            user,
+        } => {
+            let r = ohl_store_pg::backup::restore(&database(db)?, &user, &dir)
+                .map_err(|e| e.to_string())?;
+            println!(
+                "backup of {} restored in {:.1} s (pg_restore {:.1} s, the drill {:.1} s): {} \
+                 lines and the network's tables the same as backed up",
+                r.manifest.time, r.seconds, r.restore_seconds, r.verify_seconds, r.models
+            );
+            Ok(())
+        }
+        NetworkCommand::Migrate {
+            database: db,
+            user,
+            i_have_a_backup,
+        } => {
+            let mut net = Network::connect_as_is(&database(db)?).map_err(|e| e.to_string())?;
+            let (from, to) = net
+                .migrate_now(&user, i_have_a_backup)
+                .map_err(|e| e.to_string())?;
+            if from == to {
+                println!("network schema {to}: nothing to do");
+            } else if from == 0 {
+                println!("network schema {to} made");
+            } else {
+                println!("network schema {from} brought to {to}");
+            }
+            Ok(())
+        }
+        NetworkCommand::Setting {
+            key,
+            value,
+            database: db,
+            user,
+        } => {
+            let net = Network::connect(&database(db)?).map_err(|e| e.to_string())?;
+            match value {
+                None => println!(
+                    "{key} = {}",
+                    net.setting(&key)
+                        .map_err(|e| e.to_string())?
+                        .unwrap_or_else(|| "(default)".into())
+                ),
+                Some(v) => {
+                    let user = user.ok_or("--user: who changes it")?;
+                    net.set_setting(&user, &key, &v)
+                        .map_err(|e| e.to_string())?;
+                    println!("{key} = {v}");
+                }
+            }
             Ok(())
         }
         NetworkCommand::Lines { database: db } => {

@@ -36,8 +36,10 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use postgres::types::ToSql;
-use postgres::{Client, NoTls, Row, Statement};
+use postgres::{Client, Row, Statement};
 
+pub mod backup;
+pub mod connect;
 pub mod export;
 pub mod import;
 pub mod library;
@@ -98,7 +100,18 @@ pub(crate) fn db_message(e: &postgres::Error) -> String {
             Some(detail) => format!("{} ({detail})", d.message()),
             None => d.message().to_owned(),
         },
-        None => e.to_string(),
+        // With its causes (a TLS handshake: why the certificate was
+        // refused).
+        None => {
+            let mut text = e.to_string();
+            let mut cause = std::error::Error::source(e);
+            while let Some(c) = cause {
+                text.push_str(": ");
+                text.push_str(&c.to_string());
+                cause = c.source();
+            }
+            text
+        }
     }
 }
 
@@ -216,12 +229,25 @@ impl std::fmt::Debug for Network {
 
 impl Network {
     /// Connects to the database at `url` (a PostgreSQL connection string,
-    /// e.g. `host=127.0.0.1 port=5432 user=ohl dbname=network`) to read
-    /// (and to write the audit): the schema made or brought forward
-    /// first, a newer one refused.
+    /// e.g. `host=127.0.0.1 port=5432 user=ohl dbname=network`; TLS and
+    /// the password as [`connect`] reads them) to read (and to write the
+    /// audit): the schema made (an empty database) or brought forward
+    /// first — **refused without a recent backup** (phase 13: one newer
+    /// than the network's `backup_max_age_hours`, default 24, recorded by
+    /// `ohl network backup`; else `ohl network migrate
+    /// --i-have-a-backup`) —, a newer one refused.
     pub fn connect(url: &str) -> Result<Self, NetError> {
-        let client = Client::connect(url, NoTls)?;
-        let mut net = Self {
+        let mut net = Self::connect_as_is(url)?;
+        net.migrate(Guard::Backup)?;
+        Ok(net)
+    }
+
+    /// Connects without making or bringing the schema forward (a backup, a
+    /// restore, `ohl network migrate`): a newer schema refused; a database
+    /// of an older one, or an empty one, read as it is.
+    pub fn connect_as_is(url: &str) -> Result<Self, NetError> {
+        let client = connect::Target::parse(url)?.connect()?;
+        let net = Self {
             conn: Arc::new(Mutex::new(Conn {
                 client,
                 steps: Vec::new(),
@@ -230,8 +256,47 @@ impl Network {
             })),
             writer: false,
         };
-        net.migrate()?;
+        let have = net.schema_as_is()?;
+        if have > schema::SCHEMA {
+            return Err(NetError::Refused(format!(
+                "network schema {have} newer than this program's ({})",
+                schema::SCHEMA
+            )));
+        }
         Ok(net)
+    }
+
+    /// The schema of the database as it is (0: none yet).
+    pub fn schema_as_is(&self) -> Result<i32, NetError> {
+        let mut c = lock(&self.conn);
+        let exists: bool = c
+            .query_one("SELECT to_regclass('public.net_schema') IS NOT NULL", &[])?
+            .get(0);
+        if !exists {
+            return Ok(0);
+        }
+        Ok(
+            c.query_one("SELECT COALESCE(MAX(version), 0) FROM net_schema", &[])?
+                .get(0),
+        )
+    }
+
+    /// Brings the schema forward for `user` (`ohl network migrate`): with a
+    /// recent backup recorded, or `i_have_a_backup` (in the audit, the
+    /// backup not checked). Returns the schema before and after.
+    pub fn migrate_now(
+        &mut self,
+        user: &str,
+        i_have_a_backup: bool,
+    ) -> Result<(i32, i32), NetError> {
+        let before = self.schema_as_is()?;
+        let guard = if i_have_a_backup {
+            Guard::Override(user.to_owned())
+        } else {
+            Guard::BackupBy(user.to_owned())
+        };
+        self.migrate(guard)?;
+        Ok((before, self.schema()?))
     }
 
     /// Connects as the network's one writer (the authority, an import):
@@ -269,8 +334,10 @@ impl Network {
     /// Makes or brings the schema forward ([`schema::MIGRATIONS`]), each
     /// migration in a transaction of its own, under a lock so that two
     /// programs starting together do not both migrate. A database of a
-    /// newer schema is refused before anything changes.
-    fn migrate(&mut self) -> Result<(), NetError> {
+    /// newer schema is refused before anything changes; one of an older
+    /// schema (not an empty one) is brought forward only as `guard` lets
+    /// it (phase 13), in the audit.
+    fn migrate(&mut self, guard: Guard) -> Result<(), NetError> {
         let mut c = lock(&self.conn);
         let client = &mut c.client;
         let mut tx = client.transaction()?;
@@ -288,6 +355,34 @@ impl Network {
                 schema::SCHEMA
             )));
         }
+        // Phase 13: a network holding data is migrated only after a backup.
+        let mut audit = None;
+        if have > 0 && have < schema::SCHEMA {
+            let (user, why) = match &guard {
+                Guard::Override(user) => (
+                    user.clone(),
+                    "--i-have-a-backup: the backup not checked".to_owned(),
+                ),
+                Guard::Backup | Guard::BackupBy(_) => {
+                    let user = match &guard {
+                        Guard::BackupBy(u) => u.clone(),
+                        _ => "(a program connecting)".to_owned(),
+                    };
+                    match backup::recent_backup(&mut tx)? {
+                        backup::Recent::Yes(text) => (user, format!("the backup of {text}")),
+                        backup::Recent::No(why) => {
+                            return Err(NetError::Refused(format!(
+                                "network schema {have}, this program's {}: a migration needs a \
+                                 backup first — {why}; make one (ohl network backup), or say you \
+                                 have one (ohl network migrate --i-have-a-backup, in the audit)",
+                                schema::SCHEMA
+                            )));
+                        }
+                    }
+                }
+            };
+            audit = Some((user, why));
+        }
         for (version, note, sql) in schema::MIGRATIONS {
             if *version <= have {
                 continue;
@@ -304,6 +399,17 @@ impl Network {
                 &[&version.to_string()],
             )?;
             step.commit()?;
+        }
+        if let Some((user, why)) = audit {
+            tx.execute(
+                "INSERT INTO audit (user_name, action, target, detail) VALUES ($1, $2, $3, $4)",
+                &[
+                    &user,
+                    &"migrate",
+                    &"schema",
+                    &format!("network schema {have} brought to {}; {why}", schema::SCHEMA),
+                ],
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -446,6 +552,17 @@ impl Network {
         lock(&self.conn).client.batch_execute("ANALYZE")?;
         Ok(())
     }
+}
+
+/// What lets a database of an older schema be brought forward (phase 13).
+#[derive(Debug, Clone)]
+enum Guard {
+    /// A backup recorded recently enough (a program connecting).
+    Backup,
+    /// The same, `ohl network migrate` by this user.
+    BackupBy(String),
+    /// `--i-have-a-backup` by this user (audited).
+    Override(String),
 }
 
 /// Refuses a model code that is not 1 to 32 letters, digits, `_`, `.` or

@@ -5,7 +5,9 @@
 //! The network's schema: numbered forward migrations, each run once in a
 //! transaction of its own and noted in `net_schema` (and `net_meta`
 //! `schema`). A database of a newer schema is refused before anything in
-//! it changes. (Refusing a migration without a recent backup is phase 13.)
+//! it changes; one of an older schema is brought forward only after a
+//! recent backup (phase 13: `crate::backup`), or when an admin says they
+//! have one (`ohl network migrate --i-have-a-backup`, in the audit).
 //!
 //! Columns as in the data model's "Server database (PostgreSQL)":
 //! `docs/development/data-model.md`. Times are `timestamptz` (UTC); the
@@ -13,7 +15,7 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 6;
+pub const SCHEMA: i32 = 7;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
@@ -397,6 +399,38 @@ CREATE TABLE offline_export (
   reach double precision NOT NULL,
   brought_back text NOT NULL DEFAULT '[]');
 CREATE INDEX offline_export_user ON offline_export (user_name);
+"#,
+    ),
+    (
+        7,
+        "security, deployment, backups (phase 13)",
+        r#"
+-- A user's personal invitation's generation: a reissued invitation (an
+-- admin's) refuses every older one of that user.
+ALTER TABLE net_user ADD COLUMN invitation integer NOT NULL DEFAULT 0;
+-- OIDC sign-in: an identity provider's subject mapped to a user by a
+-- network admin (the issuer as configured; the subject as the ID token's
+-- `sub`).
+CREATE TABLE net_identity (
+  issuer text NOT NULL, subject text NOT NULL,
+  user_name text NOT NULL REFERENCES net_user ON DELETE CASCADE,
+  by_user text NOT NULL, time timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (issuer, subject));
+CREATE INDEX net_identity_user ON net_identity (user_name);
+-- Backups made and restores into this database: the dump's hash and
+-- size, the schema, who, how long (the last backup also in net_meta
+-- 'last_backup', which every schema has: a migration reads it there).
+CREATE TABLE net_backup (
+  id bigserial PRIMARY KEY,
+  kind text NOT NULL CHECK (kind IN ('backup', 'restore')),
+  time timestamptz NOT NULL DEFAULT clock_timestamp(),
+  user_name text NOT NULL, schema integer NOT NULL,
+  sha256 text NOT NULL, bytes bigint NOT NULL, models integer NOT NULL,
+  seconds double precision NOT NULL, note text NOT NULL DEFAULT '');
+-- The network's settings (phase 13): the age of the last backup a
+-- migration accepts, hours.
+INSERT INTO net_meta (key, value) VALUES ('backup_max_age_hours', '24')
+  ON CONFLICT (key) DO NOTHING;
 "#,
     ),
 ];

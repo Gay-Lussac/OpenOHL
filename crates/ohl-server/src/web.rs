@@ -171,6 +171,7 @@ pub(crate) async fn listen(
     acceptor: tokio_rustls::TlsAcceptor,
     jobs: std_mpsc::Sender<Job>,
     gate: Arc<Gate>,
+    token_check: Option<crate::server::TokenCheck>,
 ) {
     let scenes = Arc::new(Scenes::new());
     let slots = Arc::new(Semaphore::new(MAX_CONNECTIONS));
@@ -194,13 +195,19 @@ pub(crate) async fn listen(
         };
         next += 1;
         let client = WEB_CLIENTS + next;
-        let (acceptor, jobs, scenes, gate) =
-            (acceptor.clone(), jobs.clone(), scenes.clone(), gate.clone());
+        let (acceptor, jobs, scenes, gate, token_check) = (
+            acceptor.clone(),
+            jobs.clone(),
+            scenes.clone(),
+            gate.clone(),
+            token_check.clone(),
+        );
         tokio::spawn(async move {
             let entry = Entry {
                 gate,
                 ip: from.ip(),
                 pending,
+                token_check,
             };
             if let Err(e) = connection(tcp, acceptor, client, jobs, scenes, entry).await {
                 log(&format!("web connection {next}: {e}"));
@@ -215,6 +222,8 @@ struct Entry {
     gate: Arc<Gate>,
     ip: std::net::IpAddr,
     pending: Pending,
+    /// Phase 13: a network's checker of sign-in tokens.
+    token_check: Option<crate::server::TokenCheck>,
 }
 
 /// An HTTP request's head.
@@ -465,12 +474,12 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
         Some(Err(e)) => return Err(e.to_string()),
         None => return Ok(()),
     };
-    let (protocol, user, code, options) = match hello {
+    let (protocol, user, code, options, id_token) = match hello {
         ClientMsg::Hello {
             protocol,
             user,
             code,
-        } => (protocol, user, code, JoinOptions::default()),
+        } => (protocol, user, code, JoinOptions::default(), None),
         // A viewer: no model's copy, its routes and tiles.
         ClientMsg::Join {
             protocol,
@@ -480,6 +489,7 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
             routes,
             tiles,
             see_as,
+            id_token,
             ..
         } => (
             protocol,
@@ -492,6 +502,7 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
                 see_as,
                 ..JoinOptions::default()
             },
+            id_token,
         ),
         _ => return Err("no hello".into()),
     };
@@ -511,6 +522,7 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
         user.clone(),
         code,
         options,
+        id_token.map(|t| (t, entry.token_check.clone())),
     )
     .await?;
     drop(entry.pending);
@@ -523,10 +535,12 @@ async fn websocket<S: AsyncRead + AsyncWrite + Unpin>(
     };
     log(&format!("{user} joined (web)"));
     // The client sends nothing more before the welcome: no frame is lost.
+    // A viewer's messages are small (phase 13: at most
+    // [`crate::MAX_WEB_MESSAGE`]).
     let ws = WebSocketStream::from_raw_socket(
         ws.into_inner(),
         WsRole::Server,
-        Some(ws_config(MAX_MESSAGE)),
+        Some(ws_config(crate::MAX_WEB_MESSAGE)),
     )
     .await;
     let result = joined_session(ws, client, &user, joined, &jobs, &scenes).await;

@@ -15,6 +15,13 @@ ohl-session.workspace = true
 # The synchronous PostgreSQL client (MIT OR Apache-2.0): the authority is
 # one thread (ADR-0013).
 postgres = "0.19"
+# Phase 13: TLS to a database on another host (rustls with ring, as the
+# server's own TLS; no system or bundled roots: the CA file is given).
+tokio-postgres-rustls = { version = "0.14", default-features = false, features = ["ring"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+# Phase 13: the backups' manifest (the dump's hash, each model's).
+sha2 = "0.10"
 # Reading what an imported project file keeps beside the session's tables
 # (point clouds, backgrounds), to list it in the report.
 rusqlite = { version = "0.40", features = ["bundled"] }
@@ -27,6 +34,8 @@ testing = []
 
 [dev-dependencies]
 ohl-session = { workspace = true, features = ["store-suite"] }
+# Phase 13: a CA and a server certificate for the TLS test cluster.
+rcgen = "0.14"
 
 [lints]
 workspace = true

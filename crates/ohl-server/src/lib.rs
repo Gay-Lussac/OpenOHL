@@ -57,6 +57,8 @@ pub(crate) mod network_rights;
 #[cfg(feature = "network")]
 pub mod offline_checks;
 #[cfg(feature = "network")]
+pub mod oidc;
+#[cfg(feature = "network")]
 pub(crate) mod packager;
 #[cfg(feature = "network")]
 pub(crate) mod scoped_report;
@@ -104,6 +106,15 @@ pub const ALPN: &[u8] = b"ols/2";
 
 /// Largest message, bytes (an exit clause against garbage).
 pub const MAX_MESSAGE: usize = 64 << 20;
+
+/// Phase 13: a message larger than this takes its size from the
+/// server's budget of large messages being read at once
+/// ([`server::LARGE_BUDGET`]) before it is read.
+pub const LARGE_MESSAGE: usize = 1 << 20;
+
+/// Phase 13: the largest message of a web client after its join (a
+/// viewer: interests, catch-ups, edits — no bundles), bytes.
+pub const MAX_WEB_MESSAGE: usize = 8 << 20;
 
 /// Largest hello (before the access code is checked), bytes.
 pub const MAX_HELLO: usize = 16 << 10;
@@ -839,6 +850,11 @@ pub enum ClientMsg {
         /// is changed so; in the audit).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         see_as: Option<String>,
+        /// Phase 13: an ID token of the network's identity provider
+        /// (OIDC) in place of the access code (`code` then empty): its
+        /// subject signs in as the user a network admin mapped it to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id_token: Option<String>,
     },
     /// The routes and tiles a client of a network follows from now on (in
     /// place of the last ones): tiles new to it come as packages at their
@@ -1508,6 +1524,69 @@ impl Keys {
         }
     }
 
+    /// Phase 13: `user`'s personal access code of `generation` (each
+    /// reissue adds one: older codes refused), valid to the end of day
+    /// `until` (UTC, `YYYYMMDD`; none: no end). Generation 0 without an
+    /// end is the code of before ([`Keys::code`]): invitations given out
+    /// stay valid until reissued. Otherwise `G.UNTIL.MAC` (`UNTIL` 0 for
+    /// none), the MAC over the name, the generation and the end — neither
+    /// can be changed without the key.
+    pub fn personal_code(&self, user: &str, generation: i32, until: Option<u32>) -> String {
+        if generation == 0 && until.is_none() {
+            return self.code(Some(user));
+        }
+        let u = until.unwrap_or(0);
+        let mac = hmac_sha256(
+            &self.personal,
+            format!("user:{user}\ngeneration:{generation}\nuntil:{u}").as_bytes(),
+        );
+        format!("{generation}.{u}.{}", hex(&mac[..16]))
+    }
+
+    /// Phase 13: checks `code` as `user`'s personal access code, whose
+    /// current generation is `generation`, on day `today` (`YYYYMMDD`,
+    /// UTC). A code that is not one of the key's is [`CodeRefusal::Wrong`]
+    /// (nothing else said); one of the key's of an older generation is
+    /// withdrawn, one past its day expired.
+    pub fn check_personal(
+        &self,
+        user: &str,
+        code: &str,
+        generation: i32,
+        today: u32,
+    ) -> Result<(), CodeRefusal> {
+        let mut parts = code.splitn(3, '.');
+        let (g, u, rest) = (parts.next(), parts.next(), parts.next());
+        let (g, u) = match (g, u, rest) {
+            (Some(g), Some(u), Some(_)) => (
+                g.parse::<i32>().map_err(|_| CodeRefusal::Wrong)?,
+                u.parse::<u32>().map_err(|_| CodeRefusal::Wrong)?,
+            ),
+            _ => {
+                // The code of before: generation 0, no end.
+                if !same_code(code, &self.code(Some(user))) {
+                    return Err(CodeRefusal::Wrong);
+                }
+                return if generation == 0 {
+                    Ok(())
+                } else {
+                    Err(CodeRefusal::Withdrawn)
+                };
+            }
+        };
+        let until = (u != 0).then_some(u);
+        if (g == 0 && until.is_none()) || !same_code(code, &self.personal_code(user, g, until)) {
+            return Err(CodeRefusal::Wrong);
+        }
+        if g != generation {
+            return Err(CodeRefusal::Withdrawn);
+        }
+        match until {
+            Some(day) if day < today => Err(CodeRefusal::Expired(day)),
+            _ => Ok(()),
+        }
+    }
+
     /// The personal key from a key file (64 hexadecimal digits), made
     /// with a fresh random key when the file does not exist (readable and
     /// writable by its owner only).
@@ -1550,6 +1629,41 @@ impl Keys {
             Err(e) => Err(format!("{}: {e}", path.display())),
         }
     }
+}
+
+/// Phase 13: why a personal access code is refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodeRefusal {
+    /// Not a code of the server's key for this user.
+    Wrong,
+    /// A code of an older generation (the invitation was reissued).
+    Withdrawn,
+    /// Valid to the end of this day (`YYYYMMDD`, UTC), passed.
+    Expired(u32),
+}
+
+/// Phase 13: the day `days` days after today, `YYYYMMDD` (UTC).
+pub fn utc_day(days_from_today: i64) -> u32 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    ymd(now.div_euclid(86_400) + days_from_today)
+}
+
+/// The date of day `z` after 1970-01-01 as `YYYYMMDD` (the proleptic
+/// Gregorian calendar; H. Hinnant's civil-from-days).
+pub fn ymd(z: i64) -> u32 {
+    let z = z + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    (y * 10_000 + m * 100 + d) as u32
 }
 
 /// Makes a new directory only its owner may enter (0700 on Unix), with a
@@ -1738,10 +1852,41 @@ pub async fn read_msg<T: for<'de> Deserialize<'de>>(
     read_msg_max(stream, MAX_MESSAGE).await
 }
 
+/// Phase 13: `len` bytes (in KiB) taken from `budget`, waited for
+/// `wait` at most.
+pub(crate) async fn take_budget(
+    len: usize,
+    budget: &std::sync::Arc<tokio::sync::Semaphore>,
+    wait: std::time::Duration,
+) -> Result<tokio::sync::OwnedSemaphorePermit, String> {
+    let kib = u32::try_from(len.div_ceil(1024)).unwrap_or(u32::MAX);
+    tokio::time::timeout(wait, budget.clone().acquire_many_owned(kib))
+        .await
+        .map_err(|_| {
+            format!(
+                "a message of {} MB: the server is reading too many large messages: try again",
+                len >> 20
+            )
+        })?
+        .map_err(|_| "server stopped".to_owned())
+}
+
 /// Reads a message of at most `max` bytes (`None`: the stream ended).
 pub async fn read_msg_max<T: for<'de> Deserialize<'de>>(
     stream: &mut quinn::RecvStream,
     max: usize,
+) -> Result<Option<T>, String> {
+    read_msg_budget(stream, max, None).await
+}
+
+/// [`read_msg_max`], a message larger than [`LARGE_MESSAGE`] first
+/// taking its size (KiB) from `budget` (phase 13: the server's budget of
+/// large messages read at once; waited for 30 s at most, then the
+/// connection is closed).
+pub async fn read_msg_budget<T: for<'de> Deserialize<'de>>(
+    stream: &mut quinn::RecvStream,
+    max: usize,
+    budget: Option<&std::sync::Arc<tokio::sync::Semaphore>>,
 ) -> Result<Option<T>, String> {
     let mut len = [0u8; 4];
     match stream.read_exact(&mut len).await {
@@ -1753,6 +1898,12 @@ pub async fn read_msg_max<T: for<'de> Deserialize<'de>>(
     if len > max {
         return Err(format!("message of {len} bytes: too large"));
     }
+    let _permit = match budget {
+        Some(b) if len > LARGE_MESSAGE => {
+            Some(take_budget(len, b, std::time::Duration::from_secs(30)).await?)
+        }
+        _ => None,
+    };
     // Grown as the bytes arrive, never allocated from the announced
     // length alone (security review 2026-10-26, M4).
     let mut buf = Vec::with_capacity(len.min(64 << 10));
@@ -1827,6 +1978,8 @@ pub fn random_code(n: usize) -> String {
         .collect()
 }
 
+#[cfg(test)]
+mod hardening_tests;
 #[cfg(all(test, feature = "network"))]
 mod library_tests;
 #[cfg(all(test, feature = "network"))]
