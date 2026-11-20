@@ -3792,7 +3792,16 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
   author and message; `parents` a JSON list of ids (none: the first
   revision, two: a merge); `tree` the hash of the tree's blob —
   `{"objects": [[kind, id, ord, hash], …], "libraries": [[kind, name,
-  hash], …]}`; `seq` the last `oplog` entry when it was made.
+  hash], …]}` (a project file always writes this *flat* tree); `seq` the
+  last `oplog` entry when it was made. A **split tree** (tree version 2,
+  written on a network's models since 2026-11-20, phase 11, read by this
+  build everywhere — a model exported from a network keeps them,
+  `ohl_session::trees`): the root `{"libraries": [[kind, name, hash], …],
+  "objects": NODE or null, "v": 2}`; a node is a leaf `{"e": [[kind, id,
+  ord, hash], …]}` (at most 64 objects, by the SHA-256 of `kind\nid`) or
+  inner `{"c": [[digit, NODE], …]}` (up to 16 children by the next
+  hexadecimal digit of that hash, 16 digits deep at most); every text
+  canonical JSON, kept as a blob like the others.
 - `vc_ref`: `kind` `branch` or `tag`; `revision` the branch's last
   revision or the tag's (null: nothing committed yet); `protected` 1:
   commits and merges by admins or approved reviews only; `user` who made
@@ -3837,6 +3846,7 @@ background_drawing(name TEXT PRIMARY KEY, source TEXT NOT NULL, crs TEXT NOT NUL
 | `part_users` | a part only (phase 8): the objects of the whole line using its structures that it does not hold, JSON `{structure: [User, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 | `working_sets` | only while a user has one (phase 8): the routes each user edits, JSON `{user: [route, …]}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
 | `stale_routes` | only while a route's results are out of date (phase 8): JSON `{route: Stale}` ([below](#towers-shared-by-several-routes-2026-11-18)) |
+| `branch_scopes` | only while a project line is a branch over a working set (phase 11, 2026-11-20; made on a network's server, kept by an exported model): JSON `{line: {"by": user, "routes": [route, …], "team": [user or group, …]}}` — the rules of shared towers apply to its commands with these routes, its stale marks are written when its changes reach another line |
 | `network.name`, `network.line`, `network.position`, `network.working_set` | a working set's replica only (phase 6, 2026-11-19): the network's name, the model, the stream's position it holds (JSON `{seq, step}`, moved by each rows taken), its picks (JSON `WorkingSetSpec`) ([below](#a-working-sets-replica-phase-6-2026-11-19)) |
 
 #### The applications' settings (`setting.<key>`)
@@ -4455,7 +4465,7 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7 and 9** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9 and 11** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
 network schema 5 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
@@ -4499,13 +4509,13 @@ kept; times given as the project file writes them,
 | — | `stream` | every change the server applied and broadcast, logged or not, at its position (schema 2) |
 | `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree) |
 | `vc_blob` | `vc_blob`, `vc_blob_use` | a blob kept once for the network, each model's use of it noted |
-| `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | (later: trees split by line, kind and tile bucket; library reviews) |
+| `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | since phase 11 (2026-11-20) a model's revisions are written as split trees (a trie by the hash of kind and id, its nodes blobs; above); library reviews later |
 | `edit_grant` | `edit_grant`, + `line_id` | a project's edit grants as imported: still checked by the session beside the assignments (phase 7; turned into assignments at import later) |
 | `surface` (one blob per TIN) | `surface` (+ `line_id`); `surface_tile` | whole TINs as in the file; tiles per grid tile later |
 | `pointcloud*`, `background_*` | — (later) | stay in the project files; the import report lists them |
 | — | `line`, `working_set`, `object_ref` | the models; saved working sets (phase 6) and the reference index (written by the import and by every command of the server, phase 5) |
 | — | `lib_kind`, `lib_file`, `lib_entry`, `lib_release`, `lib_release_file`, `lib_withdrawn`, `lib_use`, `lib_request` | country libraries (phase 9, schema 5): each kind once for the network; a line holds the files of the release it is pinned to as its `library` objects |
-| — | `stale`, `notice`, `audit` | results out of date and notices (later); the audit of imports, exports and admin actions |
+| — | `stale`, `notice`, `audit` | `stale` and `notice` made, still empty: a model's stale marks are its `line_meta` row `stale_routes` (phase 8, as a project file's), the notices sent to connected users (phase 11); the audit of imports, exports, rights and library changes and refusals |
 
 Columns (`time` columns `timestamptz`, UTC; every text id is the name users
 see):
@@ -4677,7 +4687,9 @@ lib_withdrawn  (kind text, file text, entry text, note text NOT NULL,
                 by_user text NOT NULL, time timestamptz NOT NULL,
                 PRIMARY KEY (kind, file, entry))             -- kept in later releases;
                                                              -- never newly used
-lib_use        (line_id text REFERENCES line, branch text,   -- the use index: main only
+lib_use        (line_id text REFERENCES line, branch text,   -- the use index: main's, and
+                                                             -- (phase 11) a branch's for
+                                                             -- the objects it changed
                 object_kind text, object text,               -- an element, or `library` and
                                                              -- `kind/name` for a file a
                                                              -- line picks as a whole
@@ -4720,7 +4732,9 @@ audit          (id bigserial PRIMARY KEY, time timestamptz NOT NULL, user_name t
                                                              -- before and after); refused (joins,
                                                              -- commands, working sets, rights
                                                              -- changes, see as, exports, imports);
-                                                             -- see_as, explain; lock, release (later)
+                                                             -- see_as, explain; library changes
+                                                             -- (phase 9: lock, put, request, grant,
+                                                             -- refuse, release, withdraw, pins)
                 target text NOT NULL, before jsonb, after jsonb, detail text NOT NULL DEFAULT '')
                -- append only: a trigger refuses every UPDATE, DELETE and TRUNCATE
 ```
@@ -4755,8 +4769,9 @@ Notes:
   every element and the tiles of its entry; a database imported before
   schema 2 gets them when the server first starts on it (rows with
   `routes` NULL). Branches other than `main`: their objects' routes and
-  references are not kept (with branches over working sets, phase 11,
-  as `vc_ref.routes`).
+  references are not kept; a branch's object is placed as on main (phase
+  7), and a branch over a working set keeps its routes in the model's
+  `line_meta` row `branch_scopes` (phase 11; not in `vc_ref`).
 - **Positions**: a change's place in the stream is (`seq`, `step`): `seq`
   the network's last log entry when it was made (its own last entry if
   it made entries), `step` 0 for a change that made log entries, 1, 2, …
@@ -4809,6 +4824,20 @@ Notes:
   import, kept by every command of the server, made again by a server
   for a model without one; read through the rights' one function
   (`Network::uses`).
+- **Versions at scale** (phase 11, 2026-11-20; no schema change): a
+  model's revisions are written as **split trees** (`PgStore::split_trees`;
+  the nodes are `vc_blob` rows like any blob, each noted in `vc_blob_use`
+  for the model): a commit writes the nodes and objects its tree does not
+  share with its first parent's; a model's flat revisions of before stay
+  readable. **Branches over a working set**: the server's operation
+  `CreateWorkingSetBranch {name, from, routes, team}` makes a project
+  line kept as differences (`object` rows of its branch, `vc_ref.base`)
+  with its scope in the model's `line_meta` row `branch_scopes`; its use
+  index rows are `lib_use` rows of its branch (the objects it changed,
+  renamed and deleted with it). Its commands, commits, reviews and
+  merges are decided by the rights as the decision log of phase 11 says;
+  the stale marks a merge writes (`line_meta` `stale_routes`) are told to
+  the connected users who may edit those routes (`Notice`).
 - **An import** (`ohl network import`, `ohl_store_pg::import`): the
   current state of the file's main project line — objects, spatial index,
   meta rows, users, edit grants, surfaces — as one transaction, **one**
@@ -4887,6 +4916,16 @@ asked by a client, planned by the server, never applied as such) and
 replay; refused from a client); a file server refuses both. A
 `library_pins` change reaches clients that may not see the whole line
 as "read these tiles again", as any library change.
+
+Phase 11 (2026-11-20): one operation, no new message —
+`create_working_set_branch` (`name`, `from`: a project line, `routes`,
+`team`?: users or groups) makes a branch over a working set (a project
+line kept as differences, its scope in the model's `branch_scopes` meta
+row); requests on it name it as their `line`. Its changes reach only
+clients seeing the whole line (as every branch's); a merge of it into
+main that marks other routes out of date sends a `notice` ("line L:
+route R's results are out of date (…, by U)") to each connected user who
+may edit such a route, in words they may see.
 
 ## What a plugin sees
 

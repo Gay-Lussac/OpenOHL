@@ -8,6 +8,213 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-20 (owner): country server phase 9's 10 recommendations approved
+
+The owner, 2026-11-20: "go ahead with recommendations" — the ten
+questions of [phase 9](#2026-11-20-country-server-phase-9) answered as
+recommended:
+
+1. A release changes no line; lines in design follow the latest by
+   `update-pins --following` and are shown behind (explicit; a setting
+   later if wanted).
+2. Unlocking a kind by network admins only (maintainers may lock).
+3. A request granted only by a maintainer other than its requester.
+4. A pending draft "replaced" means taken out of the branch; a request
+   withdrawn still blocks while its draft is in the branch.
+5. A built line's pins moved by whoever may review the whole line; a
+   library review flow with OHL-Server stage D.
+6. Update library pins not undone by Undo (updated back to the release
+   before).
+7. A withdrawn entry stays in later releases and is never newly used;
+   using routes marked "not on the safe side" when the app shows library
+   notices (OHL-Server stage D).
+8. The import adds new entries of kinds not locked, asks for the rest,
+   the model keeping its own files until Update library pins.
+9. A draft in the requester's own branch, and in a team's branch with
+   phase 11 — built with [phase 11](#2026-11-20-country-server-phase-11).
+10. A line's library file filtered per entry with OHL-Server stage D;
+    until then a deny naming an entry denies the line's file holding it
+    whole (built the same day in the rights' one function, tested).
+
+The branches' use index, left by phase 9, was built with phase 11 too.
+Phase 7's eight questions are not answered yet.
+
+## 2026-11-20 (country server, phase 11)
+
+**Version control at scale: split trees, branches over working sets,
+merges at shared towers; the owner's questions of phases 7 and 9 left
+"with phase 11"** (ROADMAP O17 phase 11; built, in active development,
+not approved yet;
+[ADR-0013](../adr/0013-country-server.md#versions-at-the-scale-of-a-country),
+[data model](data-model.md#server-database-postgresql),
+[user guide](../user-guide/server.md#branches-over-a-working-set-phase-11-in-active-development),
+[measured](performance.md#synthetic-country-phase-11-version-control-at-scale-2026-11-20)).
+
+- **Split trees** (`ohl_session::trees`, tree version 2): a revision's
+  tree is a trie of the objects keyed by the SHA-256 of each object's
+  kind and id — a leaf holds at most 64 objects, a fuller node is split
+  into up to 16 children by the next hexadecimal digit (16 digits at
+  most) — and a root naming its top node and listing the library files.
+  **Decided here (the unit)**: the object's key, not its route or tension
+  section. A route or a section is worked out from the line (an object's
+  routes change with edits, a tower stands on several routes, a structure
+  near an alignment counts for its route): a trie by route would move
+  objects between subtrees with edits, need the whole line to be made,
+  and could differ between two programs reading the line differently. A
+  trie by key depends on the objects only, so the server, a replica and
+  an offline copy make the same tree and the same revision id. What a
+  route's commit, diff or merge reads is what changed in it: the nodes
+  whose hashes differ and the objects in them.
+- **A commit costs what changed**: the session keeps per project line
+  each object's value hash with the JSON it was taken from (shared, never
+  copied) and the nodes' hashes; a commit compares the objects by their
+  shared JSON (a pointer each), hashes the changed ones, makes the nodes
+  on their paths again and writes only the nodes and objects not in the
+  parent's tree (read along the paths that differ). The first commit of a
+  line after opening hashes every object once. **A failed unit is safe**
+  without copying anything: what is written is decided against the
+  stored parent, never against what the memory thinks was written (a
+  commit rolled back with its unit leaves nothing missing; tested).
+- **Where** (decided here, the desktop's format unchanged): a store says
+  whether it writes split trees — PostgreSQL does, a project file does
+  not (flat trees, the same bytes as before). Both are read everywhere:
+  a model's flat revisions of before (its import) stay its history, and
+  "nothing to commit", the status and the differences are told object by
+  object across the two kinds. An exported model keeps its split trees
+  (its revision ids, so a bundle comes back); this build reads them, an
+  older build of the desktop does not (a question below). Bundles carry
+  the nodes; a bundle missing one is refused before anything is written.
+- **Diffs, ahead/behind and merge bases**: `Session::diff_revisions` and
+  the status read only the nodes that differ; ahead/behind and the merge
+  bases stay exact (one read of the history's parents, as before).
+- **Merges from what differs** (`MergePlan::local`): with split trees, the
+  working state committed and no object kept twice, the objects that
+  differ between the base and each side are read alone, merged as whole
+  states merge (the others are equal on all three sides) and laid over
+  the working state; the connection conflicts of shared towers are worked
+  out as on whole states. The merged line is **validated as a command
+  is**, where it changes (phase 3's local validation; the merge refused
+  and nothing kept otherwise) — not whole first; notes are checked
+  against the line only when the merge touches what they are on. **A
+  merge changing library files takes the whole way** (their entry-by-entry
+  merge and the structure types' check read whole states). Bring in
+  likewise, from the two project lines in memory.
+- **Branches over working sets** (`ohl_session::shared::BranchScope`,
+  `ols_meta` key `branch_scopes`; the server's `CreateWorkingSetBranch`):
+  a project line made from another over a set of routes, by its maker,
+  shared with a team (users or groups). It holds only its changes (as
+  every line since schema 6). The rules of shared towers (phase 8) apply
+  to every command on it with its routes as the working set; **its stale
+  marks are written when its changes reach main** (a merge, a review's
+  merge), not on the branch. Changes brought into it from main are not
+  checked again (they were on main).
+- **Merges at shared towers**: a merge of such a branch is checked by
+  its routes where it lands — a connection broken is a conflict, named
+  (always said where branches over working sets exist); a move marks the
+  other routes stale (the merge's log entry says it) and the server
+  tells the connected users who may edit those routes (a notice in words
+  they may see); **on a protected line the merge waits for a review** —
+  a direct merge is refused, "it needs a review by its owners", a
+  review's merge (approved) goes through. Reviews of the whole line are
+  its owners' (deciding a review needs review on the whole line).
+- **Rights** (the owner's questions of phase 7, through the one function
+  `ohl_session::rights`): **a commit needs edit only on what it records**
+  — the line's changes since its revision, each decided as create, edit
+  or delete (a branch made from a line with uncommitted changes records
+  them first: the same rule); **a branch over a working set** is made by
+  whoever sees each of its routes and may edit something on it; its
+  commands, commits, reviews and merges are its maker's and its team's,
+  deleting, renaming or describing it its maker's; **merging it into
+  main needs only what the merge changes there**; changes brought into it
+  from main are main's. **Decided here (conservative)**: tags, branches
+  of the whole line (`CreateLine`, `CreateBranch`), rollbacks, reverts
+  and reviews' merges still need the line whole; a commit's objects are
+  placed as the server keeps them (main's), an object gone or made only
+  on the branch decided by its own place or none (only a scope of the
+  whole line covers it). **A designer of a part of a route makes new
+  objects inside it** (question 1): a new object refused by the rights as
+  they were is decided again with the user's parts of routes worked out
+  on the line as it is after the command.
+- **Team branches** (question 9 of phase 9): a pending library draft may
+  be used in a branch over a working set whose maker named the requester
+  in its team (users; a group's members work on it, a draft's requester
+  is named). The draft is still put and changed only by its requester,
+  and still blocks the branch's review and merge into main until
+  granted.
+- **Branches' use index** (phase 9's left item): `lib_use` rows of a
+  branch (the column existed) for the objects it changed, as it holds
+  them — never a copy of main's rows; renamed and deleted with it; read
+  through the rights with the branch named, an object placed as on main
+  (one made only on the branch: seen by who sees the whole line).
+- **No schema change**: the network schema stays 5 (the branches' scopes
+  are a model's meta row, the use index had its branch column, nodes are
+  blobs). The desktop's `.ohl` format is unchanged.
+- **Tests**: split trees against flat ones on a random script (5 seeds,
+  150 steps: edits, notes, commits, project lines, merges with conflicts
+  chosen at random, bringing in — the same answers, states, statuses and
+  differences at every step); a commit writes what changed; a commit
+  rolled back with its unit; flat and split revisions mixed, bundles with
+  nodes (one missing: refused); merges from what differs; branches over a
+  working set in the session (rules on the branch, stale marks at the
+  merge, a protected main waiting for a review, renamed and deleted) on
+  both kinds of tree; on the server: a branch of the whole line refused
+  to a route's designer, over her route made, its team and maker, a
+  commit recording only what its user may edit (a hidden object's
+  refusal naming nothing), a tag needing the line whole, a part's
+  designer making a new structure inside her part and not outside;
+  branches' use index through the rights; and **the property that no
+  message holds a hidden id or place** extended with branches over a
+  working set made, worked on, committed and merged by another user and
+  by the user herself.
+- **Measured** ([performance](performance.md#synthetic-country-phase-11-version-control-at-scale-2026-11-20)),
+  flat trees (as phase 9's code writes them) against split ones on the
+  same model: the country as one model (108 785 objects) — a commit of
+  one changed route p50 6.7 s → 100 ms, its status 1.4 s → 107 ms, a
+  branch's diff 134 → 9.6 ms, its merge (plan, merge) 24.7 / 33.8 s → 40
+  / 117 ms, a merge at a shared tower 10.7 s → 79 ms; a line of 1 590
+  objects — the commit 348 → 89 ms, the merge 785 → 43 ms. Phase 9's
+  code and phase 11's on fresh databases of the same 147 lines: a move
+  applied and broadcast p50 9.2 → 9.1 ms, a replica loaded, its rows and
+  joining again after 20 moves (357 ms) the same, Update library pins
+  3.2 s both.
+- **Found while measuring** (there before phase 11): the first revision
+  of a big model in a network whose version store has no rows yet is
+  quadratic (the planner's statistics say the table is empty: each
+  blob's check reads the rows written so far) — minutes instead of 24 s
+  on the country as one model; said in the
+  [database's page](postgresql.md#what-is-not-there-yet), a store reading
+  many blob hashes at once to come.
+- **Not yet**: opening a model reads each branch's base revision whole
+  (the country with the bench's branches: 20 s instead of 1.8 s); the
+  branch's in-memory line is still a whole line (its
+  objects' JSON shared with main's): on a model of a whole country a
+  branch costs the line's structure in memory (a branch the size of its
+  working set comes with phase 12's offline working set); reverts and
+  rollbacks read whole states; history, diffs and reviews are not served
+  to a network's clients yet (the server's operations are there);
+  OHL-Design has no window for branches over a working set yet.
+
+> **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
+> 1. Split trees only on a network's models, the desktop's project file
+> keeping flat trees? → yes, as built (the format unchanged).
+> 2. A model exported with split trees: readable by this build and later
+> only; or flattened at export (new revision ids, the bundle round trip
+> lost)? → keep them split, as built; say so in the export's report.
+> 3. Tags, whole-line branches, rollbacks and reviews' merges still need
+> the whole line? → yes for now; tags of a branch over a working set by
+> its maker later if wanted.
+> 4. A commit decided object by object (it may record other users'
+> uncommitted work only if its user may edit it all)? → yes, as built.
+> 5. Stale marks written when a branch's changes reach main, not on the
+> branch? → yes, as built.
+> 6. A merge into a protected main moving another route's tower waits for
+> a review even by a line admin? → yes, as built (phase 8's rule).
+> 7. A team named by users (and groups); a draft's requester named in it?
+> → yes, as built.
+> 8. Merges changing library files take the whole way (slower on a very
+> big model)? → yes, until a library file's merge is made per entry on
+> the trees.
+
 ## 2026-11-20 (country server, phase 9)
 
 **Country libraries: each library kind kept once for the network, locks

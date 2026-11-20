@@ -62,9 +62,10 @@ from here. The owner's order of 2026-11-19:
    J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
    not approved yet; J7b, a weld's sides, not started).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
-   phase 6 built 2026-11-19, phase 7 (rights and roles) and phase 9
-   (country libraries) 2026-11-20, in active development, not approved
-   yet — the owner's questions under O17).
+   phase 6 built 2026-11-19, phase 7 (rights and roles), phase 9
+   (country libraries) and phase 11 (version control at scale)
+   2026-11-20, in active development, not approved yet — the owner's
+   questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -2858,7 +2859,9 @@ or three, L four or more. The phases, in order:
   engineering impact before a pin moves, a line's file filtered per
   entry, branches' use index (phase 11), OHL-Server's Libraries page
   (stage D).
-  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > **Owner:** (answered 2026-11-20: as recommended — "go ahead with
+  > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phase-9s-10-recommendations-approved);
+  > question 9 and the branches' use index built with phase 11; the recommendation after the
   > arrow) 1. A release moves no line; designs in progress follow by
   > `update-pins --following`, shown behind? → yes, as built. 2. Unlocking
   > by network admins only? → yes. 3. A grant by a maintainer other than
@@ -2881,8 +2884,55 @@ or three, L four or more. The phases, in order:
   in, other lines' wires as targets, structure loads with other lines'
   sections, hidden neighbours computed on the server, results saying what
   was pulled in and marked stale when it changes.
-- [ ] 11 Version control at scale (M–L): trees split, branches over
-  working sets, merges at shared towers.
+- [x] 11 Version control at scale (M–L): trees split, branches over
+  working sets, merges at shared towers. **Built 2026-11-20, in active
+  development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-country-server-phase-11),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/server.md#branches-over-a-working-set-phase-11-in-active-development),
+  [measured](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#synthetic-country-phase-11-version-control-at-scale-2026-11-20)):
+  **split trees** on a network's models (a trie of the objects by the
+  hash of their kind and id, 64 objects a leaf, the library files in the
+  root; the desktop's project file keeps flat trees, both read
+  everywhere): a commit hashes and writes what changed since the line's
+  last tree, a diff or a merge reads the nodes and objects that differ,
+  ahead/behind and merge bases exact as before; **merges from what
+  differs**, validated as a command is (locally), library files' merges
+  the whole way; **branches over a working set** (`CreateWorkingSetBranch`:
+  its routes, its maker, a team), only changes stored, the rules of
+  shared towers on every command with its routes, its stale marks written
+  when it reaches main; **merges at shared towers**: a broken connection
+  a conflict, named; a move marking the other routes stale and their
+  connected owners told; a protected main waiting for a review. With the
+  owner's questions left for phase 11: a commit needs edit only on what
+  it records, a branch over a working set its routes, its work its maker
+  and team, its merge into main what it changes there (tags and
+  whole-line branches the line whole, as before); a part's designer makes
+  new objects inside the part; a draft usable in a team's branch; the
+  branches' use index (only their changes). Network schema unchanged (5).
+  Measured on the synthetic country as one model (108 785 objects): a
+  commit of one changed route 6.7 s → 0.10 s, its status 1.4 → 0.11 s, a
+  branch's diff 134 → 10 ms, its merge 33.8 → 0.12 s, a merge at a shared
+  tower 10.7 → 0.08 s (flat trees, as phase 9's code writes them, against
+  split ones); moves, replicas, joining again and Update library pins as
+  with phase 9's code.
+  Left: a branch's line in memory is a whole line (its JSON shared:
+  a branch the size of its working set with phase 12); reverts and
+  rollbacks read whole states; history, diffs and reviews served to a
+  network's clients and OHL-Design's window for these branches.
+  > **Owner:** (to answer, 2026-11-20; the recommendation after the
+  > arrow) 1. Split trees only on a network, the project file keeping flat
+  > ones? → yes, as built. 2. A model exported keeps its split trees
+  > (readable by this build on), or is flattened (new revision ids, the
+  > bundle round trip lost)? → keep them, as built. 3. Tags, whole-line
+  > branches, rollbacks and reviews' merges still need the whole line? →
+  > yes for now. 4. A commit decided object by object (it records others'
+  > uncommitted work only if its user may edit it all)? → yes, as built.
+  > 5. A branch's stale marks written when it reaches main? → yes, as
+  > built. 6. A merge into a protected main moving another route's tower
+  > waits for a review, even by a line admin? → yes, as built (phase 8's
+  > rule). 7. A team named by users and groups, a draft's requester named
+  > in it? → yes, as built. 8. Merges changing library files the whole
+  > way? → yes, until library files merge entry by entry on the trees.
 - [ ] 12 The offline working set (M): exported with read-only
   neighbours, back as a bundle.
 - [ ] 13 Security, deployment, backups (M): a security review of the

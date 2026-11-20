@@ -930,6 +930,93 @@ Notes:
 - A line's log keeps the files Update library pins changed (the command
   and its inverse): a few kilobytes per kind and update.
 
+## Synthetic country: phase 11, version control at scale (2026-11-20)
+
+What split trees, branches over a working set and merges at shared
+towers cost ([ADR-0013](../adr/0013-country-server.md#versions-at-the-scale-of-a-country),
+[decision log](decisions.md#2026-11-20-country-server-phase-11)), on the
+12 000-pylon synthetic country (seed 1, made in 73 s), measured by
+
+```bash
+ohl network bench-versions --user admin --line L001 --rounds 10   # a line of one route
+ohl network bench-versions --user admin --line CH --rounds 5      # the country as one model
+```
+
+as the network's writer (no server running), each measure with split
+trees and with flat ones (the trees of phase 9's code) on the same
+model, one after the other. `bench-fast`, Apple M-series, 10 cores,
+PostgreSQL 17 on 127.0.0.1, the machine shared with another agent's
+builds (load 5–10).
+
+| Measure | The first line (one route, 145 structures, 1 590 objects) | The country as one model (CH, 108 785 objects, its first route 145 structures) |
+|---|---|---|
+| **A commit of one changed route** (every structure of the route moved 1 cm, one command; the route's structures and the alignment points they carry recorded) | split p50 89 ms, p95 174 ms; flat p50 348 ms, p95 361 ms | split p50 100 ms, p95 175 ms; flat p50 6.7 s, p95 7.0 s |
+| Its status first (what the commit records) | split p50 58 ms; flat p50 56 ms | split p50 107 ms; flat p50 1.4 s |
+| The first revision of the model (every object hashed and written) | split 0.66 s | split 24.1 s (108 785 objects written; see the note) |
+| **A branch over the route**: ten structures moved on it, one on main — the diff of the two | split 6.7 ms; flat 6.0 ms (14 objects) | split 9.6 ms; flat 134 ms (14 objects) |
+| Ahead and behind (one read of the history) | 0.55 / 0.60 ms | 0.64 / 0.85 ms |
+| Its merge into main: the plan / the merge (plan, command, revision) | split 7.6 / 43 ms (14 objects read); flat 370 / 785 ms (every object of three revisions read, the line validated whole) | split 40 / 117 ms (14 objects read); flat 24.7 / 33.8 s |
+| **A merge at a shared tower** (a branch over one route moving a tower another route uses; the other route marked out of date) | — (a line of one route: no tower shared within it) | a tower of the first route that a branching route also uses, moved 5 cm on a branch over the first route: split 79 ms, flat 10.7 s — the other route marked out of date, the merge's log entry saying so |
+
+**Not slower** — the same benches as phase 9 run with phase 9's code
+(main d155b1d5) and phase 11's, each on a fresh database of the same 147
+lines (imported without revisions in 57.5 s and 57.1 s), one after the
+other on the same machine:
+
+| Measure | Phase 9's code | Phase 11's code |
+|---|---|---|
+| A move applied and broadcast, in the server (`bench-rights`, network admin) | p50 9.2 ms, p95 10.6 ms | p50 9.1 ms, p95 10.1 ms |
+| The same, a designer of one route | p50 9.7 ms, p95 10.8 ms | p50 9.1 ms, p95 10.2 ms |
+| A command's rights decided | p50 15–22 µs | p50 21–22 µs |
+| A partial replica loaded (`bench-working-set`): the third / the whole route | 0.077 / 0.116 s | 0.076 / 0.117 s |
+| A move's rows in the replica | p50 21.0 ms, p95 24.6 ms | p50 20.8 ms, p95 24.1 ms |
+| A replica joining again after 20 moves / a route added | 357 / 95 ms | 357 / 92 ms |
+| On the server: a move with a working set / its rows per change | p50 15.4 / 10.8 ms | p50 15.0 / 10.6 ms |
+| **Update library pins** of 147 lines (`bench-library`), the first / after a wire changed | 3.20 s / 3.07 s (per line p50 20 / 19 ms) | 3.24 s / 3.08 s (per line p50 20 / 19 ms) |
+| The use index of the wire every span uses, by a network admin (93 977 uses) | p50 269 ms | p50 361 ms with the first query (main's and the branches' rows sorted together); 273 ms with the one built (main's rows as before, the branches' after) |
+| Its query alone, the same database, run in turn five times (`EXPLAIN ANALYZE`) | 140–167 ms | 140–146 ms, and 7 ms for the branches' rows |
+| Server start | 2.88 s | 2.97 s |
+| Memory of the server, idle | 1 310 MB | 1 310 MB |
+
+Notes:
+
+- The machine's load moved between 5 and 10 during the runs (another
+  agent's builds): two more runs of `bench-library` each way gave the
+  use index 337 / 341 ms (phase 9's code) and 273 / 548 ms (phase 11's,
+  the second at load 10, Update library pins 4.8 s in the same run) —
+  the query timed in turn above is the fair comparison: 7 ms more, the
+  branches' rows read apart.
+- A split commit writes the objects that changed (three statements each:
+  is it there, the blob, the model's use of it), the nodes on their
+  paths and the root; a flat commit hashes every object and asks for
+  each whether it is stored, then writes the whole list again. On a
+  line of 1 590 objects whose every structure moved, a quarter of the
+  time; on the country as one model, a sixty-seventh (100 ms against 6.7 s).
+- A merge worked out from what differs reads the objects that differ
+  (base, theirs) from the store and the rest from memory; the flat merge
+  reads every object of three revisions (twice: its plan, then the merge)
+  and validates the merged line whole.
+- The diff of two revisions reads the nodes that differ (split) or the
+  two lists whole (flat): on one line both are a few milliseconds; on
+  the country as one model the flat lists are 3 MB each.
+- The first commit of a model after it was opened hashes every object
+  once (as a flat commit does at each commit); a server keeps what it
+  hashed while it runs.
+- **Found while measuring** (not phase 11's, there before it): the first
+  revision of a big model in a network whose version store has no rows
+  yet checks each blob by reading the rows written so far in its own
+  transaction one after the other (the planner's statistics say the
+  table is empty): minutes instead of 24 s on the country as one model.
+  Measured here after five small lines were imported with their
+  revisions and `ANALYZE` was run; a store reading many blob hashes at
+  once is to come ([running it](postgresql.md#what-is-not-there-yet)).
+- Opening a model reads each branch's base revision whole (lines kept as
+  differences, schema 6): the country as one model with the bench's
+  branches opened in 20 s instead of 1.8 s — a base read along what its
+  branch changed is to come.
+- The run's other measures of the first line, for the record: opening it
+  50 ms (split) and 194 ms (flat, after the split run's branches).
+
 ## OHL-Design: an edit taken in place (O42, 2026-11-19)
 
 Owner, 2026-11-19: "per element modified instead of validating the whole

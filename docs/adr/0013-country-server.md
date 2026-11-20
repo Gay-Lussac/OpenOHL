@@ -2,7 +2,7 @@
 
 - **Status:** Proposed (in active development since 2026-11-18; the owner
   answered the plan's questions on 2026-11-16 and started the work on
-  2026-11-18; phases 0–9 built — this record is not approved yet)
+  2026-11-18; phases 0–9 and 11 built — this record is not approved yet)
 - **Date:** 2026-11-18
 - **Amends:** [ADR-0004](0004-project-file-format.md) (the project file
   stays the desktop's format; the server stores models in PostgreSQL),
@@ -284,6 +284,12 @@ stand for rights until phase 7; stale marks with notices in the project
 file; a protected project line stands for a built line, its review the
 existing one; a project without working sets unchanged (the
 [decision log](../development/decisions.md#2026-11-18-country-server-phase-8)).
+On a network's server (since phases 7 and 11): the rights decide every
+object a command changes; the rules of this section apply to the
+commands on a branch over a working set (its routes the working set) and
+to its merge where it lands (stale marks, the other routes' connected
+owners told, a protected line waiting for a review) — not yet to edits
+made directly on a network's main line.
 
 ### Rights and roles on (almost) every element and library
 
@@ -459,6 +465,34 @@ becomes a tree of trees (by line, kind, tile bucket), so a commit costs what
 changed; old flat trees still read. No whole-network snapshots or
 whole-branch copies (owner rule: only changes logged).
 
+Built 2026-11-20 (phase 11, in active development; the
+[decision log](../development/decisions.md#2026-11-20-country-server-phase-11)),
+**amending the split**: a revision's tree on a network's model is a
+**trie of its objects keyed by the SHA-256 of each object's kind and
+id** (`ohl_session::trees`, tree version 2: at most 64 objects a leaf,
+up to 16 children by the next hexadecimal digit, the library files in
+the root), not a tree by line, kind and tile bucket — a model is one
+line already, and a bucket by tile or route is worked out from the line
+(objects move between buckets with edits, a tower stands on several
+routes), while a trie by key depends on the objects alone, so every copy
+makes the same revision id. A commit hashes and writes what changed
+since the line's last tree (the session keeps each object's hash with
+its shared JSON), a diff or a merge reads the nodes and objects that
+differ; ahead/behind and merge bases stay exact. **The desktop's project
+file keeps flat trees** (a store says which it writes; both are read).
+Merges are worked out from what differs and validated as a command is
+(locally); a merge changing library files goes the whole way.
+**Branches over a working set** (`CreateWorkingSetBranch`; the session's
+`BranchScope`, a model's meta row): a project line over a set of routes,
+its maker's and its team's, only its changes stored, the rules of
+towers shared by several routes applied to its commands with its routes
+as the working set and to its merge where it lands — a broken
+connection a conflict, a move marking the other routes stale (their
+connected owners told), a protected line waiting for a review. Rights:
+a commit needs edit only on what it records; a branch over a working
+set needs its routes; tags, whole-line branches, rollbacks and reviews'
+merges still the whole line. The network schema stays 5.
+
 ### Security and operations
 
 Sign-in by OIDC/SSO with the owner's identity provider (personal
@@ -469,6 +503,10 @@ Shipped deployment: a Docker Compose file (server, PostgreSQL with PostGIS,
 backup job), plain binaries as the other option — the owner's IT decides.
 Backups by base backup and WAL archiving, with a restore drill; a schema
 migration is refused when the last backup is older than a setting.
+**None of this section is built yet** (phase 13): sign-in is the personal
+invitation, the server connects with the connection string it is given,
+there are no deployment files, and backups are PostgreSQL's own tools
+until then.
 
 ### Measured first
 
