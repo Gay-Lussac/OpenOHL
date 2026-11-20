@@ -2666,6 +2666,70 @@ fn write_rounds(
                 }
                 bad.push(why);
             }
+            // (L2, 2026-11-20, found measuring) The bolts of each member on
+            // a plate the layout made within the plate's outline as written
+            // (a plate in its member's own plane, a bent plate's flat: their
+            // outlines laid out in the plan) — the joint checks' own rule;
+            // else that member left as it was too, said.
+            for id in &o.plates {
+                let Some(pd) = j.plates.iter().find(|p| &p.id == id) else {
+                    continue;
+                };
+                if pd.outline.len() < 3 {
+                    continue;
+                }
+                for a in crate::joints::bolted_onto(&j.arrivals, id) {
+                    if out.contains_key(&a.member) {
+                        continue;
+                    }
+                    let outside = a.bolt_points.iter().any(|at| {
+                        crate::plate_checks::ray_to_outline(&pd.outline, *at, a.direction).is_none()
+                    });
+                    if outside {
+                        let on = o
+                            .plates
+                            .iter()
+                            .position(|p| p == id)
+                            .map_or("?", |k| o.plan.plates[k].on.as_str());
+                        let why = format!(
+                            "its bolts on a plate on {on} would lie outside the plate's outline"
+                        );
+                        out.insert(
+                            a.member.clone(),
+                            format!("laid out, {why} (left as it was)"),
+                        );
+                        bad.push(format!("{}: {why}", a.member));
+                    }
+                }
+            }
+            // (L2, 2026-11-20, found measuring) A member not laid out here
+            // bolting onto one that is: its bolts, where they are, still
+            // within that member's flange and on its steel as written (the
+            // joint checks' own rule, as for an end laid onto a member left
+            // as it was); else the member laid out left as it was, said. (A
+            // member left for a hand detail is not asked: its hand detail
+            // places its bolts, J2.)
+            for x in &j.arrivals {
+                if o.plan.ends.iter().any(|e| e.member == x.member)
+                    || o.plan.hand_members.contains(&x.member)
+                {
+                    continue;
+                }
+                let Some(h) = x.onto.value.as_deref() else {
+                    continue;
+                };
+                if out.contains_key(h) || !o.plan.ends.iter().any(|e| e.member == h) {
+                    continue;
+                }
+                let Some(host) = j.arrivals.iter().find(|a| a.member == h) else {
+                    continue;
+                };
+                if let Some(w) = misfit_on(j, x, host) {
+                    let why = format!("{} (as it is) would then not fit onto it: {w}", x.member);
+                    out.insert(h.to_owned(), format!("laid out, {why} (left as it was)"));
+                    bad.push(format!("{h}: {why}"));
+                }
+            }
             if bad.is_empty() {
                 continue;
             }
