@@ -147,6 +147,13 @@ impl LayoutWindow {
             bottom_up: true,
             more_plates: true,
             onto_search: true,
+            // L2 (2026-11-20): plates on their member, clash-aware
+            // planning, the tries before an end is left for a clash; L1 (c)
+            // off (measured, left out).
+            plate_on: true,
+            exact_plan: true,
+            clash_tries: true,
+            direct_first: false,
         }
     }
 
