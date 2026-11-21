@@ -612,6 +612,11 @@ pub struct LayoutRun {
     /// `in_line`). Never written by the run: until confirmed each piece
     /// ends at the joint (on the safe side).
     pub splices: Vec<crate::LegSplice>,
+    /// The leg pieces at the joints asked whose joints say they are turned
+    /// about their axis (O44 L11, [`crate::leg_roll`]): proposed, never
+    /// applied by the run (Joint details' Solve the clashes offers the turn
+    /// with its effect).
+    pub leg_rolls: Vec<crate::LegRoll>,
 }
 
 impl LayoutRun {
@@ -851,6 +856,12 @@ fn lay_out_once(
     // J7: the leg splices proposed (said, never written by the run), from
     // the joints as planned (the layout's own values taken out).
     let splices = crate::leg_splices::leg_splices(&around_details, t, Some(&targets));
+    // L11: the leg pieces their joints say are turned (proposed, never
+    // applied; said in the notes).
+    let leg_rolls: Vec<crate::LegRoll> = crate::leg_rolls(&around_details)
+        .into_iter()
+        .filter(|r| r.flagged() && r.estimates.iter().any(|e| targets.contains(&e.joint)))
+        .collect();
     // The ends bolting onto nothing named, at the joints asked: the member
     // running through the joint named in the planning copy (as the layout
     // writes it), so that their leg bolted and the turn laying it flat are
@@ -1832,6 +1843,7 @@ fn lay_out_once(
                 seconds: start.elapsed().as_secs_f64(),
                 in_line: in_line.clone(),
                 splices: splices.clone(),
+                leg_rolls: leg_rolls.clone(),
             });
         }
         let mut done = None;
@@ -2097,6 +2109,7 @@ fn lay_out_once(
             seconds: start.elapsed().as_secs_f64(),
             in_line: in_line.clone(),
             splices: splices.clone(),
+            leg_rolls: leg_rolls.clone(),
         });
     }
 }

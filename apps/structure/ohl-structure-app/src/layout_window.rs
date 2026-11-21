@@ -1003,6 +1003,23 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
             .color(ui.visuals().warn_fg_color),
         );
     }
+    // L11: the leg pieces their joints say are turned (proposed only).
+    if !p.run.leg_rolls.is_empty() {
+        let words: Vec<String> = p.run.leg_rolls.iter().map(|r| r.words()).collect();
+        ui.horizontal_wrapped(|ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} leg piece(s) turned against their joints (proposed, not applied: Joint \
+                     details › Solve the clashes offers the turn with its effect)",
+                    p.run.leg_rolls.len()
+                ))
+                .small()
+                .color(ui.visuals().warn_fg_color),
+            )
+            .on_hover_text(words.join("\n"));
+            ohl_ui::tool_window::question(ui, LEG_ROLL_HELP);
+        });
+    }
     for n in p.run.notes.iter().take(3) {
         ui.label(egui::RichText::new(n).small().weak());
     }
@@ -1014,6 +1031,15 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
         );
     }
 }
+
+/// The help of the leg pieces turned against their joints (O44 L11).
+pub const LEG_ROLL_HELP: &str = "A leg piece whose joints say it is turned about its axis: \
+     the member ends bolting onto it arrive in planes (the plane through the leg's axis and \
+     theirs) turned against its flanges by about the same angle — at least two members, all \
+     the same way, within 4° of each other, more than the owner's 2°. The tower's faces through \
+     the neighbouring legs (Orient angles) are said beside it as a hint only. Never applied: \
+     Joint details › Solve the clashes offers the turn (the pieces in line with it turned \
+     alike, one leg) with the joint's solution worked out with it.";
 
 /// The help of the pieces in line (O44 J9).
 pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a joint (within 1°, \

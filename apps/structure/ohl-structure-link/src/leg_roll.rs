@@ -155,6 +155,7 @@ pub fn leg_rolls(d: &JointDetails) -> Vec<LegRoll> {
             continue;
         }
         // The pieces in line here, turned alike: one leg.
+        let mut here: BTreeSet<(String, String)> = BTreeSet::new();
         for (i, a) in legs.iter().enumerate() {
             for b in legs.iter().skip(i + 1) {
                 if angle_deg(a.direction, neg(b.direction)) > IN_LINE_DEG {
@@ -165,6 +166,8 @@ pub fn leg_rolls(d: &JointDetails) -> Vec<LegRoll> {
                 };
                 // Turned alike: their y axes within 2° (about their axes).
                 if angle_deg(pa.axes[1], pb.axes[1]) <= FLAT_OFF {
+                    here.insert((a.member.clone(), b.member.clone()));
+                    here.insert((b.member.clone(), a.member.clone()));
                     partners
                         .entry(a.member.clone())
                         .or_default()
@@ -204,6 +207,18 @@ pub fn leg_rolls(d: &JointDetails) -> Vec<LegRoll> {
                 (Some(o), None) if j.arrivals.iter().any(|x| x.member == o) => Vec::new(),
                 _ => legs.iter().collect(),
             };
+            // (And the pieces in line with it here, turned alike: one leg —
+            // an end there says as much of each.)
+            let mut targets = targets;
+            for l in targets.clone() {
+                for m in legs.iter() {
+                    if here.contains(&(l.member.clone(), m.member.clone()))
+                        && !targets.iter().any(|t| t.member == m.member)
+                    {
+                        targets.push(m);
+                    }
+                }
+            }
             for l in targets {
                 let Some(p) = &l.profile else { continue };
                 let x = p.axes[0];
