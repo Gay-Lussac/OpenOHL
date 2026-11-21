@@ -57,6 +57,9 @@ mod export;
 pub mod in_line;
 #[cfg(test)]
 mod in_line_tests;
+pub mod joint_classes;
+#[cfg(test)]
+mod joint_classes_tests;
 pub mod joint_fixes;
 mod joint_groups;
 #[cfg(test)]
@@ -143,7 +146,7 @@ pub use layout_run::{
     RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
     plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };
-pub use leg_roll::{LegRoll, RollEstimate, leg_rolls};
+pub use leg_roll::{LegRoll, RollEstimate, leg_rolls, piece_rolls};
 pub use leg_splices::{LegSplice, leg_splices};
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,

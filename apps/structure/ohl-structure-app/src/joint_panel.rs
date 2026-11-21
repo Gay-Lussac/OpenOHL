@@ -272,6 +272,27 @@ impl StructureApp {
                 );
             }
         });
+        // O44 L12: the joint's group (what it bolts onto, what comes in, how
+        // the ends lie against the host's flanges).
+        if let Some(j) = details.joint(&chosen) {
+            let zone = ohl_structure_link::joint_order(&t).zone_of(&j.id);
+            let f = ohl_structure_link::joint_classes::joint_features(j, zone);
+            let g = ohl_structure_link::joint_classes::group_of(&f);
+            ui.label(
+                egui::RichText::new(format!("Group: {}", g.name()))
+                    .small()
+                    .weak(),
+            )
+            .on_hover_text(format!(
+                "How the joint is laid out and what comes in (the automatic joint layout's \
+                 groups): what the other ends bolt onto ({}), what comes in, and how far the \
+                 ends lie from the host's flanges' planes (within 2°: they can lie flat on it; \
+                 a few degrees out: a sloping face; out of plane: a plan member or a member \
+                 between two faces). For understanding the layout's results; nothing depends on \
+                 it.",
+                f.host.as_deref().unwrap_or("none")
+            ));
+        }
         if chosen != id {
             self.selected = vec![Handle::Joint(chosen.clone())];
             self.scroll_to = Some(Handle::Joint(chosen.clone()));

@@ -316,6 +316,14 @@ pub struct LayoutSettings {
     /// flat plate on that flange's outer face instead, past the heel
     /// (the module `both_faces`). On by default; off: as before.
     pub both_faces: bool,
+    /// L12, 2026-11-21 (the joints grouped by what comes in): a chord
+    /// running on through joints whose ends say it is turned (as L11's leg,
+    /// [`crate::piece_rolls`] of [`crate::joint_classes::chord_pieces`])
+    /// turned by what they say, with its pieces in line alike, kept where
+    /// its joints lay out more ends, or as many on fewer plates, none fewer
+    /// at any of them. **Off by default** (a chord's roll is Orient
+    /// angles'; the owner decides); on: measured.
+    pub chord_turns: bool,
 }
 
 impl Default for LayoutSettings {
@@ -354,6 +362,7 @@ impl Default for LayoutSettings {
             nothing_joined: true,
             plate_shift: false,
             both_faces: true,
+            chord_turns: false,
         }
     }
 }

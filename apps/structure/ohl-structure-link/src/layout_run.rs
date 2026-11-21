@@ -651,8 +651,173 @@ pub struct RunAsk<'a> {
 
 /// The layout run on `text` (a structure file) as `ask` says.
 pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
+    if ask.settings.chord_turns {
+        return chord_turned(text, ask);
+    }
     lay_out_with(text, ask, true)
 }
+
+/// L12 (off by default, [`LayoutSettings::chord_turns`]): the run with
+/// the chords whose joints say they are turned turned first (as Orient
+/// angles turns a chord, before the members' own turns). In rounds: the
+/// chords flagged on the run's result so far ([`chord_groups`]) all turned
+/// and the run made again; each kept where its joints lay out more ends,
+/// or as many on fewer plates, none fewer at any of them (planned again
+/// with only those until each still helps); the next round from that
+/// result, until no chord flagged there helps — so that a run again on the
+/// result finds nothing more to turn. The turns kept said in the notes;
+/// none kept: the run without them.
+fn chord_turned(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
+    use crate::other_face::helps;
+    let plain_settings = LayoutSettings {
+        chord_turns: false,
+        ..ask.settings.clone()
+    };
+    let plain = RunAsk {
+        library: ask.library,
+        bolts: ask.bolts,
+        settings: &plain_settings,
+        preset_fields: ask.preset_fields.clone(),
+        joints: ask.joints.clone(),
+        replace_hand: ask.replace_hand,
+    };
+    let r0 = lay_out_with(text, &plain, true)?;
+    let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+        .map_err(|e| e.message)?;
+    let record = LayoutRecord::of(&t);
+    let targets: BTreeSet<String> = ask
+        .joints
+        .clone()
+        .unwrap_or_else(|| t.nodes.iter().map(|n| n.id.clone()).collect());
+    let may = |m: &str| -> bool {
+        let Some(x) = t.members.iter().find(|x| x.id == m) else {
+            return false;
+        };
+        let automatic = record.rolled.contains_key(m) || record.oriented.contains_key(m);
+        !(x.roll.is_some() && !automatic && !ask.replace_hand)
+    };
+    // The input with the turns `cum` (degrees, per member) added.
+    let turned_text = |cum: &BTreeMap<String, f64>| -> Result<String, String> {
+        let mut doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+        for (m, turn) in cum {
+            let now = t
+                .members
+                .iter()
+                .find(|x| &x.id == m)
+                .map_or(0.0, ohl_structure_edit::edits::member_roll);
+            let mut deg = now.to_degrees() + turn;
+            while deg > 180.0 {
+                deg -= 360.0;
+            }
+            while deg <= -180.0 {
+                deg += 360.0;
+            }
+            let deg = (deg * 100.0).round() / 100.0;
+            ohl_structure_edit::edits::set_member_roll(&mut doc, m, deg.to_radians());
+        }
+        Ok(doc.to_string())
+    };
+    let counts = |r: &LayoutRun, js: &[&str]| -> Vec<(usize, usize)> {
+        js.iter()
+            .map(|j| {
+                r.joints.iter().find(|o| o.joint == *j).map_or((0, 0), |o| {
+                    if o.written {
+                        (o.plan.ends.len(), o.plates.len())
+                    } else {
+                        (0, 0)
+                    }
+                })
+            })
+            .collect()
+    };
+    let joints_of = |g: &ChordGroup| -> Vec<String> {
+        let mut js: Vec<String> = g
+            .members
+            .iter()
+            .filter_map(|m| t.members.iter().find(|x| &x.id == m))
+            .flat_map(|x| x.nodes.iter())
+            .filter(|j| targets.contains(*j))
+            .cloned()
+            .collect();
+        js.sort_unstable();
+        js.dedup();
+        js
+    };
+    let sums = |g: &ChordGroup, r: &LayoutRun| -> Vec<(usize, usize)> {
+        let js = joints_of(g);
+        let js: Vec<&str> = js.iter().map(String::as_str).collect();
+        counts(r, &js)
+    };
+    let mut cum: BTreeMap<String, f64> = BTreeMap::new();
+    let mut base = r0;
+    let mut words = Vec::new();
+    let mut seconds = base.seconds;
+    for _ in 0..CHORD_ROUNDS {
+        let d = crate::joint_details(&base.text, ask.library, ask.bolts)?;
+        let groups = chord_groups(&d, &targets, &may);
+        if groups.is_empty() {
+            break;
+        }
+        let with = |set: &BTreeSet<usize>| {
+            let mut c = cum.clone();
+            for &k in set {
+                for m in &groups[k].members {
+                    *c.entry(m.clone()).or_insert(0.0) += groups[k].turn;
+                }
+            }
+            c
+        };
+        let all: BTreeSet<usize> = (0..groups.len()).collect();
+        let mut r = lay_out_with(&turned_text(&with(&all))?, &plain, true)?;
+        seconds += r.seconds;
+        let mut set: BTreeSet<usize> = all
+            .iter()
+            .copied()
+            .filter(|&k| helps(&sums(&groups[k], &base), &sums(&groups[k], &r)))
+            .collect();
+        let mut confirmed = set == all;
+        for _ in 0..FACE_ROUNDS {
+            if set.is_empty() || confirmed {
+                break;
+            }
+            r = lay_out_with(&turned_text(&with(&set))?, &plain, true)?;
+            seconds += r.seconds;
+            let keep: BTreeSet<usize> = set
+                .iter()
+                .copied()
+                .filter(|&k| helps(&sums(&groups[k], &base), &sums(&groups[k], &r)))
+                .collect();
+            if keep == set {
+                confirmed = true;
+            } else {
+                set = keep;
+            }
+        }
+        if set.is_empty() || !confirmed {
+            break;
+        }
+        for &k in &set {
+            let g = &groups[k];
+            let total =
+                |v: Vec<(usize, usize)>| v.iter().fold((0, 0), |(e, p), (x, y)| (e + x, p + y));
+            let (e0, p0) = total(sums(g, &base));
+            let (e1, p1) = total(sums(g, &r));
+            words.push(format!(
+                "{}: its joints lay out {e1} ends on {p1} plates (before {e0} on {p0}); its \
+                 roll written turned (a chord's roll: Orient angles' — the owner decides)",
+                g.words
+            ));
+        }
+        cum = with(&set);
+        base = r;
+    }
+    base.notes.extend(words);
+    base.seconds = seconds;
+    Ok(base)
+}
+
+/// L12: the most rounds [`chord_turned`] makes (the program's bound).
+const CHORD_ROUNDS: usize = 4;
 
 /// [`lay_out`] with the joints in detail from the whole file, never from
 /// the file cut down to what they read (`reduce`): the same
@@ -2264,6 +2429,99 @@ fn other_faces(
 /// L10: the most plans [`other_faces`] makes to confirm the members it
 /// keeps (the program's bound).
 const FACE_ROUNDS: usize = 3;
+
+/// L12: a chord's pieces turned together and the turn their joints say
+/// (degrees), in words.
+struct ChordGroup {
+    members: Vec<String>,
+    turn: f64,
+    words: String,
+}
+
+/// L12: the chords of `d` whose joints say they are turned
+/// ([`crate::piece_rolls`] of [`crate::joint_classes::chord_pieces`]): the
+/// pieces in line turned alike taken together (one chord: every piece
+/// named as another's partner, transitively), their flagged pieces' turns
+/// all one way within [`crate::leg_roll::SPREAD_DEG`], the chord turned by
+/// their middle; only where a flagged estimate lies at a joint asked and
+/// `may` turn every piece. Deterministic (the members' order).
+fn chord_groups(
+    d: &JointDetails,
+    targets: &BTreeSet<String>,
+    may: &dyn Fn(&str) -> bool,
+) -> Vec<ChordGroup> {
+    let rolls = crate::piece_rolls(d, &crate::joint_classes::chord_pieces);
+    // One chord: the pieces linked as partners.
+    let mut root: BTreeMap<String, String> = BTreeMap::new();
+    fn find(root: &mut BTreeMap<String, String>, m: &str) -> String {
+        let mut x = m.to_owned();
+        while let Some(p) = root.get(&x).filter(|p| **p != x) {
+            x = p.clone();
+        }
+        root.insert(m.to_owned(), x.clone());
+        x
+    }
+    for r in &rolls {
+        root.entry(r.member.clone())
+            .or_insert_with(|| r.member.clone());
+        for p in &r.partners {
+            root.entry(p.clone()).or_insert_with(|| p.clone());
+            let (a, b) = (find(&mut root, &r.member), find(&mut root, p));
+            if a != b {
+                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+                root.insert(hi, lo);
+            }
+        }
+    }
+    let mut chords: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let members: Vec<String> = root.keys().cloned().collect();
+    for m in members {
+        let r = find(&mut root, &m);
+        chords.entry(r).or_default().push(m);
+    }
+    let mut out = Vec::new();
+    for ms in chords.into_values() {
+        let flagged: Vec<&crate::LegRoll> = rolls
+            .iter()
+            .filter(|r| r.flagged() && ms.contains(&r.member))
+            .collect();
+        if flagged.is_empty()
+            || !flagged
+                .iter()
+                .any(|r| r.estimates.iter().any(|e| targets.contains(&e.joint)))
+            || !ms.iter().all(|m| may(m))
+        {
+            continue;
+        }
+        let mut turns: Vec<f64> = flagged.iter().filter_map(|r| r.turn).collect();
+        turns.sort_by(f64::total_cmp);
+        let (lo, hi) = (turns[0], turns[turns.len() - 1]);
+        if lo.signum() != hi.signum() || hi - lo > crate::leg_roll::SPREAD_DEG {
+            continue;
+        }
+        let mid = if turns.len() % 2 == 1 {
+            turns[turns.len() / 2]
+        } else {
+            0.5 * (turns[turns.len() / 2 - 1] + turns[turns.len() / 2])
+        };
+        let turn = (mid * 100.0).round() / 100.0;
+        out.push(ChordGroup {
+            words: format!(
+                "chord {} turned by {turn:+.2}° (L12, a chord turned against its joints: {})",
+                ms.join(", "),
+                flagged
+                    .iter()
+                    .map(|r| r.words())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+                    .replace("turn leg piece", "piece")
+            ),
+            members: ms,
+            turn,
+        });
+    }
+    out
+}
 
 /// Either leg of `a` may be its leg bolted (J3, [`crate::whole_roll`]): a
 /// single equal-leg angle whose leg bolted is not given as both (an

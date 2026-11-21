@@ -147,10 +147,35 @@ pub fn leg_rolls(d: &JointDetails) -> Vec<LegRoll> {
     let is_leg = |a: &Arrival| {
         a.class.as_deref() == Some("leg") && a.profile.as_ref().is_some_and(|p| p.angle.is_some())
     };
+    piece_rolls(d, &|j: &crate::JointDetail| {
+        j.arrivals
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| is_leg(a))
+            .map(|(i, _)| i)
+            .collect()
+    })
+}
+
+/// The members a joint's other ends bolt onto (O44 L12): at each joint the
+/// arrivals `pieces` names (indices; single angles), and what the joint's
+/// other ends say of their turn, as [`leg_rolls`] reads a leg's — for the
+/// host running on through a joint that is not a leg (an arm's chord, a
+/// body's horizontal: [`crate::joint_classes`]), whose flanges the joint's
+/// bracing should lie in too. Proposals only, as for a leg.
+pub fn piece_rolls(
+    d: &JointDetails,
+    pieces: &dyn Fn(&crate::JointDetail) -> Vec<usize>,
+) -> Vec<LegRoll> {
     let mut est: BTreeMap<String, Vec<RollEstimate>> = BTreeMap::new();
     let mut partners: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for j in &d.joints {
-        let legs: Vec<&Arrival> = j.arrivals.iter().filter(|a| is_leg(a)).collect();
+        let legs: Vec<&Arrival> = pieces(j)
+            .into_iter()
+            .filter_map(|i| j.arrivals.get(i))
+            .filter(|a| a.profile.as_ref().is_some_and(|p| p.angle.is_some()))
+            .collect();
+        let is_leg = |a: &Arrival| legs.iter().any(|l| l.member == a.member);
         if legs.is_empty() {
             continue;
         }

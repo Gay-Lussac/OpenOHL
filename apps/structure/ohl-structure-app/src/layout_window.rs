@@ -206,6 +206,10 @@ impl LayoutWindow {
             // flange's plane on its inner side, past the heel, on the back of
             // that flange's flat plate instead (both faces of one plate).
             both_faces: true,
+            // L12 (2026-11-21): a chord turned to what its joints say, kept
+            // where its joints lay out more — off (measured; the owner
+            // decides, a chord's roll being Orient angles').
+            chord_turns: false,
         }
     }
 
