@@ -26,6 +26,12 @@
 //! ([`crate::ServerMsg::Network`]) and asks for the tiles around its view
 //! ([`crate::ClientMsg::Interest`]); it draws their packages and reads a
 //! tile again when a change touched it — a viewer of any size.
+//!
+//! When the network's server takes its organisation's sign-in (OIDC), the
+//! page offers it too (2026-11-21, `web/signin.js`): the code flow with
+//! PKCE in the browser, the page's own address the redirect, the tokens in
+//! the page's memory only; the page's `connect-src` names the provider's
+//! origin, taken from the configured issuer ([`provider_origin`]).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -69,6 +75,11 @@ pub const FILES: &[(&str, &str, &str)] = &[
         "/gpu.js",
         "text/javascript; charset=utf-8",
         include_str!("../web/gpu.js"),
+    ),
+    (
+        "/signin.js",
+        "text/javascript; charset=utf-8",
+        include_str!("../web/signin.js"),
     ),
 ];
 
@@ -146,6 +157,30 @@ pub fn fragment_escape(text: &str) -> String {
         }
     }
     out
+}
+
+/// The origin (`scheme://host[:port]`) of a server's identity provider,
+/// for the web page's `connect-src` (2026-11-21): from its configured
+/// issuer only, HTTPS (plain HTTP only on this computer, as the server
+/// fetches it), a plain host name or address; none otherwise (the page
+/// then cannot reach the provider and says so).
+pub fn provider_origin(offer: &crate::sign_in::OidcOffer) -> Option<String> {
+    let (scheme, rest) = offer.issuer.split_once("://")?;
+    let host = offer.host();
+    let plain = !host.is_empty()
+        && host.len() <= 255
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-:[]".contains(&b));
+    if !plain || !rest.starts_with(host) {
+        return None;
+    }
+    let origin = format!("{scheme}://{host}");
+    match scheme {
+        "https" => Some(origin),
+        "http" if crate::sign_in::loopback_url(&origin) => Some(origin),
+        _ => None,
+    }
 }
 
 /// TLS for the web listener, with the server's certificate.
@@ -398,10 +433,19 @@ async fn connection(
     };
     match FILES.iter().find(|(p, _, _)| *p == path) {
         Some((_, media, body)) => {
-            let connect = match req.plain_host() {
+            let mut connect = match req.plain_host() {
                 Some(h) => format!("'self' wss://{h}"),
                 None => "'self'".into(),
             };
+            // The organisation's sign-in (2026-11-21): the page reads its
+            // provider's discovery document and exchanges the code at its
+            // token endpoint, so the policy names the provider's origin —
+            // taken from the server's configured issuer only, never from
+            // the request.
+            if let Some(origin) = entry.sign_in.as_ref().and_then(provider_origin) {
+                connect.push(' ');
+                connect.push_str(&origin);
+            }
             let headers = [
                 ("Content-Type", (*media).to_owned()),
                 (

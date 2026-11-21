@@ -9,6 +9,11 @@
 //! a token endpoint checking the code, the redirect, the client id and
 //! the PKCE verifier (S256), giving an ID token (with the nonce) and a
 //! refresh token. [`FakeProvider::browse`] plays the user's browser.
+//! The redirect may be a loopback port (OHL-Design) or the web viewer's
+//! page on this computer (`https://127.0.0.1:PORT/`, 2026-11-21); the
+//! origin given with [`FakeProvider::allow_origin`] is allowed (CORS) on
+//! its discovery document, keys and token endpoint, as a provider must
+//! for the web viewer.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -32,6 +37,8 @@ struct Book {
     refresh: HashMap<String, String>,
     subject: String,
     deny: bool,
+    /// The origin allowed from a browser (CORS).
+    origin: Option<String>,
 }
 
 /// The fake provider (see the module's notes).
@@ -120,6 +127,7 @@ impl FakeProvider {
                     continue;
                 }
                 let mut length = 0usize;
+                let mut origin = None;
                 loop {
                     let mut h = String::new();
                     if r.read_line(&mut h).is_err() || h.trim().is_empty() {
@@ -128,7 +136,19 @@ impl FakeProvider {
                     if let Some(v) = h.to_ascii_lowercase().strip_prefix("content-length:") {
                         length = v.trim().parse().unwrap_or(0);
                     }
+                    if let Some((name, v)) = h.split_once(':')
+                        && name.trim().eq_ignore_ascii_case("origin")
+                    {
+                        origin = Some(v.trim().to_owned());
+                    }
                 }
+                // CORS: the allowed origin only, as a provider does.
+                let cors = match (&origin, &b.lock().expect("the book").origin) {
+                    (Some(o), Some(allowed)) if o == allowed => {
+                        format!("Access-Control-Allow-Origin: {o}\r\nVary: Origin\r\n")
+                    }
+                    _ => String::new(),
+                };
                 let mut body = vec![0u8; length.min(1 << 16)];
                 let _ = r.read_exact(&mut body);
                 let target = line.split(' ').nth(1).unwrap_or_default().to_owned();
@@ -136,7 +156,7 @@ impl FakeProvider {
                 let json = |status: &str, v: serde_json::Value| {
                     let body = v.to_string();
                     format!(
-                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: \
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{cors}Content-Length: \
                          {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
                     )
@@ -152,7 +172,7 @@ impl FakeProvider {
                         }),
                     ),
                     "/keys" => format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n{cors}Content-Length: \
                          {}\r\nConnection: close\r\n\r\n{jwks}",
                         jwks.len()
                     ),
@@ -163,7 +183,8 @@ impl FakeProvider {
                         let mut book = b.lock().expect("the book");
                         let ok = q.get("response_type").map(String::as_str) == Some("code")
                             && q.get("code_challenge_method").map(String::as_str) == Some("S256")
-                            && redirect.starts_with("http://127.0.0.1:");
+                            && (redirect.starts_with("http://127.0.0.1:")
+                                || redirect.starts_with("https://127.0.0.1:"));
                         let location = if book.deny || !ok {
                             format!(
                                 "{redirect}?error=access_denied&error_description=not+allowed&state={state}"
@@ -249,6 +270,12 @@ impl FakeProvider {
             }
         });
         Self { issuer, book }
+    }
+
+    /// Allows `origin` (a web page's, `https://127.0.0.1:PORT`) from a
+    /// browser: CORS on its discovery document, keys and token endpoint.
+    pub fn allow_origin(&self, origin: &str) {
+        self.book.lock().expect("the book").origin = Some(origin.to_owned());
     }
 
     /// From now on the sign-in page refuses (the user denies).

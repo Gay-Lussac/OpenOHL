@@ -27,8 +27,14 @@
     <form id="join-form" autocomplete="off">
       <label>User name <input id="user" maxlength="64" required></label>
       <label>Access code <input id="code" required spellcheck="false"></label>
-      <button type="submit">Join</button>
+      <button type="submit" id="join-button">Join</button>
     </form>
+    <div id="org" hidden>
+      <h2>Sign in with your organisation</h2>
+      <p id="org-text" class="weak"></p>
+      <button type="button" id="org-button">Sign in with your organisation ↗</button>
+      <p id="org-state" class="weak"></p>
+    </div>
     <p id="join-error" class="error"></p>
   </section>
   <section id="views" hidden>
@@ -81,6 +87,7 @@
   </aside>
 </main>
 <script src="gpu.js"></script>
+<script src="signin.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

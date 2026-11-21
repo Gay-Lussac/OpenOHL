@@ -187,7 +187,7 @@ struct Discovery {
 }
 
 /// Whether `url` is plain HTTP to this computer.
-fn loopback_url(url: &str) -> bool {
+pub(crate) fn loopback_url(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("http://") else {
         return false;
     };

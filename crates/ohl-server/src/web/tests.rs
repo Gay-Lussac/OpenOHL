@@ -522,3 +522,344 @@ fn web_viewers_read_tiles_of_a_network() {
     drop(bob);
     server.stop();
 }
+
+/// The web page's sign-in with the organisation (2026-11-21), the browser
+/// played by Node.js running the page's own `signin.js` (when installed;
+/// else the same steps here) against the fake provider on the loopback:
+/// the page's security policy names the provider's origin — the configured
+/// issuer's, whatever the request says; the page's question answered; the
+/// provider allows the page's origin (CORS) and its address as the
+/// redirect; the code flow with PKCE; a forged answer, a code used twice
+/// and a sign-in too old refused; the join with the ID token a viewer of
+/// the network; the same sign-in under another user's name refused.
+#[cfg(feature = "network")]
+#[test]
+fn the_web_page_signs_in_with_the_organisation() {
+    use crate::fake_provider::FakeProvider;
+    use crate::network_tests as n;
+    use crate::sign_in::OidcOffer;
+    use ohl_store_pg::rights::RightsCommand as R;
+    let Some(t) = n::test_network("web-sign-in", 40) else {
+        return;
+    };
+    let idp = FakeProvider::start("00u-bob");
+    ohl_store_pg::Network::connect(&t.url)
+        .unwrap()
+        .rights_command(
+            "admin",
+            &R::MapIdentity {
+                issuer: idp.issuer.clone(),
+                subject: "00u-bob".into(),
+                user: "bob".into(),
+            },
+        )
+        .unwrap();
+    let oidc = Arc::new(
+        crate::oidc::Oidc::new(crate::oidc::OidcConfig::new(&idp.issuer, "ohl-web")).unwrap(),
+    );
+    let server = Server::start_network(
+        Options {
+            web: Some("127.0.0.1:0".parse().unwrap()),
+            ..n::local("abcd2345")
+        },
+        crate::network::NetOptions {
+            oidc: Some(oidc),
+            ..n::net_options(&t.url)
+        },
+    )
+    .unwrap();
+    let addr = server.web_addr.unwrap();
+    let fp = server.invitation.fingerprint;
+    let page = format!("https://{addr}");
+    let redirect = format!("{page}/");
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        // The policy names the configured issuer's origin, not the
+        // request's words.
+        let r = http(
+            addr,
+            fp,
+            &format!("GET / HTTP/1.1\r\nHost: {addr}\r\nOrigin: https://evil.example\r\n\r\n"),
+        )
+        .await;
+        let csp = r
+            .lines()
+            .find(|l| l.starts_with("Content-Security-Policy:"))
+            .unwrap();
+        assert!(
+            csp.contains(&format!("connect-src 'self' wss://{addr} {};", idp.issuer)),
+            "{csp}"
+        );
+        assert!(!csp.contains("evil"), "{csp}");
+        // The provider's answer comes back to the page's address: the page,
+        // no referrer, its sign-in script.
+        let back = http(
+            addr,
+            fp,
+            &format!("GET /?code=x&state=y HTTP/1.1\r\nHost: {addr}\r\n\r\n"),
+        )
+        .await;
+        assert!(back.starts_with("HTTP/1.1 200 OK"), "{back}");
+        assert!(back.contains("Referrer-Policy: no-referrer") && back.contains("signin.js"));
+        let js = http(addr, fp, "GET /signin.js HTTP/1.1\r\nHost: x\r\n\r\n").await;
+        assert!(js.starts_with("HTTP/1.1 200 OK") && js.contains("code_challenge_method"));
+        // The page's question.
+        let mut w = ws(addr, fp).await;
+        send(&mut w, &ClientMsg::SignInOptions { protocol: PROTOCOL }).await;
+        match next(&mut w).await {
+            Some(ServerMsg::SignIn(o)) => assert_eq!(
+                o.oidc,
+                Some(OidcOffer {
+                    issuer: idp.issuer.clone(),
+                    client_id: "ohl-web".into()
+                })
+            ),
+            other => panic!("{other:?}"),
+        }
+    });
+    // The provider allows the page's origin, and only it.
+    idp.allow_origin(&page);
+    let cors = |origin: &str| {
+        ureq::get(&format!("{}/.well-known/openid-configuration", idp.issuer))
+            .header("Origin", origin)
+            .call()
+            .unwrap()
+            .headers()
+            .get("access-control-allow-origin")
+            .map(|v| v.to_str().unwrap().to_owned())
+    };
+    assert_eq!(cors(&page).as_deref(), Some(page.as_str()));
+    assert_eq!(cors("https://evil.example"), None);
+    let token = node_sign_in(&idp.issuer, &redirect).unwrap_or_else(|| {
+        // No Node.js: the same steps as the page.
+        rust_sign_in(&idp.issuer, &redirect, &page)
+    });
+    rt.block_on(async {
+        let join = |user: &str| ClientMsg::Join {
+            protocol: PROTOCOL,
+            user: user.into(),
+            code: String::new(),
+            model: None,
+            since: None,
+            routes: Vec::new(),
+            tiles: Vec::new(),
+            held: false,
+            working_set: None,
+            see_as: None,
+            id_token: Some(token.clone()),
+        };
+        let mut w = ws(addr, fp).await;
+        send(&mut w, &join("bob")).await;
+        // Bob, signed in (a designer of the lines; the web client views
+        // only).
+        let m = next(&mut w).await.unwrap();
+        assert!(
+            matches!(&m, ServerMsg::Welcome { size: 0, peers, .. }
+                if peers.iter().any(|p| p.user == "bob")),
+            "{m:?}"
+        );
+        let info = until(&mut w, |m| matches!(m, ServerMsg::Network(_))).await;
+        assert!(matches!(info, ServerMsg::Network(i) if i.models.len() == t.codes.len()));
+        drop(w);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let mut w = ws(addr, fp).await;
+        send(&mut w, &join("carol")).await;
+        let m = next(&mut w).await.unwrap();
+        assert!(
+            matches!(&m, ServerMsg::Refused { reason } if reason.contains("another user's")),
+            "{m:?}"
+        );
+    });
+    server.stop();
+}
+
+/// The page's sign-in in Node.js, with the page's `signin.js`: the ID
+/// token (none: Node.js not installed).
+#[cfg(feature = "network")]
+fn node_sign_in(issuer: &str, redirect: &str) -> Option<String> {
+    const DRIVER: &str = r#"
+require(process.argv[1]);
+const [, , issuer, client, redirect] = process.argv;
+(async () => {
+  const S = globalThis.OhlSignIn;
+  const b = await S.begin({ issuer, client_id: client }, redirect, { user: "bob" });
+  const r = await fetch(b.url, { redirect: "manual" });
+  const loc = r.headers.get("location") || "";
+  if (!loc.startsWith(redirect + "?")) throw new Error("redirected to " + loc);
+  const ans = S.answer(new URL(loc).search);
+  const refused = async (f) => {
+    try { await f(); return null; } catch (e) { return e.message; }
+  };
+  const forged = await refused(() => S.finish(b.pending, { ...ans, state: "another" }));
+  const late = await refused(() =>
+    S.finish(b.pending, ans, b.pending.started + S.PENDING_MAX + 1));
+  const s = await S.finish(b.pending, ans);
+  const twice = await refused(() => S.finish(b.pending, ans));
+  const again = await S.renew(s);
+  console.log(JSON.stringify({
+    url: b.url, id_token: s.id_token, renewed: again.id_token, subject: s.subject,
+    user: b.pending.extra.user, forged, late, twice,
+    stale: S.stale(s), stale_later: S.stale(s, s.got + 51 * 60 * 1000),
+    kept: Object.keys(b.pending).sort(),
+  }));
+})().catch((e) => { console.error(e.message); process.exit(1); });
+"#;
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("web/signin.js");
+    let out = std::process::Command::new("node")
+        .arg("-e")
+        .arg(DRIVER)
+        .arg(&script)
+        .arg(issuer)
+        .arg("ohl-web")
+        .arg(redirect)
+        .output()
+        .ok()?;
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let url = v["url"].as_str().unwrap();
+    assert!(url.starts_with(&format!("{issuer}/authorize?")), "{url}");
+    for part in [
+        "response_type=code",
+        "client_id=ohl-web",
+        "code_challenge_method=S256",
+        "scope=openid",
+    ] {
+        assert!(url.contains(part), "{url}");
+    }
+    assert!(url.contains(&format!(
+        "redirect_uri={}",
+        redirect.replace(':', "%3A").replace('/', "%2F")
+    )));
+    assert_eq!(v["subject"], "00u-bob");
+    assert_eq!(v["user"], "bob");
+    assert!(v["forged"].as_str().unwrap().contains("not this sign-in's"));
+    assert!(v["late"].as_str().unwrap().contains("10 minutes"));
+    assert!(v["twice"].as_str().unwrap().contains("refused"));
+    assert_eq!(v["stale"], false);
+    assert_eq!(v["stale_later"], true);
+    // Kept across the provider's page: one-time values, no token.
+    assert_eq!(
+        v["kept"],
+        serde_json::json!([
+            "client_id",
+            "extra",
+            "issuer",
+            "nonce",
+            "redirect",
+            "started",
+            "state",
+            "token_endpoint",
+            "verifier"
+        ])
+    );
+    assert_ne!(v["renewed"], v["id_token"]);
+    Some(v["id_token"].as_str().unwrap().to_owned())
+}
+
+/// The page's steps in Rust (Node.js not installed): discovery, the code
+/// flow with PKCE and the page's address as the redirect, the code
+/// exchanged from the page's origin.
+#[cfg(feature = "network")]
+fn rust_sign_in(issuer: &str, redirect: &str, origin: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let b64url = |d: &[u8]| {
+        crate::base64::encode(d)
+            .trim_end_matches('=')
+            .replace('+', "-")
+            .replace('/', "_")
+    };
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .max_redirects(0)
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let d: serde_json::Value = agent
+        .get(&format!("{issuer}/.well-known/openid-configuration"))
+        .header("Origin", origin)
+        .call()
+        .unwrap()
+        .body_mut()
+        .read_json()
+        .unwrap();
+    let verifier = crate::random_code(64);
+    let url = format!(
+        "{}?response_type=code&client_id=ohl-web&redirect_uri={}&scope=openid&state=s1&nonce=n1\
+         &code_challenge={}&code_challenge_method=S256",
+        d["authorization_endpoint"].as_str().unwrap(),
+        super::fragment_escape(redirect),
+        b64url(&Sha256::digest(verifier.as_bytes()))
+    );
+    let r = agent.get(&url).call().unwrap();
+    let location = r.headers().get("location").unwrap().to_str().unwrap();
+    assert!(
+        location.starts_with(&format!("{redirect}?code=")),
+        "{location}"
+    );
+    let code = location
+        .split("code=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
+    let mut r = agent
+        .post(d["token_endpoint"].as_str().unwrap())
+        .header("Origin", origin)
+        .send_form([
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", redirect),
+            ("client_id", "ohl-web"),
+            ("code_verifier", verifier.as_str()),
+        ])
+        .unwrap();
+    assert_eq!(
+        r.headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some(origin)
+    );
+    let body: serde_json::Value = r.body_mut().read_json().unwrap();
+    body["id_token"].as_str().unwrap().to_owned()
+}
+
+/// The provider's origin for the page's policy: the issuer's scheme and
+/// host only; HTTPS, or plain HTTP on this computer; none for anything
+/// else.
+#[test]
+fn provider_origins_for_the_page() {
+    let o = |issuer: &str| {
+        super::provider_origin(&crate::sign_in::OidcOffer {
+            issuer: issuer.into(),
+            client_id: "c".into(),
+        })
+    };
+    assert_eq!(
+        o("https://id.example.org/realms/grid").as_deref(),
+        Some("https://id.example.org")
+    );
+    assert_eq!(
+        o("https://id.example.org:8443").as_deref(),
+        Some("https://id.example.org:8443")
+    );
+    assert_eq!(
+        o("http://127.0.0.1:5000").as_deref(),
+        Some("http://127.0.0.1:5000")
+    );
+    for bad in [
+        "http://id.example.org",
+        "ftp://id.example.org",
+        "https://id.example.org; script-src *",
+        "https://",
+        "id.example.org",
+        "https://a b",
+        "https://user@id.example.org",
+    ] {
+        assert_eq!(o(bad), None, "{bad}");
+    }
+}

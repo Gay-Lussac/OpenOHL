@@ -14,6 +14,10 @@
 // tiles around its view — light packages of the context, each at its
 // revision — and draws them; a change touching a tile it holds makes it
 // read that tile again. A viewer of any size.
+//
+// A user joins with their access code, or — when the network's server
+// takes its organisation's sign-in — signed in with the organisation in
+// this tab (signin.js; the tokens in this page's memory only).
 "use strict";
 
 (() => {
@@ -75,6 +79,10 @@
     tileTimer: 0,
     sceneTimer: 0,
     last: null,
+    // The server's organisation sign-in ({issuer, client_id}) and the
+    // sign-in made (its tokens in memory only; signin.js).
+    offer: null,
+    signIn: null,
   };
 
   // ---- small helpers ------------------------------------------------
@@ -143,7 +151,9 @@
     return out;
   }
 
-  function connect(user, code) {
+  // Joins as `user` with access code `code`, or — `code` empty, signed in
+  // with the organisation — with the ID token kept in memory.
+  function connect(user, code, idToken) {
     if (state.ws) state.ws.close();
     $("join-error").textContent = "";
     setStatus("connecting…");
@@ -151,7 +161,10 @@
     const ws = new WebSocket(`wss://${location.host}/ws`);
     state.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, user, code }));
+      const first = idToken
+        ? { type: "join", protocol: PROTOCOL, user, code: "", id_token: idToken }
+        : { type: "hello", protocol: PROTOCOL, user, code };
+      ws.send(JSON.stringify(first));
     };
     ws.onmessage = (e) => {
       let msg;
@@ -183,6 +196,154 @@
       state.tiles.clear();
       state.dirty.clear();
     };
+  }
+
+  // ---- signing in with the organisation (2026-11-21) -----------------
+  //
+  // The server says whether it takes its organisation's sign-in (the
+  // `sign_in_options` question, asked on a WebSocket of its own); the
+  // sign-in itself is the code flow with PKCE in this tab (signin.js), the
+  // page's own address the redirect. Only the one-time values of the
+  // sign-in under way (verifier, state, nonce: no token) are kept in the
+  // tab's session storage across the provider's page, and removed as soon
+  // as the page is back; the ID token and the refresh token stay in this
+  // page's memory (`state.signIn`), gone when the tab closes or reloads.
+
+  const PENDING_KEY = "ohl.signin.pending";
+
+  function redirectUri() {
+    return `${location.origin}/`;
+  }
+
+  function askSignInOptions() {
+    let ws;
+    try {
+      ws = new WebSocket(`wss://${location.host}/ws`);
+    } catch (e) {
+      return;
+    }
+    ws.onopen = () => ws.send(JSON.stringify({ type: "sign_in_options", protocol: PROTOCOL }));
+    ws.onmessage = (e) => {
+      let msg;
+      try {
+        msg = JSON.parse(e.data);
+      } catch (err) {
+        return;
+      }
+      if (msg.type === "sign_in" && msg.oidc && msg.oidc.issuer && msg.oidc.client_id) {
+        state.offer = msg.oidc;
+        let host = msg.oidc.issuer;
+        try {
+          host = new URL(msg.oidc.issuer).host;
+        } catch (err) {
+          // Named as given.
+        }
+        $("org-text").textContent =
+          `This network also takes your organisation's sign-in (${host}).`;
+        $("org").hidden = false;
+      }
+      ws.close();
+    };
+    // A server of before answers nothing: invitations only.
+    ws.onerror = () => {};
+  }
+
+  function showSignedIn() {
+    const s = state.signIn;
+    $("org").hidden = !state.offer && !s;
+    $("code").required = !s;
+    $("join-button").textContent = s ? "Join with your sign-in" : "Join";
+    if (s) {
+      $("org-state").textContent = `Signed in as ${s.name || s.subject}.`;
+      $("org-state").className = "";
+      $("org-button").textContent = "Sign in again ↗";
+    }
+  }
+
+  function orgError(text) {
+    $("org").hidden = false;
+    $("org-state").textContent = text;
+    $("org-state").className = "error";
+  }
+
+  async function startSignIn() {
+    if (!state.offer) return;
+    $("org-state").className = "weak";
+    $("org-state").textContent = "Opening your organisation's sign-in page…";
+    let started;
+    try {
+      started = await OhlSignIn.begin(state.offer, redirectUri(), {
+        user: $("user").value.trim(),
+      });
+    } catch (e) {
+      orgError(`Could not start the sign-in: ${e.message}`);
+      return;
+    }
+    try {
+      sessionStorage.setItem(PENDING_KEY, JSON.stringify(started.pending));
+    } catch (e) {
+      orgError(
+        "This browser refuses to keep the sign-in's one-time values while you are on your " +
+          "organisation's page: allow this page's site data, or join with your invitation.",
+      );
+      return;
+    }
+    location.assign(started.url);
+  }
+
+  // Back from the provider's page: its answer in the address.
+  async function finishSignIn() {
+    const ans = OhlSignIn.answer(location.search);
+    if (!ans) return false;
+    let pending = null;
+    try {
+      pending = JSON.parse(sessionStorage.getItem(PENDING_KEY) || "null");
+      sessionStorage.removeItem(PENDING_KEY);
+    } catch (e) {
+      pending = null;
+    }
+    // The code leaves the address bar and the tab's history at once.
+    history.replaceState(null, "", location.pathname);
+    if (!pending) {
+      orgError("No sign-in was under way in this tab: sign in again.");
+      return true;
+    }
+    if (pending.extra && pending.extra.user) $("user").value = pending.extra.user;
+    state.offer = state.offer || { issuer: pending.issuer, client_id: pending.client_id };
+    $("org-state").className = "weak";
+    $("org-state").textContent = "Finishing the sign-in…";
+    $("org").hidden = false;
+    try {
+      state.signIn = await OhlSignIn.finish(pending, ans);
+    } catch (e) {
+      orgError(`Not signed in: ${e.message}`);
+      return true;
+    }
+    showSignedIn();
+    const user = $("user").value.trim();
+    if (user) joinSignedIn(user);
+    return true;
+  }
+
+  // Joins with the sign-in, renewed first when older than 50 minutes.
+  async function joinSignedIn(user) {
+    let s = state.signIn;
+    if (OhlSignIn.stale(s)) {
+      try {
+        s = await OhlSignIn.renew(s);
+      } catch (e) {
+        s = null;
+      }
+      if (!s) {
+        state.signIn = null;
+        showSignedIn();
+        $("org-button").textContent = "Sign in with your organisation ↗";
+        orgError("Your sign-in is more than 50 minutes old and could not be renewed: sign in again.");
+        return;
+      }
+      state.signIn = s;
+    }
+    connect(user, "", s.id_token);
   }
 
   function send(msg) {
@@ -1350,7 +1511,9 @@
     const user = $("user").value.trim();
     const code = $("code").value.trim();
     if (user && code) connect(user, code);
+    else if (user && state.signIn) joinSignedIn(user);
   });
+  $("org-button").addEventListener("click", startSignIn);
 
   if (window.ResizeObserver) new ResizeObserver(resize).observe($("stage"));
   else window.addEventListener("resize", resize);
@@ -1370,6 +1533,8 @@
     const f = fragment();
     $("user").value = f.user || stored("ols.user", "");
     $("code").value = f.code || "";
+    askSignInOptions();
+    if (await finishSignIn()) return;
     if ($("user").value && $("code").value) connect($("user").value, $("code").value);
   }
 
