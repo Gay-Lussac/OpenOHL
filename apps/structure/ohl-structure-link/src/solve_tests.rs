@@ -158,3 +158,43 @@ fn nothing_better_is_said() {
         assert!(s.why_none.is_some());
     }
 }
+
+/// Two pieces of a horizontal in line through a joint, not given one part,
+/// with their design data's bolts (the owner's picture of bolts joining
+/// nothing): the layout alone leaves the horizontal by hand; Solve the
+/// clashes confirms the pieces one part (the layout's proposal, marked) and
+/// the joint is laid out with nothing left.
+#[test]
+fn pieces_in_line_with_bolts_joining_nothing_are_confirmed_one_part() {
+    let text = crate::bent_plate_tests::OVER.replace(
+        "section = \"EA-100x10\"\norientation = \"y+z-\"\ndesign = { class = \"bracing\" }",
+        "section = \"EA-100x10\"\norientation = \"y+z-\"\ndesign = { class = \"bracing\", \
+         bolts = { diameter = \"16 mm\", count = 4 } }",
+    );
+    let lib = crate::bent_plate_tests::library();
+    let bolts = Default::default();
+    let s = settings();
+    let sol = solve_joint(
+        &text,
+        &SolveAsk {
+            library: &lib,
+            bolts: &bolts,
+            settings: &s,
+            preset_fields: BTreeMap::new(),
+            leg_bolt: None,
+            joint: "N2".to_owned(),
+        },
+    )
+    .unwrap();
+    let plain = &sol.tried[0];
+    assert!(plain.counts.left > 0, "{:?}", sol.tried);
+    let best = sol.best().unwrap_or_else(|| panic!("{:?}", sol.why_none));
+    assert_eq!(best.counts.left, 0, "{:?}", best);
+    assert!(
+        best.effects
+            .iter()
+            .any(|e| e.kind == EffectKind::Confirmed && e.marked()),
+        "{:?}",
+        best.effects
+    );
+}

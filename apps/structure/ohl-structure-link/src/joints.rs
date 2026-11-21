@@ -1531,6 +1531,14 @@ struct PlateSeat {
     /// 2026-11-20); else (the joint's leg worked out) a plate at a built-up
     /// leg stays through the work point, as before.
     on_given: bool,
+    /// Both its faces used (O44 L11, the owner's picture: "both diagonals
+    /// could be on the same plate just bolted on different sides"): the
+    /// members on its leg's outer face lie on its front, these — which sit
+    /// on the inner face side of that flange — on its back, past the
+    /// flange's edge (the plate's back is the flange's outer face there).
+    /// Empty: all on one face (a plate on the inner face where all sit
+    /// inside, as before).
+    back: std::collections::BTreeSet<String>,
 }
 
 /// The plates of a joint by id.
@@ -1618,6 +1626,7 @@ fn plate_seats(
                     thickness: p.thickness.si(),
                     lift: Some((lift, at)),
                     on_given,
+                    back: Default::default(),
                 },
             );
             continue;
@@ -1643,6 +1652,53 @@ fn plate_seats(
         let Some(n) = given.filter(|c| norm(*c) > 1e-9).or(spanned) else {
             continue;
         };
+        // (L11) Its members' sides of its leg's flange: some on the flange's
+        // outer side and some on its inner side (each's own side, where its
+        // bolts' heads are, against the flange's outward normal) — both of
+        // its faces used, those on the inner side on its back.
+        let mut back = std::collections::BTreeSet::new();
+        if let Some(q) = leg
+            .as_ref()
+            .and_then(|l| all.iter().find(|a| &a.member == l))
+            .and_then(|h| h.profile.as_ref())
+            .filter(|q| q.angle.is_some())
+        {
+            // The flange the plate lies on (its normal nearest the plate's),
+            // its normal out of the angle (the flange along y faces -z, the
+            // one along z faces -y).
+            let out = if dot(n, q.axes[2]).abs() >= dot(n, q.axes[1]).abs() {
+                scale(q.axes[2], -1.0)
+            } else {
+                scale(q.axes[1], -1.0)
+            };
+            // A member's own side: of its legs, the one lying along the
+            // flange (its normal nearest the flange's), that normal (the
+            // leg along y's own side is +z, along z's +y).
+            let own = |a: &Arrival| {
+                if leg.as_deref() == Some(a.member.as_str()) {
+                    return None;
+                }
+                let p = a.profile.as_ref().filter(|p| p.angle.is_some())?;
+                Some(if dot(p.axes[2], out).abs() >= dot(p.axes[1], out).abs() {
+                    p.axes[2]
+                } else {
+                    p.axes[1]
+                })
+            };
+            {
+                let sides: Vec<(&str, f64)> = on
+                    .iter()
+                    .filter_map(|a| own(a).map(|nb| (a.member.as_str(), dot(nb, out))))
+                    .collect();
+                if sides.iter().any(|x| x.1 > 0.5) && sides.iter().any(|x| x.1 < -0.5) {
+                    back = sides
+                        .iter()
+                        .filter(|x| x.1 < -0.5)
+                        .map(|x| x.0.to_owned())
+                        .collect();
+                }
+            }
+        }
         out.insert(
             p.id.clone(),
             PlateSeat {
@@ -1651,6 +1707,7 @@ fn plate_seats(
                 thickness: p.thickness.si(),
                 lift: None,
                 on_given,
+                back,
             },
         );
     }
@@ -1881,6 +1938,22 @@ fn seat(a: &Arrival, all: &[Arrival], seats: &PlateSeats, parts: bool) -> [f64; 
             b.onto = Valued::of(l.clone(), Source::WorkedOut);
             seat(&b, all, &PlateSeats::new(), s.on_given)
         });
+        // (L11) On the plate's back (both its faces used): seated on the
+        // flange's inner face, then out by the flange's thickness — its leg
+        // against the plate's back, in the flange's outer face's plane,
+        // past the flange's edge.
+        if s.back.contains(&a.member)
+            && let (Some(o), Some(t)) = (
+                on_leg.filter(|o| norm(*o) > 0.0),
+                s.leg
+                    .as_ref()
+                    .and_then(|l| all.iter().find(|b| &b.member == l))
+                    .and_then(|h| h.profile.as_ref())
+                    .and_then(|q| q.angle.map(|g| g.t).or(q.part_angles.first().map(|g| g.t))),
+            )
+        {
+            return add(o, scale(nb, -t));
+        }
         return match on_leg {
             Some(o) if norm(o) > 0.0 => add(o, scale(nb, s.thickness)),
             _ => {
@@ -2960,7 +3033,12 @@ fn plate(
     short: bool,
 ) -> PlateDetail {
     let gathered = bolted_onto(arrivals, &p.id);
-    let onto: Vec<&Arrival> = gathered.iter().map(|a| a.as_ref()).collect();
+    let mut onto: Vec<&Arrival> = gathered.iter().map(|a| a.as_ref()).collect();
+    // (L11) Both faces used: the members on its front first (its plane and
+    // which way it is drawn through its thickness are theirs).
+    if let Some(s) = seat.filter(|s| !s.back.is_empty()) {
+        onto.sort_by_key(|a| s.back.contains(&a.member));
+    }
     let mut members: Vec<String> = Vec::new();
     for a in &onto {
         if !members.contains(&a.member) {

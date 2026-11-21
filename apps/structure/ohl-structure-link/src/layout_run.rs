@@ -1491,6 +1491,8 @@ fn lay_out_once(
                     let scratch = std::cell::RefCell::new(Guard {
                         changed: BTreeMap::new(),
                         plain: guard.borrow().plain.clone(),
+                        l11: BTreeMap::new(),
+                        no_l11: guard.borrow().no_l11.clone(),
                     });
                     let turns: BTreeMap<&String, f64> = t.iter().map(|(m, x)| (m, *x)).collect();
                     let p = planned_in(&turns, &settings, &scratch)?;
@@ -1505,6 +1507,7 @@ fn lay_out_once(
                     }
                     // (As if planned with the run's guard.)
                     guard.borrow_mut().changed.extend(g.changed);
+                    guard.borrow_mut().l11.extend(g.l11);
                     first = Some(p);
                 }
                 None => first = Some(base),
@@ -1780,6 +1783,7 @@ fn lay_out_once(
                     plated,
                     direct,
                     guard.borrow().plain.contains(joint),
+                    guard.borrow().no_l11.contains(joint),
                 ),
             );
             p.joins = joins
@@ -1868,6 +1872,23 @@ fn lay_out_once(
                         back.push(o.joint.clone());
                     }
                 }
+                // L11's guard: a joint its steps changed laid out with fewer
+                // ends than its plan without them lays out — planned again
+                // without them.
+                let mut back11: Vec<String> = Vec::new();
+                for o in &outcomes {
+                    let Some(&n) = g.l11.get(&o.joint) else {
+                        continue;
+                    };
+                    let laid = if o.written { o.plan.ends.len() } else { 0 };
+                    if laid < n && !g.no_l11.contains(&o.joint) && !back.contains(&o.joint) {
+                        back11.push(o.joint.clone());
+                    }
+                }
+                for j in &back11 {
+                    g.no_l11.insert(j.clone());
+                    touched.insert(j.clone());
+                }
                 for j in &back {
                     g.plain.insert(j.clone());
                     touched.insert(j.clone());
@@ -1880,7 +1901,7 @@ fn lay_out_once(
                         }
                     }
                 }
-                if !back.is_empty() {
+                if !back.is_empty() || !back11.is_empty() {
                     drop(g);
                     if settings.onto_search {
                         (around_details, around_model) = crate::joints::joint_details_and_model(
@@ -2291,7 +2312,8 @@ fn plans_of(
     let in_plan = settings.more_plates;
     for j in &joints {
         let plain = g.plain.contains(&j.id);
-        let own = |plain: bool| {
+        let no_l11 = g.no_l11.contains(&j.id);
+        let own_with = |plain: bool, no_l11: bool| {
             crate::joint_layout::plan_joint_ctx(
                 j,
                 settings,
@@ -2306,12 +2328,14 @@ fn plans_of(
                     &BTreeSet::new(),
                     &BTreeSet::new(),
                     plain,
+                    no_l11,
                 ),
             )
         };
+        let own = |plain: bool| own_with(plain, no_l11);
         let mut p = match kinds
             .get(&j.id)
-            .filter(|_| !plain)
+            .filter(|_| !plain && !no_l11)
             .and_then(|l| planned.get(&l.of).map(|p| (l, p)))
         {
             Some((l, rep)) => {
@@ -2323,12 +2347,28 @@ fn plans_of(
             }
             None => {
                 let p = own(plain);
-                if !plain {
+                if !plain && !no_l11 {
                     planned.insert(j.id.clone(), p.clone());
                 }
                 p
             }
         };
+        // L11: the plan without its steps, for the guard (only where one of
+        // them said something here).
+        if !plain
+            && !no_l11
+            && (settings.plate_shift || settings.both_faces)
+            && p.notes.iter().any(|n| {
+                n.contains("within the longest pull-back")
+                    || n.contains("both faces of one plate")
+                    || n.contains("one part, their flanges in one plane")
+            })
+        {
+            let pre = own_with(false, true);
+            if pre.ends != p.ends || pre.plates != p.plates {
+                g.l11.insert(j.id.clone(), pre.ends.len());
+            }
+        }
         // L1 (b, c in the plan): today's plan of the joint, for the guard.
         if in_plan && !plain {
             let today = own(true);
@@ -2356,12 +2396,14 @@ fn ctx_of(
     plated: &BTreeSet<String>,
     direct: &BTreeSet<String>,
     plain: bool,
+    no_l11: bool,
 ) -> crate::joint_layout::PlanCtx {
     crate::joint_layout::PlanCtx {
         plated: plated.clone(),
         direct: direct.clone(),
         body: settings.direct_first && order.zone_of(j) == crate::Zone::Body,
         plain,
+        no_l11,
     }
 }
 
@@ -2377,6 +2419,12 @@ struct Guard {
     /// The joints planned as today (L1 b and c off in the plan, d's choice
     /// taken back).
     plain: BTreeSet<String>,
+    /// L11: the joints whose plan L11's steps changed, with the ends their
+    /// plan without them lays out; a joint laid out with fewer ends after
+    /// the clash rounds is planned again without them ([`Guard::no_l11`]).
+    l11: BTreeMap<String, usize>,
+    /// L11: the joints planned without L11's steps.
+    no_l11: BTreeSet<String>,
 }
 
 /// Join `x` at joint `j` written into `doc` (its end's `kind` and `onto`,

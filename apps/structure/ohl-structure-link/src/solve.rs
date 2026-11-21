@@ -251,30 +251,63 @@ pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
             hand,
         })
     };
-    let run_on = |text: &str, replace: bool| -> Result<LayoutRun, String> {
-        crate::lay_out(
-            text,
-            &RunAsk {
-                library: ask.library,
-                bolts: ask.bolts,
-                settings: ask.settings,
-                preset_fields: ask.preset_fields.clone(),
-                joints: Some(BTreeSet::from([joint.clone()])),
-                replace_hand: replace,
-            },
-        )
-    };
+    let run_on =
+        |text: &str, replace: bool, settings: &LayoutSettings| -> Result<LayoutRun, String> {
+            crate::lay_out(
+                text,
+                &RunAsk {
+                    library: ask.library,
+                    bolts: ask.bolts,
+                    settings,
+                    preset_fields: ask.preset_fields.clone(),
+                    joints: Some(BTreeSet::from([joint.clone()])),
+                    replace_hand: replace,
+                },
+            )
+        };
     // 1. The layout, values given by hand kept, then replaced; 2. the same
     // with the layout's proposals at the joint confirmed (marked).
     let bases = bases_of(text, ask, &t0, &joint)?;
+    // (L11: an end moved sideways to pass the flange on a plate, off in a
+    // run, tried here too where the layout leaves something.)
+    let shifted = LayoutSettings {
+        plate_shift: true,
+        ..ask.settings.clone()
+    };
     for b in &bases {
         for replace in [false, true] {
-            let run = run_on(&b.text, replace)?;
-            if run.text == text {
+            let run = run_on(&b.text, replace, ask.settings)?;
+            let mut left_some = false;
+            if run.text != text {
+                let label = format!(
+                    "{}the layout of the joint{}",
+                    b.prefix,
+                    if replace {
+                        ", values given by hand replaced"
+                    } else {
+                        ""
+                    }
+                );
+                let c = judge(
+                    label,
+                    run.text.clone(),
+                    &b.confirms,
+                    &[],
+                    Some(&run),
+                    &allowed,
+                )?;
+                left_some = c.counts.clashes + c.counts.problems + c.counts.left > 0;
+                tried.push(c);
+            }
+            if ask.settings.plate_shift || !(left_some || run.text == text) {
+                continue;
+            }
+            let run2 = run_on(&b.text, replace, &shifted)?;
+            if run2.text == text || run2.text == run.text {
                 continue;
             }
             let label = format!(
-                "{}the layout of the joint{}",
+                "{}the layout of the joint{}, ends moved sideways to pass the flange on a plate",
                 b.prefix,
                 if replace {
                     ", values given by hand replaced"
@@ -284,10 +317,10 @@ pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
             );
             tried.push(judge(
                 label,
-                run.text.clone(),
+                run2.text.clone(),
                 &b.confirms,
                 &[],
-                Some(&run),
+                Some(&run2),
                 &allowed,
             )?);
         }

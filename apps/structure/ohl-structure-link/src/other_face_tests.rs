@@ -52,7 +52,7 @@ fn k(n: usize) -> String {
     )
 }
 
-fn lib_wide() -> crate::SectionLibrary {
+pub(crate) fn lib_wide() -> crate::SectionLibrary {
     crate::SectionLibrary::parse(&format!(
         "{}\n[[section]]\nid = \"EA-150x13\"\nname = \"Equal angle 150 × 13 (invented)\"\n\
          shape = \"equal_angle\"\nh = \"150 mm\"\nt = \"13 mm\"\nr = \"16 mm\"\n\
@@ -70,7 +70,7 @@ fn lib_wide() -> crate::SectionLibrary {
 /// The invented joint: a leg 150 × 13 running through N2 (one part),
 /// diagonals 65 × 5 from (`a`, 0, 0) and (`a`, 0, 6) with `n` bolts, and
 /// (`h`) a horizontal to (`a`, 0, 3).
-fn face_joint(a: f64, n: usize, h: bool) -> String {
+pub(crate) fn face_joint(a: f64, n: usize, h: bool) -> String {
     let mut t = crate::joint_layout_tests::K
         .replace("section = \"EA-61x7\"\norientation = \"x+y+\"", "section = \"EA-150x13\"\norientation = \"x+y+\"")
         .replace("section = \"EA-61x7\"", "section = \"EA-65x5\"")

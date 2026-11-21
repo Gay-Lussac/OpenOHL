@@ -296,6 +296,26 @@ pub struct LayoutSettings {
     /// not laid out whole — that member by hand, said with why. On by
     /// default; off: as before (such a joint could count as whole).
     pub nothing_joined: bool,
+    /// L11, 2026-11-21 (the owner, at a leg splice: "the diagonals need a
+    /// horizontal shift and a pull back as well as a plate"): an end going
+    /// onto a plate whose bolts would need more than the longest pull-back
+    /// to pass the flange's edge moved sideways — the least whole
+    /// millimetre within the shift limit (its `shift`, an eccentricity the
+    /// analysis takes) — so that they pass it within the pull-back, clear of
+    /// the plane's other ends as they lie; kept at a joint only where its
+    /// plan lays out more ends, or as many on fewer plates. **Off by default
+    /// in a run** (measured on a sample of the private real towers: alone it
+    /// laid out fewer ends at more joints than it gained); Joint details'
+    /// Solve the clashes tries it per joint ([`crate::solve`]), where the
+    /// joint's outcome is weighed.
+    pub plate_shift: bool,
+    /// L11, 2026-11-21 (the owner's picture: "both diagonals could be on
+    /// the same plate just bolted on different sides"): an end the plan puts
+    /// on a plate in its own plane whose leg bolted lies flat in a flange's
+    /// plane on its inner side, leaving over the heel, on the back of the
+    /// flat plate on that flange's outer face instead, past the heel
+    /// ([`crate::both_faces`]). On by default; off: as before.
+    pub both_faces: bool,
 }
 
 impl Default for LayoutSettings {
@@ -332,6 +352,8 @@ impl Default for LayoutSettings {
             other_face: true,
             face_pattern: true,
             nothing_joined: true,
+            plate_shift: false,
+            both_faces: true,
         }
     }
 }
@@ -2089,6 +2111,11 @@ pub(crate) struct PlanCtx {
     /// built-up member): the run's guard found the joint laid out worse
     /// with them.
     pub plain: bool,
+    /// Planned without L11's steps (the end moved to pass the flange on a
+    /// plate, one plate per plane, both faces of one plate): the run's
+    /// guard found the joint laid out with fewer ends after writing with
+    /// them than without.
+    pub no_l11: bool,
 }
 
 /// How many faces bolted directly are tried on a plate per joint (L1 b,
@@ -2102,6 +2129,40 @@ pub const PLATE_TRIES: usize = 4;
 /// one laying out more of the joint's ends is taken — direct bolting wins
 /// a tie (the plate's penalty).
 pub(crate) fn plan_joint_ctx(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+    floors: &BTreeMap<String, (f64, String)>,
+    limit: usize,
+    ctx: &PlanCtx,
+) -> JointPlan {
+    // L11: planned as before (the run's guard, [`PlanCtx::plain`]): without
+    // the end moved to pass the flange and the plates' both faces — so that
+    // a joint laid out with fewer ends after writing than the plan without
+    // them is planned again without them (the owner: kept only where
+    // better).
+    let plain;
+    let s = if (ctx.plain || ctx.no_l11) && (s.plate_shift || s.both_faces) {
+        plain = LayoutSettings {
+            plate_shift: false,
+            both_faces: false,
+            ..s.clone()
+        };
+        &plain
+    } else {
+        s
+    };
+    let mut plan = plan_joint_searched(j, s, edge, except, floors, limit, ctx);
+    // L11: both faces of one plate (as many ends, fewer plates).
+    if s.both_faces {
+        crate::both_faces::both_faces(j, &mut plan, s);
+    }
+    plan
+}
+
+/// [`plan_joint_ctx`] before both faces of one plate.
+fn plan_joint_searched(
     j: &JointDetail,
     s: &LayoutSettings,
     edge: EdgeRule<'_>,
@@ -2130,6 +2191,24 @@ pub(crate) fn plan_joint_ctx(
             if !better(&plan, &p0) {
                 plan = p0;
                 direct = d0;
+            }
+        }
+        // L11: the ends moved to pass the flange on a plate kept the same
+        // way (only where some end was so moved).
+        if s.plate_shift
+            && plan
+                .notes
+                .iter()
+                .any(|n| n.contains("within the longest pull-back"))
+        {
+            let s1 = LayoutSettings {
+                plate_shift: false,
+                ..s.clone()
+            };
+            let (p1, d1) = plan_once(j, &s1, edge, except, floors, limit, ctx, &BTreeSet::new());
+            if !better(&plan, &p1) {
+                plan = p1;
+                direct = d1;
             }
         }
         (plan, direct)
@@ -2774,6 +2853,27 @@ fn plan_once(
                 if need > p.cut + 1e-9 {
                     let limit = (s.pull_back * x.tilted.as_ref().map_or(1.0, |t| t.lu))
                         .min(x.half - bolt_run(x));
+                    // L11: moved sideways so that its bolts pass the flange
+                    // within the pull-back, where the shift limit allows.
+                    if need > limit + 1e-9
+                        && s.plate_shift
+                        && let Some(q) = {
+                            let others: Vec<Placed> =
+                                orig.iter().filter(|q| q.k != p.k).cloned().collect();
+                            shift_past_toe(&strips, &p, &others, s, limit)
+                        }
+                    {
+                        plan.notes.push(format!(
+                            "{}: moved {} sideways so that on its plate its bolts pass the \
+                             flange of {} within the longest pull-back: an eccentricity, its \
+                             shift",
+                            x.member,
+                            mm_text((q.moved - concentric_of(x)).abs()),
+                            x.host
+                        ));
+                        kept.push(q);
+                        continue;
+                    }
                     if need > limit + 1e-9 {
                         let why = format!(
                             "{}: on a plate its bolts need it pulled back {:.0} mm to pass the \
@@ -5220,6 +5320,51 @@ fn past_toe(x: &Strip, p: &Placed, gap: f64) -> f64 {
         need = need.max(c);
     }
     ceil_to(need, 0.001)
+}
+
+/// L11 ([`LayoutSettings::plate_shift`]): end `p` going onto a plate,
+/// moved sideways by the least whole millimetre within the shift limit so
+/// that its bolts pass the flange by the nut and the gap within `limit`
+/// (the longest pull-back), clear of the plane's ends `others` as they lie
+/// and of the fixed steel, keeping the bolts of a member left as it is that
+/// bolts onto it; none where nothing within the limit does (or its cut or
+/// shift is given by hand, or it is off its flange or over the heel).
+fn shift_past_toe(
+    strips: &[Strip],
+    p: &Placed,
+    others: &[Placed],
+    s: &LayoutSettings,
+    limit: f64,
+) -> Option<Placed> {
+    let x = &strips[p.k];
+    if x.shift_per.is_none()
+        || x.hand_shift
+        || x.hand_cut.is_some()
+        || x.tilted.is_some()
+        || x.over.is_some()
+    {
+        return None;
+    }
+    let floor = x.floor.as_ref().map_or(0.0, |f| f.0);
+    let conc = concentric_of(x);
+    let steps = (s.shift_limit * 1000.0 + 1e-9).floor() as i64;
+    for n in 1..=steps {
+        for sign in [1.0, -1.0] {
+            let moved = conc + sign * n as f64 * 0.001;
+            let (clear, _) = cut_need(strips, p.k, others, s, moved);
+            let cut = clear.max(floor);
+            let c = past_toe(x, &Placed { k: p.k, cut, moved }, s.gap);
+            let c = ceil_to(c.max(cut), 0.001);
+            if c.is_finite() && c <= limit + 1e-9 && partner_misfit(x, c, moved, s).is_none() {
+                return Some(Placed {
+                    k: p.k,
+                    cut: c,
+                    moved,
+                });
+            }
+        }
+    }
+    None
 }
 
 /// `lo` and `hi` narrowed to the cuts `c` with `a ≤ v0 + c·dv ≤ b`.

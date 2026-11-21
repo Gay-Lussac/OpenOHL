@@ -197,6 +197,15 @@ impl LayoutWindow {
             // L10 (2026-11-21): a joint with an end's bolts drawn that join
             // nothing is not laid out whole (that member by hand, said).
             nothing_joined: true,
+            // L11 (2026-11-21): an end going onto a plate moved sideways
+            // within the shift limit so that its bolts pass the flange within
+            // the longest pull-back — off in a run (measured: alone it lost
+            // more ends than it gained); Solve the clashes tries it per joint.
+            plate_shift: false,
+            // L11: an end on a plate in its own plane lying flat in a
+            // flange's plane on its inner side, past the heel, on the back of
+            // that flange's flat plate instead (both faces of one plate).
+            both_faces: true,
         }
     }
 
