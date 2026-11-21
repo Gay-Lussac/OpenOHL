@@ -1414,7 +1414,8 @@ fn h_flat(text: &str, j: &str) -> crate::welds::Flat {
 /// J3 (2026-11-19): one roll for the whole member. The strut's flange at
 /// N7 turned 1.6° about H: H flat at N2 lies 1.6° off at N7; the middle
 /// turn leaves each end 0.8° off (within the owner's 2° flatness of
-/// 2026-11-19): H is turned once, both its joints laid out
+/// 2026-11-19; since L9 the 0.8° at N2 is taken by its plate, whose
+/// outline is written in H's plane): H is turned once, both its joints laid out
 /// with it (its leg bolted upright at N2, the other at N7 — an equal-leg
 /// angle's leg bolted changing between its ends); a run again changes
 /// nothing, and the relaxed planner (the estimated eccentricities, O45)
@@ -1433,11 +1434,19 @@ fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
     );
     for j in ["N2", "N7"] {
         let f = h_flat(&r.text, j);
-        // (L9, 2026-11-21: where H lies on a plate drawn round its own
-        // bolts, the plate read in the plane of its whole outline — H's —
-        // H lies flat on it and the plate takes the 0.8° to the flange;
-        // before, the plate's plane taken from three of its corners.)
-        assert!((f.off - 0.8).abs() < 0.1 || f.off < 0.1, "{j}: {f:?}");
+        // (L9, 2026-11-21: a plate whose outline is written is read in
+        // the plane of its whole outline. At N2 the layout writes G1's
+        // outline, drawn round H's bolts, so G1 lies in H's plane: H lies
+        // flat on it — 0.047°, the outline's corners written to 0.1 mm
+        // over its 61 mm — and G1 takes the 0.8° to L2's flange (below).
+        // At N7 G2 is written without an outline: its plane is the one
+        // its members' axes span (S1's and H's), which H's leg lies 0.8°
+        // off, as before L9.)
+        if j == "N2" {
+            assert!(f.off < 0.1, "{j}: {f:?}");
+        } else {
+            assert!((f.off - 0.8).abs() < 1e-6, "{j}: {f:?}");
+        }
         let o = r.joints.iter().find(|o| o.joint == j).unwrap();
         assert!(
             o.written && o.plan.ends.iter().any(|e| e.member == "H"),
@@ -1449,6 +1458,29 @@ fn one_roll_for_the_whole_member_lets_both_its_ends_lie_flat() {
     }
     // Its leg bolted changes between its ends (an equal-leg angle).
     let after = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    // Where H lies flat (N2), its plate takes the 0.8° to the flange of the
+    // leg it lies on (within the outline's 0.1 mm over 61 mm: 0.1°).
+    let n2 = after.joint("N2").unwrap();
+    let g1 = n2.plates.iter().find(|p| p.members == ["H"]).unwrap();
+    assert!(g1.outline_given, "{g1:?}");
+    let leg = n2
+        .arrivals
+        .iter()
+        .find(|a| Some(&a.member) == g1.leg.as_ref())
+        .and_then(|a| a.profile.as_ref())
+        .unwrap();
+    let n = g1.through.unwrap();
+    let to_flange = [leg.axes[1], leg.axes[2]]
+        .iter()
+        .map(|m| {
+            let c: f64 = (0..3).map(|k| n[k] * m[k]).sum();
+            c.abs().min(1.0).acos().to_degrees()
+        })
+        .fold(f64::INFINITY, f64::min);
+    assert!(
+        (to_flange - 0.8).abs() < 0.1,
+        "G1 to its flange {to_flange}°"
+    );
     let leg = |j: &str| {
         after
             .joint(j)
