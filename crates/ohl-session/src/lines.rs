@@ -543,6 +543,7 @@ impl Session {
         mut by_line: BTreeMap<String, BTreeMap<(Kind, String), Object>>,
         gone: BTreeMap<String, BTreeSet<(Kind, String)>>,
         placed: Places,
+        upgrade: Option<bool>,
     ) -> Result<(), SessionError> {
         // Frozen project lines of earlier files: editable lines now.
         // (Files made since schema 4 have no such table.)
@@ -608,6 +609,22 @@ impl Session {
                 }
             }
             objects.extend(by_line.remove(&r.name).unwrap_or_default());
+            // The objects' upgrades of an older file (the lines keeping all
+            // their objects were upgraded when read): on the whole state,
+            // what changes written as the line's own rows (2026-11-21: its
+            // rows alone were taken for a line and refused, "the project
+            // has no line").
+            if let Some(before_routes) = upgrade {
+                let tx = crate::Step::begin(&*self.conn)?;
+                crate::upgrade_line_objects(
+                    &*tx,
+                    &r.name,
+                    &mut objects,
+                    Some(&bases[&base]),
+                    before_routes,
+                )?;
+                tx.commit()?;
+            }
             by_line.insert(r.name.clone(), objects);
         }
         // Branches without a working state (files of schema 2): their last

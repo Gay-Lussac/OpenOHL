@@ -1595,6 +1595,66 @@ fn upgraded_objects(
     Ok(Some(objects_of(&line)))
 }
 
+/// Upgrades the objects of project line `name` in place
+/// ([`upgraded_objects`]) and writes what changed through `tx` — not a
+/// logged edit. `base`: the base revision's objects of a line kept as
+/// differences (`objects` its whole state, its rows laid over the base):
+/// an object it changes becomes a row of its own, one it leaves out a
+/// tombstone when the base holds it.
+pub(crate) fn upgrade_line_objects(
+    tx: &dyn Store,
+    name: &str,
+    objects: &mut BTreeMap<(Kind, String), Object>,
+    base: Option<&BTreeMap<(Kind, String), Object>>,
+    before_routes: bool,
+) -> Result<(), SessionError> {
+    let Some(new) = upgraded_objects(objects, before_routes)? else {
+        return Ok(());
+    };
+    // Alignments and their points: in their order.
+    let mut nth: BTreeMap<Kind, i64> = BTreeMap::new();
+    let keys: BTreeSet<(Kind, String)> = new.iter().map(|(k, id, _)| (*k, id.clone())).collect();
+    for (k, (kind, id, value)) in new.into_iter().enumerate() {
+        let key = (kind, id.clone());
+        let n = nth.entry(kind).or_default();
+        let place = *n;
+        *n += 1;
+        let reorder = matches!(kind, Kind::Alignment | Kind::AlignmentPoint);
+        let (ord, version) = match objects.get(&key) {
+            Some(o) if *o.value == value && (!reorder || o.ord == place) => continue,
+            Some(o) => (if reorder { place } else { o.ord }, o.version + 1),
+            None => (if reorder { place } else { k as i64 }, 1),
+        };
+        tx.replace_object(name, kind, &id, ord, version, &value.to_string())?;
+        objects.insert(
+            key,
+            Object {
+                ord,
+                version,
+                value: Arc::new(value),
+            },
+        );
+    }
+    // Objects the upgrade left out (not the line's reports and library
+    // files: kept with it, not part of the line).
+    let gone: Vec<(Kind, String)> = objects
+        .keys()
+        .filter(|k| {
+            !keys.contains(*k) && !matches!(k.0, Kind::Report | Kind::Library | Kind::Annotation)
+        })
+        .cloned()
+        .collect();
+    for (kind, id) in gone {
+        if base.is_some_and(|b| b.contains_key(&(kind, id.clone()))) {
+            tx.write_object(name, kind, &id, None)?;
+        } else {
+            tx.delete_object(name, kind, &id)?;
+        }
+        objects.remove(&(kind, id));
+    }
+    Ok(())
+}
+
 /// The line made of `objects`, not validated; the load case sets of
 /// before 2026-11-15 read into structure groups
 /// ([`Line::adopt_structure_groups`]: a value an undo puts back).
@@ -1829,53 +1889,20 @@ impl Session {
         // points once (the objects rewritten in place; not a logged edit).
         let done = |key: &str| -> Result<bool, SessionError> { Ok(conn.meta(key)?.is_some()) };
         let before_routes = !done("routes_alignments")?;
-        if before_routes || !done("alignment_points")? || !done("structure_groups")? {
+        // `Some(before_routes)`: the objects still to be upgraded.
+        let upgrade = (before_routes || !done("alignment_points")? || !done("structure_groups")?)
+            .then_some(before_routes);
+        if let Some(before_routes) = upgrade {
             let tx = Step::begin(&*conn)?;
             for (name, objects) in &mut by_line {
-                let Some(new) = upgraded_objects(objects, before_routes)? else {
+                // A line kept as differences holds only what it changed
+                // (its rows alone are not a line): upgraded once laid
+                // over its base ([`Session::load_lines`], 2026-11-21).
+                if conn.line_base(name)?.is_some() {
                     continue;
-                };
-                // Alignments and their points: in their order.
-                let mut nth: BTreeMap<Kind, i64> = BTreeMap::new();
-                let keys: BTreeSet<(Kind, String)> =
-                    new.iter().map(|(k, id, _)| (*k, id.clone())).collect();
-                for (k, (kind, id, value)) in new.into_iter().enumerate() {
-                    let key = (kind, id.clone());
-                    let n = nth.entry(kind).or_default();
-                    let place = *n;
-                    *n += 1;
-                    let reorder = matches!(kind, Kind::Alignment | Kind::AlignmentPoint);
-                    let (ord, version) = match objects.get(&key) {
-                        Some(o) if *o.value == value && (!reorder || o.ord == place) => continue,
-                        Some(o) => (if reorder { place } else { o.ord }, o.version + 1),
-                        None => (if reorder { place } else { k as i64 }, 1),
-                    };
-                    tx.replace_object(name, kind, &id, ord, version, &value.to_string())?;
-                    objects.insert(
-                        key,
-                        Object {
-                            ord,
-                            version,
-                            value: Arc::new(value),
-                        },
-                    );
                 }
-                // Objects the upgrade left out (not the line's reports and
-                // library files: kept with it, not part of the line).
-                let gone: Vec<(Kind, String)> = objects
-                    .keys()
-                    .filter(|k| {
-                        !keys.contains(*k)
-                            && !matches!(k.0, Kind::Report | Kind::Library | Kind::Annotation)
-                    })
-                    .cloned()
-                    .collect();
-                for (kind, id) in gone {
-                    tx.delete_object(name, kind, &id)?;
-                    objects.remove(&(kind, id));
-                }
+                upgrade_line_objects(&*tx, name, objects, None, before_routes)?;
             }
-            conn.mark_object_upgrades_done()?;
             tx.commit()?;
         }
         let mut session = Self {
@@ -1909,7 +1936,12 @@ impl Session {
             trees: std::sync::Mutex::new(std::collections::HashMap::new()),
         };
         session.split = session.conn.split_trees();
-        session.load_lines(by_line, gone, placed)?;
+        session.load_lines(by_line, gone, placed, upgrade)?;
+        if upgrade.is_some() {
+            // Marked done once every line, those kept as differences too,
+            // is upgraded (an open failing before that upgrades again).
+            session.conn.mark_object_upgrades_done()?;
+        }
         session.read_part()?;
         session.read_shared()?;
         // The reference index of the line worked on, made now: the first

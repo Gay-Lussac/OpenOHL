@@ -3952,8 +3952,11 @@ or three, L four or more. The phases, in order:
   > transaction (no `VACUUM`: the database's administrators or autovacuum
   > give the space back)? → yes, as built.
 - [x] Follow-up of 2026-11-21 (S): two server tests that failed under the
-  full check's load (and passed alone) made certain. **Built 2026-11-21,
-  in active development, not approved yet.** **The exports' thread held
+  full check's load (and passed alone) made certain; phase 14's second
+  real line refused at import ("the project has no line") found and
+  fixed. **Built 2026-11-21, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-an-older-projects-lines-kept-as-differences-upgraded-on-their-whole-state)).
+  **The exports' thread held
   at a gate in the tests** (`ExportGate`, tests only) instead of a fixed
   wait of 1.5 s: a move or a rights change made while an export is
   written or a bundle made ready came after it when the test's own steps
@@ -3966,6 +3969,18 @@ or three, L four or more. The phases, in order:
   answer, which took up to 7.3 s with the machine loaded (measured), more
   in the full check; a fixed 300 ms sleep in the sign-in test is a wait
   for the connection gone. What the tests check is unchanged.
+  **An older project with project lines kept as differences opens**
+  (and imports): the objects' upgrades run once when a project of before
+  2026-11-15 opens (here: the load case sets read into structure groups)
+  took each project line's rows for a whole line; a line kept as
+  differences holds only what it changed, no settings row of its own, so
+  the project was refused — in the network's import and in OHL-Design
+  alike, a session bug, not the file's or the importer plugin's. Now such
+  a line is upgraded on its whole state (its base revision with its rows
+  laid over it) and what changes is written as its own rows; the
+  upgrades are marked done once every line is (tested on an invented
+  project of the same shape: refused before, open after). The real line
+  refused in phase 14 now imports (measured locally only).
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

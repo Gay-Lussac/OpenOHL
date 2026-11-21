@@ -2131,6 +2131,106 @@ fn old_case_sets_become_groups_when_the_project_opens() {
     assert!(!s.line().takes_load_case("T2", "everyday"));
 }
 
+/// A project of before 2026-11-15 with a project line kept as differences
+/// (only what it changed in its rows, no settings of its own) opens
+/// (2026-11-21: its rows alone were upgraded as a line and refused, "the
+/// project has no line"); the line upgraded on its whole state, what
+/// changes written as its own rows, its own change kept; opened again,
+/// the same groups, none added twice.
+#[test]
+fn old_case_sets_become_groups_on_a_line_kept_as_differences() {
+    let (path, mut s) = project("old-sets-lines");
+    let mut t2 = s.line().structure("T2").unwrap().clone();
+    t2.load_cases = vec!["wind".into()];
+    let mut line = s.line().clone();
+    line.structure_loads
+        .type_load_cases
+        .insert("1A".into(), vec!["ice".into()]);
+    s.apply(
+        "ana",
+        Command::Batch {
+            commands: vec![
+                Command::Put {
+                    kind: Kind::Structure,
+                    id: "T2".into(),
+                    value: json(&t2),
+                    ord: None,
+                },
+                line_settings_change(s.line(), &line),
+            ],
+        },
+    )
+    .unwrap();
+    s.commit("ana", "old sets").unwrap();
+    s.create_line("ana", "phase 2", "main").unwrap();
+    s.select_line("phase 2").unwrap();
+    let p = position(&s, "T3");
+    s.apply(
+        "ana",
+        Command::MoveStructure {
+            id: "T3".into(),
+            position: [p[0] + 1.5, p[1], p[2]],
+        },
+    )
+    .unwrap();
+    s.select_line("main").unwrap();
+    // The line keeps differences, none of them settings.
+    let rows = |path: &Path| -> Vec<(String, String, i64)> {
+        let c = Connection::open(path).unwrap();
+        let mut stmt = c
+            .prepare(
+                "SELECT kind, id, gone FROM model_object WHERE line = 'phase 2' ORDER BY kind, id",
+            )
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    assert!(s.conn.line_base("phase 2").unwrap().is_some());
+    let before = rows(&path);
+    assert!(
+        before.iter().all(|(k, _, _)| k != "meta") && !before.is_empty(),
+        "{before:?}"
+    );
+    // An older project: the upgrade not done yet.
+    s.conn
+        .sqlite()
+        .unwrap()
+        .execute("DELETE FROM ols_meta WHERE key = 'structure_groups'", [])
+        .unwrap();
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    s.select_line("phase 2").unwrap();
+    let stored = &*s.objects[&(Kind::Structure, "T2".to_owned())].value;
+    assert!(stored.get("load_cases").is_none(), "{stored}");
+    let names: Vec<&str> = s
+        .line()
+        .structure_groups
+        .iter()
+        .map(|g| g.name.as_str())
+        .collect();
+    assert_eq!(names, ["type 1A", "T2"]);
+    assert_eq!(position(&s, "T3")[0], p[0] + 1.5);
+    let groups = s.line().structure_groups.clone();
+    let main_groups = s.line_named("main").unwrap().structure_groups.clone();
+    assert_eq!(main_groups, groups);
+    // Its upgrade written as its own rows (T2 and the settings changed).
+    let after = rows(&path);
+    assert!(
+        after
+            .iter()
+            .any(|(k, id, g)| k == "structure" && id == "T2" && *g == 0),
+        "{after:?}"
+    );
+    drop(s);
+    let mut s = Session::open(&path).unwrap();
+    s.select_line("phase 2").unwrap();
+    assert_eq!(s.line().structure_groups, groups);
+    assert!(s.line().takes_load_case("T2", "wind"));
+    assert_eq!(rows(&path), after);
+}
+
 /// A project still to be upgraded to alignment points keeps its library
 /// files when it opens (the upgrade rewrites the line's objects only).
 #[test]

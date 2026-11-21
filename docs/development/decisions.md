@@ -8,6 +8,39 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-21: an older project's lines kept as differences upgraded on their whole state
+
+**A project of before 2026-11-15 with project lines kept as differences
+opens** (roadmap O17's follow-up; found by phase 14's second real line,
+refused at import with "the project has no line"; built, in active
+development, not approved yet; [data model](data-model.md#project-lines-kept-as-differences-schema-6)).
+No format change.
+
+- The objects' upgrades of an older project (routes and alignments,
+  alignment points, the load case sets read into structure groups; done
+  once, `ols_meta` `routes_alignments`, `alignment_points`,
+  `structure_groups`) ran on each project line's rows. A line kept as
+  differences (schema 6, `vc_ref.base`) holds only what it changed — no
+  settings row `line` of its own — so its rows were taken for a line and
+  refused: the whole project did not open, in the network's import and in
+  OHL-Design alike (a bug of the session, not of the file or the importer
+  plugin).
+- Now a line with a base is upgraded **on its whole state** (its base
+  revision's objects with its rows laid over them, as it is read), and
+  what the upgrade changes is written **as its own rows**: an object
+  changed becomes a row, one left out a tombstone when the base holds it
+  (a row deleted otherwise) — the same rule as every command on such a
+  line. Lines keeping all their objects are upgraded as before.
+- The upgrades are **marked done once every line is upgraded** (before:
+  with the lines keeping all their objects, before the others were read);
+  an open failing between upgrades again, which changes nothing already
+  upgraded.
+- Tested on an invented project of the same shape (old load case sets
+  committed on main, a line started from it with one move): refused with
+  "the project has no line" before, open after, the line's groups those
+  of main, its move kept, opened again nothing added twice. The real line
+  refused in phase 14 now imports (measured locally only).
+
 ## 2026-11-21 (joint layout: Solve the clashes, face-lining steps, a leg turned against its joints, L11)
 
 **Joint details' problems grouped with one Solve the clashes; an end moved
