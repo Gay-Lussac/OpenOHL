@@ -314,7 +314,7 @@ pub struct LayoutSettings {
     /// on a plate in its own plane whose leg bolted lies flat in a flange's
     /// plane on its inner side, leaving over the heel, on the back of the
     /// flat plate on that flange's outer face instead, past the heel
-    /// ([`crate::both_faces`]). On by default; off: as before.
+    /// (the module `both_faces`). On by default; off: as before.
     pub both_faces: bool,
 }
 
