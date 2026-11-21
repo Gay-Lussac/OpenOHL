@@ -42,11 +42,17 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "json"
 # A server on a country server's database (PostgreSQL, ADR-0013 phase 5):
 # the command line enables it; the desktop application does not need it.
 network = [
+    "offline-checks",
     "dep:ohl-store-pg",
+    "dep:jsonwebtoken",
+]
+# The network's scoped checks run on an offline working set's file
+# (2026-11-21: OHL-Design's Offline working set window), without the
+# database: what `network` needs of them, alone.
+offline-checks = [
     "dep:ohl-scope",
     "dep:ohl-clearance",
     "dep:ohl-loads",
-    "dep:jsonwebtoken",
 ]
 
 [dev-dependencies]

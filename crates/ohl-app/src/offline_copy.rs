@@ -181,6 +181,9 @@ pub fn menu(ui: &mut egui::Ui, r: &mut Ready, current: &str) {
             open(r, path);
         }
     }
+    // A network's working set taken offline and brought back (2026-11-21).
+    ui.separator();
+    crate::network_offline::menu(ui, r);
 }
 
 /// Reads bundle file `path` and opens the import window on it.

@@ -88,6 +88,7 @@ mod merge_conflicts;
 mod merge_describe;
 mod merge_plan;
 mod model;
+mod network_offline;
 mod network_window;
 mod next_steps;
 mod notices;

@@ -368,9 +368,17 @@ impl Model {
             | ServerMsg::CatchUp { .. }
             | ServerMsg::Extent { .. }
             | ServerMsg::RouteDetail { .. } => None,
-            // Phase 12: offline working sets are exported and brought back
-            // with the command line for now (OHL-Design's Offline copy
-            // menu for a network comes later); said if one comes anyway.
+            // Phase 12: offline working sets exported and brought back —
+            // the Offline working set window's answers (2026-11-21), kept
+            // for it; said if one comes without a working set.
+            msg @ (ServerMsg::WorkingSetExported { .. } | ServerMsg::BundleImported { .. })
+                if self.remote.as_ref().is_some_and(|r| r.network.is_some()) =>
+            {
+                if let Some(net) = self.remote.as_mut().and_then(|r| r.network.as_mut()) {
+                    net.offline_answers.push(msg);
+                }
+                None
+            }
             ServerMsg::WorkingSetExported { result, .. } => {
                 others.push(match result {
                     Ok(f) => format!(

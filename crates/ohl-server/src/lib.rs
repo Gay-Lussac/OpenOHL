@@ -57,13 +57,13 @@ pub mod fake_provider;
 pub mod network;
 #[cfg(feature = "network")]
 pub(crate) mod network_rights;
-#[cfg(feature = "network")]
+#[cfg(feature = "offline-checks")]
 pub mod offline_checks;
 #[cfg(feature = "network")]
 pub mod oidc;
-#[cfg(feature = "network")]
+#[cfg(feature = "offline-checks")]
 pub(crate) mod packager;
-#[cfg(feature = "network")]
+#[cfg(feature = "offline-checks")]
 pub(crate) mod scoped_report;
 pub mod server;
 pub mod sign_in;

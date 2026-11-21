@@ -27,7 +27,7 @@ ohl-pointcloud.workspace = true
 ohl-session.workspace = true
 ohl-clearance.workspace = true
 ohl-io.workspace = true
-ohl-server.workspace = true
+ohl-server = { workspace = true, features = ["offline-checks"] }
 ohl-loads.workspace = true
 ohl-scope.workspace = true
 ohl-structures-fe.workspace = true
@@ -79,6 +79,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # identity provider on the loopback (tests and the user guide's picture).
 ohl-server = { workspace = true, features = ["network"] }
 ohl-store-pg = { workspace = true, features = ["testing"] }
+# The Offline working set window against a small synthetic country.
+ohl-synth.workspace = true
 
 [lints]
 workspace = true

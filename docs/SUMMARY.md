@@ -79,6 +79,7 @@
 - [Server mode (pre-alpha)](user-guide/server.md)
   - [Signing in to a network](user-guide/sign-in.md)
   - [Working sets on a network](user-guide/working-set.md)
+  - [Offline working sets in OHL-Design](user-guide/offline-working-set.md)
   - [A network on the command line](user-guide/network-commands.md)
   - [Deploying a network's server](user-guide/server-deployment.md)
 - [Project lines and stages](user-guide/project-lines.md)

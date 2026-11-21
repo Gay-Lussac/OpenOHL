@@ -40,6 +40,10 @@
 //! line, bit for bit (tested on the example lines and a synthetic
 //! country).
 
+// Without `network` (the `offline-checks` feature: OHL-Design's offline
+// checks) only what the scoped checks read is used.
+#![cfg_attr(not(feature = "network"), allow(dead_code, unused_imports))]
+
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Debug, Write as _};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -52,6 +56,7 @@ use ohl_core::grid::Bounds;
 use ohl_line::{Line, Structure};
 use tokio_tungstenite::tungstenite::Utf8Bytes;
 
+#[cfg(feature = "network")]
 use crate::server::Job;
 use crate::{
     ContextLabel, ContextRoute, ContextStructure, ContextWire, Position, SceneSpan, ServerMsg,
@@ -273,12 +278,14 @@ impl Caches {
 }
 
 /// The packagers: threads taking [`BuildJob`]s.
+#[cfg(feature = "network")]
 pub(crate) struct Packager {
     tx: Option<std_mpsc::Sender<BuildJob>>,
     threads: Vec<std::thread::JoinHandle<()>>,
     pub(crate) caches: Arc<Caches>,
 }
 
+#[cfg(feature = "network")]
 impl Packager {
     /// `n` threads giving what they make to the authority (`jobs`); their
     /// library files written under `work` to be read.
@@ -333,6 +340,7 @@ impl Packager {
     }
 }
 
+#[cfg(feature = "network")]
 impl Drop for Packager {
     fn drop(&mut self) {
         self.tx = None;

@@ -331,6 +331,9 @@ pub struct Ready {
     pub line_status: crate::line_status::LineStatus,
     /// Versions › Offline copy › Import bundle, when open.
     pub bundle_import: Option<Box<crate::offline_copy::ImportWindow>>,
+    /// Versions › Offline copy › a network's offline working set, when
+    /// open (2026-11-21).
+    pub network_offline: Option<Box<crate::network_offline::OfflineWindow>>,
     /// Checks › Structure loads.
     pub loads: crate::loads::LoadsPage,
     /// Checks › Thermal rating.
@@ -569,6 +572,7 @@ impl Ready {
             versions: Default::default(),
             line_status: Default::default(),
             bundle_import: None,
+            network_offline: None,
             loads: Default::default(),
             thermal: Default::default(),
             bom: Default::default(),

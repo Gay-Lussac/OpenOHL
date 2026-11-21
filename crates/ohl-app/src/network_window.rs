@@ -56,6 +56,9 @@ pub struct NetState {
     /// Signed in with the organisation (in memory only): joining again
     /// carries its ID token, renewed when old.
     pub signed: Option<ohl_server::sign_in::SignedIn>,
+    /// The server's answers to the Offline working set window (exports
+    /// and bundles brought back, 2026-11-21), taken by it by their id.
+    pub offline_answers: Vec<ohl_server::ServerMsg>,
 }
 
 impl std::fmt::Debug for NetState {

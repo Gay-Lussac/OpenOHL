@@ -315,3 +315,335 @@ fn signing_in_to_a_local_network() {
     assert!(harness.state().join_network_window.is_none());
     server.stop();
 }
+
+/// Versions › Offline copy's Offline working set window (2026-11-21)
+/// against a local network's server (a throwaway PostgreSQL cluster, a
+/// small synthetic country, the invented user `tester`): 1 the working set
+/// exported through this connection, the file written, an existing file
+/// never replaced; a stale export said in red with what changed meanwhile;
+/// 2 the offline file checked with the network's code; 3 its bundle made
+/// after a commit; 4 brought back onto a branch, never main; Escape
+/// closes. With `OHL_SHOTS` (made as `USER=tester`): the user guide's
+/// pictures.
+#[test]
+fn offline_working_set_window_on_a_local_network() {
+    use crate::network_offline::{Exported, OfflineWindow, Step};
+    use ohl_server::client::{NetJoin, join_network};
+    use ohl_server::network::NetOptions;
+    use ohl_server::server::{Options, Server};
+    use ohl_store_pg::Network;
+    use ohl_store_pg::import::{ImportOptions, import};
+    use ohl_store_pg::rights::RightsCommand as R;
+    let Some(cluster) = ohl_store_pg::testing::Cluster::start("app-offline") else {
+        return;
+    };
+    cluster.create_db("net");
+    let url = cluster.url("net");
+    let dir = cluster.scratch();
+    let country = ohl_synth::country(&ohl_synth::Settings {
+        pylons: 300,
+        ..Default::default()
+    })
+    .unwrap();
+    let files =
+        ohl_synth::project::write_line_projects(&country, &dir.join("lines"), "tester").unwrap();
+    let code = {
+        let net = Network::connect_writer(&url).unwrap();
+        let mut codes = Vec::new();
+        for (code, path, _) in files {
+            let mut o = ImportOptions::new(&code, "tester");
+            o.revision = false;
+            import(&net, &path, &o).unwrap();
+            codes.push(code);
+        }
+        net.rights_command(
+            "tester",
+            &R::Bootstrap {
+                user: "tester".into(),
+            },
+        )
+        .unwrap();
+        codes[0].clone()
+    };
+    cluster.wait_for_locks_gone("net");
+    let server = Server::start_network(
+        Options {
+            bind: "127.0.0.1:0".parse().unwrap(),
+            code: Some("abcd2345".into()),
+            newcomers: None,
+            ..Options::default()
+        },
+        NetOptions {
+            database: url.clone(),
+            idle_solve: false,
+            ..NetOptions::default()
+        },
+    )
+    .unwrap();
+    let invitation = server.invitation_for("tester");
+    // The working set: the line's first route, followed by OHL-Design.
+    let route = {
+        let net = Network::connect(&url).unwrap();
+        net.route_list()
+            .unwrap()
+            .into_iter()
+            .find(|(l, _)| *l == code)
+            .unwrap()
+            .1
+    };
+    let spec = WorkingSetSpec {
+        name: String::new(),
+        model: code.clone(),
+        picks: vec![Pick::Route { route }],
+    };
+    let replica = dir.join("replica.ohl");
+    let joined = join_network(
+        &invitation,
+        "tester",
+        &NetJoin {
+            working_set: Some(spec.clone()),
+            file: Some(replica.clone()),
+            ..NetJoin::default()
+        },
+        &mut |_| {},
+    )
+    .unwrap();
+    let load = |file: PathBuf| {
+        model::load(
+            Sources {
+                file,
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap()
+    };
+    let mut m = load(replica);
+    let mut remote = crate::remote::Remote::new(joined, invitation, false);
+    remote.network = Some(Box::new(crate::network_window::NetState::new(spec)));
+    m.attach(remote);
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1100.0, 800.0))
+        .build_eframe(|_| App::with_model(m, None));
+    harness.run_steps(2);
+    fn window(a: &mut App) -> &mut OfflineWindow {
+        a.ready()
+            .unwrap()
+            .network_offline
+            .as_mut()
+            .expect("the window")
+    }
+    let wait = |h: &mut Harness<'_, App>, what: &str, done: &dyn Fn(&mut App) -> bool| {
+        let t0 = std::time::Instant::now();
+        while !done(h.state_mut()) {
+            assert!(t0.elapsed() < std::time::Duration::from_secs(60), "{what}");
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(2);
+    };
+    // The pictures show short file names (the test's files are in a
+    // temporary folder), without the mouse pointer.
+    let shot = |h: &mut Harness<'_, App>, name: &str| {
+        if let Ok(shots) = ohl_core::env::var("OHL_SHOTS") {
+            assert_eq!(crate::files::user(), "tester", "made with USER=tester");
+            let w = window(h.state_mut());
+            let short = |p: &str| {
+                Path::new(p)
+                    .file_name()
+                    .map_or(String::new(), |n| n.to_string_lossy().into_owned())
+            };
+            let kept = (
+                w.export_file.clone(),
+                w.bundle_in.clone(),
+                w.rules_file.clone(),
+                w.exported
+                    .iter()
+                    .map(|e| e.file.clone())
+                    .collect::<Vec<_>>(),
+            );
+            w.export_file = short(&w.export_file);
+            w.bundle_in = short(&w.bundle_in);
+            w.rules_file = short(&w.rules_file);
+            for e in &mut w.exported {
+                e.file = PathBuf::from(short(&e.file.display().to_string()));
+            }
+            h.input_mut().events.push(egui::Event::PointerGone);
+            h.run_steps(2);
+            let image = h.render().unwrap();
+            let ppp = image.width() as f32 / 1100.0;
+            let image = match super::tool_shots::window_rect(h, "Offline working set") {
+                Some(rect) => super::tool_shots::crop(&image, rect, ppp),
+                None => image,
+            };
+            image.save(format!("{shots}/{name}.png")).unwrap();
+            let w = window(h.state_mut());
+            w.export_file = kept.0;
+            w.bundle_in = kept.1;
+            w.rules_file = kept.2;
+            for (e, f) in w.exported.iter_mut().zip(kept.3) {
+                e.file = f;
+            }
+        }
+    };
+    // 1. Exported through this connection.
+    crate::network_offline::open(harness.state_mut().ready().unwrap(), Step::Export);
+    let ws = dir.join(format!("{code}-offline.ohl"));
+    window(harness.state_mut()).export_file = ws.display().to_string();
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_label_contains("Your working set: line")
+            .is_some()
+    );
+    harness.get_by_label("Export").click();
+    wait(&mut harness, "exported", &|a| {
+        !window(a).exported.is_empty() || window(a).error.is_some()
+    });
+    assert_eq!(window(harness.state_mut()).error, None);
+    let report = window(harness.state_mut()).exported[0].report.clone();
+    assert!(ws.is_file() && report.wanted > 0, "{report:?}");
+    assert!(harness.query_by_label_contains("Wrote ").is_some());
+    shot(&mut harness, "offline-working-set");
+    // The same file again: refused before anything is asked.
+    harness.run_steps(2);
+    assert!(harness.query_by_label_contains("exists already").is_none());
+    // A stale export said in red, with what changed meanwhile.
+    let mut stale = report.clone();
+    stale.stale = true;
+    stale.changed_meanwhile = 3;
+    window(harness.state_mut()).exported.push(Exported {
+        file: dir.join(format!("{code}-offline-2.ohl")),
+        report: stale,
+    });
+    harness.run_steps(2);
+    assert!(
+        harness
+            .query_by_label_contains("STALE: 3 object(s)")
+            .is_some()
+    );
+    shot(&mut harness, "offline-working-set-stale");
+    window(harness.state_mut()).exported.pop();
+    // Escape closes the window.
+    for pressed in [true, false] {
+        harness.input_mut().events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+    }
+    harness.run_steps(2);
+    assert!(
+        harness
+            .state_mut()
+            .ready()
+            .unwrap()
+            .network_offline
+            .is_none()
+    );
+
+    // 2 and 3, offline: the file worked on and committed, checked, its
+    // bundle made.
+    {
+        let mut s = Session::open(&ws).unwrap();
+        let id = s
+            .part()
+            .unwrap()
+            .iter()
+            .find(|(k, _)| *k == ohl_session::Kind::Structure)
+            .unwrap()
+            .1
+            .clone();
+        let p = s.line().structure(&id).unwrap().position;
+        s.apply(
+            "tester",
+            Command::MoveStructure {
+                id,
+                position: [p[0] + 0.5, p[1], p[2]],
+            },
+        )
+        .unwrap();
+        s.commit("tester", "offline work").unwrap();
+    }
+    let mut offline = Harness::builder()
+        .with_size(egui::vec2(1100.0, 800.0))
+        .build_eframe(|_| App::with_model(load(ws.clone()), None));
+    offline.run_steps(2);
+    crate::network_offline::open(offline.state_mut().ready().unwrap(), Step::Check);
+    let rules = dir.join("rules.ohlr");
+    std::fs::write(
+        &rules,
+        "[[rule]]\nname = \"other lines\"\ntarget = \"other_lines\"\n\
+         vertical = { by_voltage = [[150, 5.0], [420, 7.0]] }\n\
+         radial = { by_voltage = [[150, 4.0], [420, 6.5]] }\n\
+         [[rule]]\nname = \"phase to phase\"\ntarget = \"same_line\"\nradial = \"3 m\"\n",
+    )
+    .unwrap();
+    {
+        let w = window(offline.state_mut());
+        w.kind = crate::network_offline::CheckKind::Clearances;
+        w.case = "10 °C".into();
+        w.rules_file = rules.display().to_string();
+    }
+    offline.run_steps(2);
+    assert!(
+        offline
+            .query_by_label_contains("Offline working set of line")
+            .is_some()
+    );
+    offline.get_by_label("Check").click();
+    wait(&mut offline, "checked", &|a| window(a).checked.is_some());
+    let checked = window(offline.state_mut()).checked.clone().unwrap();
+    assert!(checked.is_ok(), "{checked:?}");
+    shot(&mut offline, "offline-working-set-check");
+    let bundle = dir.join("work.bundle");
+    crate::network_offline::open(offline.state_mut().ready().unwrap(), Step::Bundle);
+    window(offline.state_mut()).bundle_out = bundle.display().to_string();
+    offline.run_steps(2);
+    offline.get_by_label("Make the bundle").click();
+    offline.run_steps(2);
+    let made = window(offline.state_mut()).bundled.clone().unwrap();
+    assert!(made.is_ok() && bundle.is_file(), "{made:?}");
+    // Not on a network: steps 1 and 4 greyed, said why.
+    window(offline.state_mut()).step = Step::BringBack;
+    offline.run_steps(2);
+    assert!(
+        offline
+            .query_by_label_contains("Join the network first")
+            .is_some()
+    );
+
+    // 4. Brought back onto a branch, never main.
+    crate::network_offline::open(harness.state_mut().ready().unwrap(), Step::BringBack);
+    window(harness.state_mut()).bundle_in = bundle.display().to_string();
+    harness.run_steps(2);
+    harness.get_by_label("Bring back").click();
+    wait(&mut harness, "brought back", &|a| {
+        window(a).brought.is_some()
+    });
+    let back = window(harness.state_mut())
+        .brought
+        .clone()
+        .unwrap()
+        .unwrap();
+    assert!(back.branch.starts_with("offline-tester-"), "{back:?}");
+    assert!(back.revisions == 1 && back.puts >= 1, "{back:?}");
+    assert!(
+        harness
+            .query_by_label_contains("Brought back onto branch")
+            .is_some()
+    );
+    shot(&mut harness, "offline-working-set-back");
+    // The same bundle twice: refused, said.
+    harness.get_by_label("Bring back").click();
+    wait(&mut harness, "refused", &|a| {
+        window(a).brought.as_ref().is_some_and(|b| b.is_err())
+    });
+    drop(harness);
+    server.stop();
+}
