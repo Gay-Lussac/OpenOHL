@@ -2943,6 +2943,117 @@ only where it helps):
   > generalisation) — the new steps were added to the plan in the owner's
   > order and measured → Recommended: continue step by step, each measured
   > joint by joint, rather than one rewrite.
+  > **Answered 2026-11-21 (evening): (1) and (2) approved** (the problems
+  > kept grouped and closed, one Solve the clashes; one-click Apply,
+  > including the layout's own proposals at the joint, marked); **(3)–(8)
+  > not answered yet** (the owner asked for the joints grouped first: L12
+  > below).
+- [x] L12. **The joints grouped by what comes in and how it lies; a chord
+  turned against its joints (a setting, off)** (the owner, 2026-11-21:
+  "grouping the joints based on how they are laid out and what kind of
+  members come in … see if we would need to apply per group methods or
+  have it working differently based on the incoming parts … The goal is to
+  lay the joints so that it works most of the time"; the owner busy: built
+  on its own, reported). **Built 2026-11-21, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-joints-grouped-by-what-comes-in-and-how-it-lies-l12),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#a-joints-group),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-joint-layout-the-joints-grouped-by-what-comes-in-and-how-it-lies-l12);
+  no format change). **The grouping**: every joint described from its
+  details alone — its host (what the other ends bolt onto: class first,
+  then the steel area), what runs through along it (one part, the same
+  section, a splice, the section changing, nothing), its place (body, arm,
+  top) and per incoming end its class, a plan member or not, its size, its
+  angle to the host, how far its axis runs out of the host's flanges'
+  planes (in within 2°, a few degrees out within 16°, out beyond) and how
+  far its leg lies off (its roll). Measured on the 78 private real towers,
+  as imported and after Orient angles: the place and the members' counts
+  explained less than **how the incoming ends lie against the host's
+  flanges** — all in a flange's plane 80 % whole after Orient angles (65 %
+  as imported), some a few degrees out 13 % (16 %), some out of plane 5 %
+  (3 %), in every place. So a group is *what the ends bolt onto · what
+  comes in · how they lie* (89 groups; the 30 largest hold 88 % of the
+  joints); shown in Joint details as "Group: …". The largest groups (after
+  Orient angles; whole as imported → after):
+
+  | group | joints | whole | of the ends left by hand |
+  |---|---|---|---|
+  | chord running on (arm, top) · with plan members · all in a flange's plane | 12.9 % | 34 → 70 % | 8.3 % |
+  | member running on (body) · redundants · all in plane | 10.9 % | 62 → 98 % | 0.4 % |
+  | chord running on · bracing · all in plane | 6.8 % | 75 → 87 % | 1.4 % |
+  | built-up member · redundants · all in plane | 5.6 % | 46 → 47 % | 6.3 % |
+  | leg running on · redundants · all in plane | 5.0 % | 14 → 98 % | 0.3 % |
+  | chord running on · redundants · all in plane | 4.5 % | 43 → 97 % | 0.2 % |
+  | built-up leg · redundants · all in plane | 4.2 % | 4 → 97 % | 0.4 % |
+  | leg running on · bracing · all in plane | 4.1 % | 52 → 96 % | 0.5 % |
+  | member running on (body) · with plan members · all in plane | 4.0 % | 24 → 83 % | 1.1 % |
+  | built-up member · redundants · a few degrees out | 3.4 % | 15 → 11 % | 2.5 % |
+  | member running on (body) · with plan members · a few degrees out | 2.0 % | 16 → 20 % | 3.3 % |
+  | nothing runs through · bracing · out of plane | 2.0 % | 0 → 0 % | 9.4 % |
+  | member running on (body) · with plan members · out of plane | 1.9 % | 0 → 0 % | 5.8 % |
+  | crossing · nothing else · none to measure | 1.9 % | 23 → 51 % | 0.2 % |
+  | chord running on · with plan members · out of plane | 1.8 % | 4 → 1 % | 5.5 % |
+  | built-up member · with plan members · out of plane | 1.8 % | 3 → 7 % | 6.0 % |
+  | leg running on · with plan members · out of plane | 1.5 % | 0 → 0 % | 3.6 % |
+
+  **Why ends are left** (43 909 after Orient angles): an end's axis more
+  than 2° out of the host's flanges' planes 43 %; in a flange's plane but
+  its leg not flat there (its roll set at its other end, or its leg on the
+  host's other flange) 19 %; room (a plate into steel, clashes, the
+  pull-back, too short) 18 %; a built-up host 10 %; bolts joining nothing
+  7 %; a leg splice 3 % — the same causes in every place. Pareto: ten
+  groups hold 57 % of the ends left; seven of them have a plan member
+  coming in (plan and hip members: 57 % of the ends left). **Per group
+  or general**: what is missing is general and driven by the incoming
+  ends (an end's host chosen by the plane its axis lies in, a member ending
+  at the joint too — the plan members onto a horizontal's level leg; a
+  built-up member's seat by that plane, then J6's plates), except two
+  causes of their own group: where nothing runs through, the base member's
+  own bolts join nothing (565 joints left for that alone — L10's question
+  5, a format decision), and chords whose joints say they are turned
+  (built as a setting, off). **A chord turned against its joints**
+  (`LayoutSettings::chord_turns`, off): L11's leg turn read for a chord
+  (a host piece running on that is not a leg), in rounds — turned, the run
+  made again, kept per chord where its joints lay out more ends or as many
+  on fewer plates, none fewer at any — until nothing flagged helps.
+  Measured (78 towers, after Orient angles; L11 → the setting on): joints
+  whole 35 656 → 35 884 (230 gained, 2 lost), ends 130 097 → 130 943,
+  plates 67 532 → 67 798, joint by joint 858 better and 60 worse, the time
+  per tower median 41 → 164 s (four to five runs of the layout);
+  a run again identical on 5 of 6 towers tried (on the sixth some chords are turned back: not stable there). Unweighed, every flagged chord turned: +633 whole but
+  1 396 joints worse. L11's leg turns applied (its question 6): +54 whole,
+  101 better, 14 worse.
+  > **Owner:** (1) The grouping (what the ends bolt onto · what comes in ·
+  > how they lie), shown in Joint details, nothing depending on it →
+  > Recommended: keep. (2) Per group or general: general rules driven by
+  > the incoming ends, two group causes apart → Recommended: next, an
+  > end's host chosen by the plane its axis lies in, including a member
+  > ending at the joint (the plan and hip members onto a horizontal's level
+  > leg or a level plate across two), measured joint by joint; then the
+  > built-up member's seat by that plane and J6's plates. (3) Where nothing
+  > runs through: the base member's end bolted onto the gusset the others
+  > bolt onto, its own bolts the gusset's holding bolts (a format field;
+  > 565 joints wait for it alone) → Recommended: yes, with the format
+  > decision. (4) The chords turned against their joints
+  > (`chord_turns`, off): +228 joints whole, 858 better and 60 worse, but
+  > four times the time, and a chord's roll is Orient angles' → Recommended:
+  > keep off in a run; next, propose the chord turns as L11 proposes the
+  > leg turns (Lay out joints' preview and Solve the clashes, with their
+  > effect, a tick to apply), and trace why Orient angles' turn of a chord
+  > (to the faces through its neighbouring chords) and its joints disagree
+  > by a few degrees (a fix there costs no time). (5) The leg turns L11
+  > proposes (its question
+  > 6), measured applied after Orient angles: 114 pieces, joints whole
+  > +54 (58 gained, 4 lost), ends +145, plates −28, 101 joints better and
+  > 14 worse → Recommended: offer them in Lay out joints' preview with a
+  > tick (applied with the run, one undo step), as Solve the clashes does
+  > per joint. (6) The ends 2° to 5° out of their host's flange plane
+  > (12 039 ends, 41 % left; from 5° to 20° 82 % left): the owner's 2° rule
+  > decides them → Recommended: keep the 2°; the chord turns bring about a
+  > tenth of them within it (measured), the rest are for the bent plate —
+  > next, trace why the bent plate fails from 5° to 20° (its outstanding leg
+  > towards the flange, the inner face over the heel, the welded plate's
+  > offset limit).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

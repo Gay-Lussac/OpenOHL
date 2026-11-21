@@ -278,6 +278,29 @@ orientation): run Orient angles first ([below](#orient-angles)); the check
 then shows the pieces Orient angles cannot place (where no faces are
 found) or the joints disagree with.
 
+## A joint's group
+
+(2026-11-21, O44 L12; built, in active development.) **What it is for:**
+understanding why a joint is or is not laid out. **Joint details** shows,
+under the joint's member count, a small line "Group: …" in three parts:
+
+- **what the other ends bolt onto** — a leg running on, a leg splice, a leg
+  ending here, a built-up leg, a chord running on (an arm or the top), a
+  member running on (the body), a crossing, nothing running through, a
+  built-up member;
+- **what comes in** — redundants, bracing, or with a plan (level) member;
+- **how the ends lie against that member's flanges** — all in a flange's
+  plane (within 2°: they can lie flat on it), some a few degrees out (a
+  sloping face), some out of plane (a plan member at a leg, a member
+  between two faces).
+
+The hover names the member they bolt onto. Nothing depends on it: the
+layout's results are the same with or without it. On the private towers
+measured, a joint whose ends all lie in a flange's plane is laid out
+whole four times in five; one with an end out of plane seldom — the
+reason is then usually that end (its leg cannot lie flat there), whatever
+the joint's place in the tower.
+
 ## Apply this joint's detail to similar joints
 
 ![The Apply this joint's detail to similar joints window: the joints like J10 of an invented body, each turned a quarter turn, with what changes there, ticked](../images/structure-tools/tool-apply-detail.png)

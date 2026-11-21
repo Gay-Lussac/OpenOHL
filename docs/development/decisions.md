@@ -8,6 +8,66 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-21 (joint layout: the joints grouped by what comes in and how it lies, L12)
+
+**Every joint described and grouped; a chord turned against its joints as
+a setting, off** (roadmap O44 L12: the owner's words of 2026-11-21,
+"grouping the joints based on how they are laid out and what kind of
+members come in … see if we would need to apply per group methods"; the
+owner busy; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-joints-grouped-by-what-comes-in-and-how-it-lies-l12),
+[user guide](../user-guide/joint-layout.md#a-joints-group)). No format
+change.
+
+- **A joint described from its details alone** (`joint_classes`): the
+  host (what the other ends bolt onto — class first, as the layout ranks
+  it, then the steel area as drawn), what runs through along it, its
+  place, and per incoming end how far its axis runs out of the host's
+  flanges' planes (in within 2°, the owner's rule; a few degrees out within
+  16°; out beyond — the program's values) and how far its leg lies off.
+- **The group: what the ends bolt onto · what comes in · how they lie.**
+  Chosen on the 78 private real towers, as imported and after Orient
+  angles: the place and the members' counts explained less than the plane
+  of the incoming ends (all in a flange's plane 80 % whole after Orient
+  angles, some a few degrees out 13 %, out of plane 5 %, in every place);
+  89 groups, the 30 largest 88 % of the joints. Shown in Joint details
+  ("Group: …"); nothing depends on it.
+- **Per group or general**: six in ten ends left are geometric (an end out
+  of its host's flange plane, or its roll set at its other end), in every
+  place; the methods missing are general rules driven by the incoming
+  ends, two causes apart that belong to one group each (the base member's
+  own bolts where nothing runs through: a format question; the chords
+  whose joints say they are turned).
+- **A chord turned against its joints** (`LayoutSettings::chord_turns`,
+  **off by default**; `leg_roll::piece_rolls`, `joint_classes::chord_pieces`):
+  L11's leg turn read for a chord, turned in rounds before the members'
+  own turns, kept per chord where its joints lay out more ends or as many
+  on fewer plates and none fewer at any, until nothing flagged helps. Off:
+  a chord's roll is Orient angles' (as a leg's), the owner decides.
+  Measured on the 78 private towers with it on: joints whole 35 656 →
+  35 884, ends +846, plates +266, 858 joints better and 60 worse, the time
+  per tower four times (median 41 → 164 s); a run again the same text on 5 of 6 towers tried (on the sixth some chords turned back: not stable there; off, as before). Its turns are
+  written as the chords' rolls, not in the record's `rolled`.
+- **Measured, not built**: L11's leg turns applied before the run (+54
+  joints whole, 101 better, 14 worse); every flagged chord turned without
+  weighing (+633 whole, 1 396 worse).
+- `leg_roll::leg_rolls` now calls `piece_rolls` with the leg pieces (the
+  same results, tested).
+
+## 2026-11-21 (owner): joint layout L11 — questions 1 and 2 approved
+
+The owner, 2026-11-21 (evening), on the questions of the joint layout's
+[L11](#2026-11-21-joint-layout-solve-the-clashes-face-lining-steps-a-leg-turned-against-its-joints-l11)
+(roadmap O44):
+
+1. Joint details' problems kept grouped by kind and closed until opened,
+   one **Solve the clashes…**, no button per problem: approved.
+2. One-click **Apply** of a solution, including the layout's own proposals
+   at the joint (pieces in line one part, a leg splice place), marked as
+   such, one undo step: approved.
+3. to 8. Not answered yet; the owner asked first for the joints to be
+   grouped by how they are laid out and what comes in (L12).
+
 ## 2026-11-21: an older project's lines kept as differences upgraded on their whole state
 
 **A project of before 2026-11-15 with project lines kept as differences

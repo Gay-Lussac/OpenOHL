@@ -1663,6 +1663,39 @@ that order; "plan ideas to get the automatic layout working"):
   already there far from the origin; a short plate's own bolts) and
   `layout_ui_tests::members_on_either_side_of_a_flange_in_the_window` (the
   user guide's picture).
+- **L12: the joints grouped by what comes in and how it lies** (2026-11-21;
+  in active development, not approved yet;
+  [theory](../theory/joint-layout.md#the-joints-grouped-by-what-comes-in-and-how-it-lies-l12)).
+  `joint_classes` (public): `joint_features(&JointDetail, Zone)` describes a
+  joint — its host (class first, as `through_of` ranks; then the steel area
+  of the profile's outlines; then the larger leg) and the piece in line
+  with it within `IN_LINE_DEG` (10°), `Through` (one part, the same section
+  not one part, spliced, the section changing, nothing), and per end
+  (`EndFeature`) its class, plan flag (the joint details' `plan` face), its
+  angle to the host, `EndPlane` against the host's two flanges (the
+  normals `axes[2]`, `axes[1]`; a built-up section's too) — `In` within
+  `IN_PLANE_DEG` (2°), `Near` within `NEAR_PLANE_DEG` (16°), else `Out` —
+  and `flat_off` (its leg bolted against that flange); `group_of` gives
+  `JointGroup { host: HostKind, incoming: Incoming, geometry: Geometry }`
+  and its `name()`; `joint_groups(&JointDetails, &JointOrder)` all of them.
+  `chord_pieces` names a joint's host pieces running on that are not legs;
+  `leg_roll::piece_rolls(d, pieces)` is `leg_rolls` for any such pieces
+  (`leg_rolls` now calls it with the leg pieces: the same results).
+  `LayoutSettings::chord_turns` (off; the app passes off):
+  `layout_run::lay_out` then calls `chord_turned` — rounds of
+  `chord_groups` (the flagged pieces with their partners, transitively,
+  one chord; all one way within `SPREAD_DEG`; the middle turn) on the
+  result so far, the run made again with them turned on the input
+  (`set_member_roll`), kept per chord by `other_face::helps` on the chord's
+  joints, planned again with those kept (`FACE_ROUNDS`), at most
+  `CHORD_ROUNDS` (4) rounds, until nothing flagged helps (a run again: mostly the
+  same text). Joint details (`joint_panel`) shows "Group: …" under the
+  joint's member count. No format change. Tests: `joint_classes_tests`
+  (invented: a leg running on with two diagonals in one flange's plane, a
+  splice and one part, a leg ending and nothing running through, ends a few
+  degrees out and a plan member, redundants and a built-up leg, an X-brace's
+  centre, a chord turned 5° found and turned by the run only with the
+  setting, a run again the same).
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

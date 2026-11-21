@@ -9,8 +9,9 @@
 //! yet.
 //!
 //! A joint is described from its details alone (never from names): its
-//! **host** — the biggest member at the joint, with the piece in line with
-//! it where one runs on (what everything else bolts onto) —, **what runs
+//! **host** — what the other ends bolt onto: by class first (legs, then
+//! bracing, then redundants, as the layout ranks it), then the largest
+//! steel area, with the piece in line with it where one runs on —, **what runs
 //! through** (the host's pieces one part, the same section not confirmed
 //! one part, a change of section or a splice, nothing: the host ends
 //! here), where it lies (the body, an arm, the top: [`mod@crate::joint_order`])
@@ -19,12 +20,12 @@
 //! angle to the host, how far its bolted leg lies off that flange (its
 //! roll), its size against the host's and its bolts ([`JointFeatures`]).
 //!
-//! From those the joint's **group** ([`JointGroup`], [`group_of`]): a few
-//! dozen groups with a readable name, chosen on the measured towers so
-//! that the joints of one group are laid out alike (the theory page's
-//! L12 section says how). The groups are for understanding and for
-//! choosing a method per group; the layout's results do not depend on
-//! them unless a setting says so.
+//! From those the joint's **group** ([`JointGroup`], [`group_of`]): what
+//! the ends bolt onto, what comes in, and how the incoming ends lie against
+//! the host's flanges — chosen on the measured towers so that the joints of
+//! one group are laid out alike (the theory page's L12 section says how:
+//! the plane the ends lie in divides them best). The groups are for
+//! understanding; the layout's results do not depend on them.
 //!
 //! Deterministic: a pure function of the joint's details. The tolerances
 //! are the tool's, not a standard's.
@@ -36,10 +37,9 @@ use crate::joints::{Arrival, JointDetail};
 /// tool's value, as Orient angles' in-line tolerance).
 pub const IN_LINE_DEG: f64 = 10.0;
 
-/// An end lies in a flange's plane within this, degrees (the tool's
-/// value: the owner's 2° rule for a flat fit, widened to what a bent plate
-/// is not needed for).
-pub const IN_PLANE_DEG: f64 = 2.0;
+/// An end lies in a flange's plane within this, degrees: the owner's 2°
+/// rule for a leg bolted flat ([`crate::FLAT_OFF`]).
+pub const IN_PLANE_DEG: f64 = crate::FLAT_OFF;
 
 /// An end lies near a flange's plane within this, degrees (the tool's
 /// value: a triangular crossarm's face lies about 15° off a chord's

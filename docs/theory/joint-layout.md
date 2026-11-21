@@ -2416,6 +2416,235 @@ see on the joint itself").
 Lay out joints' preview); Solve the clashes works the joint's solution out
 again with the leg turned and offers it ticked off, its counts beside it.
 
+## The joints grouped by what comes in and how it lies (L12)
+
+(The owner, 2026-11-21: "grouping the joints based on how they are laid out
+and what kind of members come in to better understand them and then try to
+see if we would need to apply per group methods or have it working
+differently based on the incoming parts to the joints … The goal is to lay
+the joints so that it works most of the time." Built 2026-11-21, in active
+development, not approved yet. The code: `joint_classes` (the description
+and the group of a joint, a pure function), `leg_roll::piece_rolls`
+(L11's leg turn read for any host piece), `layout_run` (the chord turns,
+`LayoutSettings::chord_turns`, **off by default**); the application's
+Joint details shows a joint's group. **No format change**.)
+
+### A joint described
+
+From the joint's details alone (never from names):
+
+- **The host** — what the other ends bolt onto: of the members with a
+  profile, the class first (legs, then bracing and crossing diagonals,
+  then redundants: the order the layout ranks what an end bolts onto),
+  then the largest steel area as drawn, then the larger leg; with the piece
+  in line with it within 10° (its run), where there is one.
+- **What runs through** along the host: its two pieces one part; two
+  pieces of one section not one part; a splice given; the section changing
+  without a splice; nothing (the host ends here).
+- **Where it lies**: the body, an arm or the top (L1's order).
+- **Every other end**: its class; a plan or hip member (level, in no steep
+  face of the tower); single angle or built up, its size against the
+  host's; its angle to the host; its bolts; and **how it lies against the
+  host's two flanges** — how far its axis runs out of each flange's plane
+  (an angle's legs, a built-up member's angles along the same two axes):
+  within 2° *in* the plane (the owner's 2° rule: it can lie flat there),
+  within 16° *near* (a sloping face against a chord's flange: a triangular
+  arm's faces lie about 15° off its chords' flanges), else *out* (a plan
+  member at a leg, a member between two faces); and how far its leg
+  bolted lies off that flange (its roll). The 10°, 16° and the class order
+  are the program's values, not a standard's.
+
+### The groups, and how they were chosen
+
+A joint's group has three parts: **what the ends bolt onto** (a leg running
+on, a leg splice, a leg ending here, a built-up leg, a chord running on
+through a joint of an arm or the top, a member running on through a joint
+of the body, a crossing of two members running on, nothing running
+through, a built-up member, no host), **what comes in** (redundants only;
+bracing; with a plan member; nothing) and **how the incoming ends lie**
+(all in a flange's plane; some a few degrees out; some out of plane; none
+to measure). Its name reads so: "leg running on · bracing · all in a
+flange's plane".
+
+Chosen on the 78 private real towers (kept privately), each joint
+measured as imported and after Orient angles, with what the layout did at
+each end and why an end was left. The first grouping took the place in the
+tower and what runs through, then the incoming members' classes and
+counts and the flanges they use. The place explained less than expected:
+one kind of host lays out whole from 0 % to 98 % of its joints depending on
+how the ends lie. **The plane of the incoming ends against the host's
+flanges divides the joints best**, in every place and in both states:
+
+| how the incoming ends lie | joints after Orient angles | laid out whole after Orient angles | as imported: joints | as imported: whole |
+|---|---|---|---|---|
+| all in a flange's plane | 41 745 | 80 % | 22 033 | 65 % |
+| some a few degrees out (2° to 16°) | 6 623 | 13 % | 23 243 | 16 % |
+| some out of plane (over 16°) | 10 918 | 5 % | 14 010 | 3 % |
+| none to measure | 5 474 | 12 % | 5 474 | 6 % |
+
+So the plane is a part of the group's name; the number of ends and the
+flanges used are not (they matter within a group as **room**: of the
+chords' joints with a plan member, all in plane, those with two ends are
+91 % whole, with four 59 %, with six or more 16 %). 89 groups occur; the
+30 largest hold 88 % of the joints:
+
+| group | joints | share | the same joints whole as imported | whole after Orient angles | ends laid out after Orient | of the ends left by hand | main reasons left |
+|---|---|---|---|---|---|---|---|
+| chord running on (arm, top) · with plan members · all in a flange's plane | 8 333 | 12.9 % | 34 % | 70 % | 84 % | 8.3 % | roll set at its other end, a plate into steel, clashes after writing |
+| member running on (body) · redundants · all in a flange's plane | 7 038 | 10.9 % | 62 % | 98 % | 98 % | 0.4 % | clashes after writing |
+| chord running on (arm, top) · bracing · all in a flange's plane | 4 407 | 6.8 % | 75 % | 87 % | 93 % | 1.4 % | a neighbour left as it is, clashes |
+| built-up member · redundants · all in a flange's plane | 3 656 | 5.6 % | 46 % | 47 % | 57 % | 6.3 % | its leg on the built-up member's other flange, built-up host |
+| leg running on · redundants · all in a flange's plane | 3 262 | 5.0 % | 14 % | 98 % | 98 % | 0.3 % | pull-back |
+| chord running on (arm, top) · redundants · all in a flange's plane | 2 937 | 4.5 % | 43 % | 97 % | 97 % | 0.2 % | — |
+| built-up leg · redundants · all in a flange's plane | 2 736 | 4.2 % | 4 % | 97 % | 98 % | 0.4 % | — |
+| leg running on · bracing · all in a flange's plane | 2 641 | 4.1 % | 52 % | 96 % | 98 % | 0.5 % | pull-back |
+| member running on (body) · with plan members · all in a flange's plane | 2 594 | 4.0 % | 24 % | 83 % | 90 % | 1.1 % | bolts joining nothing |
+| built-up member · redundants · some a few degrees out | 2 192 | 3.4 % | 15 % | 11 % | 29 % | 2.5 % | out of plane, a plate into steel |
+| member running on (body) · with plan members · some a few degrees out | 1 281 | 2.0 % | 16 % | 20 % | 50 % | 3.3 % | out of plane, roll set at its other end |
+| nothing runs through · bracing · some out of plane | 1 280 | 2.0 % | 0 % | 0 % | 41 % | 9.4 % | roll set at its other end, bolts joining nothing, too short |
+| member running on (body) · with plan members · some out of plane | 1 244 | 1.9 % | 0 % | 0 % | 40 % | 5.8 % | out of plane, roll set at its other end |
+| crossing · nothing · none to measure | 1 210 | 1.9 % | 23 % | 51 % | 94 % | 0.2 % | — |
+| chord running on (arm, top) · with plan members · some out of plane | 1 182 | 1.8 % | 4 % | 1 % | 52 % | 5.5 % | roll set at its other end |
+| built-up member · with plan members · some out of plane | 1 163 | 1.8 % | 3 % | 7 % | 25 % | 6.0 % | out of plane |
+| leg running on · with plan members · some out of plane | 970 | 1.5 % | 0 % | 0 % | 71 % | 3.6 % | roll set at its other end (the plan and hip members) |
+| nothing runs through · with plan members · all in a flange's plane | 948 | 1.5 % | 12 % | 21 % | 65 % | 2.0 % | bolts joining nothing |
+| chord running on (arm, top) · with plan members · some a few degrees out | 877 | 1.4 % | 11 % | 11 % | 50 % | 3.4 % | roll set at its other end, out of plane |
+| built-up leg · with plan members · some out of plane | 869 | 1.3 % | 0 % | 0 % | 50 % | 5.5 % | roll set at its other end, built-up host |
+| nothing runs through · with plan members · some out of plane | 847 | 1.3 % | 8 % | 22 % | 53 % | 3.5 % | roll set at its other end, out of plane |
+| chord running on (arm, top) · bracing · some a few degrees out | 747 | 1.2 % | 29 % | 14 % | 45 % | 1.7 % | roll set at its other end, inner face over the heel |
+| built-up member · nothing · none to measure | 742 | 1.1 % | 4 % | 2 % | 33 % | 0.7 % | out of plane |
+| chord running on (arm, top) · bracing · some out of plane | 712 | 1.1 % | 18 % | 24 % | 53 % | 2.5 % | roll set at its other end, clashes |
+| chord running on (arm, top) · nothing · none to measure | 603 | 0.9 % | 0 % | 0 % | 0 % | 0 % | (nothing to lay out) |
+| built-up leg · bracing · all in a flange's plane | 560 | 0.9 % | 13 % | 72 % | 83 % | 0.7 % | pull-back, built-up host |
+| built-up member · bracing · none to measure | 489 | 0.8 % | 4 % | 4 % | 49 % | 0.3 % | out of plane |
+| built-up member · bracing · all in a flange's plane | 424 | 0.7 % | 39 % | 40 % | 38 % | 1.1 % | built-up host |
+| leg splice · with plan members · some out of plane | 416 | 0.6 % | 0 % | 0 % | 47 % | 2.5 % | roll set at its other end, a plate into steel, a neighbour left as it is |
+| built-up member · bracing · some out of plane | 406 | 0.6 % | 1 % | 0 % | 29 % | 0.2 % | roll set at its other end, out of plane |
+
+(*Roll set at its other end*: its bolted leg lies off the flange and no one
+roll of its member lays both its ends flat, and the welded or bent plate in
+its own plane does not fit; *out of plane*: its axis runs out of the face
+of the flange it would lie on.)
+
+### What leaves an end for a hand detail
+
+Of the 43 909 ends left for a hand detail after Orient angles, by cause
+(each end counted once, in this order):
+
+| cause | ends | share |
+|---|---|---|
+| F. a leg splice (its cover in the way) | 1 122 | 2.6 % |
+| D. its bolts join nothing (pieces in line not one part; at a joint where nothing runs through, the base member's own bolts) | 2 985 | 6.8 % |
+| A. its axis more than 2° out of the host's flanges' planes | 19 013 | 43.3 % |
+| B. its axis in a flange's plane, its leg bolted not flat there (its roll set at its other end, or its leg lying on the host's other flange) | 8 449 | 19.2 % |
+| C. a built-up host (no plate on its angle yet: J6's rest) | 4 415 | 10.1 % |
+| E. room: a plate into steel, a clash after writing, the pull-back, too short, a neighbour left as it is | 7 806 | 17.8 % |
+| other | 119 | 0.3 % |
+
+**Six in ten are geometric (A and B)**, in every place: the end does not
+lie in the plane of the flange it would bolt onto, or its member's roll is
+set by its other end. Of the ends out of plane by more than 2° (each
+counted whatever its cause): from 2° to 5° 41 % are left (of 12 039 ends),
+from 5° to 20° 82 % (of 7 355), from 20° to 45° 62 % (of 13 785). The plan and hip members are the
+largest single family: with a plan member at the joint, 57 % of the ends
+left (with plan members in 35 % of the joints).
+
+### Per group, or general?
+
+What the groups with most ends left need, measured:
+
+- **Plan and hip members** (the groups "· with plan members · some out of
+  plane", 30 % of the ends left): a level member arrives between a leg's
+  or a chord's flanges, 30° to 45° out of each. Where a face's horizontal
+  ends at the joint its outstanding leg is level (Orient angles turns a
+  face member's other leg out of the tower), so the plan member could lie
+  flat on it, or on a level plate across both horizontals (a plan gusset,
+  the owner's picture of a bent plate at a corner where the horizontals'
+  flanges are not level). Today a plan member's host is a member running
+  through, else the leg — never a member ending there except in the
+  run's search of other members for an end left (L1 d). **General**: an
+  end's host chosen by the plane of its axis — the flange of a member at
+  the joint, running through or not, in whose plane it lies — before the
+  biggest member. Not built (it changes what an end bolts onto everywhere;
+  measured first).
+- **Built-up hosts** (built-up members and legs, 19 % + 9 % of the ends
+  left): an end whose axis lies in the plane of one of the built-up
+  member's flanges, its leg bolted parallel to the other (its roll from
+  its other end): seated on the flange its leg is parallel to, it is "out
+  of the face" by up to 90° (1 547 such ends) — the joint details' seat on
+  a built-up member is chosen by the end's leg, not by the plane its axis
+  lies in; and no plate is yet laid on a built-up member's angle (J6's
+  rest). **General**: the seat chosen by the plane of the axis (as for a
+  single angle's flange already), then J6's plates.
+- **Nothing runs through** (arm tips, K-braces' apexes, peaks; 18 % of the
+  ends left, 16 % whole): the base member's own bolts join nothing (it
+  bolts onto nothing), so such a joint cannot be whole; 565 joints (456
+  where nothing runs through, 109 where a leg ends) are left only for that.
+  **Per group**: the base member's end bolted onto the gusset the others
+  bolt onto (its bolts the gusset's holding bolts) — L10's question 5, a
+  format decision.
+- **Chords a few degrees out** (chord or body member running on, "· some
+  a few degrees out"): the chord's flanges lie 2° to 5° off the planes its
+  joints' ends lie in (Orient angles turns a chord to the faces through its
+  neighbouring chords; its joints' ends say otherwise). **Per group**: the
+  chord turned to what its joints say — L11's leg turn read for a chord
+  (below, a setting, off).
+- **Room** (E, 18 %, mostly "chord running on · with plan members · all in
+  a flange's plane"): crowding — four or more ends on two flanges; the
+  general steps (both faces of a flange, one plate per plane, shifts) are
+  where it is won.
+
+**Recommendation: general rules driven by the incoming ends, not methods
+per place.** The same three causes (an end out of its host's flange plane,
+its roll set at its other end, room) leave ends in every place; what
+differs between groups is how often. Two causes are specific to a group
+and worth a step of their own: the base member where nothing runs through
+(a format decision) and the chords whose joints say they are turned (built
+as a setting, off).
+
+### A chord turned against its joints (a setting, off by default)
+
+L11's leg turn ([above](#a-leg-turned-against-its-joints)) read for the
+host's pieces running on through a joint that are not legs
+(`joint_classes::chord_pieces`; `piece_rolls`): an arm's chord, a body's
+horizontal or diagonal running on. With `LayoutSettings::chord_turns` the
+run (`layout_run::chord_turned`) works in rounds: the chords flagged on its
+result so far — the pieces in line turned alike taken together as one
+chord, their flagged pieces' turns all one way within 4°, turned by their
+middle — all turned (as Orient angles turns a chord, before the members'
+own turns) and the run made again; each chord kept where its joints lay
+out more ends, or as many on fewer plates, none fewer at any of them
+(planned again with only those until each still helps); the next round
+from that result (at most four), until no chord flagged there helps — so
+that a run again on the result mostly finds nothing more to turn (not
+always, below). The turns kept
+are written as the chords' rolls (the file's rolls, not in the layout
+record's `rolled`: a later run keeps them) and said in the notes. **Off by
+default**: a chord's roll is Orient angles' (as a leg's), the owner
+decides. The analysis takes the turned roll as it takes any roll.
+
+Measured on the 78 private real towers (after Orient angles, with the
+bundled plugin), L11 → with the setting on: joints laid out whole 35 656 →
+35 884 (230 gained, 2 lost), ends 130 097 → 130 943, plates 67 532 →
+67 798; joint by joint 858 better (more ends, or as many on fewer plates)
+and 60 worse; 1 760 members' rolls differ on 71 towers (the chords turned
+and the bracing turned after them). The gains lie in the groups "· some a
+few degrees out": member running on (body) · with plan members 258 → 319
+whole, chord · with plan members 93 → 151, chord · bracing 107 → 148. The
+time: four to five runs of the layout per tower, median 41 → 164 s, the
+largest 67 → 327 s (all 78 towers, five at a time). Turning every flagged
+chord without weighing gained more joints whole (+633) but made 1 396
+joints worse (216 no longer whole); keeping each chord's turn where its
+joints were better in that comparison (worked out after the runs, not in
+a run) gave +342 whole and 138 worse. A run again on its result (six towers, every 13th): the same text on five; on the sixth the run again turns some chords back (their bracing, turned after them, says another turn — up to 9°): not stable there, **a run again not always identical with the setting on** (with it off, as before: 78/78). The time on those six towers, back to back: median 39 → 161 s, the largest 40 → 245 s.
+
+**L11's leg turns measured** (its question 6, the turns it proposes after
+Orient angles, applied before the run without weighing): 114 leg pieces
+on 22 towers (mostly leg extensions Orient angles finds no faces for),
+joints whole +54 (58 gained, 4 lost), ends +145, plates −28, 101 joints
+better and 14 worse — the group "leg running on · redundants · some a few
+degrees out" 3 → 60 whole of 70.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

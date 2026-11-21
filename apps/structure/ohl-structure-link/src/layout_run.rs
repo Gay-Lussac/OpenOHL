@@ -665,7 +665,9 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
 /// or as many on fewer plates, none fewer at any of them (planned again
 /// with only those until each still helps); the next round from that
 /// result, until no chord flagged there helps — so that a run again on the
-/// result finds nothing more to turn. The turns kept said in the notes;
+/// result mostly finds nothing more to turn (measured: not on every tower,
+/// the bracing turned after a chord may say another turn). The turns kept
+/// said in the notes;
 /// none kept: the run without them.
 fn chord_turned(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     use crate::other_face::helps;
