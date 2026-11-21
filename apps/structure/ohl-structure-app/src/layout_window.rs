@@ -182,6 +182,12 @@ impl LayoutWindow {
             // L8 (2026-11-21): the bolts of a member left as it is that
             // bolts onto an end laid out kept on that end's steel.
             partner_bolts: true,
+            // L9 (2026-11-21): a welded plate's flat plate planned with its
+            // outline as written (else short, else the ends left); holding
+            // bolts on a plate stopping short of the work point where they
+            // fit.
+            reach_clear: true,
+            short_holds: true,
         }
     }
 
