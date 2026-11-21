@@ -3951,6 +3951,21 @@ or three, L four or more. The phases, in order:
   > 8. Schema 8 deletes the old branch rows in the migration's own
   > transaction (no `VACUUM`: the database's administrators or autovacuum
   > give the space back)? → yes, as built.
+- [x] Follow-up of 2026-11-21 (S): two server tests that failed under the
+  full check's load (and passed alone) made certain. **Built 2026-11-21,
+  in active development, not approved yet.** **The exports' thread held
+  at a gate in the tests** (`ExportGate`, tests only) instead of a fixed
+  wait of 1.5 s: a move or a rights change made while an export is
+  written or a bundle made ready came after it when the test's own steps
+  (reading the model, a request) took longer than the wait — the export
+  not stale, the bundle applied without its conflict (shown by taking
+  the wait away: the same failure); now the work is decided, the change
+  made, then the work let through. **The server tests' waits generous**
+  (one constant, 120 s instead of 5–20 s; a wait ends as soon as its
+  condition holds): the property of rights waited 10 s for a merge's
+  answer, which took up to 7.3 s with the machine loaded (measured), more
+  in the full check; a fixed 300 ms sleep in the sign-in test is a wait
+  for the connection gone. What the tests check is unchanged.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

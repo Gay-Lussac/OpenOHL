@@ -867,7 +867,7 @@ fn shared_towers_on_direct_edits_of_main() {
     let gone = |server: &Server| {
         let t0 = std::time::Instant::now();
         while server.peers().iter().any(|p| p.user == "admin") {
-            assert!(t0.elapsed() < Duration::from_secs(20));
+            assert!(t0.elapsed() < crate::tests::WAIT);
             std::thread::sleep(Duration::from_millis(50));
         }
     };
@@ -1025,12 +1025,13 @@ fn exports_on_their_thread_as_on_the_authority() {
             assert!(got[1].0["left_out"]["other_lines"].as_u64() > Some(0));
         }
     }
-    // A move before an export, one while it is written (its writing made
-    // to wait 1.5 s).
+    // A move before an export, one while it is written (its writing held
+    // at the exports' thread's gate until the move is answered).
+    let gate = std::sync::Arc::new(crate::network::ExportGate::default());
     let server = Server::start_network(
         local("abcd2345"),
         NetOptions {
-            export_delay: Some(Duration::from_millis(1500)),
+            export_gate: Some(gate.clone()),
             ..net_options(&t.url)
         },
     )
@@ -1066,6 +1067,7 @@ fn exports_on_their_thread_as_on_the_authority() {
         v["export_plan_ms"].as_array().map_or(0, Vec::len)
     };
     let planned = plans(&server);
+    let held = gate.hold();
     bob.link
         .send(ClientMsg::ExportWorkingSet {
             id: 22,
@@ -1073,10 +1075,10 @@ fn exports_on_their_thread_as_on_the_authority() {
             reach: None,
         })
         .unwrap();
-    // Its content taken on the authority, then the move.
+    // Its content taken on the authority, then the move, then its writing.
     let t0 = std::time::Instant::now();
     while plans(&server) == planned {
-        assert!(t0.elapsed() < Duration::from_secs(60), "no export started");
+        assert!(t0.elapsed() < Duration::from_secs(120), "no export started");
         std::thread::sleep(Duration::from_millis(20));
     }
     request(
@@ -1087,6 +1089,7 @@ fn exports_on_their_thread_as_on_the_authority() {
         moved(&sid, [p0[0] + 0.6, p0[1], p0[2]]),
     )
     .unwrap();
+    drop(held);
     let got = pump_for(&bob, &mut log, Duration::from_secs(120), |m| {
         matches!(m, ServerMsg::WorkingSetExported { id: 22, .. })
     });
@@ -1118,6 +1121,7 @@ fn exports_on_their_thread_as_on_the_authority() {
     // Pat's rights changed while her export is written: nothing.
     let planned = plans(&server);
     let out_path = dir.join("pat-changed.ohl");
+    let held = gate.hold();
     let asked = std::thread::scope(|s| {
         let h = s.spawn(|| {
             server.offline(
@@ -1131,10 +1135,11 @@ fn exports_on_their_thread_as_on_the_authority() {
         });
         let t0 = std::time::Instant::now();
         while plans(&server) == planned {
-            assert!(t0.elapsed() < Duration::from_secs(60), "no export started");
+            assert!(t0.elapsed() < Duration::from_secs(120), "no export started");
             std::thread::sleep(Duration::from_millis(20));
         }
         assign(&t.url, "user:pat", Some("viewer"), false, Scope::network());
+        drop(held);
         h.join().unwrap()
     });
     let e = asked.unwrap_err();
@@ -1241,11 +1246,13 @@ fn bundles_on_their_thread_as_on_the_authority() {
     assert!(got[0].0["puts"].as_u64() >= Some(2), "{got:?}");
     assert!(lines.iter().all(|l| *l == lines[0]), "the branches differ");
     // A move of s1 on main while a bundle's line is made ready (its
-    // making held 1.5 s): a conflict when it is applied.
+    // making held at the exports' thread's gate until the move is
+    // answered): a conflict when it is applied.
+    let gate = std::sync::Arc::new(crate::network::ExportGate::default());
     let server = Server::start_network(
         local("abcd2345"),
         NetOptions {
-            export_delay: Some(Duration::from_millis(1500)),
+            export_gate: Some(gate.clone()),
             ..net_options(&t.url)
         },
     )
@@ -1258,16 +1265,18 @@ fn bundles_on_their_thread_as_on_the_authority() {
         v["bundle_plan_ms"].as_array().map_or(0, Vec::len)
     };
     let planned = plans(&server);
+    let during_bundle = worked("during");
+    let held = gate.hold();
     bob.link
         .send(ClientMsg::ImportBundle {
             id: 30,
-            bundle: Box::new(worked("during")),
+            bundle: Box::new(during_bundle),
             branch: None,
         })
         .unwrap();
     let t0 = std::time::Instant::now();
     while plans(&server) == planned {
-        assert!(t0.elapsed() < Duration::from_secs(60), "no bundle started");
+        assert!(t0.elapsed() < Duration::from_secs(120), "no bundle started");
         std::thread::sleep(Duration::from_millis(20));
     }
     let p1 = Network::connect(&t.url)
@@ -1288,6 +1297,7 @@ fn bundles_on_their_thread_as_on_the_authority() {
         moved(&s1, [p1[0] - 0.3, p1[1], p1[2]]),
     )
     .unwrap();
+    drop(held);
     let got = pump_for(&bob, &mut log, Duration::from_secs(120), |m| {
         matches!(m, ServerMsg::BundleImported { id: 30, .. })
     });
@@ -1315,6 +1325,7 @@ fn bundles_on_their_thread_as_on_the_authority() {
     };
     let before = lines_of(&t.url, &code);
     let planned = plans(&server);
+    let held = gate.hold();
     let asked = std::thread::scope(|s| {
         let h = s.spawn(|| {
             server.offline(
@@ -1327,10 +1338,11 @@ fn bundles_on_their_thread_as_on_the_authority() {
         });
         let t0 = std::time::Instant::now();
         while plans(&server) == planned {
-            assert!(t0.elapsed() < Duration::from_secs(60), "no bundle started");
+            assert!(t0.elapsed() < Duration::from_secs(120), "no bundle started");
             std::thread::sleep(Duration::from_millis(20));
         }
         assign(&t.url, "user:pat", Some("viewer"), false, Scope::network());
+        drop(held);
         h.join().unwrap()
     });
     let e = asked.unwrap_err();

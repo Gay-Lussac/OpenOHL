@@ -87,7 +87,7 @@ fn long_work_waits_behind_the_commands() {
     let t = std::thread::spawn(move || run(host, rx));
     let started = Instant::now();
     while log.lock().unwrap().len() < 5 {
-        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(started.elapsed() < crate::tests::WAIT);
         std::thread::sleep(Duration::from_millis(5));
     }
     tx.send(Job::Stop).unwrap();
@@ -121,7 +121,7 @@ fn overdue_long_work_starts_between_jobs() {
     let t = std::thread::spawn(move || run(host, rx));
     let started = Instant::now();
     while log.lock().unwrap().len() < 101 {
-        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(started.elapsed() < crate::tests::WAIT);
         std::thread::sleep(Duration::from_millis(5));
     }
     tx.send(Job::Stop).unwrap();
@@ -306,7 +306,7 @@ mod network {
         drop(bob);
         let wait = std::time::Instant::now();
         while server.peers().iter().any(|p| p.user == "bob") {
-            assert!(wait.elapsed() < Duration::from_secs(20));
+            assert!(wait.elapsed() < crate::tests::WAIT);
             std::thread::sleep(Duration::from_millis(50));
         }
         let e = join_network(&old, "bob", &NetJoin::default(), &mut |_| {})
@@ -319,7 +319,7 @@ mod network {
         // Valid to the end of today: joins; one that ended yesterday: no.
         let wait = std::time::Instant::now();
         while server.peers().iter().any(|p| p.user == "bob") {
-            assert!(wait.elapsed() < Duration::from_secs(20));
+            assert!(wait.elapsed() < crate::tests::WAIT);
             std::thread::sleep(Duration::from_millis(50));
         }
         let today = server.invitation_valid("bob", Some(0)).unwrap();
@@ -334,7 +334,7 @@ mod network {
         assert!(e.contains("wrong access code"), "another user's: {e}");
         let wait = std::time::Instant::now();
         while server.peers().iter().any(|p| p.user == "bob") {
-            assert!(wait.elapsed() < Duration::from_secs(20));
+            assert!(wait.elapsed() < crate::tests::WAIT);
             std::thread::sleep(Duration::from_millis(50));
         }
         let e = join_network(&ended, "bob", &NetJoin::default(), &mut |_| {})
@@ -744,7 +744,7 @@ radial = "50000 m"
         // A stale mark comes at once after the result; else a few
         // heartbeats pass without one.
         let mut beats = 0;
-        let stale = pump_for(&bob, &mut log, Duration::from_secs(5), |m| {
+        let stale = pump_for(&bob, &mut log, crate::tests::WAIT, |m| {
             beats += usize::from(matches!(m, ServerMsg::Heartbeat { .. }));
             matches!(m, ServerMsg::CheckStale { id: 50, .. }) || beats > 6
         });

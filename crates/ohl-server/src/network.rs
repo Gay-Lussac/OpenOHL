@@ -99,6 +99,8 @@ use crate::{
 };
 pub(crate) use checks::CheckDone;
 pub(crate) use exports::ExportBack;
+#[cfg(test)]
+pub(crate) use exports::ExportGate;
 
 /// Phase 14: the longest long work (a check, an export, a bundle) waits
 /// behind jobs that keep coming before it starts anyway, and the least
@@ -184,10 +186,11 @@ pub struct NetOptions {
     /// thread of their own, decided on the authority (false: written on
     /// the authority, as before — measurements, tests of the same file).
     pub export_worker: bool,
-    /// Tests: the exports' thread waits this long before writing (a
-    /// change landing while an export is written, made certain).
+    /// Tests: the exports' thread waits at this gate before each work
+    /// while a test holds it (a change landing while an export is written
+    /// or a bundle made ready, made certain however busy the machine).
     #[cfg(test)]
-    pub(crate) export_delay: Option<Duration>,
+    pub(crate) export_gate: Option<Arc<ExportGate>>,
 }
 
 impl std::fmt::Debug for NetOptions {
@@ -234,7 +237,7 @@ impl Default for NetOptions {
             check_worker: true,
             export_worker: true,
             #[cfg(test)]
-            export_delay: None,
+            export_gate: None,
         }
     }
 }
@@ -683,10 +686,10 @@ impl NetHost {
         };
         let exports = if o.export_worker {
             #[cfg(test)]
-            let delay = o.export_delay;
+            let gate = o.export_gate.clone();
             #[cfg(not(test))]
-            let delay = None;
-            exports::Exports::start(jobs.clone(), delay)?
+            let gate = None;
+            exports::Exports::start(jobs.clone(), gate)?
         } else {
             exports::Exports::default()
         };

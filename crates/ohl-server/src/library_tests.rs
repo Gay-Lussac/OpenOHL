@@ -47,7 +47,7 @@ fn ask(j: &Joined, id: u64, model: &str, line: &str, op: Op) -> Result<String, S
         .unwrap();
     let started = Instant::now();
     loop {
-        assert!(started.elapsed() < Duration::from_secs(20), "no answer");
+        assert!(started.elapsed() < crate::tests::WAIT, "no answer");
         match j.link.recv_timeout(Duration::from_millis(20)) {
             Some(Incoming::Msg(ServerMsg::Response { id: i, result })) if i == id => {
                 return result;

@@ -26,16 +26,17 @@ use crate::network_tests::{
     TestNet, add_user, local, moved, net_options, structure_of, test_network, tiles_around,
 };
 use crate::server::Server;
+use crate::tests::WAIT;
 use crate::{ClientMsg, HeldTile, Op, ServerMsg, TileKey};
 
-/// Takes messages until `until` (10 s at most); every message kept in
+/// Takes messages until `until` ([`WAIT`] at most); every message kept in
 /// `log`.
 pub(crate) fn pump(
     j: &Joined,
     log: &mut Vec<ServerMsg>,
     until: impl FnMut(&ServerMsg) -> bool,
 ) -> Vec<ServerMsg> {
-    pump_for(j, log, Duration::from_secs(10), until)
+    pump_for(j, log, WAIT, until)
 }
 
 /// [`pump`] for at most `limit` (a check computed on the server takes
@@ -725,7 +726,7 @@ fn grants_denies_and_groups_while_connected() {
     drop(dora);
     let peers = Instant::now();
     while server.peers().iter().any(|p| p.user == "dora") {
-        assert!(peers.elapsed() < Duration::from_secs(20));
+        assert!(peers.elapsed() < WAIT);
         std::thread::sleep(Duration::from_millis(50));
     }
     let dora = join_network(
@@ -764,7 +765,7 @@ fn grants_denies_and_groups_while_connected() {
     drop(dora);
     let peers = Instant::now();
     while server.peers().iter().any(|p| p.user == "dora") {
-        assert!(peers.elapsed() < Duration::from_secs(20));
+        assert!(peers.elapsed() < WAIT);
         std::thread::sleep(Duration::from_millis(50));
     }
     // She joins again (a user still) and sees nothing of the network.
@@ -812,7 +813,7 @@ fn grants_denies_and_groups_while_connected() {
     drop(dora);
     let peers = Instant::now();
     while server.peers().iter().any(|p| p.user == "dora") {
-        assert!(peers.elapsed() < Duration::from_secs(20));
+        assert!(peers.elapsed() < WAIT);
         std::thread::sleep(Duration::from_millis(50));
     }
     assert!(
@@ -1328,7 +1329,7 @@ fn property_no_message_holds_a_hidden_id_or_place() {
         drop(pat);
         let peers = Instant::now();
         while server.peers().iter().any(|p| p.user == "pat") {
-            assert!(peers.elapsed() < Duration::from_secs(20));
+            assert!(peers.elapsed() < WAIT);
             std::thread::sleep(Duration::from_millis(50));
         }
     }

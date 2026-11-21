@@ -145,6 +145,65 @@ pub(crate) struct ExportBack {
     done: Done,
 }
 
+/// Tests: a gate the exports' thread waits at before each work while a
+/// test holds it (`ExportGate::hold`) — the work decided on the
+/// authority, then a change made, then the work let through: the change
+/// lands while it is written or made ready, however long the test's own
+/// steps take on a busy machine (a fixed wait of 1.5 s did not, 2026-11-21).
+/// Never in the server outside the tests (a type with no state there).
+#[derive(Default)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct ExportGate {
+    #[cfg(test)]
+    held: std::sync::Mutex<bool>,
+    #[cfg(test)]
+    moved: std::sync::Condvar,
+}
+
+/// A hold on an `ExportGate`: let go when dropped.
+#[cfg(test)]
+pub(crate) struct GateHeld<'a>(&'a ExportGate);
+
+#[cfg(test)]
+impl ExportGate {
+    /// Holds the gate until the hold is dropped.
+    pub(crate) fn hold(&self) -> GateHeld<'_> {
+        *self.held.lock().unwrap_or_else(|e| e.into_inner()) = true;
+        GateHeld(self)
+    }
+}
+
+#[cfg(test)]
+impl Drop for GateHeld<'_> {
+    fn drop(&mut self) {
+        *self.0.held.lock().unwrap_or_else(|e| e.into_inner()) = false;
+        self.0.moved.notify_all();
+    }
+}
+
+impl ExportGate {
+    /// Waits while the gate is held (at most ten minutes: a test that
+    /// forgot it fails on what it checks instead of hanging).
+    fn pass(&self) {
+        #[cfg(test)]
+        {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(600);
+            let mut held = self.held.lock().unwrap_or_else(|e| e.into_inner());
+            while *held {
+                let left = until.saturating_duration_since(std::time::Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                held = self
+                    .moved
+                    .wait_timeout(held, left)
+                    .unwrap_or_else(|e| e.into_inner())
+                    .0;
+            }
+        }
+    }
+}
+
 /// The exports' thread and the work in flight.
 #[derive(Default)]
 pub(super) struct Exports {
@@ -155,18 +214,18 @@ pub(super) struct Exports {
 
 impl Exports {
     /// The exports' thread started; its exports come back on `jobs`
-    /// (`delay`: tests, a wait before each is written).
+    /// (`gate`: tests, waited at before each work while a test holds it).
     pub(super) fn start(
         jobs: std_mpsc::Sender<Job>,
-        delay: Option<std::time::Duration>,
+        gate: Option<Arc<ExportGate>>,
     ) -> Result<Self, String> {
         let (tx, rx) = std_mpsc::channel::<(u64, Work)>();
         std::thread::Builder::new()
             .name("ohl-exports".into())
             .spawn(move || {
                 while let Ok((key, work)) = rx.recv() {
-                    if let Some(d) = delay {
-                        std::thread::sleep(d);
+                    if let Some(g) = &gate {
+                        g.pass();
                     }
                     // A panic is a refusal, not a stop.
                     let internal = |what: &str| {

@@ -190,13 +190,14 @@ impl C {
         self.changes.push(c);
     }
 
-    /// Takes messages until `until` says stop (10 s at most).
+    /// Takes messages until `until` says stop ([`crate::tests::WAIT`] at
+    /// most).
     fn pump(&mut self, mut until: impl FnMut(&ServerMsg) -> bool) -> Vec<ServerMsg> {
         let started = Instant::now();
         let mut got = Vec::new();
         loop {
             assert!(
-                started.elapsed() < Duration::from_secs(10),
+                started.elapsed() < crate::tests::WAIT,
                 "{:?}",
                 got.iter().rev().take(5).collect::<Vec<_>>()
             );
@@ -731,7 +732,7 @@ fn a_network_serves_by_interest() {
     drop(d);
     let peers = Instant::now();
     while server.peers().iter().any(|p| p.user == "admin") {
-        assert!(peers.elapsed() < Duration::from_secs(10));
+        assert!(peers.elapsed() < crate::tests::WAIT);
         std::thread::sleep(Duration::from_millis(20));
     }
     let mut missed = Vec::new();

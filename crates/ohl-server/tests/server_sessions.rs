@@ -7,7 +7,8 @@
 //! object at once end with the same project in the same order, and a
 //! client gone in the middle of a request leaves the server serving the
 //! others. Each test has its own server on a free local port; every wait
-//! is bounded (10 s).
+//! is bounded ([`WAIT`]: generous, the whole test run keeps the machine
+//! busy; a wait ends as soon as its condition holds).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -16,6 +17,9 @@ use ohl_server::client::{Incoming, Joined, join, replay};
 use ohl_server::server::{Options, Server};
 use ohl_server::{ClientMsg, Invitation, Op, ServerMsg};
 use ohl_session::{Command, Role, Session};
+
+/// How long a wait lasts at most before the test fails.
+const WAIT: Duration = Duration::from_secs(120);
 
 fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ohl-server-it-{name}-{}", std::process::id()));
@@ -65,13 +69,13 @@ impl Client {
         Ok(Self { joined, replica })
     }
 
-    /// Takes messages until `until` says stop (10 s at most), applying
+    /// Takes messages until `until` says stop ([`WAIT`] at most), applying
     /// the edits to the replica; returns the messages.
     fn pump(&mut self, mut until: impl FnMut(&ServerMsg) -> bool) -> Vec<ServerMsg> {
         let started = Instant::now();
         let mut got = Vec::new();
         loop {
-            assert!(started.elapsed() < Duration::from_secs(10), "{got:?}");
+            assert!(started.elapsed() < WAIT, "{got:?}");
             match self.joined.link.recv_timeout(Duration::from_millis(50)) {
                 Some(Incoming::Msg(m)) => {
                     if let ServerMsg::Applied {
@@ -114,15 +118,11 @@ fn moved(id: &str, p: [f64; 3]) -> Op {
     }
 }
 
-/// Waits (10 s at most) until the server lists `n` users.
+/// Waits ([`WAIT`] at most) until the server lists `n` users.
 fn peers(server: &Server, n: usize) {
     let t = Instant::now();
     while server.peers().len() != n {
-        assert!(
-            t.elapsed() < Duration::from_secs(10),
-            "{:?}",
-            server.peers()
-        );
+        assert!(t.elapsed() < WAIT, "{:?}", server.peers());
         std::thread::sleep(Duration::from_millis(20));
     }
 }

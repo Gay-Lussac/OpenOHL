@@ -25,8 +25,8 @@ use crate::network_tests::{local, moved, net_options, test_network};
 use crate::server::Server;
 use crate::{ClientMsg, Op, ServerMsg};
 
-/// Takes messages until `until` says stop (10 s at most), rows into
-/// `replica` when given.
+/// Takes messages until `until` says stop ([`crate::tests::WAIT`] at
+/// most), rows into `replica` when given.
 fn pump(
     j: &Joined,
     mut replica: Option<&mut Session>,
@@ -36,7 +36,7 @@ fn pump(
     let mut got = Vec::new();
     loop {
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < crate::tests::WAIT,
             "{:?}",
             got.iter().rev().take(4).collect::<Vec<_>>()
         );
@@ -514,7 +514,7 @@ fn the_idle_solve_makes_every_tile_once() {
         if !s["idle_done_s"].is_null() {
             break s;
         }
-        assert!(started.elapsed() < Duration::from_secs(60), "{s}");
+        assert!(started.elapsed() < crate::tests::WAIT, "{s}");
         std::thread::sleep(Duration::from_millis(50));
     };
     let tiles = first["tiles"].as_u64().unwrap();
@@ -582,7 +582,7 @@ fn the_idle_solve_makes_every_tile_once() {
             assert!(s["solved"].as_u64().unwrap() > solved_before, "{s}");
             break;
         }
-        assert!(started.elapsed() < Duration::from_secs(30), "{s}");
+        assert!(started.elapsed() < crate::tests::WAIT, "{s}");
         std::thread::sleep(Duration::from_millis(50));
     }
 }

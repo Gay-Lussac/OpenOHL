@@ -11,6 +11,12 @@ use crate::client::{Incoming, Joined, join, replay};
 use crate::server::{Options, Server};
 use crate::{ClientMsg, Invitation, Op, ServerMsg};
 
+/// How long a test waits for what it waits on (a message, a client gone,
+/// a count reached) before failing: generous, as the whole test run keeps
+/// the machine busy (2026-11-21: 10 s waits failed under load). A wait
+/// ends as soon as its condition holds; what the tests check is unchanged.
+pub(crate) const WAIT: Duration = Duration::from_secs(120);
+
 pub(crate) fn temp(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("ohl-server-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -62,13 +68,13 @@ impl Client {
         Ok(Self { joined, replica })
     }
 
-    /// Takes messages until `until` says stop (10 s at most), applying
+    /// Takes messages until `until` says stop ([`WAIT`] at most), applying
     /// the edits to the replica; returns the messages.
     pub(crate) fn pump(&mut self, mut until: impl FnMut(&ServerMsg) -> bool) -> Vec<ServerMsg> {
         let started = Instant::now();
         let mut got = Vec::new();
         loop {
-            assert!(started.elapsed() < Duration::from_secs(10), "{got:?}");
+            assert!(started.elapsed() < WAIT, "{got:?}");
             match self.joined.link.recv_timeout(Duration::from_millis(50)) {
                 Some(Incoming::Msg(m)) => {
                     if let ServerMsg::Applied {
@@ -280,7 +286,7 @@ fn users_share_a_project() {
     drop(carol);
     let t = Instant::now();
     while server.peers().len() != 2 {
-        assert!(t.elapsed() < Duration::from_secs(10));
+        assert!(t.elapsed() < WAIT);
         std::thread::sleep(Duration::from_millis(20));
     }
     // Same name twice, wrong code, another certificate: refused.

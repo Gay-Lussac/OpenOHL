@@ -89,7 +89,12 @@ fn signing_in_with_the_organisation() {
     // Renewed without the browser, joined again.
     let again = refresh(&signed).unwrap();
     assert_eq!(again.subject(), "00u-bob");
-    std::thread::sleep(Duration::from_millis(300));
+    // Its first connection gone (one a user), waited for, not slept.
+    let t0 = std::time::Instant::now();
+    while server.peers().iter().any(|p| p.user == "bob") {
+        assert!(t0.elapsed() < crate::tests::WAIT);
+        std::thread::sleep(Duration::from_millis(20));
+    }
     let bob = join_network(&bare, "bob", &with(again.id_token()), &mut |_| {}).unwrap();
     drop(bob);
     // The user refuses on the provider's page: said.

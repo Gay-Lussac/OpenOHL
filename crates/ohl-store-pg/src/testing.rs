@@ -462,11 +462,12 @@ impl Cluster {
     ///
     /// # Panics
     ///
-    /// When a lock is still held after 10 s.
+    /// When a lock is still held after 120 s (generous: the whole test
+    /// run keeps the machine busy; the wait ends once the lock is gone).
     pub fn wait_for_locks_gone(&self, db: &str) {
         let mut c = self.admin();
         let name = self.db_name(db);
-        let until = Instant::now() + Duration::from_secs(10);
+        let until = Instant::now() + Duration::from_secs(120);
         loop {
             let held: i64 = c
                 .query_one(
@@ -481,7 +482,7 @@ impl Cluster {
             }
             assert!(
                 Instant::now() < until,
-                "{name}: an advisory lock still held 10 s after its connection was closed"
+                "{name}: an advisory lock still held 120 s after its connection was closed"
             );
             std::thread::sleep(Duration::from_millis(10));
         }

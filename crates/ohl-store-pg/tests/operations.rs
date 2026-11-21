@@ -653,7 +653,7 @@ fn tls_to_the_database() {
         if t.connect().is_ok() {
             break;
         }
-        assert!(started.elapsed().as_secs() < 20, "TLS never offered");
+        assert!(started.elapsed().as_secs() < 120, "TLS never offered");
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
     let encrypted = |url: &str| -> Result<bool, String> {
