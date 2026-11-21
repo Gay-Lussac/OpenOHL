@@ -223,7 +223,12 @@ fn the_redundant_on_the_pieces_before_and_after_confirming() {
             SPLIT.to_owned()
         };
         let d = joint_details(&text, &lib, &Default::default()).unwrap();
-        let p = plan_joint(d.joint("M").unwrap(), &settings(), &|_, _| None);
+        // (Without L8's partner bolts: the guard's own scenario.)
+        let s = LayoutSettings {
+            partner_bolts: false,
+            ..settings()
+        };
+        let p = plan_joint(d.joint("M").unwrap(), &s, &|_, _| None);
         let ends: Vec<&str> = p.ends.iter().map(|e| e.member.as_str()).collect();
         assert_eq!(ends, ["V"], "{p:?}");
         let mutual = p

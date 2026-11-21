@@ -1245,6 +1245,54 @@ fn a_run_keeps_the_place_of_a_member_left_by_hand() {
     assert_eq!(run(&r.text, &settings(), Some(&["N2"]), false).text, r.text);
 }
 
+/// L8 (L7's proposal 3): a member the run names what it bolts onto in its
+/// planning copy but does not lay out is written without the name — drawn
+/// elsewhere. Its joint is planned once more with it where the file draws
+/// it, kept where that lays out more ends (or as many on no more plates):
+/// on the invented tower, more ends than without, each such joint said in
+/// the notes, the name of such a member not written, nothing taken back
+/// for a plate's bolts off its outline; a run again changes nothing.
+#[test]
+fn a_member_named_but_not_laid_out_is_planned_where_it_is_drawn() {
+    let text = tall();
+    let r = run(&text, &settings(), None, false);
+    let off = LayoutSettings {
+        as_drawn: false,
+        ..settings()
+    };
+    let r0 = run(&text, &off, None, false);
+    let ends = |r: &crate::LayoutRun| r.laid_out().map(|o| o.plan.ends.len()).sum::<usize>();
+    assert!(ends(&r) > ends(&r0), "{} {}", ends(&r), ends(&r0));
+    let said: Vec<&String> = r
+        .notes
+        .iter()
+        .filter(|n| n.contains("where the file draws it"))
+        .collect();
+    assert!(!said.is_empty(), "{:?}", r.notes);
+    let t = parse(&r.text);
+    for n in &said {
+        let (j, rest) = n.split_once(": planned with ").unwrap();
+        let ms = rest.split(" where").next().unwrap();
+        let o = r.joints.iter().find(|o| o.joint == j).unwrap();
+        for m in ms.split(", ") {
+            assert!(!o.plan.ends.iter().any(|e| e.member == m), "{n}");
+            assert!(
+                t.connection(m, j).is_none_or(|c| c.onto.is_none()),
+                "{n}: {m}'s name written"
+            );
+        }
+    }
+    assert!(
+        r.joints
+            .iter()
+            .flat_map(|o| &o.hand)
+            .all(|h| !h.contains("would lie outside its outline")),
+        "{:?}",
+        r.joints.iter().flat_map(|o| &o.hand).collect::<Vec<_>>()
+    );
+    assert_eq!(run(&r.text, &settings(), None, false).text, r.text);
+}
+
 /// J1 in a run: the short redundant the owner's order filled one after
 /// the other would leave out is laid out (D1 pulled back past it), and the
 /// joint is laid out whole, running into nothing.

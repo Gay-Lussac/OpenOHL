@@ -176,6 +176,12 @@ impl LayoutWindow {
             // facing the ends (its angles known), kept where it lays out
             // more.
             built_up_plates: true,
+            // L8 (2026-11-21): a joint planned once more with the members
+            // the run named but does not lay out where the file draws them.
+            as_drawn: true,
+            // L8 (2026-11-21): the bolts of a member left as it is that
+            // bolts onto an end laid out kept on that end's steel.
+            partner_bolts: true,
         }
     }
 

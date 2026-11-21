@@ -861,6 +861,10 @@ fn lay_out_once(
     let mut conns = connection_edits::Connections::of(&planning);
     let mut joins: BTreeMap<String, Vec<Join>> = BTreeMap::new();
     let mut taken = ids_in(&planning);
+    // L8: the ends the run names what they bolt onto in the planning copy
+    // (member, joint), with what the copy gave before (none: nothing) — a
+    // name written only where the end is laid out.
+    let mut run_named: BTreeMap<(String, String), Option<String>> = BTreeMap::new();
     for j in around_details
         .joints
         .iter()
@@ -885,6 +889,9 @@ fn lay_out_once(
             if in_line_here || joined.contains(m.as_str()) {
                 continue;
             }
+            run_named
+                .entry((m.clone(), j.id.clone()))
+                .or_insert_with(|| onto_in(&planning, &m, &j.id));
             let _ = conns.set(
                 &mut planning,
                 &m,
@@ -1545,6 +1552,9 @@ fn lay_out_once(
                     onto_back.insert(jid.clone(), back);
                     guard.borrow_mut().changed.insert(jid.clone(), n);
                     for (m, h) in &alt[&jid] {
+                        run_named
+                            .entry((m.clone(), jid.clone()))
+                            .or_insert_with(|| onto_in(&planning.borrow(), m, &jid));
                         let _ = chosen.set(
                             &mut planning.borrow_mut(),
                             m,
@@ -1589,6 +1599,14 @@ fn lay_out_once(
             joint_members.entry(n.as_str()).or_default().push(m);
         }
     }
+    // L8: the joints planned as drawn in the pass before (their ends and
+    // plates laid out as named, and the names taken out), and those done.
+    type Names = Vec<(String, Option<String>)>;
+    type Laid = (usize, usize, BTreeSet<String>);
+    let mut as_drawn: BTreeMap<String, (Laid, Names)> = BTreeMap::new();
+    let mut as_drawn_done: BTreeSet<String> = BTreeSet::new();
+    let mut as_drawn_passes = 0;
+    let mut as_drawn_plan: Option<Planned> = None;
     loop {
         let turns: BTreeMap<&String, f64> = turned
             .iter()
@@ -1606,26 +1624,35 @@ fn lay_out_once(
         // The joints asked in detail with the turns, each planned (those
         // of the half turns' check when the turns are the same).
         let fresh;
-        let (details, model, plans) = match (turns.is_empty(), refused.is_empty(), &first) {
-            (true, _, _) => (
-                &around_details,
-                around_model.as_ref(),
-                plans_of(
+        let held;
+        let (details, model, plans) = if let Some(p) = as_drawn_plan.take() {
+            // (L8: the joints planned as drawn again, the others as in the
+            // pass before.)
+            held = p;
+            (&held.0, held.1.as_ref(), held.2.clone())
+        } else {
+            match (turns.is_empty(), refused.is_empty(), &first) {
+                (true, _, _) => (
                     &around_details,
                     around_model.as_ref(),
-                    &targets,
-                    &settings,
-                    &joins,
-                    &order,
-                    &guard,
+                    plans_of(
+                        &around_details,
+                        around_model.as_ref(),
+                        &targets,
+                        &settings,
+                        &joins,
+                        &order,
+                        &guard,
+                    ),
                 ),
-            ),
-            (false, true, Some(p)) => (&p.0, p.1.as_ref(), p.2.clone()),
-            _ => {
-                fresh = planned_with(&turns, &settings)?;
-                (&fresh.0, fresh.1.as_ref(), fresh.2.clone())
+                (false, true, Some(p)) => (&p.0, p.1.as_ref(), p.2.clone()),
+                _ => {
+                    fresh = planned_with(&turns, &settings)?;
+                    (&fresh.0, fresh.1.as_ref(), fresh.2.clone())
+                }
             }
         };
+        let plans_first = plans.clone();
         let mut outcomes: Vec<JointOutcome> = plans
             .into_iter()
             .map(|(j, plan)| JointOutcome {
@@ -1764,6 +1791,137 @@ fn lay_out_once(
                 if !back.is_empty() {
                     drop(g);
                     if settings.onto_search {
+                        (around_details, around_model) = crate::joints::joint_details_and_model(
+                            &text_of(&planning.borrow(), &keep_around),
+                            ask.library,
+                            ask.bolts,
+                            Some(&around),
+                        )?;
+                    }
+                    first = None;
+                    continue;
+                }
+            }
+            // L8 (L7's proposal 3): a member the run named what it bolts
+            // onto in the planning copy but does not lay out is written
+            // without the name — drawn elsewhere than planned. Its joint
+            // planned once more with the name taken out (the member where
+            // the file draws it); kept where it then lays out more ends, or
+            // as many on no more plates, else named again (at most
+            // [`AS_DRAWN_PASSES`] such passes).
+            if useless.is_empty() && settings.as_drawn && !run_named.is_empty() {
+                // A joint's ends laid out, its plates and the members it
+                // lays out or leaves for a hand detail.
+                let laid = |o: &JointOutcome| -> Laid {
+                    let (ends, plates) = if o.written {
+                        (o.plan.ends.len(), o.plates.len())
+                    } else {
+                        (0, 0)
+                    };
+                    let asked = o
+                        .plan
+                        .ends
+                        .iter()
+                        .map(|e| e.member.clone())
+                        .chain(o.plan.hand_members.iter().cloned())
+                        .collect();
+                    (ends, plates, asked)
+                };
+                let mut again = false;
+                let mut doc = planning.borrow_mut();
+                let mut c = connection_edits::Connections::of(&doc);
+                for (j, (before, names)) in std::mem::take(&mut as_drawn) {
+                    let Some(o) = outcomes.iter().find(|o| o.joint == j) else {
+                        continue;
+                    };
+                    let now = laid(o);
+                    // (No member it laid out or left for a hand detail now
+                    // left as it is, unsaid.)
+                    let keep = now.2.is_superset(&before.2)
+                        && (now.0 > before.0 || (now.0 == before.0 && now.1 <= before.1));
+                    if keep {
+                        let ms: Vec<&str> = names.iter().map(|(m, _)| m.as_str()).collect();
+                        notes.push(format!(
+                            "{j}: planned with {} where the file draws it (not laid out \
+                             there: the run's name for what it bolts onto taken out)",
+                            ms.join(", ")
+                        ));
+                        continue;
+                    }
+                    for (m, v) in names {
+                        let _ = c.set(&mut doc, &m, &j, "onto", v.map(FieldValue::Word).as_ref());
+                    }
+                    touched.insert(j);
+                    again = true;
+                }
+                if as_drawn_passes < AS_DRAWN_PASSES {
+                    for o in &outcomes {
+                        if as_drawn_done.contains(&o.joint) {
+                            continue;
+                        }
+                        let names: Names = run_named
+                            .iter()
+                            .filter(|((m, j), plain)| {
+                                j == &o.joint
+                                    && !(o.written && o.plan.ends.iter().any(|e| &e.member == m))
+                                    && onto_in(&doc, m, j) != **plain
+                                    // (The face it lies on given by hand:
+                                    // given for the member named, kept so.)
+                                    && field_in(&doc, m, j, "face").is_none()
+                            })
+                            .map(|((m, _), _)| (m.clone(), onto_in(&doc, m, &o.joint)))
+                            .collect();
+                        if names.is_empty() {
+                            continue;
+                        }
+                        for (m, _) in &names {
+                            let plain = run_named[&(m.clone(), o.joint.clone())].clone();
+                            let _ = c.set(
+                                &mut doc,
+                                m,
+                                &o.joint,
+                                "onto",
+                                plain.map(FieldValue::Word).as_ref(),
+                            );
+                        }
+                        as_drawn_done.insert(o.joint.clone());
+                        as_drawn.insert(o.joint.clone(), (laid(o), names));
+                        touched.insert(o.joint.clone());
+                        again = true;
+                    }
+                    as_drawn_passes += 1;
+                }
+                drop(doc);
+                if again {
+                    // Only the joints whose names changed planned again
+                    // (in detail from the planning copy now, with the
+                    // turns); the others as in this pass.
+                    let mut d = planning.borrow().clone();
+                    for (m, turn) in &turns {
+                        ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+                    }
+                    let (dd, _) = crate::joints::joint_details_and_model(
+                        &text_of(&d, &keep_for(&touched)),
+                        ask.library,
+                        ask.bolts,
+                        Some(&touched),
+                    )?;
+                    let mut ps = plans_first;
+                    for (jid, p) in
+                        plans_of(&dd, model, &touched, &settings, &joins, &order, &guard)
+                    {
+                        if let Some(x) = ps.iter_mut().find(|x| x.0 == jid) {
+                            x.1 = p;
+                        }
+                    }
+                    let mut merged = details.clone();
+                    for jd in dd.joints {
+                        if let Some(x) = merged.joints.iter_mut().find(|x| x.id == jd.id) {
+                            *x = jd;
+                        }
+                    }
+                    as_drawn_plan = Some((merged, model.cloned(), ps));
+                    if turns.is_empty() {
                         (around_details, around_model) = crate::joints::joint_details_and_model(
                             &text_of(&planning.borrow(), &keep_around),
                             ask.library,
@@ -2233,6 +2391,32 @@ const CLASH_ROUNDS: usize = 6;
 /// (L1 d, [`LayoutSettings::onto_search`]): the program's bound on the
 /// extra work, not a standard's.
 pub const ONTO_TRIES: usize = 2;
+
+/// How many passes of a run take out the names of the members it named
+/// but does not lay out (L8, [`LayoutSettings::as_drawn`]): the program's
+/// bound on the extra work, not a standard's.
+pub const AS_DRAWN_PASSES: usize = 2;
+
+/// What `m`'s end at joint `j` bolts onto as `doc` gives it (none: not
+/// given).
+fn onto_in(doc: &DocumentMut, m: &str, j: &str) -> Option<String> {
+    field_in(doc, m, j, "onto")
+}
+
+/// `m`'s end at joint `j`: its field `field` as `doc` gives it (a word).
+fn field_in(doc: &DocumentMut, m: &str, j: &str, field: &str) -> Option<String> {
+    doc.get("connection")
+        .and_then(Item::as_array_of_tables)
+        .and_then(|a| {
+            a.iter().find(|t| {
+                t.get("member").and_then(Item::as_str) == Some(m)
+                    && t.get("joint").and_then(Item::as_str) == Some(j)
+            })
+        })
+        .and_then(|t| t.get(field))
+        .and_then(Item::as_str)
+        .map(str::to_owned)
+}
 
 /// How many times an end laid out is pulled back past what it would run
 /// into before it is left as it was (J1, 2026-11-19).

@@ -237,6 +237,27 @@ pub struct LayoutSettings {
     /// between them: by hand, the packing there not known). On by default;
     /// off: as before.
     pub built_up_plates: bool,
+    /// L8, 2026-11-21 (L7's proposal 3): a member the run names what it
+    /// bolts onto in its planning copy (so that its leg and turn are those
+    /// on that member) but does not lay out is drawn without that name
+    /// (the run writes only what it lays out) — elsewhere. Its joint is
+    /// then planned once more with that member where the file will draw
+    /// it (the name taken out), so that the plates, ends and holding bolts
+    /// on it are planned where it lies; kept at a joint only where it lays
+    /// out more ends, or as many on no more plates, else planned as before.
+    /// On by default; off: as before.
+    pub as_drawn: bool,
+    /// L8, 2026-11-21 (L7's proposal 4): a member left as it is that bolts
+    /// onto an end the plan lays out (the partner of a pair bolting onto
+    /// each other, its own end left as it is) keeps its bolts on that end:
+    /// the end's cut no further than the partner's first bolt less its end
+    /// distance, its move such that every partner bolt's hole stays within
+    /// its flange, its own bolts the default minimum spacing from the
+    /// partner's; where no cut and move within the longest pull-back and
+    /// the shift limit does, the end is left for a hand detail in the plan
+    /// (before: laid out, then taken back after writing). On by default;
+    /// off: as before.
+    pub partner_bolts: bool,
 }
 
 impl Default for LayoutSettings {
@@ -266,6 +287,8 @@ impl Default for LayoutSettings {
             direct_moved: true,
             hold_plates: true,
             built_up_plates: true,
+            as_drawn: true,
+            partner_bolts: true,
         }
     }
 }
@@ -643,6 +666,14 @@ struct Strip {
     /// splice…): their centres (2D) and how far each keeps (its head's or
     /// nut's corner radius), m.
     obstacles: Vec<([f64; 2], f64)>,
+    /// L8 (L7's proposal 4): the bolts of the members left as they are that
+    /// bolt onto this end (2D, as `obstacles`), each with its hole's
+    /// diameter and the end distance it keeps in this end's steel, m —
+    /// kept on its steel ([`partner_misfit`]), not kept clear of.
+    partners: Vec<([f64; 2], f64, f64)>,
+    /// Nothing runs on into it as one part at the joint: its steel starts
+    /// at its cut (the partners' bolts past it by their end distance).
+    own_ends: bool,
     /// The flange's heel (structure axes, m) and across it.
     heel: [f64; 3],
     across: [f64; 3],
@@ -2039,9 +2070,9 @@ fn plan_once(
         let off = a.flat.filter(|f| f.off > FLAT_OFF).map(|f| f.off);
         // Off: on the flange in whose plane its axis lies most nearly, else
         // on the other.
-        let strip = strip_of(j, a, host, s, edge, &others, off, false).or_else(|e| {
+        let strip = strip_of(j, a, host, s, edge, (&others, except), off, false).or_else(|e| {
             if off.is_some() {
-                strip_of(j, a, host, s, edge, &others, off, true).map_err(|_| e)
+                strip_of(j, a, host, s, edge, (&others, except), off, true).map_err(|_| e)
             } else {
                 Err(e)
             }
@@ -2171,6 +2202,9 @@ fn plan_once(
                 for (c, _) in x.obstacles.iter_mut() {
                     *c = sub2(*c, dp);
                 }
+                for (c, _, _) in x.partners.iter_mut() {
+                    *c = sub2(*c, dp);
+                }
             }
         }
         let mut order = ks.clone();
@@ -2210,7 +2244,11 @@ fn plan_once(
             // Left for its own sake (it fits nowhere even alone): its place
             // kept free; left for want of room beside the others, or for a
             // clash: said with them.
-            if strips[k].floor.is_none() && place(&strips, k, &[], s).is_err() {
+            // (Not one left for a partner's bolts, L8: its place is not
+            // kept free — as a member taken back after writing.)
+            if strips[k].floor.is_none()
+                && place(&strips, k, &[], s).is_err_and(|e| !e.contains(PARTNER_LEFT))
+            {
                 plan.kept_free.push(strips[k].member.clone());
                 left_here.push(k);
             }
@@ -3724,7 +3762,9 @@ fn strip_of(
     host: &Arrival,
     s: &LayoutSettings,
     edge: EdgeRule<'_>,
-    others: &[&str],
+    // The members not laid out here, and of those the ones left for a hand
+    // detail by the run's rounds (their hand detail places their bolts).
+    (others, except): (&[&str], &BTreeMap<String, String>),
     tilt: Option<f64>,
     other: bool,
 ) -> Result<Strip, String> {
@@ -3870,6 +3910,7 @@ fn strip_of(
     let edge_end = |t: f64| -> (f64, f64) {
         edge(a, t).unwrap_or((own_edge.unwrap_or(edge_min), end.max(end_min)))
     };
+    let edge_rule = edge;
     let edge = edge_end(f.t).0;
     // The data's shift: along `shift.1`, per metre along `v`.
     // (Towards the member it is to bolt onto, as the drawing measures it
@@ -3892,14 +3933,38 @@ fn strip_of(
         scale(f.out, if inside { -f.t } else { 0.0 }),
     );
     let mut obstacles = Vec::new();
+    // L8 (L7's proposal 4): the members left as they are bolting onto this
+    // end — their bolts kept on its steel, not kept clear of (an end off
+    // the flange or leaving over the heel: as before, the check after
+    // writing judges them; a member left for a hand detail by the run's
+    // rounds: not asked, as after writing).
+    let mut partners = Vec::new();
     for b in &j.arrivals {
         if b.member == a.member || !others.contains(&b.member.as_str()) {
             continue;
         }
         let Some(bs) = &b.bolts.value else { continue };
+        if s.partner_bolts
+            && !except.contains_key(&b.member)
+            && tilt.is_none()
+            && !leaves_over
+            && b.continuous.is_none()
+            && b.onto.value.as_deref() == Some(a.member.as_str())
+            && crate::joints::host_flange(b, a).is_some()
+        {
+            let hole = bs.hole.unwrap_or(bs.diameter);
+            let end = edge_rule(b, g.t).map_or(s.defaults.of(bs.diameter)[0], |e| e.1);
+            for q in &b.bolt_points {
+                partners.push((to2(sub(*q, j.position)), hole, end));
+            }
+            continue;
+        }
         let r = bs.drawn[0].unwrap_or(BOLT_DRAWN[0] * bs.diameter) / 3f64.sqrt();
         for (q, axis, _) in b.bolts_with_axes() {
-            let q = add(j.position, q);
+            // (The bolts are where they are in the structure's axes; L8,
+            // 2026-11-21, found measuring: before, the joint's position was
+            // added once more — the bolts already there were missed unless
+            // the face passed near the structure's origin.)
             if dot(axis, f.out).abs() < 0.9 || dot(sub(q, face_at), f.out).abs() > 0.03 {
                 continue;
             }
@@ -4097,6 +4162,11 @@ fn strip_of(
         tilted,
         inside,
         obstacles,
+        partners,
+        own_ends: !j
+            .arrivals
+            .iter()
+            .any(|b| b.continuous.as_deref() == Some(a.member.as_str())),
         heel: add(j.position, f.heel),
         across: f.across,
         member: a.member.clone(),
@@ -4814,7 +4884,7 @@ fn land_moved(
                 }
             }
             let c = ceil_to(lo, 0.001);
-            if c.is_finite() && c <= hi + 1e-9 {
+            if c.is_finite() && c <= hi + 1e-9 && partner_misfit(x, c, moved, s).is_none() {
                 return Some(Placed {
                     k: p.k,
                     cut: c,
@@ -4928,6 +4998,44 @@ fn cut_need(
     (need.max(0.0), by)
 }
 
+/// The words of an end left because the bolts of a member left as it is
+/// bolting onto it would not stay on it (L8, [`LayoutSettings::partner_bolts`]).
+pub const PARTNER_LEFT: &str =
+    "a bolt of a member left as it is that bolts onto it would not stay on it";
+
+/// L8 (L7's proposal 4): why strip `x` cut at `cut` and moved `moved`
+/// across does not keep the bolts of the members left as they are that bolt
+/// onto it (`Strip::partners`) — a hole not within its flange (the joint
+/// checks' rule), a bolt nearer its steel's end than its end distance, or
+/// one of its own bolts nearer a partner's than the default minimum
+/// spacing; none: it keeps them.
+fn partner_misfit(x: &Strip, cut: f64, moved: f64, s: &LayoutSettings) -> Option<String> {
+    let (lo, hi) = (x.lat[0] + moved, x.lat[1] + moved);
+    let spacing = s.defaults.of(x.d)[1];
+    for (c, hole, end) in &x.partners {
+        let rel = sub2(*c, x.w);
+        let (along, across) = (dot2(rel, x.u), dot2(rel, x.v));
+        if across - hole / 2.0 < lo - 1e-9 || across + hole / 2.0 > hi + 1e-9 {
+            return Some("its hole would not lie within the flange".to_owned());
+        }
+        if x.own_ends && along < cut + end - 1e-9 {
+            return Some(
+                "its bolt would lie nearer the steel's end than its end distance".to_owned(),
+            );
+        }
+        let keep = spacing.max(s.defaults.of(*hole)[1]);
+        for (b, line) in &x.bolts {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
+            let q = x.at(cut + b, l);
+            let d = sub2(q, *c);
+            if (d[0] * d[0] + d[1] * d[1]).sqrt() < keep - 1e-9 {
+                return Some("a bolt of the end would lie nearer it than the spacing".to_owned());
+            }
+        }
+    }
+    None
+}
+
 /// Strip `k` placed against those `placed` before it: concentric and
 /// pulled back, else shifted, else why not.
 fn place(
@@ -4965,6 +5073,10 @@ fn place(
             (need, by)
         }
     };
+    // L8: the bolts of the members left as they are bolting onto it kept
+    // on its steel (`Strip::partners`).
+    let partner = |cut: f64, moved: f64| partner_misfit(x, cut, moved, s);
+    let mut partner_why: Option<String> = None;
     if let Some(c) = x.hand_cut {
         let (need, by) = cut_at(concentric);
         if need > c + 1e-4 {
@@ -4976,6 +5088,12 @@ fn place(
                 need * 1000.0
             ));
         }
+        if let Some(w) = partner(c, concentric) {
+            return Err(format!(
+                "{}: with its cut given by hand, {PARTNER_LEFT} ({w})",
+                x.member
+            ));
+        }
         return Ok(Placed {
             k,
             cut: c,
@@ -4984,11 +5102,17 @@ fn place(
     }
     let (need, by) = cut_at(concentric);
     if need <= limit {
-        return Ok(Placed {
-            k,
-            cut: ceil_to(need, 0.001),
-            moved: concentric,
-        });
+        let cut = ceil_to(need, 0.001);
+        match partner(cut, concentric) {
+            None => {
+                return Ok(Placed {
+                    k,
+                    cut,
+                    moved: concentric,
+                });
+            }
+            Some(w) => partner_why = Some(w),
+        }
     }
     // A shift: the smallest that fits, a millimetre at a time.
     if x.shift_per.is_some() && !x.hand_shift {
@@ -4998,14 +5122,25 @@ fn place(
                 let moved = concentric + sign * n as f64 * 0.001;
                 let (c, _) = cut_at(moved);
                 if c <= limit {
-                    return Ok(Placed {
-                        k,
-                        cut: ceil_to(c, 0.001),
-                        moved,
-                    });
+                    let cut = ceil_to(c, 0.001);
+                    match partner(cut, moved) {
+                        None => return Ok(Placed { k, cut, moved }),
+                        Some(w) => {
+                            partner_why.get_or_insert(w);
+                        }
+                    }
                 }
             }
         }
+    }
+    if let Some(w) = partner_why {
+        return Err(format!(
+            "{}: {PARTNER_LEFT} with any cut and move that fits ({w}; the longest pull-back \
+             {:.0} mm, the shift limit {:.0} mm)",
+            x.member,
+            limit * 1000.0,
+            s.shift_limit * 1000.0
+        ));
     }
     let by = by.unwrap_or_default();
     let angle = strips

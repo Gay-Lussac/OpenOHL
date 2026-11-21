@@ -730,8 +730,13 @@ design = { class = "redundant" }
 #[test]
 fn members_bolting_onto_each_other_are_never_both_laid_out() {
     let j = joint(SPLIT, "M");
-    let p = plan_joint(&j, &settings(), &|_, _| None);
-    eprintln!("{j:#?}\n{p:#?}");
+    // (Without L8's partner bolts: with them the pieces' bolts are kept on
+    // V, below.)
+    let s = LayoutSettings {
+        partner_bolts: false,
+        ..settings()
+    };
+    let p = plan_joint(&j, &s, &|_, _| None);
     let ends: Vec<&str> = p.ends.iter().map(|e| e.member.as_str()).collect();
     assert_eq!(ends, ["V"], "{p:?}");
     for m in ["H1", "H2"] {
@@ -751,6 +756,28 @@ fn members_bolting_onto_each_other_are_never_both_laid_out() {
         assert!(!ends.contains(&host.as_str()), "{e:?} onto an end laid out");
     }
     // The same plan again.
+    assert_eq!(plan_joint(&j, &s, &|_, _| None), p);
+}
+
+/// L8 (L7's proposal 4): the pieces of the horizontal, left as they are,
+/// bolt onto the redundant V the plan lays out. Two bolts each along the
+/// horizontal: no cut and move of V keeps them all on its flange — V is
+/// left for a hand detail in the plan, said, its place not kept free
+/// (before: laid out, then taken back after writing); the same plan
+/// twice.
+#[test]
+fn an_end_keeps_the_bolts_of_the_members_left_bolting_onto_it() {
+    let j = joint(SPLIT, "M");
+    let p = plan_joint(&j, &settings(), &|_, _| None);
+    assert!(p.ends.is_empty(), "{p:?}");
+    assert!(
+        p.hand
+            .iter()
+            .any(|h| h.starts_with("V: ") && h.contains(crate::joint_layout::PARTNER_LEFT)),
+        "{:?}",
+        p.hand
+    );
+    assert!(p.kept_free.is_empty(), "{:?}", p.kept_free);
     assert_eq!(plan_joint(&j, &settings(), &|_, _| None), p);
 }
 
