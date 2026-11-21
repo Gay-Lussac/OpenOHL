@@ -65,8 +65,9 @@ from here. The owner's order of 2026-11-19:
    phase 6 built 2026-11-19, phases 7 to 14 (rights and roles, country
    libraries, version control at scale, offline working sets, security,
    scale validation) and the rest of the exports' thread with OHL-Design's
-   sign-in window 2026-11-20, in active development, not approved
-   yet — the owner's questions under O17).
+   sign-in window 2026-11-20, the web viewer's sign-in, OHL-Design's
+   Offline working set window and schema 8 2026-11-21, in active
+   development, not approved yet — the owner's questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
 
@@ -3540,8 +3541,8 @@ or three, L four or more. The phases, in order:
   base read along what differs from the main line (opening a model with
   branches, a line made from a revision). Measured on the synthetic
   country: a whole route exported in 0.25 s (7.7 MB, 15 other lines near), bundles of 20 / 500 changes brought back in 0.29 / 0.66 s, the country as one model opened with its branches 20.8 → 4.7 s; moves, replicas, joining again and the start as with main's code.
-  Left: OHL-Design's Offline copy menu for a network (the command line
-  and the protocol do it); the export on a thread of its own (built with
+  Left: ~~OHL-Design's Offline copy menu for a network~~ (built
+  2026-11-21, phase 16); the export on a thread of its own (built with
   phase 14); OHL-Design's
   check windows using a file's neighbours; a revision of main's changes
   made by the server so any designer can export.
@@ -3598,8 +3599,8 @@ or three, L four or more. The phases, in order:
   Measured on the synthetic country: main's code against phase 13's on fresh databases of the 147 lines (a shared machine, the quietest rounds): a move applied and broadcast p50 9.2 → 8.4 ms (a route's designer 9.5 → 8.9 ms), a replica loaded 0.076 / 0.130 → 0.074 / 0.120 s, joining again after 20 moves 358 → 355 ms, the start 3.0 → 2.8 s; a backup of the 147 lines 7.0–10.6 s (13.6 MB), a restore with its drill 13.8–14.1 s; **a move while a whole route's clearances run (12 s): on the authority the first waited 12.08 s, on the worker p50 9.6 ms, p95 27.8 ms (836 moves meanwhile)**.
   Left: the offline export on a thread of its own (phase 12's question
   6, approved; built with phase 14); ~~OHL-Design's sign-in window~~
-  (built 2026-11-20, below); the web client's sign-in window (the
-  protocol takes the token; the server answers its question); a role per
+  (built 2026-11-20, below); ~~the web client's sign-in window~~ (built
+  2026-11-21, phase 16); a role per
   task in the database; WAL archiving driven by `ohl`; OHL-Server's
   Operations page (stage F).
   > **Owner:** (to answer, 2026-11-20; the recommendation after the
@@ -3699,11 +3700,9 @@ or three, L four or more. The phases, in order:
   the authority held about 0.1 s for its decision and 0.1–0.3 s for its
   final apply (a move meanwhile p50 6.8 ms, at most 243 ms); moves,
   joins, memory and the start as with main's code.
-  Left: the web client's sign-in (the server answers its question; the
-  page needs the provider's origin in its security policy and the
-  provider's consent to the page's address and CORS); a clean-up of the
-  branches' spatial rows written before; OHL-Design's Offline copy menu
-  for a network (phase 12).
+  Left: ~~the web client's sign-in~~, ~~a clean-up of the branches'
+  spatial rows written before~~, ~~OHL-Design's Offline copy menu for a
+  network~~ (all built 2026-11-21, phase 16).
   > **Owner:** (to answer, 2026-11-20; the recommendation after the arrow)
   > 1. An extent narrowed by an index by place, every candidate tested as
   > before (the same extent, tested)? → yes, as built.
@@ -3726,6 +3725,63 @@ or three, L four or more. The phases, in order:
   > server of before answers nothing: invitations only)? → yes.
   > 8. The web client's sign-in → build it next, with the provider's
   > origin added to the page's `connect-src`.
+- [x] 16 The web viewer's sign-in, the Offline working set window, schema
+  8 (S): phase 15's "left" and its questions 2 and 8, phase 12's "left".
+  **Built 2026-11-21, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-country-server-the-web-viewers-sign-in-the-offline-working-set-window-schema-8),
+  [the window](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/offline-working-set.md),
+  [the web viewer's sign-in](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/sign-in.md#in-the-web-viewer),
+  [the security review](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/server-security-review.md#the-web-viewers-sign-in-2026-11-21)):
+  **the web viewer's "Sign in with your organisation"** (the code flow
+  with PKCE in the tab, `web/signin.js`; the page's own address the
+  redirect; tokens in the page's memory only, the one-time values of a
+  sign-in under way in the tab's session storage until it is back; the
+  page's `connect-src` names the provider's origin, from the configured
+  issuer only; the provider must allow the page's redirect and its
+  origin on its discovery document and token endpoint — documented;
+  tested against the fake provider on the loopback, the page's own script
+  run in Node.js); **OHL-Design's Offline working set window**
+  (Versions › Offline copy: export, check offline, make the bundle,
+  bring back — the tool windows' rules, a stale export said in red with
+  what changed meanwhile, what changed on the server said on bringing
+  back; `ohl-server`'s new `offline-checks` feature, no PostgreSQL client
+  in the desktop; tested against a local network's server, its pictures
+  made from it as `USER=tester`); **network schema 8** (the branches' old
+  rows of the spatial index deleted, a migration after a backup; tested on
+  a database holding such rows). With it, O44 L9's loosened layout test
+  made exact (each joint's value; the plate's 0.8° to the flange).
+  Measured: a whole route's clearances checked offline in OHL-Design
+  17.6 s on a synthetic country of 300 pylons (on a thread of its own:
+  the window stays usable).
+  Left: the web viewer's glue driven in a real browser against a real
+  provider (its script tested in Node.js; the page checked to parse);
+  OHL-Design's check windows using an offline file's neighbours (the
+  window runs the network's checks; the check windows still run on the
+  file alone); a server setting naming a token endpoint on another
+  origin, if a real provider needs it.
+  > **Owner:** (to answer, 2026-11-21; the recommendation after the arrow)
+  > 1. The web viewer's tokens in the page's memory only, a reload signing
+  > in again? → yes, as built (a session storage of tokens only if users
+  > ask).
+  > 2. The page's `connect-src` names the issuer's origin only; a provider
+  > splitting its token endpoint onto another origin not reached from the
+  > page? → yes, as built; a server setting naming that origin if a real
+  > provider needs it.
+  > 3. The desktop and the web viewer the same OIDC client (the audience),
+  > both redirects registered with it? → yes, as built (one audience the
+  > server checks).
+  > 4. The Offline working set window under Versions › Offline copy, its
+  > four steps in one window? → yes, as built.
+  > 5. An export answered after its window stopped waiting writes no file
+  > (the export stays recorded on the server)? → yes, as built; export
+  > again.
+  > 6. An existing file never replaced by an export or a bundle? → yes, as
+  > built.
+  > 7. `ohl-server`'s `offline-checks` feature, the desktop without a
+  > PostgreSQL client? → yes, as built.
+  > 8. Schema 8 deletes the old branch rows in the migration's own
+  > transaction (no `VACUUM`: the database's administrators or autovacuum
+  > give the space back)? → yes, as built.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

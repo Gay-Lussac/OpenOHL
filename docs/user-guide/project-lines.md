@@ -78,6 +78,7 @@ lines shown next to yours. It stays open while you tick lines to show.
 | **Operation log…** | Every edit, one entry each: who did what; admins reverse entries. |
 | **Offline copy ›** **Export line as bundle…** | Writes the committed revisions of the line you work on to one file, to carry to another copy of the project (see [Offline work](versions.md#offline-work)). |
 | **Offline copy ›** **Import bundle…** | Reads such a file: its line is made, or moved forward, under a name you choose; a small window reports what was added. |
+| **Offline copy ›** **Export working set for offline work…**, **Check the offline working set…**, **Make the bundle of offline work…**, **Bring offline work back…** | A network's working set taken offline and its work brought back onto a branch (2026-11-21): see [Offline working sets in OHL-Design](offline-working-set.md). |
 | ☐ **whole lines (else only what differs)** | Draw the lines shown whole; by default only what differs from the line you work on. |
 | ☐ *line* … | Tick to show a line next to yours, in its colour; untick to hide it. |
 

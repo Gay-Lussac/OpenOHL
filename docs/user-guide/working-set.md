@@ -111,7 +111,8 @@ connection — with its read-only neighbours, so that the network's checks
 can run on it offline — and bring the work back as a bundle onto a
 branch over your working set:
 [Offline working sets](server.md#offline-working-sets-phase-12-in-active-development)
-(on the command line for now).
+(in OHL-Design: Versions › Offline copy, [Offline working
+sets in OHL-Design](offline-working-set.md); or on the command line).
 
 ## What is not there yet
 
@@ -123,7 +124,6 @@ something you may not see is refused, saying nothing of it). On main, the
 rights decide each edit, and the rules of [towers shared by several
 routes](shared-towers.md) (other routes refused, stale marks) apply to
 your edits there too (since 2026-11-20), as on a branch over your
-working set and when it is merged. OHL-Design's Offline copy menu for a
-network (export, bring back) is to come. Point clouds, terrain and backgrounds are
+working set and when it is merged. Point clouds, terrain and backgrounds are
 not served by the network yet (so clearances to the ground and to points
 are not checked on the network); a working set is on one line.

@@ -81,9 +81,26 @@ An option; personal invitations stay the default and keep working.
    --user ADMIN`. An unmapped subject is refused.
 
 The server checks each token's signature (asymmetric keys only), issuer,
-audience and times (issued within the last hour, not expired). The
-desktop and web sign-in windows are to come; the protocol takes the
-token.
+audience and times (issued within the last hour, not expired).
+OHL-Design's **Sign in to a network** window (2026-11-20) and the **web
+viewer's** "Sign in with your organisation" (2026-11-21) both sign in
+with the authorization code flow and PKCE, as the same client (the
+audience), in the user's own browser — built, in active development.
+
+**What the identity provider must allow** for the client (a *public*
+client: no secret; PKCE with S256):
+
+| For | Allow | Example (Keycloak's words) |
+|---|---|---|
+| OHL-Design | the loopback redirect on any port: `http://127.0.0.1:*/callback` (RFC 8252) | *Valid redirect URIs* `http://127.0.0.1/*` |
+| The web viewer | the page's own address as a redirect, exactly as users open it, with the slash: `https://HOST:PORT/` (the address `ohl network serve --web` prints; the host name users type, not another name of the same machine) | *Valid redirect URIs* `https://ohl.example.org:8443/` |
+| The web viewer | the page's origin on the provider's **discovery document and token endpoint** (CORS: `Access-Control-Allow-Origin: https://HOST:PORT`), since the page reads the one and exchanges the code at the other | *Web origins* `https://ohl.example.org:8443` |
+
+The page's own security policy (`connect-src`) names the provider's
+origin — the scheme, host and port of `--oidc-issuer`, taken from the
+server's configuration only. A provider whose token endpoint is on
+another address than its issuer cannot be reached from the page (it says
+so); its users sign in with OHL-Design or join with their invitation.
 
 ## Backups and restores
 

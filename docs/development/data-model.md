@@ -138,7 +138,10 @@ nothing a plugin sees changed with it). Kept on purpose, being on-disk or protoc
 than readers of old files: the project table `ols_meta`, the ALPN
 `ols/2`, the data folders `OLS CAD` / `OLS Structure` and the window
 storage keys `ols-structure-…` (and the web client's `ols.…` browser
-storage keys).
+storage keys; since 2026-11-21 also `ohl.signin.pending` in the tab's
+session storage: the one-time values of an organisation sign-in under
+way — verifier, state, nonce, the token endpoint, the user name, never a
+token — removed when the provider sends the tab back).
 
 New optional fields raise the format version (review rule 2.12: an older
 program then says "newer version", not "unknown field"). The string
@@ -4979,7 +4982,7 @@ alone (a network's messages sent to it get a notice).
 
 | Message | Fields | Meaning |
 |---|---|---|
-| client `sign_in_options` | `protocol` | asked first instead of joining (2026-11-20, OHL-Design's sign-in window; the web client's socket too): answered with `sign_in`, then the connection closes. A server of before closes it unanswered (invitations only) — no new protocol |
+| client `sign_in_options` | `protocol` | asked first instead of joining (2026-11-20, OHL-Design's sign-in window; the web client's socket too, whose page offers the organisation's sign-in since 2026-11-21 and then joins with `join` and `id_token`): answered with `sign_in`, then the connection closes. A server of before closes it unanswered (invitations only) — no new protocol |
 | server `sign_in` | `oidc`? (`issuer`, `client_id`) | how the server takes sign-ins: personal invitations always; the OIDC provider's issuer and the client id its tokens are for when it checks them. Another protocol's question gets `refused` |
 | client `join` | `protocol`, `user`, `code`, `model`?, `since`?, `routes`, `tiles`, `held`, `working_set`?, `see_as`? | a network's client's first message (the `hello` of 2 still joins: a browser as a viewer; a desktop's hello is refused with what to do): follow `model` whole (its copy follows the welcome as a project file does, unless `held`), the changes after position `since` first, the working set's `routes`, the `tiles` viewed; phase 6: or a `working_set` (`spec`) as a partial replica — its replica follows the welcome as a project file (unless `held`: then `hold`), then its `rows`; phase 7: only the network's users join, each with their personal invitation (the general one admits nobody); `model` needs see on the whole line, a `working_set` see on everything its replica holds; `see_as` (whoever manages rights): what both users may see, nothing changed, in the audit; phase 13: `id_token`? — an OIDC ID token in place of the code (`code` empty), its subject mapped to `user` by a network admin; a personal code may be `G.UNTIL.MAC` (its generation and last day) |
 | client `interest` | `routes`, `tiles` (`{tile: [level, x, y], rev?}`) | what it follows from now on, in place of the last: a tile new to it, or held at another revision, comes as a package |
@@ -5052,6 +5055,13 @@ Phase 12 (2026-11-20): two messages each way, and `create_working_set_branch`'s
 | server `working_set_exported` | `id`, `result` (`Ok`: `report` — `model`, `number`, `bytes`, `wanted`, `context`, `neighbour_lines`, `neighbour_sections`, `left_out` (`other_lines`, `this_line`), `base`, `export`, `recorded_first`, `seconds`, phase 14 `changed_meanwhile` and `stale` (objects of it or within its reach changed on the server while it was written on the exports' thread — not in the file; absent from a server of before: 0 and false) — and `file`, the project file in base64 (at most what a message carries, 64 MB); `Err`: why, naming nothing its user may not see) | the file written and recorded; the main line's changes recorded first when it had some (by the exporter, by phase 11's rule) |
 | client `import_bundle` | `id`, `bundle` (the bundle format), `branch`? (default `offline-USER-N-K`) | an offline working set's work brought back |
 | server `bundle_imported` | `id`, `result` (`Ok`: `model`, `branch`, `revisions`, `puts`, `deletes`, `conflicts` (the objects it changes that changed on main since the export, as its user may see them), `context_changed`, `seconds`; `Err`: why) | applied on a new branch over the working set made from the export's base, committed; or refused, nothing kept |
+
+OHL-Design's Offline working set window (2026-11-21) sends
+`export_working_set` and `import_bundle` on its joined connection (one
+per user) and writes the exported file itself (never over a file); no
+message or format changed. `ohl-server`'s feature `offline-checks` (the
+scoped checks on a file, without the database; `network` includes it)
+lets the desktop run `check-offline`'s code.
 
 Phase 11 (2026-11-20): one operation, no new message —
 `create_working_set_branch` (`name`, `from`: a project line, `routes`,

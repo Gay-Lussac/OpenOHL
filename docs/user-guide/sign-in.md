@@ -67,5 +67,43 @@ personal invitation or your organisation's account.
 - The sign-in is asked of the server before joining: a server of before
   2026-11-20 answers nothing, and the window then offers the invitation
   only.
-- The web client does not offer the organisation's sign-in yet (it
-  joins with an invitation).
+- The web viewer offers the organisation's sign-in too (2026-11-21,
+  below).
+
+## In the web viewer
+
+*Built 2026-11-21, in active development, not approved yet*
+([decisions](../development/decisions.md#2026-11-21-country-server-the-web-viewers-sign-in-the-offline-working-set-window-schema-8),
+[what the provider must allow](server-deployment.md#sign-in-with-the-organisations-accounts-oidc)).
+
+When the network's server takes the organisation's sign-in, the web
+viewer's join page shows **Sign in with your organisation** under the
+access code: *This network also takes your organisation's sign-in
+(provider)*.
+
+1. Open the viewer's address (`https://HOST:PORT/`) and type your **user
+   name**.
+2. Press **Sign in with your organisation ↗**: the tab goes to your
+   organisation's sign-in page; sign in there as you always do.
+3. The provider sends the tab back to the viewer, which finishes the
+   sign-in (*Signed in as …*) and joins at once when the user name is
+   given; else type it and press **Join with your sign-in**.
+
+**Good to know**:
+
+- **No password passes through the page**, and the tokens are **kept in
+  the page's memory only**: never in the browser's storage, gone when the
+  tab closes or reloads (sign in again then). Only the one-time values of
+  the sign-in under way (a verifier, a `state`, a `nonce` — no token) are
+  kept in the tab's session storage while you are on the provider's page,
+  and removed as soon as the page is back; the code the provider sends
+  back leaves the address bar at once.
+- Joining again after the connection was lost uses the sign-in, renewed
+  when it is older than 50 minutes; when it cannot be renewed, sign in
+  again.
+- *The sign-in could not be read / reached from this page*: the provider
+  does not allow the viewer's address yet (its CORS and redirect
+  settings): ask the network's administrator
+  ([deployment](server-deployment.md#sign-in-with-the-organisations-accounts-oidc)).
+- The web viewer only views: signed in or not, it does not edit.
+

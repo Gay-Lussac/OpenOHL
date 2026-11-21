@@ -100,7 +100,7 @@ yet** ([ADR-0013](../adr/0013-country-server.md),
 | Country libraries: locks, requests, releases, pins, withdrawn entries, the use index (phase 9) | built, in active development; Update library pins on the command line and the server's protocol |
 | Scoped computations: checks pulling in their neighbours — clearances between wires, the magnetic field, shared towers' loads — hidden neighbours counted, results marked stale (phase 10) | built, in active development; through the server's protocol (OHL-Design's check windows run on the working set's file and say what they did not pull in) |
 | Version control at scale: split trees, branches over a working set, merges at shared towers (phase 11) | built, in active development; through the server's protocol |
-| Offline working sets: exported with read-only neighbours, checked offline, back as a bundle onto a branch (phase 12) | built, in active development; on the command line and the server's protocol (OHL-Design's Offline copy menu for a network not yet) |
+| Offline working sets: exported with read-only neighbours, checked offline, back as a bundle onto a branch (phase 12) | built, in active development; on the command line, the server's protocol and, since 2026-11-21, OHL-Design's [Offline working set window](offline-working-set.md) (Versions › Offline copy) |
 | Security review and its fixes, deployment files (Compose), **backups, restores and the restore drill**, migrations only after a backup, OIDC sign-in, invitations reissued and expiring, TLS to a database on another host (phase 13) | built, in active development: on the command line ([below](#security-sign-in-and-backups-phase-13-in-active-development), [deployment](server-deployment.md), [the review](../development/server-security-review.md)); OHL-Design's sign-in window built 2026-11-20 ([Signing in to a network](sign-in.md)); the web client's not yet |
 | The admin app OHL-Server | a plan waiting for the owner |
 | Point clouds, terrain tiles and backgrounds served by the network | not yet (they stay in project files) |
@@ -445,8 +445,11 @@ the work back:
    back again).
 
 Then merge the branch into main as any branch over a working set
-(above). OHL-Design's Offline copy menu does not do this for a network
-yet: use the command line.
+(above). *Since 2026-11-21* OHL-Design does the four steps without the
+command line: Versions › Offline copy › [Offline working
+set](offline-working-set.md) (export, check offline, make the bundle,
+bring it back; a stale export said in red with what changed
+meanwhile).
 
 ### Security, sign-in and backups (phase 13, in active development)
 

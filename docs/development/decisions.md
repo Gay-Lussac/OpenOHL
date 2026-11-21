@@ -8,6 +8,122 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-21 (country server: the web viewer's sign-in, the Offline working set window, schema 8)
+
+**The web viewer's "Sign in with your organisation", OHL-Design's
+Offline working set window for a network, and network schema 8
+deleting the branches' old rows of the spatial index** (ROADMAP O17:
+phase 15's "left" and its owner questions 2 and 8, phase 12's "left";
+built, in active development, not approved yet;
+[the web viewer's sign-in](../user-guide/sign-in.md#in-the-web-viewer),
+[the window](../user-guide/offline-working-set.md),
+[what the provider must allow](../user-guide/server-deployment.md#sign-in-with-the-organisations-accounts-oidc),
+[the security review](server-security-review.md#the-web-viewers-sign-in-2026-11-21)).
+
+- **The web viewer's sign-in** (phase 15's question 8, recommended
+  "build it next"): when the network's server takes OIDC sign-ins, the
+  join page asks it (`sign_in_options`, on a WebSocket of its own) and
+  offers **Sign in with your organisation ↗**: the authorization code
+  flow with PKCE (S256) in the tab (`web/signin.js`), the page's own
+  address `https://HOST:PORT/` the redirect; the provider's endpoints from
+  its discovery document (its `issuer` the server's); the code exchanged
+  at the token endpoint from the page; the ID token's issuer, audience
+  and nonce looked at; then the join with the ID token (the protocol's
+  `join` with `id_token`, as OHL-Design's), renewed with the refresh
+  token after 50 minutes. **Tokens in the page's memory only**; only the
+  one-time values of the sign-in under way (verifier, state, nonce, the
+  token endpoint, the user name — no token) wait in the tab's session
+  storage while it is on the provider's page, removed when it is back,
+  and the code leaves the address bar at once. **The page's
+  `connect-src`** gains the provider's origin — the scheme, host and port
+  of the configured issuer (`web::provider_origin`: HTTPS, or plain HTTP
+  to this computer; a plain host name), never the request's. **The
+  provider must allow** the page's address as a redirect and its origin
+  on the discovery document and the token endpoint (CORS); a provider
+  whose token endpoint is on another origin than its issuer is not
+  reached from the page (said; **accepted**, a narrower policy). Tested
+  against the fake provider on the loopback (now also accepting a page's
+  `https://127.0.0.1:PORT/` redirect and answering CORS for one allowed
+  origin) with a network's server on a throwaway cluster: the policy
+  (the request's `Origin` ignored), the page's question, CORS for the
+  page only, **the page's own `signin.js` run in Node.js** when installed
+  (else the same steps in Rust): the authorize address, a forged
+  `state`, a code used twice, a sign-in older than 10 minutes, the
+  renewal, what waits across the provider's page; the join over the
+  page's WebSocket with the token, the same token under another user's
+  name refused. The page's glue (`app.js`) is checked to parse; it was not
+  driven in a browser here.
+- **OHL-Design's Offline working set window** (phase 12's "left"):
+  Versions › Offline copy gains four entries for a network's working set,
+  each opening the window at its step — **1 Export for offline work**
+  (joined: the server's `export_working_set` on this connection, the file
+  written where the user says, never over a file), **2 Check offline**
+  (the exported file open: `offline_checks::check_offline`, the server's
+  code, on a thread of its own), **3 Make the bundle** (the file open:
+  `Session::offline_bundle`, uncommitted changes refuse it), **4 Bring the
+  work back** (joined: the server's `import_bundle`). **A stale export**
+  is said first, in red, with the objects changed meanwhile (the
+  server's `changed_meanwhile`), and what it means; bringing back says
+  in red what changed on the server meanwhile (conflicts with main, the
+  read-only neighbours changed since). The answers of the server come on
+  the joined link and wait in the working set's state for the window (by
+  their id); one that comes after its window stopped waiting is said in
+  the status line (an export recorded then writes no file: export
+  again). The tool windows' rules: a sentence, (?) and User guide ↗, every
+  setting with its (?), one button row (the step's action first, Cancel
+  last; Enter runs no step), Escape cancels, reports in boxes that
+  scroll. To run the checks without the database, `ohl-server` has a new
+  feature **`offline-checks`** (`ohl-scope`, `ohl-clearance`,
+  `ohl-loads`; `network` includes it), which OHL-Design turns on — no
+  PostgreSQL client in the desktop. Tested against a local network's
+  server (a throwaway cluster, a synthetic country of 40 pylons, the
+  invented user `tester`): exported, a stale report shown, Escape,
+  checked offline, the bundle made after a commit, brought back onto
+  `offline-tester-…`, the same bundle twice refused; the user guide's
+  pictures made from it as `USER=tester`.
+- **Network schema 8** (phase 15's question 2, recommended "a clean-up
+  of the old rows with the next migration"): a migration deleting the
+  rows of `spatial` whose branch is not `main` — since 2026-11-20 nothing
+  reads or writes them. It goes through phase 13's guard like every
+  migration: refused without a backup newer than
+  `backup_max_age_hours`, or `--i-have-a-backup` (audited). Tested on a
+  database of schema 7 holding branch rows of two models: refused,
+  nothing changed; after a real backup brought to 8, the branch rows
+  gone, the main lines' kept and answering, in the audit; the same with
+  `--i-have-a-backup`.
+- **A layout test made exact** (O44 L9's loosened assertion):
+  `one_roll_for_the_whole_member_lets_both_its_ends_lie_flat` now asserts
+  what each joint gives — at N2, where the layout writes G1's outline
+  round H's bolts, H lies flat on its plate (0.047°, the outline written
+  to 0.1 mm over 61 mm) and G1 takes the 0.8° to L2's flange (within
+  0.1°); at N7, G2 written without an outline, H lies 0.8° off its plane
+  (the members' axes', as before L9). This agrees with the comment L9
+  wrote; no behaviour changed.
+
+> **Owner:** (to answer, 2026-11-21; the recommendation after the arrow)
+> 1. The web viewer's tokens in the page's memory only, a reload signing
+> in again? → yes, as built (a session storage of tokens only if users
+> ask).
+> 2. The page's `connect-src` names the issuer's origin only; a provider
+> splitting its token endpoint onto another origin not reached from the
+> page? → yes, as built; a server setting naming that origin if a real
+> provider needs it.
+> 3. The desktop and the web viewer the same OIDC client (the audience),
+> both redirects registered with it? → yes, as built (one audience the
+> server checks).
+> 4. The Offline working set window under Versions › Offline copy, its
+> four steps in one window? → yes, as built.
+> 5. An export answered after its window stopped waiting writes no file
+> (the export stays recorded on the server)? → yes, as built; export
+> again.
+> 6. An existing file never replaced by an export or a bundle? → yes, as
+> built.
+> 7. `ohl-server`'s `offline-checks` feature, the desktop without a
+> PostgreSQL client? → yes, as built.
+> 8. Schema 8 deletes the old branch rows in the migration's own
+> transaction (no `VACUUM`: the database's administrators or autovacuum
+> give the space back)? → yes, as built.
+
 ## 2026-11-21 (joint layout: a plate read in its own plane, plates planned as written, L9)
 
 **A plate's plane read from its whole outline, an end on a plate seated

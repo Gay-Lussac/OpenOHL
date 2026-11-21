@@ -111,6 +111,48 @@ OHL-Design's Sign in to a network window) and the server's answer to
   loopback port during a sign-in; without the `state` its answer is
   refused, and the code is useless without the verifier (PKCE).
 
+## The web viewer's sign-in (2026-11-21)
+
+`crates/ohl-server/web/signin.js`, `app.js` and the page's headers in
+`web.rs` (the web viewer's "Sign in with your organisation"):
+
+- **The page's Content-Security-Policy** gains the identity provider's
+  origin in `connect-src` (beside `'self'` and the page's own `wss://`):
+  the scheme, host and port of the **server's configured issuer**
+  (`--oidc-issuer`), never of the request — a `Host` or `Origin` header
+  changes nothing (tested) — and only for HTTPS (plain HTTP only to this
+  computer: tests) and a plain host name (`web::provider_origin`; an
+  issuer with other characters adds nothing, and the page then cannot
+  reach the provider). Nothing else of the policy changes: scripts,
+  styles and images still from the page only, no frames, no forms, no
+  base. A provider whose token endpoint is on another origin than its
+  issuer is not added (the page says so): **accepted**, a narrower
+  policy over providers that split their endpoints.
+- **The redirect URI** is the page's own address, `https://HOST:PORT/`,
+  exactly; the provider must allow it (and the page's origin on its
+  discovery document and token endpoint: CORS). The code comes back in
+  the query of `/`, which the server answers with the page (it reads no
+  query); the page takes it out of the address bar and the tab's history
+  at once (`history.replaceState`); `Referrer-Policy: no-referrer` and
+  `Cache-Control: no-store` as for every file. PKCE (S256, a 64-character
+  verifier from `crypto.getRandomValues`), a `state` and a `nonce` of 32
+  characters, checked; a sign-in older than 10 minutes refused; the ID
+  token's issuer, audience and nonce looked at before it is used (its
+  signature and times are the server's to check, as before).
+- **Where the tokens are**: in the page's memory only (a variable of the
+  page's script) — never in `localStorage`, `sessionStorage`, cookies or
+  the address; gone when the tab closes or reloads. Only the one-time
+  values of the sign-in under way (verifier, state, nonce, the token
+  endpoint, the user name typed — no token) are kept in the tab's
+  `sessionStorage` while the tab is on the provider's page, removed as
+  soon as it is back (tested in Node.js with the page's own script against
+  the fake provider). **Accepted**: script running in the page (an XSS)
+  could read the tokens in memory, as it could the access code; the
+  page's policy allows scripts from the page only, and the page writes
+  what the server sends as text, never as HTML.
+- The join carries the ID token over the page's WebSocket (TLS), as
+  OHL-Design's; the server's checks and limits are unchanged (S8).
+
 ## Not reviewed here
 
 The desktop applications, the plugins' sandbox (ADR-0003, its own
