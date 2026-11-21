@@ -2647,6 +2647,64 @@ only where it helps):
   > into the steel of a piece running on as one part with another (the
   > largest plate clash left) → Recommended: trace next. (7) L5o on short
   > plates (L6's question 2) → Recommended: after (3).
+- [x] L8. **A joint planned where its members are drawn, the partners'
+  bolts kept, the bolts already there found** (L7's proposals 3 to 6 in
+  L7's recommended order; the owner busy: built on its own, reported).
+  **Built 2026-11-21, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-joint-planned-where-its-members-are-drawn-the-partners-bolts-kept-l8),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-joint-layout-a-joint-planned-where-its-members-are-drawn-the-partners-bolts-kept-l8);
+  no format change). **L7's proposal 3 built (fixes L6's question 7)**: a
+  joint with an end the run named what it bolts onto in its planning copy
+  but does not lay out (the name not written, the member drawn elsewhere)
+  is planned once more with that member where the file draws it, kept
+  where it lays out more ends, or as many on no more plates, leaving no
+  member it laid out or left for a hand detail unsaid. **L7's proposal 4
+  built**: an end laid out onto a member left as it is that bolts onto it
+  keeps that member's bolts — its cut and move only where each hole stays
+  within its flange, past its cut by the end distance, its own bolts the
+  minimum spacing away (the code's, else the default minimums: assumed);
+  else left for a hand detail in the plan, said. **Found measuring,
+  fixed**: the bolts already there on a face were missed by the plan away
+  from the structure's origin. **L7's proposal 5 tried, not kept** (no
+  change on six towers); traced: nearly all heads and nuts against plates
+  are the end's own bolts against another plate of the joint. **L7's proposal
+  6 traced, not fixed**: a plate whose outline after writing reaches over
+  a run lapped on the same face. L5o on short plates: not reached.
+  On the 78 real towers (kept privately; with the bundled plugin), before
+  → as drawn → L8: joints laid out whole 52.5 % → 53.4 % → 53.3 %, ends
+  69.4 % → 70.7 % → 70.1 % (of more ends asked: an end left for a
+  partner's bolts is now named by the plan), plates 69 154 → 70 860 →
+  70 722 (their steel 111.8 → 116.1 → 115.8 t), the bent flats' bolts off
+  their flat 228 → 37 → 39 ends, members left as they are no longer
+  fitting 1 734 → 1 379 → 152, plates whose holding is not checked
+  21 270 → 21 759 → 20 973, joints not fitting as given 35 → 35 → 42 (one
+  joint repeated on seven towers of one type: a member nested in the
+  partner carries its bolts onto the end now left; said by the joint
+  checks), as assumed 12 906 → 12 877 → 12 883, a run again identical
+  78/78; the time per tower (six towers, back to back,
+  twice, load 5–6) median 30 → 41 → 45 s, the largest 36 → 47 → 50 s.
+  > **Owner:** (1) Plan a joint again with the members named but not laid
+  > out where the file draws them (the run's time about a third more) →
+  > Recommended: keep (more ends, the bent flats' bolts off their flat
+  > gone; the plan sees what the checks see). (2) The partners' bolts kept
+  > on the end they bolt onto: about as many ends on 138 fewer plates, 45 fewer
+  > joints whole, the members no longer fitting after writing 1 379 → 152,
+  > one joint more not fitting as given (on seven towers) → Recommended: keep (the
+  > decision made in the plan where the joint is planned round it, no end
+  > taken back after writing for it, fewer plates; on the safe side); the
+  > alternative: off (more ends laid out, each taken back after writing
+  > where its partner's bolts no longer fit). (3) The plan keeping clear of
+  > the bolts already there wherever the structure lies (a fix) →
+  > Recommended: keep. (4) Heads and nuts against plates: nearly all
+  > (1 751 of 1 754 ends) are the end's own bolts against another plate
+  > of the joint, not a hand member's (L7's proposal 5 tried: no change)
+  > → Recommended: next, trace where the plan misses them, then the ends'
+  > heads and nuts and the plates checked against each other across the
+  > joint's planes in the plan. (5) Plates into a run
+  > lapped on the same face (L7's proposal 6) → Recommended: next with
+  > (4): the plate's planned outline as after writing, checked against the
+  > run, else cut short of it as a short plate is. (6) L5o on short plates
+  > → Recommended: after (4) and (5).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

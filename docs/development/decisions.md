@@ -8,6 +8,58 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-21 (joint layout: a joint planned where its members are drawn, the partners' bolts kept, L8)
+
+**A member the run named but does not lay out planned where the file
+draws it, the bolts of a member left as it is kept on the end it bolts
+onto, the bolts already there found wherever the structure lies**
+(roadmap O44 L8, L7's proposals 3 to 6 in L7's recommended order, the
+owner busy; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#a-joint-planned-where-its-members-are-drawn-the-partners-bolts-kept-l8),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md)). No format change.
+
+- **As drawn** (`LayoutSettings::as_drawn`, on; L7's proposal 3, which
+  fixes L6's question 7): the run names what an end bolts onto in its
+  planning copy but writes the name only for ends it lays out. A joint
+  with an end so named and not laid out is planned once more with the
+  name taken out (the member where the file will draw it) — only those
+  joints worked out again —, kept where it then lays out more ends, or as
+  many on no more plates, and leaves no member it laid out or left for a
+  hand detail unsaid; else planned as before. A `face` given by hand keeps
+  the name. At most two such passes (`AS_DRAWN_PASSES`, the program's
+  bound). Each joint so planned is said in the run's notes.
+- **The partners' bolts** (`LayoutSettings::partner_bolts`, on; L7's
+  proposal 4): an end the plan lays out onto a member left as it is that
+  itself bolts onto the end (the mutual-host guard's pair) takes a cut and
+  move only where every hole of that member stays within its flange, past
+  its cut by the end distance, its own bolts the minimum spacing from them
+  (the code's, else the default minimums: assumed); else it is left for a
+  hand detail in the plan, said, its place not kept free — before, laid
+  out and then taken back after writing. A member left by the run's own
+  rounds is not asked. Kept although it lays out slightly fewer ends in
+  all (the owner's question in the roadmap); tried and not kept: a
+  per-joint guard planning without it.
+- **Found measuring, fixed**: the bolts already there on a face (of the
+  members not laid out) were placed with the joint's position added once
+  more and so missed unless the face passed near the structure's origin;
+  now kept clear of as intended (on the safe side).
+- **Tried and not kept**: L7's proposal 5 (the members left for a hand
+  detail kept clear to an end's outstanding leg's height and behind it):
+  no change on six towers. Traced: nearly all heads and nuts against
+  plates after writing are the end's own bolts against another plate of
+  the joint. **Traced, not fixed**: L7's proposal 6 (a plate into a run lapped
+  on the same face, its outline after writing reaching over the run). L5o
+  on short plates: not reached.
+- Measured on the 78 private real towers (with the bundled plugin):
+  joints laid out whole 52.5 % → 53.4 % (as drawn) → 53.3 % (with the
+  partners' bolts), ends 69.4 % → 70.7 % → 70.1 % (of more asked), the
+  bent flats' bolts off their flat 228 → 37 → 39 ends, members left as
+  they are no longer fitting 1 734 → 1 379 → 152, plates 69 154 → 70 860
+  → 70 722, joints not fitting as given 35 → 35 → 42 (one joint on seven
+  towers of one type), a run again identical 78/78; the time per tower
+  (six towers, back to back) median 30 → 41 → 45 s.
+
 ## 2026-11-20 (joint layout: an end seated where its member is drawn, L7)
 
 **An end seated on its member where that member is drawn, a plate's own

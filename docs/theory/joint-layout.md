@@ -1824,6 +1824,122 @@ plates; the members left as they are no longer fitting barely change
 back). The rest is counted in the measured section and proposed in the
 roadmap.
 
+## A joint planned where its members are drawn; the partners' bolts kept (L8)
+
+(L7's proposals 3 to 6 in the order L7 recommended, the owner busy: built
+on its own, reported. Built 2026-11-21, in active development, not
+approved yet. The code: `layout_run` (`LayoutSettings::as_drawn`,
+`AS_DRAWN_PASSES`) and `joint_layout` (`LayoutSettings::partner_bolts`,
+`partner_misfit`, `PARTNER_LEFT`). **No format change**.)
+
+### A member named but not laid out, planned where it is drawn (L7's proposal 3)
+
+The run names what an end bolts onto in its planning copy where nothing
+names it (the member running through the joint, and L1 d's choices), so
+that the end's leg and turn are those on that member. It writes the name
+only for an end it lays out. An end it does not lay out (left for a hand
+detail, or left as it is) is then drawn without the name — where the
+joint details work it out, often tens of millimetres away from where the
+plan saw it. Whatever the plan laid on that member — a plate, the ends
+bolting onto it, a bent plate's flat with its own bolts — was planned on
+it where it no longer is, and the clash check after writing took those
+ends back (L6's question 7: the bent flats' bolts outside the flat; also
+plates and steel planned clear of a member drawn elsewhere).
+
+Now, after the clash rounds, each joint with such an end is **planned
+once more with the names of those ends taken out** of the planning copy —
+the member where the file will draw it — and written again. It is kept
+only where the joint then lays out more ends, or as many on no more
+plates, and every member it laid out or left for a hand detail is still
+one of those (no member it left for a hand detail now left as it is,
+unsaid); else the names go back and the joint is planned as before. The
+name stays where the end has its face given by hand (given for the member
+named). At most two such passes (`AS_DRAWN_PASSES`, the program's bound;
+the second rarely finds one more joint). Only the joints whose names
+changed are worked out again; the others keep their plans of the pass
+before (measured: the same layouts as planning every joint again, a
+little quicker). Each joint so planned is said in the run's notes.
+
+An example (invented): a redundant R bolts onto nothing named; the run
+names the diagonal D running through, so R would lie seated on D. R is
+left for a hand detail (too short for its bolts). A plate for the other
+ends was planned clear of R where it lay on D; the file draws R on its
+work line, 20 mm off, through the plate: after writing the plate's ends
+were taken back. Planned again with R where the file draws it, the plate
+keeps clear of it and the ends are laid out.
+
+*On the safe side*: the plan sees the steel where the drawings and the
+checks will see it; nothing is written that the checks after writing
+would not pass (they run as before).
+
+### The bolts of a member left as it is kept on the end it bolts onto (L7's proposal 4)
+
+Of two members bolting onto each other the plan keeps one as the host,
+its own end left as it is (the mutual-host guard, 2026-11-19), and lays
+the other out onto it. The host's own bolts still go onto the member laid
+out. The plan moved that member — its gauge line through the work point,
+a shift — and cut it back, without asking whether the host's bolts would
+still lie on its flange; after writing they often did not (off its
+flange mostly), and the member laid out was taken back.
+
+Now such an end keeps those bolts: a cut and move is taken only where
+every hole of the member left as it is lies within the end's flange (the
+joint checks' rule), past the end's cut by that bolt's end distance (the
+code's, else the structure's default minimum: **assumed** where no code
+gives one), and the end's own bolts the default minimum spacing from them
+(also assumed). Where no cut within the longest pull-back and no move
+within the shift limit does, the end is left for a hand detail in the
+plan, said ("a bolt of a member left as it is that bolts onto it would not
+stay on it…"), its place not kept free (as an end taken back after
+writing) — before, it was laid out and then taken back. A member left by
+the run's own rounds is not asked (its hand detail places its bolts, as
+after writing). Measured on the 78 private towers: the ends taken back
+after writing for it fall by nine tenths, about as many ends are laid out
+(a dozen more) on fewer plates, a few dozen fewer joints whole; one joint
+(repeated on seven towers of one type) now does not fit as given, said by
+the joint checks — a member nested in the partner there carries its bolts
+onto the end now left. Tried and left out: planning such a joint again
+without the rule and keeping the plan with more ends — it laid out fewer
+after writing.
+
+*On the safe side*: the host's bolts stay on steel with their end
+distance; the distances are the assumed defaults where no code gives
+them, and the joint checks check them as they do every bolt.
+
+### The bolts already there, found wherever the structure lies (found measuring)
+
+The plan keeps an end clear of the bolts of the joint's members it does
+not lay out lying on the same face. Those bolts were placed with the
+joint's position added once more: they were missed unless the face passed
+near the structure's origin (on real towers, almost never). Fixed: the
+plan keeps clear of them as intended (*on the safe side*; the clash check
+after writing saw them before too). Small on the towers measured.
+
+### Heads and nuts against plates (L7's proposal 5) — tried, not kept
+
+Keeping a member left for a hand detail clear, as high as an end's
+outstanding leg reaches and behind the face where its nuts lie (as the
+fixed steel is), changed nothing on six towers: not kept. Traced: the
+heads and nuts against plates after writing are nearly all (on the 78
+private towers, 1 751 of 1 754 ends) the **end's own** bolts against
+another plate laid out at the same joint, not a hand member's (where the
+plan misses them is the next thing to trace: the plan sees the ends and
+plates of one plane against those of the planes before it). In the
+roadmap.
+
+### Plates into pieces running on as one part (L7's proposal 6) — traced, not fixed
+
+Traced on one tower: the plate lies on a member onto whose face the run
+of two pieces (one part through the joint) is also lapped; the plate's
+outline, worked out round its bolts and the work point after writing,
+reaches over the run, and runs into both pieces by the run's leg
+thickness. The plan's check of the plate against the fixed steel uses its
+planned outline. No change was clearly safe to make in the time: in the
+roadmap (the plate's planned outline against the run, or the outline cut
+short of it after writing as a plate stopping short is).
+
+L5o on plates stopping short: not reached.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -1888,6 +2004,7 @@ the same towers:
 | How much a plate stopping short must lie on the flange (L2's follow-up a) | half a square of the flange's width | room to bear on it, as step 4's flat plate; not a standard's |
 | How far off its flange an end is put on a plate bent by as much (L3) | 20° | the owner's range of the ends whose member needs rolls 5°–20° apart; beyond, welded (step 4) |
 | How far an end of a face going onto a plate is moved to bolt directly (L5) | the plate's thickness (at most the shift limit) | on the safe side relative to the plate it replaces: no larger an eccentricity than the plate's own offset out of the flange, and in the analysis as a shift; the shift limit measured on six private real towers (about a fifth fewer plates, but moves of 15 mm median): a question to the owner |
+| Passes planning a joint again with the members named but not laid out where the file draws them (L8) | 2 | a bound on the extra work: on six private real towers the second pass found 3 more joints (of about 1 190 in the first), one plate more |
 
 ## Measured (J1 and J2, 2026-11-19)
 
@@ -2492,3 +2609,56 @@ The member ends left at writing, by the record's reasons:
   it no longer fitting (off its flange mostly), heads and nuts of members
   left for a hand detail against plates on members left as they are. In
   the roadmap (O44 L7).
+
+## Measured (L8, 2026-11-21)
+
+On the same 78 private tower files and settings as L7, with the bundled
+code plugin found. "Before" is the main build with L7; "as drawn" adds a
+joint planned again with the members named but not laid out where the
+file draws them (and the bolts already there found wherever the
+structure lies); "L8" adds the partners' bolts kept.
+
+| | before | as drawn | L8 |
+|---|---|---|---|
+| joints laid out whole | 34 024 (52.5 %) | 34 560 (53.4 %) | 34 515 (53.3 %) |
+| member ends laid out | 123 412 (69.4 %) | 126 350 (70.7 %) | 126 362 (70.1 %) |
+| plates written | 69 154 | 70 860 | 70 722 |
+| … their steel (the bill of materials, 73 towers) | 111.8 t | 116.1 t | 115.8 t |
+| bolts (the bill of materials) | 230 566 | 235 201 | 235 797 |
+| plates' holding groups checked | 21 042 | 20 610 | 20 797 |
+| plates whose holding is not checked | 21 270 | 21 759 | 20 973 |
+| shifts written | 2 112 | 2 295 | 2 314 |
+| joints that do not fit, as given / as assumed | 35 / 12 906 | 35 / 12 877 | 42 / 12 883 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 |
+| time per tower, median (six towers, back to back, twice) | 30 s | 41 s | 45 s |
+
+(The share of ends is of the ends the plan asks about; L8 asks about more
+— an end left for a partner's bolts is now one the plan names, before it
+was taken back after writing: 178 608 → 180 314.)
+
+The member ends left at writing, by the record's reasons:
+
+| | before | as drawn | L8 |
+|---|---|---|---|
+| the plan: its plate into steel | 6 380 | 4 681 | 4 446 |
+| a plate into steel | 3 117 | 2 272 | 2 326 |
+| a member left as it is no longer fitting | 1 734 | 1 379 | 152 |
+| steel into steel | 1 562 | 962 | 942 |
+| a nut into a plate | 1 204 | 1 051 | 1 073 |
+| a head into a plate | 1 128 | 701 | 681 |
+| a plate's own bolts outside its outline | 228 | 37 | 39 |
+| holes overlapping, bolts beyond a member's end | 249 | 100 | 79 |
+
+- **As drawn**: per joint 561 more joints laid out whole, 25 fewer; about
+  2 900 more ends, 1 700 more plates with them. The bent flats' bolts off
+  their flat (L6's question 7) fall from 228 to 37 ends; every kind of
+  clash after writing falls, most the plates into steel (planned and after
+  writing) and steel into steel. Slower: the joints with such members are
+  worked out and checked once more.
+- **The partners' bolts**: the members left as they are no longer fitting
+  fall by nine tenths (1 379 → 152; the rest not traced yet — an end off
+  its flange or leaving over the heel is not asked in the plan); about as many ends
+  on 138 fewer plates; 45 fewer joints whole (32 won, 77 lost: the end now
+  left in the plan, the joint planned around it); plates whose holding is
+  not checked fall by 786. The seven joints more not fitting as given are
+  one joint repeated on seven towers of one type (above).

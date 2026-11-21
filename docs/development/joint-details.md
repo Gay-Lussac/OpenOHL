@@ -1540,6 +1540,48 @@ that order; "plan ideas to get the automatic layout working"):
   `layout_run_tests::a_plate_on_a_built_up_leg_lies_on_the_angle_facing_the_ends`,
   the app's `layout_ui_tests::a_plate_on_a_built_up_leg_in_the_window`
   (its picture); tests whose scenario was without them switch them off.
+- **L8: a joint planned where its members are drawn, the partners' bolts
+  kept, the bolts already there found** (2026-11-21; in active
+  development, not approved yet;
+  [theory](../theory/joint-layout.md#a-joint-planned-where-its-members-are-drawn-the-partners-bolts-kept-l8)).
+  L7's proposal 3: `LayoutSettings::as_drawn`, on. `lay_out_once` keeps
+  `run_named` — each end the run names what it bolts onto in its planning
+  copy (`hosts_to_name`, L1 d's accepted choices) with the copy's value
+  before. After the clash rounds (and L1's guard), a joint with such an
+  end it does not lay out (and no `face` given there) gets the names taken
+  out of the planning copy (the member then where the file will draw it),
+  is detailed again alone (`keep_for` of those joints, with the turns) and
+  planned with `plans_of`; the other joints keep this pass's plans (the
+  next pass is the same as planning them all again: measured identical
+  on six towers, a little quicker). A joint so planned is kept where it
+  lays out more ends, or as many on no more plates, and every member it
+  laid out or left for a hand detail is still one of those (none left as
+  it is unsaid); else the names go back and it is planned as before. At
+  most `AS_DRAWN_PASSES` (2) such passes. Each joint kept is said in the
+  run's notes. L7's proposal 4: `LayoutSettings::partner_bolts`, on.
+  `strip_of` takes the bolts of the members not laid out that bolt onto
+  the end (`onto` the end's member, on its flange by `host_flange`, not
+  one part, not left by the run's rounds — `except`) into
+  `Strip::partners` instead of `obstacles`; `place` (and `land_moved`)
+  accepts a cut and move only where `partner_misfit` finds every such
+  hole within the end's flange, past its cut by its end distance (the
+  code's, else the default minimum) where nothing runs on into the end,
+  and the end's own bolts the default minimum spacing from them; none
+  within the longest pull-back and the shift limit: left with
+  `PARTNER_LEFT`, its place not kept free (J2's test skips it). Tried and
+  not kept: a guard planning the joint again without (it laid out fewer
+  ends after writing). Found measuring: `strip_of` added the joint's
+  position to the bolts already there once more (the bolt points are in
+  the structure's axes) — they were missed unless the face passed near the
+  origin; fixed. L7's proposal 5 (the kept-free members' heads and nuts
+  kept clear to an end's outstanding leg's height and behind it, as
+  `fixed_out`/`fixed_far`): tried, no change on six towers, not kept. No
+  format change. Tests:
+  `layout_run_tests::a_member_named_but_not_laid_out_is_planned_where_it_is_drawn`,
+  `joint_layout_tests::an_end_keeps_the_bolts_of_the_members_left_bolting_onto_it`;
+  the mutual-host tests run without the partners' bolts (their own
+  scenario); the bent-plate scenarios keep their result (the `face` given
+  there keeps the name).
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2
