@@ -1306,15 +1306,18 @@ impl Workspace {
 
 impl Workspace {
     /// The row of `h` (picked in the view) shown: its table, scrolled to,
-    /// its first value focused — a wire point in the Edit window by its
-    /// string's row (it has no table there).
+    /// its first value focused — a wire point by the row of the string
+    /// ending there (owner 2026-11-21: a wire point follows from its
+    /// string, so the string is what is edited), the first one where two
+    /// strings meet; the Wire points table only for a wire point no
+    /// string ends at.
     fn show_row(&mut self, h: &Handle, t: &StructureType) {
         match h {
             Handle::Point(l) => {
                 self.sheet = Sheet::Points;
                 self.focus = Some((Sheet::Points, l.clone()));
             }
-            Handle::Wire(w) if self.library_strings.is_some() => {
+            Handle::Wire(w) if t.strings.iter().any(|x| &x.wire == w) => {
                 if let Some(x) = t.strings.iter().find(|x| &x.wire == w) {
                     self.sheet = Sheet::Strings;
                     self.focus = Some((Sheet::Strings, x.label.clone()));
@@ -1958,16 +1961,24 @@ impl Workspace {
                 if wire != s.wire {
                     put(StringChange::Wire(wire));
                 }
-                // Kind.
-                let mut strain = s.strain;
-                egui::ComboBox::from_id_salt(("string-clamp", &s.label))
-                    .selected_text(if strain { "strain" } else { "suspension" })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut strain, false, "suspension");
-                        ui.selectable_value(&mut strain, true, "strain");
-                    });
-                if strain != s.strain {
-                    put(StringChange::Strain(strain));
+                // Kind: from its library entry when it has one (owner
+                // 2026-11-21: a string from the library has none of its
+                // parameters edited here — only in the library).
+                let entry = a.map(|a| a.id.as_str());
+                if let Some(id) = entry {
+                    ui.label(if s.strain { "strain" } else { "suspension" })
+                        .on_hover_text(format!("From library entry {id} (edited in the library only)"));
+                } else {
+                    let mut strain = s.strain;
+                    egui::ComboBox::from_id_salt(("string-clamp", &s.label))
+                        .selected_text(if strain { "strain" } else { "suspension" })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut strain, false, "suspension");
+                            ui.selectable_value(&mut strain, true, "strain");
+                        });
+                    if strain != s.strain {
+                        put(StringChange::Strain(strain));
+                    }
                 }
                 // Assembly.
                 let mut pick = s.insulator.clone();
@@ -2017,32 +2028,66 @@ impl Workspace {
                     ui.label(format!("{:.2}°", (dr + ahead).rem_euclid(360.0))).on_hover_text(why);
                 }
                 // Weight, wind area, compression.
-                let mut w = s.weight.map(|w| w.si()).or(a.map(|a| a.weight.si())).unwrap_or(0.0);
-                if crate::style::field(ui, egui::DragValue::new(&mut w).range(0.0..=1e6).speed(1.0).max_decimals(1).suffix(" N")).changed() {
-                    put(StringChange::Weight(w));
-                }
-                let mut wa = s.wind_area.map(|w| w.si()).or(a.map(|a| a.wind_area.si())).unwrap_or(0.0);
-                if crate::style::field(ui, egui::DragValue::new(&mut wa).range(0.0..=100.0).speed(0.005).max_decimals(3).suffix(" m²")).changed() {
-                    put(StringChange::WindArea(wa));
-                }
-                ui.horizontal(|ui| {
-                    let mut push = s.compression.is_some();
-                    let mut c = s.compression.map_or(0.0, |c| c.si());
-                    let a = ui.checkbox(&mut push, "");
-                    let b = ui.add_enabled(push, egui::DragValue::new(&mut c).range(0.0..=1e7).speed(10.0).max_decimals(0).suffix(" N"));
-                    if a.changed() || b.changed() {
-                        put(StringChange::Compression(push.then_some(c)));
+                if let Some((a, id)) = a.zip(entry) {
+                    // From the library: every parameter read-only, its
+                    // entry's (a value the file keeps that differs: a
+                    // warning, nothing changed).
+                    crate::placed_strings::value_cell(ui, s.weight.map(|w| w.si()), Some(a.weight.si()), "N", 1, Some(id), 1e-9);
+                    crate::placed_strings::value_cell(ui, s.wind_area.map(|w| w.si()), Some(a.wind_area.si()), "m²", 3, Some(id), 1e-12);
+                    ui.label(
+                        s.compression
+                            .map(|c| c.si())
+                            .or(a.compression_load.map(|c| c.si()))
+                            .map_or("— (tension only)".to_owned(), |c| format!("{c:.0} N")),
+                    )
+                    .on_hover_text(format!("From library entry {id} (edited in the library only)"));
+                    let l = s.limits().or(a.limits());
+                    let mut words: Vec<String> = Vec::new();
+                    if let Some(v) = l.max_load {
+                        words.push(format!("{v:.0} N"));
                     }
-                });
-                for c in limits_cell(ui, s.limits(), a.map(|a| a.limits()).unwrap_or_default()) {
-                    put(c);
-                }
-                let mut d = s.description.clone();
-                if ui.add(egui::TextEdit::singleline(&mut d).desired_width(160.0)).changed() {
-                    put(StringChange::Description(d));
+                    for (n, v) in [
+                        ("swing", l.max_swing_deg),
+                        ("across", l.max_swing_across_deg),
+                        ("along", l.max_swing_along_deg),
+                    ] {
+                        if let Some(v) = v {
+                            words.push(format!("{n} {v:.1}°"));
+                        }
+                    }
+                    ui.label(if words.is_empty() { "—".to_owned() } else { words.join(", ") })
+                        .on_hover_text(format!("From library entry {id} (edited in the library only)"));
+                    let d = if s.description.is_empty() { a.name.clone() } else { s.description.clone() };
+                    ui.label(d).on_hover_text(format!("From library entry {id} (edited in the library only)"));
+                } else {
+                    let mut w = s.weight.map(|w| w.si()).or(a.map(|a| a.weight.si())).unwrap_or(0.0);
+                    if crate::style::field(ui, egui::DragValue::new(&mut w).range(0.0..=1e6).speed(1.0).max_decimals(1).suffix(" N")).changed() {
+                        put(StringChange::Weight(w));
+                    }
+                    let mut wa = s.wind_area.map(|w| w.si()).or(a.map(|a| a.wind_area.si())).unwrap_or(0.0);
+                    if crate::style::field(ui, egui::DragValue::new(&mut wa).range(0.0..=100.0).speed(0.005).max_decimals(3).suffix(" m²")).changed() {
+                        put(StringChange::WindArea(wa));
+                    }
+                    ui.horizontal(|ui| {
+                        let mut push = s.compression.is_some();
+                        let mut c = s.compression.map_or(0.0, |c| c.si());
+                        let a = ui.checkbox(&mut push, "");
+                        let b = ui.add_enabled(push, egui::DragValue::new(&mut c).range(0.0..=1e7).speed(10.0).max_decimals(0).suffix(" N"));
+                        if a.changed() || b.changed() {
+                            put(StringChange::Compression(push.then_some(c)));
+                        }
+                    });
+                    for c in limits_cell(ui, s.limits(), a.map(|a| a.limits()).unwrap_or_default()) {
+                        put(c);
+                    }
+                    let mut d = s.description.clone();
+                    if ui.add(egui::TextEdit::singleline(&mut d).desired_width(160.0)).changed() {
+                        put(StringChange::Description(d));
+                    }
                 }
                 ui.horizontal(|ui| {
-                    if ui
+                    if entry.is_none()
+                        && ui
                         .small_button("Save to library")
                         .on_hover_text("Its length, weight, wind area and kind as an assembly of the insulator library")
                         .clicked()
@@ -2291,6 +2336,73 @@ node = "N3"
 
     fn read(doc: &DocumentMut) -> StructureType {
         StructureType::parse(std::path::Path::new("p.ohls"), &doc.to_string()).unwrap()
+    }
+
+    /// A wire point clicked in the view shows the row of the string ending
+    /// there in Strings (owner 2026-11-21: the wire point follows from its
+    /// string), on the structure screen too, not only in the Edit window.
+    #[test]
+    fn a_wire_point_clicked_shows_its_string() {
+        let mut doc: DocumentMut = PYLON.parse().unwrap();
+        let t = read(&doc);
+        let w = edit::add_strings(&mut doc, &t, &["A1".to_string()], 4.0).unwrap();
+        let t = read(&doc);
+        let s = t
+            .strings
+            .iter()
+            .find(|x| x.wire == w)
+            .unwrap()
+            .label
+            .clone();
+        let mut ws = Workspace::default();
+        assert!(ws.library_strings.is_none());
+        ws.show_row(&Handle::Wire(w.clone()), &t);
+        assert_eq!(ws.sheet, Sheet::Strings);
+        assert_eq!(ws.focus, Some((Sheet::Strings, s)));
+        // A wire point no string ends at: its own row.
+        ws.show_row(&Handle::Wire("W-none".into()), &t);
+        assert_eq!(ws.sheet, Sheet::Wires);
+        assert_eq!(ws.focus, Some((Sheet::Wires, "W-none".to_string())));
+    }
+
+    /// A string from the insulator library has none of its parameters
+    /// typed in the Strings table (owner 2026-11-21): only its direction
+    /// (two angles) is a typed number; without an entry its weight, wind
+    /// area and length are typed too.
+    #[test]
+    fn a_library_string_has_its_parameters_read_only() {
+        use egui::accesskit::Role;
+        use egui_kittest::{Harness, kittest::Queryable};
+        let a = ohl_structures::InsulatorAssembly::parse(
+            std::path::Path::new("I1.ohli"),
+            "format = \"ohl-insulator\"\nversion = 3\nid = \"I1\"\nname = \"I-string\"\nkind = \"suspension\"\nlength = \"3.5 m\"\nweight = \"900 N\"\nwind_area = \"0.25 m2\"",
+        )
+        .unwrap();
+        let mut lib = InsulatorLibrary::default();
+        lib.insert(std::path::Path::new("I1.ohli"), a.clone())
+            .unwrap();
+        let typed = |with: bool| {
+            let mut doc: DocumentMut = PYLON.parse().unwrap();
+            let t = read(&doc);
+            edit::new_string(&mut doc, &t, "A1", with.then_some(&a), 3.5, None).unwrap();
+            let t = read(&doc);
+            let g = geometry(&t, &lib);
+            let mut h = Harness::builder()
+                .with_size(egui::vec2(2400.0, 400.0))
+                .build_ui_state(
+                    |ui, (ws, doc): &mut (Workspace, DocumentMut)| {
+                        ws.strings_sheet(ui, doc, &t, &g, &lib);
+                    },
+                    (Workspace::default(), doc),
+                );
+            h.run();
+            h.query_all_by_role(Role::SpinButton).count()
+        };
+        // From the library: the two angles only (and, above the table,
+        // the length of a new string); the compression's field and the
+        // limits' are gone with the rest.
+        assert_eq!(typed(true), 3);
+        assert!(typed(false) > 2, "without an entry its values are typed");
     }
 
     /// The screen's edits are those of the structure application, on the

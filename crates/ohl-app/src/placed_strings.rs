@@ -220,7 +220,7 @@ fn choose_entry(
 
 /// A value of the string read-only: the entry's (or its own), with a
 /// warning where its own differs from its entry's.
-fn value_cell(
+pub(crate) fn value_cell(
     ui: &mut egui::Ui,
     own: Option<f64>,
     from_entry: Option<f64>,
