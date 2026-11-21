@@ -125,6 +125,9 @@ themselves are not chosen here (that comes with the design codes).
   ![Lay out joints on an invented joint: a horizontal and two diagonals meeting a wide leg from one side; before, all three on a plate on the flange's outer face; after, the two diagonals on the flange's inner face and the horizontal on its outer face, all three bolted directly, no plate](../images/structure-tools/tool-lay-out-joints-both-faces.png)
 - **Bolts that join nothing** (since 2026-11-21, L10): a member left as it is that bolts onto nothing at a joint (two pieces in line not confirmed one part, their splice not given) is drawn with its bolts — its own, or its design data's —, which then join nothing. Such a joint is no longer counted as laid out whole: the window says *its bolts join nothing* with the member, and why. Confirm the pieces one part (*Pieces in line*), give the splice, or say what it bolts onto; the layout does not move those bolts onto its plate.
 - **A plate drawn on its flange** (since 2026-11-21, L10; every file): a plate without an outline given, on an angle's flange, all of whose members lie within 2° of that flange, is drawn in the flange's plane (before, in its first member's plane, up to 2° off). An end's own bolt head and nut on its own plate, its leg within 2° of the plate, touch the plate (as on a flange) — the owner's 2° rule; before, they showed as running a few millimetres into it, and the layout took such ends back.
+- **An end moved sideways to pass the flange on a plate** (since 2026-11-21, L11, in active development; the owner at a leg splice: "the diagonals need a horizontal shift and a pull back as well as a plate"): an end going onto a plate whose bolts would need more than the longest pull-back to pass the flange's edge is moved sideways — the least whole millimetre within the shift limit, its `shift` (an eccentricity the analysis takes) — so that they pass it within the pull-back; kept at a joint only where it lays out more ends, or as many on fewer plates. The joint then often takes one plate per plane of the leg with every end of that plane bolted onto it. **Tried by [Solve the clashes](#solve-the-clashes) per joint, not in a run of Lay out joints** (measured on real towers: in a whole run it laid out fewer ends at more joints than it gained).
+- **One plate per plane** (since 2026-11-21, L11): two plates the layout would put on flanges lying in one plane of members running on as one part through the joint (a chord whose pieces have their own names) are one plate, its ends shared.
+- **Both faces of one plate** (since 2026-11-21, L11; the owner's picture: "both diagonals could be on the same plate just bolted on different sides"): an end the layout would put on a plate bent or welded in its own plane, whose leg lies flat (within 2°) in the plane of a flange on that flange's inner side and leaves over the heel, goes onto the **back** of the flat plate on that flange's outer face instead, past the heel — pulled back until its steel clears the heel's line by the gap (its leg's whole width, on the safe side) and its bolts by their nuts and the gap. One plate instead of two or three. The joint details draw such a member against the plate's back (a plate with members on both sides of its leg's flange; before L11 such a member, given by hand, was drawn the flange's thickness and the plate's off the plate).
 - A **welded plate** (a plate in a member's own plane welded to a flat plate) is two plates of the file, the one in the member's plane marked in the record so the member is drawn lying on it; its weld's throat and length are written (`[[plate.weld]]`) so the weld is checked — change them like any weld (Joint details › the plate). Where two such plates are welded to one flat plate, a weld may be bent about its seam by the other member's force: the check says it **NOT ON THE SAFE SIDE** (the file says the weld's length on both sides together, not that it is two fillets).
 - A **bent plate** (since 2026-11-19): a member lying on a flange's inner face that leaves the joint over the heel — through the angle's other leg — is laid out on a plate folded round that leg: one flat where the member lies, the other on the other leg's outer face, bolted to it by two **provisional** bolts (`[plate.leg_bolts]`). The member stays where it lay, only pulled back; the plate is as thick as the thickest leg on it, bent at an inside radius of **two thicknesses — the program's starting value, not a standard's: check it against your steel's bending rules** (change the bend's radius in the file; it is kept). Turning the member half a turn onto the outer face is tried first. The bolts holding the plate lie on the steel of the member they bolt onto (since 2026-11-20): where it ends at the joint, past its cut by the end distance (moved out along it where needed, the flat with them), and slid along it clear of the holes there — the default minimum spacing from each (since 2026-11-20); no place within the longest pull-back: a hand detail, said. Where the other leg is too narrow for the bolts holding the plate, or a member already bolts directly on that leg's face there, the joint says why and the member needs a hand detail. Each flat is checked as a plate; the bend's own bending is checked by the code's plugin (since 2026-11-19; a plugin without that check: not checked, **NOT ON THE SAFE SIDE where it governs**, said on the plate). In the bill of materials the bent flat is weighed from the developed area.
 
@@ -207,6 +210,7 @@ clashes…** opens this window.
 | The layout of the joint | [Lay out joints](#lay-out-joints) on this joint alone, values given by hand kept |
 | … values given by hand replaced | the same, your cuts, shifts, rolls and *onto* replaced by the layout's |
 | The layout's proposals here confirmed, then the layout | where the layout proposes pieces in line one part or a leg splice place at this joint, those confirmed first (**marked**: never silent), then the layout (both ways) |
+| … ends moved sideways to pass the flange on a plate | where the layout leaves something, the same with an end on a plate moved sideways within the shift limit so that its bolts pass the flange within the longest pull-back (its shift: an eccentricity the analysis takes) |
 | Then the fixes of what is left | on the best so far, the fixes of the problems left (the other face, a turn, the gauge or end distance that keeps the code's distances, nesting the other way, lapping instead of nesting), one at a time, each kept only where the joint has fewer problems after it |
 
 The best is the one leaving the **fewest clashes**, then the fewest other
@@ -239,6 +243,40 @@ or taken away. A member **left** for a hand detail is said with why.
   own. A leg piece its joints say is turned is only **proposed** (see
   *Leg turned against its joints* below).
 - **Undo** takes the whole solution back in one step.
+
+## Leg turned against its joints
+
+(2026-11-21, O44 L11; built, in active development; the owner: "sometimes
+the main legs are rotated along their axis 5° out of what would be needed
+for the joints".) **What it is for:** finding a leg piece that is turned
+about its axis against the members bolting onto it, from **the joints
+themselves**. A bracing end can lie flat on a leg's flange only when its
+axis lies in that flange's plane; the plane through the leg's axis and the
+end's says how far the flange is turned from it. Where at least two
+members' ends at a leg piece's joints say the same turn (all the same way,
+within 4° of each other) and it is more than the 2° a leg bolts flat
+within, the piece is flagged with that turn; the pieces in line with it
+turned alike are named with it (one leg). The tower's faces through the
+neighbouring legs (what Orient angles turns a leg to) are said beside it
+as a hint only — never flagged on their own.
+
+**Where it shows:**
+
+- **Lay out joints**: under the numbers, "*n* leg piece(s) turned against
+  their joints (proposed, not applied)", each in the hover with the
+  turn, the ends that say it and the faces' hint.
+- **Solve the clashes**: under *Proposed, not applied*, "Turn L2, L1 by
+  −5.0°: with it clashes … → …, other problems … → …" — the joint's
+  solution worked out again with the whole leg turned (the piece and the
+  pieces in line with it, alike). **Tick it** to apply that solution
+  instead (one undo step); unticked, nothing of the leg changes.
+
+**Good to know:** a leg's turn is never changed silently, by the layout
+or by Solve the clashes. Where Orient angles has not been run on an
+imported tower, most legs show as turned (an import carries no member
+orientation): run Orient angles first ([below](#orient-angles)); the check
+then shows the pieces Orient angles cannot place (where no faces are
+found) or the joints disagree with.
 
 ## Apply this joint's detail to similar joints
 

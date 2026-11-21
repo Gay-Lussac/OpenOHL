@@ -2286,7 +2286,135 @@ picture's state came from other rolls. Ends on both faces of one plate (the
 plate standing beyond the flange's heel, an end on its back face, bolts
 taking both plies and the plate where they share holes) are a new kind of
 plate for the planner, the clash check and the joint checks: **not built**
-(left for L11).
+(left for L11; built with L11 below).
+
+## Solve the clashes, an end moved to pass the flange on a plate, both faces of one plate, a leg turned against its joints (L11)
+
+(The owner, 2026-11-21, from four pictures of a real tower: a leg splice
+whose bracing "need a horizontal shift and a pull back as well as a plate,
+then one plate for each plane of the main legs and everything bolted to
+the plates"; two diagonals that "could be on the same plate just bolted on
+different sides"; leg pieces "rotated along their axis 5° out of what
+would be needed for the joints"; and Joint details' list of problems,
+"this huge list that's a bit unreadable and where buttons don't seem to do
+much". Built 2026-11-21, in active development, not approved yet. The
+code: `solve` and `joint_fixes` (moved from the application), `both_faces`,
+`leg_roll`, `joint_layout` (`shift_past_toe`, the switches
+`LayoutSettings::plate_shift` and `both_faces`, on by default), `joints`
+(`PlateSeat::back`), `layout_run` (`LayoutRun::leg_rolls`); the
+application's `solve_window` and `joint_panel`. **No format change**.)
+
+### Solve the clashes: one solution of a joint, weighed
+
+A joint's problems were offered one by one, each with the fixes that
+worked on a copy (2026-11-08). Now they are listed grouped and closed, and
+one window works out the joint's best **whole** solution on copies of the
+structure, in this order:
+
+1. the layout of the joint alone (as Lay out joints, values given by hand
+   kept), then with the values given by hand replaced;
+2. where the layout proposes pieces in line one part or a leg splice place
+   at the joint (J9, J7 — never written by a run), the same with those
+   confirmed (**marked** in the solution's effects);
+3. on the best so far, the fixes of the problems left
+   (the joint fixes: the other face, a turn, a gauge or end
+   distance, nesting the other way, lapping), one at a time, each kept only
+   where the joint has fewer problems after it (at most 24 tries a round,
+   four rounds: the program's bounds).
+
+(Between 1 and 2, where the layout leaves something, the same with an end
+moved sideways to pass the flange on a plate — below.)
+
+**Weighed** by the clashes at the joint, then its other problems, then the
+members left for a hand detail (fewer is better); the first of equal ones.
+**Refused**, whatever its counts: a way that pulls back a leg or a member
+running on through the joint (one part, or a piece in line with another
+there — the owner's example of a main leg's "steel stops at 17 mm" at a
+splice), turns a leg, changes a member's section or moves its ends, or
+leaves more clashes and problems at the other joints of the members
+meeting there (a member turned turns at its other end too). The fixes no
+longer pull back such members either. Where nothing is better: said, with
+each way's counts and what blocks the layout.
+
+### An end moved sideways to pass the flange on a plate
+
+An end going onto a plate must have its bolts past the flange's edge by
+their nut and the gap (on the plate, beyond the flange); where that needed
+more than the longest pull-back, the end was left for a hand detail. Now
+it is moved sideways — the least whole millimetre within the shift limit —
+until its bolts pass within the pull-back, clear of the plane's other ends
+as they lie and of the fixed steel, keeping a partner's bolts (L8): the
+owner's "horizontal shift and a pull back as well as a plate". The move is
+the end's `shift`, an eccentricity the analysis takes as every shift
+(level 4, and level 3 with the estimated eccentricities; where only bars
+meet the joint the member's own check takes the moment; a cable's left out,
+**NOT ON THE SAFE SIDE**, as before). Kept at a joint only where its plan
+lays out more ends, or as many on fewer plates (planned with and without).
+**Off in a run of Lay out joints, tried per joint by Solve the clashes**:
+measured on six private towers it laid out fewer ends at 11 joints and
+more at 8 (an end moved sideways takes room its neighbours then miss after
+writing), so it is not better in a run; for one joint, where the outcome is
+weighed after writing, it is tried as a way of its own.
+
+### One plate per plane; both faces of one plate
+
+**One plate per plane**: two flat plates of a plan on flanges in one plane
+(normals within 2°, 1 mm apart at most) of members one part through the
+joint (a chord whose pieces are named apart) are one plate, its ends
+shared, as thick as the thicker.
+
+**Both faces of one plate**: an end the plan puts on a plate in its own
+plane (bent or welded, step 4) whose leg lies flat (within the owner's 2°)
+in a flange's plane on the flange's **inner** side and leaves the joint
+over the heel goes onto the **back** of the flat plate on that flange's
+outer face — past the heel the flange is not there, the plate's back is
+free. Its cut: its steel clear of the heel's line by the gap over its leg's
+whole width on either side of its gauge line (**on the safe side**: the
+leg lies on one side only), its bolts by their nut (the drawn nut's corner
+radius) and the gap; at most the longest pull-back and its half length less
+its bolts. The flat plate is then no longer cut at the heel; the own-plane
+plate, and the flat it was bent from or welded to where nothing else is on
+it, go. The run's clash check after writing takes back an end that still
+runs into something; and **the run's guard** (`PlanCtx::no_l11`, as L1's):
+a joint these steps changed that lays out fewer ends after writing than its
+plan without them is planned again without them.
+
+**Drawn there** (the joint details, every file): a plate on a leg's flange
+with members on both sides of that flange — some with their own side
+(where their bolts' heads are) out of the angle, some into it — has the
+latter on its back: seated on the flange's inner face, then out by the
+flange's thickness, their leg against the plate's back. Before L11 such a
+member, given by hand, was drawn the flange's thickness and the plate's off
+the plate, its bolts' grip as if it touched (a drawing that the clash check
+could not see; on the safe side now: the member lies where it bolts). A
+plate whose members are all on the inner side is still a plate on the inner
+face, as before. Its plane and the side it is drawn through its thickness
+are those of the members on its front.
+
+### A leg turned against its joints
+
+From the joints themselves: an angle bracing end can lie flat on a leg's
+flange only when its axis lies in that flange's plane (its leg bolted
+contains its axis). For each end bolting onto a leg piece (directly, onto
+a plate on it, or — at a joint where pieces in line are turned alike —
+onto the leg there), the plane through the leg's axis and the end's axis
+is the plane a flange should lie in; the turn of the leg about its axis
+that lays its nearer flange in that plane is that end's estimate
+(`flat_roll` of the leg against the plane). An end whose plane lies more
+than 15° from both flanges (a plan or hip member arriving between them)
+says nothing (the program's value). A piece is **flagged** where at least
+two members' ends say a turn, all the same way, within 4° of each other
+(twice the owner's 2°: two ends each flat within 2° agree), and their
+middle is more than 2°; the turn proposed is the middle. The pieces in line
+with it turned alike (their axes within 2°) are named with it and turned
+alike in the proposal (one leg). The tower's faces through the neighbouring
+legs — what Orient angles turns a leg to — are said beside it as a hint,
+never flagged alone (the owner: "this doesn't mean much when we can clearly
+see on the joint itself").
+
+**Never applied silently**: the run lists them (`LayoutRun::leg_rolls`,
+Lay out joints' preview); Solve the clashes works the joint's solution out
+again with the leg turned and offers it ticked off, its counts beside it.
 
 ## The clash check
 
@@ -3076,3 +3204,47 @@ sorted):
 | before (L8) | 4.4 39.8 45.8 46.0 46.9 49.9 | 4.4 43.6 44.4 44.5 46.8 49.9 | 45.9 / 44.5 | 49.9 |
 | L9 without the speed | 4.5 36.8 40.6 44.3 45.2 45.2 | 4.4 36.8 40.7 44.4 45.1 45.1 | 42.5 / 42.5 | 45.2 |
 | L9 | 3.8 29.1 32.3 33.5 34.3 34.5 | 3.9 29.1 32.3 33.7 34.2 34.6 | 32.9 / 33.0 | 34.6 |
+
+## Measured (L11, 2026-11-21)
+
+On the same 78 private tower files and settings as L10, with the bundled
+code plugin found. "L10" is the main build before; "L11" adds one plate per
+plane and both faces of one plate (on in a run) and the run's guard; the
+end moved to pass the flange on a plate is off in a run (below).
+
+| | L10 | L11 |
+|---|---|---|
+| joints laid out whole | 35 687 (55.1 %) | 35 656 (55.1 %) |
+| member ends laid out / candidates | 130 329 / 183 541 (71.0 %) | 130 097 / 183 476 (70.9 %) |
+| plates written | 70 140 | 67 532 |
+| one plate per plane (pairs) / ends on a plate's back | – | 822 / 755 |
+| shifts written | 2 675 | 2 744 |
+| members left after the clash rounds | 9 438 | 9 485 |
+| plates whose holding is not checked / holding groups | 21 394 / 23 340 | 21 195 / 22 238 |
+| joints that do not fit, as given / as assumed | 48 / 11 461 | 48 / 11 552 |
+| a run again identical | 78 of 78 | 78 of 78 |
+
+Joint by joint (each joint's ends laid out, plates, whole): 1 675 joints
+better (more ends, or as many on fewer plates, or newly whole), 240 worse
+(fewer ends, or as many on more plates, or no longer whole; 80 no longer
+whole, 49 newly whole). The run's guard plans a joint again without the new
+steps where it lays out fewer ends after writing than its plan without them;
+the joints still worse lose an end through a change at a neighbouring joint
+(a member turned or a plate grown there), which the guard of one joint does
+not see — to trace next.
+
+**The end moved to pass the flange on a plate, measured alone** on every
+thirteenth tower (six): fewer ends at 11 joints, more at 8, plates +2; with
+both steps 109 joints better and 28 worse, with both faces alone 99 and 15.
+It is therefore off in a run and tried per joint by Solve the clashes, where
+the joint's outcome after writing decides.
+
+The time per tower (six towers, back to back, twice, nothing else running)
+median 35 → 38.5 s, the largest 38 → 41 s: the plans made again without the
+new steps for the guard.
+
+**The leg-rotation check**: after Orient angles (as the measurements lay
+out), 114 of 9 429 leg pieces with estimates flagged, on 22 towers — 110 of
+them leg extensions' pieces Orient angles finds no faces for (±3.8° to
+±4.1°), four at ±13.5° where Orient's faces say 0°; on the towers as
+imported (the import's rolls, no Orient) 4 212 of 8 695.

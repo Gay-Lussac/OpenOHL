@@ -2857,6 +2857,92 @@ only where it helps):
   > plate on one face could be one plate). (9) An end keeping its
   > partner's bolts: no invented joint reaches it → Recommended: write the
   > test from a joint kind found on the real towers, reproduced invented.
+- [x] L11. **Solve the clashes, an end moved to pass the flange on a plate,
+  both faces of one plate, a leg turned against its joints** (the owner's
+  four pictures of a real tower and words of 2026-11-21; the owner busy:
+  built on its own, reported). **Built 2026-11-21, in active development,
+  not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#solve-the-clashes-an-end-moved-to-pass-the-flange-on-a-plate-both-faces-of-one-plate-a-leg-turned-against-its-joints-l11),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#solve-the-clashes),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-joint-layout-solve-the-clashes-face-lining-steps-a-leg-turned-against-its-joints-l11);
+  no format change). **A. Joint details**: the problems grouped by kind with
+  counts, closed until opened, no button per problem; one **Solve the
+  clashes…** working out the joint's best whole solution on copies (the
+  layout of the joint, hand values kept then replaced; the layout's
+  proposals at the joint confirmed, marked; then the fixes of what is left),
+  weighed by clashes, problems, members left by hand, refused where it pulls
+  back a leg or a member running on, turns a leg, changes a section or makes
+  the joints around worse; what it changes listed (turns, moves,
+  confirmations marked), the close-up before and after, usage on request,
+  Apply one undo step; when nothing is better it says why. **B. Face-lining
+  steps added to the plan** (not one rewritten procedure): an end on a plate
+  whose bolts would need more than the longest pull-back to pass the flange
+  moved sideways within the shift limit (its `shift`); two plates on
+  flanges in one plane of members one part made one; an end on a bent or
+  welded plate lying flat in a flange's plane on its inner side, leaving
+  over the heel, onto the back of that flange's plate (both faces of one
+  plate), drawn there by the joint details. Each kept at a joint only where
+  it lays out more ends or as many on fewer plates, and planned again
+  without them where the joint lays out fewer ends after writing (the run's
+  guard). **C. A leg turned against its joints** found from the bracing
+  ends' planes through the leg's axis (two members agreeing within 4°, more
+  than 2°; the faces through the neighbouring legs a hint only), listed by
+  Lay out joints and offered in Solve the clashes with its effect, never
+  applied silently.
+  On the 78 real towers (kept privately; with the bundled plugin), L10 →
+  L11 (the end moved to pass the flange off in a run): joints laid out
+  whole 35 687 → 35 656 (55.1 %), ends 130 329 → 130 097 (70.9 %), plates
+  70 140 → 67 532 (−3.7 %; one plate per plane on 822 pairs, both faces of
+  one plate 755 ends), joint by joint 1 675 better (more ends, or as many on
+  fewer plates) and 240 worse (80 no longer whole, 49 newly whole) — the
+  run's guard plans a joint again without the steps where it lays out fewer
+  ends after writing, but a joint can still lose an end through a
+  neighbour's change; a run again identical 78/78; the time per tower (six
+  towers, back to back, twice, nothing else running) median 35 → 38.5 s, the
+  largest 38 → 41 s. The end moved to pass the flange,
+  measured alone on six towers: fewer ends at 11 joints, more at 8, plates
+  +2 — not better in a run, so off there and tried per joint by Solve the
+  clashes. The leg-rotation check: after Orient angles 114 of 9 429 leg
+  pieces flagged on 22 towers (110 at leg extensions where Orient finds no
+  faces, ±3.8° to ±4.1°; four at ±13.5° where Orient's faces say 0°); as
+  imported (no Orient) 4 212 of 8 695 (the import's rolls). The owner's
+  joints: the splice joint, as imported, Solve the clashes 35 clashes → 4,
+  with the leg turn it proposes (+3.8°, the tower's faces agree) → 0, all
+  six ends bolted directly; after Orient angles → 0 with the end moved
+  sideways, one plate per leg plane (the owner's picture); the joint of
+  bolts joining nothing → 0, nothing left, the pieces confirmed one part;
+  the joint of two diagonals → 0 clashes with three plates (the second
+  diagonal 3.6° off its flange by its roll as imported: not flat enough for
+  the plate's back; with hand values replaced one plate, the diagonal
+  half-turned, its other end one problem more → refused).
+  > **Owner:** (1) Problems grouped and closed, one Solve the clashes, no
+  > button per problem; the per-problem fixes now only a last step of the
+  > solution, never pulling back a leg or a member running on → Recommended:
+  > keep. (2) The solution may confirm the layout's own proposals at the
+  > joint (pieces in line one part, a leg splice place), marked, applied
+  > with Apply (one undo step) → Recommended: keep (the owner's rules for
+  > them; marked, one click to undo); the alternative: a tick, off by
+  > default. (3) The end moved sideways to pass the flange on a plate: off
+  > in a run (measured not better), tried per joint by Solve the clashes →
+  > Recommended: keep so. (4) Both faces of one plate and one plate per
+  > plane on in a run: 3.7 % fewer plates, 1 675 joints better, 240 worse
+  > (232 ends fewer in all) → Recommended: keep on, and next trace the
+  > worse joints (a neighbour's merged plate or back-face end taking room
+  > after writing); the alternative: off in a run, tried per joint like (3).
+  > (5) A member on a plate's back drawn there by the joint details (every
+  > file; before: drawn off the plate) → Recommended: keep (a fix). (6) The
+  > leg-rotation check: proposals only; after Orient angles 114 pieces,
+  > mostly leg extensions Orient finds no faces for → Recommended: next,
+  > Orient angles turning such pieces by the joints' estimate (proposed with
+  > its effect), and a look at the one tower where the joints and the faces
+  > disagree by 13.5°. (7) Not built: the plates at a leg splice as the
+  > splice's outer covers ("everything bolted to the plates", the legs'
+  > splice bolts through the gusset) → Recommended: next with J7a's
+  > follow-up (a cover grown into a gusset; a format field). (8) Not built:
+  > one general per-joint procedure replacing the special passes (the brief's
+  > generalisation) — the new steps were added to the plan in the owner's
+  > order and measured → Recommended: continue step by step, each measured
+  > joint by joint, rather than one rewrite.
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

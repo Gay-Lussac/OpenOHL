@@ -8,6 +8,65 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-21 (joint layout: Solve the clashes, face-lining steps, a leg turned against its joints, L11)
+
+**Joint details' problems grouped with one Solve the clashes; an end moved
+sideways to pass the flange on a plate; one plate per plane; both faces of
+one plate; a leg turned against its joints found from the joints** (roadmap
+O44 L11: the owner's four pictures of a real tower and their words of
+2026-11-21; the owner busy; built, in active development, not approved
+yet; [theory](../theory/joint-layout.md#solve-the-clashes-an-end-moved-to-pass-the-flange-on-a-plate-both-faces-of-one-plate-a-leg-turned-against-its-joints-l11),
+[user guide](../user-guide/joint-layout.md#solve-the-clashes)). No format
+change.
+
+- **Problems grouped, closed until opened, no button per problem**; one
+  **Solve the clashes…** (a tool window): the joint's best whole solution
+  worked out on copies — the layout of the joint (hand values kept, then
+  replaced), the same with the layout's proposals at the joint confirmed
+  (marked), then the fixes of what is left — weighed by clashes, problems,
+  members left by hand; refused where it pulls back a leg or a member
+  running on through the joint, turns a leg, changes a section or makes the
+  joints around worse. Apply is one undo step; when nothing is better it
+  says why. The per-problem fixes moved into the link crate and no longer
+  pull back a leg or a piece running on.
+- **An end moved sideways to pass the flange on a plate**
+  (`LayoutSettings::plate_shift`): the least whole millimetre within the
+  shift limit, its `shift` (an eccentricity the analysis takes, as every
+  shift); kept at a joint only where it lays out more, or as many on fewer
+  plates. **Off in a run, tried by Solve the clashes per joint** (measured
+  on a sample of six private towers: alone it laid out fewer ends at 11
+  joints and more at 8, plates +2 — not better, so not on by default; the
+  owner's splice joint is laid out whole with it, one plate per leg plane).
+- **The run's guard extended** (`PlanCtx::no_l11`): a joint L11's steps
+  changed that lays out fewer ends after writing than its plan without them
+  is planned again without them.
+- **One plate per plane, both faces of one plate**
+  (`LayoutSettings::both_faces`, on): two flat plates on coplanar flanges
+  of members one part are one; an end on a bent or welded plate lying flat
+  in a flange's plane on its inner side, leaving over the heel, goes onto
+  the back of that flange's flat plate past the heel (its cut on the safe
+  side: its leg's whole width either side of its gauge line).
+- **The joint details draw a member on a plate's back** (every file): a
+  plate on a leg's flange with members on both sides of the flange has the
+  inner-side ones against its back (before: drawn the flange's and the
+  plate's thickness off it — a drawing the clash check could not see).
+- **A leg turned against its joints** (`leg_roll`): from the bracing ends'
+  planes through the leg's axis; flagged at two or more members agreeing
+  within 4°, more than 2°; the faces through the neighbouring legs a hint
+  only; proposed (Lay out joints' preview, Solve the clashes with its
+  effect), never applied silently.
+- Measured on the 78 private real towers (with the bundled plugin), L10 →
+  L11: joints laid out whole 35 687 → 35 656, ends 130 329 → 130 097,
+  plates 70 140 → 67 532 (−3.7 %), joint by joint 1 675 better and 240
+  worse, a run again identical 78/78; the time per tower (six towers, back
+  to back) median 35 → 38.5 s. Leg pieces flagged after Orient angles 114 of
+  9 429 (on 22 towers).
+- Approved orders as starting points (the owner): the new steps run after
+  the plan's own (the shift where the pull-back would fail; both faces as a
+  pass on the finished plan), measured joint by joint; a general per-joint
+  procedure replacing the special passes was **not** rewritten — see the
+  roadmap's L11 block.
+
 ## 2026-11-21 (joint layout: members on either side of a leg's flange, L10)
 
 **Members on either side of a leg's flange, bolts that join nothing, a
