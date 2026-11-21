@@ -1582,6 +1582,43 @@ that order; "plan ideas to get the automatic layout working"):
   the mutual-host tests run without the partners' bolts (their own
   scenario); the bent-plate scenarios keep their result (the `face` given
   there keeps the name).
+- **L9: a plate read in its own plane, plates planned as written, short
+  plates held, the run faster** (2026-11-21; in active development, not
+  approved yet;
+  [theory](../theory/joint-layout.md#a-plate-read-in-its-own-plane-plates-planned-as-written-short-plates-held-l9)).
+  L8's question 4: `joints::plate_seats` took a given outline's plane from
+  its first three corners (`cross(q1 − q0, q2 − q0)`) — in a line where the
+  written outline runs straight —; now `outline_normal` (Newell over all
+  corners, `welds::polygon_normal`), and `bolts_near_edge` the same. The
+  seat passes (L7) went round again only where a moved member had an end
+  `onto` it; now also where it is the `leg` of a plate (`PlateSeat::leg`)
+  some end is `onto` (`seat` seats an end on a plate on that leg, with the
+  leg's offset). L8's question 5: `LayoutSettings::reach_clear`, on — in
+  `plan_once`, a flat plate with `reach` (step 4) is checked by
+  `plate_hits` with its outline as written (the flat ends'
+  `plate_outline2` and the reach's points, `keep_to`, the heel), else
+  short (`own_reach` without the work point's flange, the flat ends'
+  `Outline::Short`; core: the seams and `Outline::Core`; `separate` cuts,
+  `on_flange`), else the own-plane ends `by_hand` and the flat plate kept
+  for the flat ends. `write_rounds`' `ours` gives a plate the members of
+  the plates welded to it in their own planes (`own.welded_to`): a clash of
+  a flat plate with nothing bolted on it is no longer nobody's. L6's
+  question 2: `LayoutSettings::short_holds`, on — `hold_flat` on a short
+  plate checks `short_round_holds` (its outline grown round the holding
+  bolts as `joints::plate` draws them, cut at the heel and by `cuts`)
+  through `HoldAt::clear` (`plate_hits`) and every holding bolt's distance
+  inside it; `plate_holds` takes `ring_min` (the host's code distances,
+  `HoldAt::host_keep` from the edge rule) on a short plate. Speed (no
+  result changed, all 78 private towers' written files byte for byte):
+  `poly_need` clips only where a line crosses the footprint (`Cow`),
+  `clip` sizes its list once, `strip_joint`'s empty-connection test skips
+  tables of more than two fields, and `ohl_structures_fe::Section::from_library`
+  takes `ohl_sections::Section::elastic_properties` (no plastic moduli,
+  which it does not read). No format change. Tests:
+  `joints_tests::a_plate_whose_first_corners_lie_in_a_line_lies_in_the_plane_of_its_outline`,
+  `joints_tests::an_end_on_a_plate_on_a_member_drawn_off_its_line_lies_on_it_where_drawn`,
+  `layout_run_tests::a_welded_plates_flat_plate_is_planned_as_written_clear_of_a_run_on_its_face`
+  (each fails without its change).
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2

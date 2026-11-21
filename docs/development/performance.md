@@ -1686,6 +1686,53 @@ whole line's solves with its lookups: 4.4 s searched); `ohl-app`
 `network::a_replica_takes_the_servers_rows_in_place` 0.7 s. The other
 server tests run with the idle solve off (their timings unchanged).
 
+## Automatic joint layout: the run made faster (O44 L9, 2026-11-21)
+
+The layout run took about 45 s per real tower after L8 (median of six
+private towers, back to back), a third more than before it (a joint
+planned again where its members are drawn). Profiled with the system's
+sampler (`sample`, one tower, one thread): about half the time planning
+joints, most of it in the least cut that keeps an end clear of a footprint
+(`joint_layout::poly_need`: three polygon clips per footprint, each into a
+new list, for every footprint at every place tried — the clips' lists
+growing were a seventh of the whole run); about a third drawing the joints
+in detail after each round, of which a tenth worked out every section's
+plastic moduli (`ohl_sections::Section::properties`), which the joint
+details' model never reads; and some looking up connections in the file
+(`strip_joint`'s test for a connection left empty, every connection of the
+file for every joint).
+
+Made faster, **every number the same**:
+
+- `poly_need`: a footprint wholly on the kept side of a clipping line is
+  kept as it is, one wholly on the other side is gone — exactly as the
+  clip gives them; it is clipped only where the line crosses it. `clip`
+  makes its list at its size once.
+- `ohl_structures_fe::Section::from_library` takes
+  `ohl_sections::Section::elastic_properties` — the same properties by the
+  same arithmetic, without the plastic moduli it does not read.
+- `strip_joint`: a connection with more than two fields is not empty,
+  without looking up its joint.
+
+The written tower files of all 78 private towers were compared byte for
+byte, before and after: the same (and their joint lists and the probe's
+lines but its time).
+
+Measured on six private towers (every 13th of 78; the layout alone, two
+at a time, back to back, twice; nothing else running, load 3 to 8; an
+Apple M-series, 10 cores, release):
+
+| | median | largest |
+|---|---|---|
+| before (L8) | 45.9 / 44.5 s | 49.9 s |
+| L9's other changes (more planned, not faster) | 42.5 / 42.5 s | 45.2 s |
+| L9 with the speed changes | 32.9 / 33.0 s | 34.6 s |
+
+The speed changes alone: about a quarter less (42.5 → 33 s); L9 as a
+whole about 27 % less than L8 (45 → 33 s). Still open: the joint details
+drawn again after each round (about a third of what is left), their
+model built from the file's text every time.
+
 ## Time budgets and exit clauses
 
 Nothing may run forever (see the design goals). In code:

@@ -1664,7 +1664,8 @@ them (J2b):
   one laid out on its own).
 - **Not given**: on a plate stopping short of the work point (its outline,
   drawn round its members' legs and cut short of what it runs into, would
-  change with them; measured: members then left after writing), on a
+  change with them; measured: members then left after writing — since L9
+  given where that outline grown round them still fits, below), on a
   built-up member (`[plate.leg_bolts]` names one angle's leg; not read for
   a built-up member yet), and where two do not fit — the plate laid out
   without them, its holding still *not checked*, said.
@@ -1939,6 +1940,142 @@ roadmap (the plate's planned outline against the run, or the outline cut
 short of it after writing as a plate stopping short is).
 
 L5o on plates stopping short: not reached.
+
+## A plate read in its own plane, plates planned as written, short plates held (L9)
+
+(L8's questions 4, 5 and 6 in L8's order, then the run made faster; the
+owner busy: built on its own, reported. Built 2026-11-21, in active
+development, not approved yet. The code: `joints` (`plate_seats`,
+`bolts_near_edge`, the seat passes), `joint_layout`
+(`LayoutSettings::reach_clear`, `LayoutSettings::short_holds`,
+`short_round_holds`, `poly_need`), `layout_run` (the clashes after
+writing) and `ohl_sections::Section::elastic_properties`. **No format
+change**.)
+
+### A plate's plane read from its whole outline (L8's question 4)
+
+L8 traced the heads and nuts against plates after writing to an end's own
+bolts. Traced further: nearly all of them lie against the end's **own**
+plate, its bolts lying along the plate instead of through it. The run
+writes a plate's outline (round its bolts, cut at the heel) to a tenth of
+a millimetre; the joint details read the plate's plane back from it — from
+its **first three corners**. Where the outline runs straight there (often:
+its first corners on a cut), those three lie in a line, or nearly: the
+plane came out far off. The end on the plate then took its other leg as
+the one bolted (the one lying most nearly in that plane), and its bolts lay
+along the plate. On the 78 private towers' written files, 12 345 of
+56 513 plates' outlines (22 %) were so read more than 2° off, 4 615 more
+than 45°.
+
+Now a plate's plane is that of **all its corners** (Newell's method — the
+clash check, the drawings and the plate checks already took it so), and a
+plate's bolts are measured from its edges in that plane too. Every file
+with plates whose outline is given is read so: also files laid out before,
+and plates drawn by hand. *On the safe side*: the plate and the ends on it
+drawn where they are; the plan was not wrong here — the file read back was.
+
+What is left of the heads and nuts against plates (L9 Q1 in the roadmap):
+mostly an end's own nut running 1 to 4 mm into its own plate where two
+ends on one plate lie up to a few degrees off each other (each within the
+owner's 2° of the flange it bolts onto) — the plate drawn in the plane of
+the first end's bolts —, and a few ends on the plate's other face.
+
+### An end on a plate on a member drawn off its line (found with L8's question 5)
+
+The joint details seat each end where the member it bolts onto is drawn
+(L7), passing over the joint again while some member moves. Whether to
+pass again asked only whether some end bolts onto the moved member
+directly. An end on a **plate** lying on that member was not asked: where
+nothing else bolted onto the member, the plate and the ends on it were
+drawn as if the member lay on its work line — off it by its seat and move
+(found: a plate on a member seated on a plate, 31 mm off it, through the
+run beside it). Now the member a plate lies on counts as well. *On the
+safe side* (as L7): the drawings and checks see the steel where it lies.
+
+An example (invented): D1 lapped on the leg's flange (seated across it);
+D2 on a plate lying on D1, nothing bolted on D1 directly. Before, the plate
+lay where D1 would lie on its work line — tens of millimetres into the leg;
+now on D1's face.
+
+### A welded plate's flat plate planned as written (L8's question 5)
+
+An end no roll lays flat goes onto a plate in its own plane welded (or
+bent) to a flat plate on the flange (step 4). The flat plate's outline,
+worked out after writing, covers the seams and the flange under them and
+under the work point, and the bolts of the ends flat on it. The plan never
+checked that outline against the fixed steel — only the outline round the
+flat ends' bolts, and not at all where no end lies flat on it. Where a run
+(two pieces as one part, a leg) lay on the same face, the flat plate ran
+into it by the run's leg thickness: the largest kind of plate clash left
+after writing (L7's proposal 6).
+
+Now the plan checks the flat plate **with its outline as the run will
+write it** (`LayoutSettings::reach_clear`, on): round the work point, the
+seams and the flange under them, kept to the seams' sides, cut at the heel
+— against the fixed steel and what the planes before laid out, in its
+thickness, as a flat plate's. Where it runs into something it **stops
+short of the work point** — the seams and the flange under them only, and
+the flat ends' legs from the flange's toe — and is cut straight short of
+what it still runs into (each seam and each flat end's bolts with their
+distances kept; at most `CUT_TRIES` cuts), kept where it then still lies
+on the flange over half a square of its width. Else the ends in their own
+planes are left for a hand detail in the plan, said ("that plate would run
+into …"); the ends flat on it keep their plate, checked before. Of the two
+ways L8 asked about — planned as written, or cut short as a short plate is
+— both are used, in that order: the plate as written where it fits, cut
+short only where it does not (the measurements below).
+
+And after writing, a flat plate with nothing bolted on it belonged to no
+member: a clash of it was nobody's, and stayed written. Now it is its
+welded plates' members' (they are taken back for it, as for any clash).
+**Before, such clashes were written unsaid — NOT ON THE SAFE SIDE before
+L9**; fixed.
+
+*On the safe side*: the plan sees the plate as written; what the checks
+after writing would take back is not planned. Conservative: a plate cut
+short may leave a member for a hand detail that a plate shaped by hand
+would carry.
+
+### A plate stopping short of the work point held by its own bolts (L5o, L6's question 2)
+
+Since L5o a flat plate on a member running on through the joint has its
+own provisional bolts onto that member (`[plate.leg_bolts]`), so that how
+it is held is checked; not on a plate stopping short of the work point,
+whose outline the bolts would change. Now (`LayoutSettings::short_holds`,
+on) such a plate gets them too where its outline, **grown round them as
+the joint details draw it** — its ends' short outline, each holding bolt
+with the largest end or edge distance its plane's ends keep, and, cut
+straight, the code's for the member it lies on (in the plate's thickness)
+—, the flange under all of it as far along as those reach, cut at the heel
+and by its straight cuts, still runs into nothing and keeps every holding
+bolt that far from its edge; else none, said (as before). *An assumption,
+on the safe side for the fit*: the plate as large as the largest of those
+distances asks.
+
+### Faster, the same results
+
+The run took about 45 s per tower after L8 (median, six towers). Profiled
+(the system's sampler on one tower): about half the time planning the
+joints (most of it the least cut keeping an end clear of a footprint —
+three polygon clips each, with a new list each, for every footprint and
+every place tried), a third drawing the joints in detail after each round
+(of which a tenth working out every section's plastic moduli, which the
+joint details never read), and some looking up a joint's connections in
+the file text. Made faster without changing a number:
+
+- the least cut: a footprint wholly on one side of a clipping line is kept
+  as it is, or is gone, as the clip would give it — clipped only where the
+  line crosses it (and the clip's list made at its size once);
+- the sections of the model the joint details build: their plastic moduli
+  not worked out there (`Section::elastic_properties`: every other
+  property the same, by the same arithmetic);
+- a connection with more than two fields is not empty, without looking up
+  its joint.
+
+The written towers before and after were compared byte for byte on all 78
+towers: the same. The time per tower (six private towers, back to back)
+went from 45 s (L8) to 42.5 s with L9's other changes and to 33 s with
+these (the median; the largest 50 → 45 → 34.5 s): below.
 
 ## The clash check
 
@@ -2662,3 +2799,69 @@ The member ends left at writing, by the record's reasons:
   left in the plan, the joint planned around it); plates whose holding is
   not checked fall by 786. The seven joints more not fitting as given are
   one joint repeated on seven towers of one type (above).
+
+## Measured (L9, 2026-11-21)
+
+On the same 78 private tower files and settings as L8, with the bundled
+code plugin found. "Before" is the main build with L8; "plane" adds a
+plate's plane read from its whole outline; "as written" adds an end on a
+plate seated where the plate's member is drawn and the welded plates' flat
+plates planned as written; "L9" adds a flat plate's clashes after writing
+owned by its welded plates' members and the holding bolts on plates
+stopping short of the work point (and the speed, which changes no number:
+the written files of all 78 towers the same byte for byte).
+
+| | before | plane | as written | L9 |
+|---|---|---|---|---|
+| joints laid out whole | 34 515 (53.3 %) | 35 435 (54.7 %) | 36 406 (56.2 %) | 36 130 (55.8 %) |
+| member ends laid out | 126 362 (70.1 %) | 128 561 (71.3 %) | 129 270 (71.6 %) | 128 092 (71.0 %) |
+| plates written | 70 722 | 72 063 | 70 940 | 69 295 |
+| … their steel (the bill of materials, 72 towers) | 115.8 t | 121.3 t | 122.4 t | 120.6 t |
+| bolts (the bill of materials) | 235 797 | 242 698 | 245 161 | 244 497 |
+| plates' holding groups checked | 20 797 | 21 520 | 21 908 | 22 443 |
+| plates whose holding is not checked | 20 973 | 21 733 | 22 003 | 21 049 |
+| shifts written | 2 314 | 2 349 | 2 379 | 2 412 |
+| joints that do not fit, as given / as assumed | 42 / 12 883 | 50 / 12 567 | 51 / 11 576 | 53 / 11 633 |
+| a run again identical | 78 of 78 | 78 of 78 | 78 of 78 | 78 of 78 |
+
+The member ends left at writing, by the record's reasons:
+
+| | before | plane | as written | L9 |
+|---|---|---|---|---|
+| the plan: its plate into steel | 4 446 | 4 206 | 4 049 | 4 051 |
+| a plate into steel | 2 326 | 2 300 | 1 410 | 1 517 |
+| a nut into a plate | 1 073 | 788 | 785 | 776 |
+| a head into a plate | 681 | 19 | 19 | 19 |
+| steel into steel | 942 | 777 | 518 | 479 |
+| a member left as it is no longer fitting | 152 | 158 | 147 | 131 |
+| a plate's own bolts outside its outline | 39 | 25 | 69 | 24 |
+| holes overlapping, bolts beyond a member's end | 79 | 81 | 67 | 55 |
+
+- **The plane**: 920 more joints laid out whole, 2 200 more ends; the
+  heads against plates after writing all but gone (681 → 19), the nuts a
+  quarter fewer; "does not fit, as assumed" 316 fewer (the joint checks
+  read the plates in their planes too). Eight joints more not fitting as
+  given: the mirrored twins of two joints known since L8 (now laid out on
+  both sides of the tower), said by the joint checks.
+- **As written**: 971 more joints whole, about 700 more ends on 1 100 fewer
+  plates; the plates into steel after writing 2 300 → 1 410, steel into
+  steel 777 → 518, "does not fit, as assumed" 991 fewer. The plates' own
+  bolts outside their outline rise (25 → 69): holding bolts on flat plates
+  now kept whose outline, kept to their seams, leaves them out — next.
+- **L9**: owning a flat plate's clashes after writing takes back ends
+  that were laid out with such a clash written unsaid (the most of the
+  1 178 fewer ends; the plates into steel after writing count them now,
+  1 410 → 1 517); the short plates' holding bolts, measured alone on six
+  towers: holding groups checked 1 747 → 1 835, plates whose holding is not
+  checked 1 624 → 1 558, for 3 fewer joints whole and 18 fewer ends (of
+  9 537).
+
+The time per tower (the layout alone, six towers — every 13th —, two at
+a time, back to back, twice; nothing else running, load 3 to 8; seconds,
+sorted):
+
+| | first | second | median | largest |
+|---|---|---|---|---|
+| before (L8) | 4.4 39.8 45.8 46.0 46.9 49.9 | 4.4 43.6 44.4 44.5 46.8 49.9 | 45.9 / 44.5 | 49.9 |
+| L9 without the speed | 4.5 36.8 40.6 44.3 45.2 45.2 | 4.4 36.8 40.7 44.4 45.1 45.1 | 42.5 / 42.5 | 45.2 |
+| L9 | 3.8 29.1 32.3 33.5 34.3 34.5 | 3.9 29.1 32.3 33.7 34.2 34.6 | 32.9 / 33.0 | 34.6 |

@@ -2705,6 +2705,74 @@ only where it helps):
   > (4): the plate's planned outline as after writing, checked against the
   > run, else cut short of it as a short plate is. (6) L5o on short plates
   > → Recommended: after (4) and (5).
+- [x] L9. **A plate read in its own plane, plates planned as written,
+  short plates held, the run faster** (L8's questions 4 to 6 in L8's
+  recommended order, then the speed; the owner busy: built on its own,
+  reported). **Built 2026-11-21, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plate-read-in-its-own-plane-plates-planned-as-written-short-plates-held-l9),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-joint-layout-a-plate-read-in-its-own-plane-plates-planned-as-written-l9);
+  no format change). **L8's question 4 traced and fixed**: the heads and
+  nuts against plates were nearly all an end's own bolts against its
+  **own** plate, drawn in a wrong plane — a plate's outline as written
+  read back from its first three corners, in a line where it runs
+  straight (on the private towers' written files 22 % of the outlines
+  more than 2° off); now from all its corners. **Found with question 5,
+  fixed**: an end on a plate lying on a member drawn off its work line
+  was seated as if that member lay on it, where nothing else bolted onto
+  the member directly. **L8's question 5 built**: a welded plate's flat
+  plate (step 4) planned with its outline as written (round the work point,
+  the seams and the flange under them), else stopping short of the work
+  point and cut straight, else the ends in their own planes left for a
+  hand detail; and after writing, a flat plate with nothing bolted on it is
+  its welded plates' members' (before, its clashes were written unsaid:
+  **not on the safe side before L9**). **L8's question 6 (L5o on short
+  plates) built**: holding bolts on a plate stopping short of the work
+  point where its outline grown round them still fits. **Faster, every
+  number the same** (all 78 written towers byte for byte): the least-cut
+  clips only where they cut, the joint details' model without the plastic
+  moduli, a connection's empty test. On the 78 real towers (kept
+  privately; with the bundled plugin), L8 → the plate's plane → the plates
+  on members drawn off their line and the flat plates as written → a flat
+  plate's clashes after writing owned and short plates held: joints laid out whole 53.3 % → 54.7 % → 56.2 % → 55.8 %, ends 70.1 % →
+  71.3 % → 71.6 % → 71.0 %, plates 70 722 → 72 063 → 70 940 → 69 295 (their steel 115.8 →
+  120.6 t), heads and nuts against plates after writing 1 754 → 807 →
+  804 → 795 ends, plates into steel after writing 2 326 → 2 300 → 1 410
+  → 1 517, plates whose holding is not checked 20 973 → 21 049, joints not
+  fitting as given 42 → 53 (mirrored twins of joints known since L8, and
+  members left as given beside ends now drawn where they are; said by the
+  joint checks), a run again identical 78/78; the last step's fewer ends
+  (−1 178) are mostly ends laid out before with a clash of their flat plate
+  written unsaid (measured alone on six towers, the short plates' holding
+  bolts cost 18 ends of 9 537); the time per tower (six towers, back to
+  back, twice, load 3 to 8) median 45 → 42.5 (L9 without the speed) → 33 s,
+  the largest 50 → 45 → 34.5 s.
+  > **Owner:** (1) A plate's plane read from all its corners (every file
+  > with plate outlines given reads so; files laid out before too) →
+  > Recommended: keep (a fix: the plate and its ends drawn where they are).
+  > (2) An end on a plate seated on the plate's member where that member is
+  > drawn (every file where such plates lie) → Recommended: keep (L7's rule,
+  > for plates too). (3) A welded plate's flat plate planned as written,
+  > else short, else the ends in their own planes left; its clashes after
+  > writing its welded members' → Recommended: keep (the plan sees what is
+  > written; the second was not on the safe side). (4) Holding bolts on
+  > short plates: on the 78 towers the plates' holding groups checked 21 908 → 22 443 and the plates whose holding is not checked 22 003 → 21 049; measured alone on six towers: 3 fewer joints whole and 18 fewer ends (of 9 537), 12 fewer plates → Recommended: keep (more plates' holding checked:
+  > on the safe side); the alternative: off (`short_holds`). (5) The speed:
+  > a method added to the section crate (`elastic_properties`), the
+  > finite-element model's sections built with it (the same values) →
+  > Recommended: keep. (6) What is left of the heads and nuts against
+  > plates (795 ends): mostly an end's own nut 1 to 4 mm into its own
+  > plate where two ends on one plate lie a few degrees off each other (each
+  > within the owner's 2°) → Recommended: next — the plate drawn in the
+  > plane of the flange it lies on and an end's own head and nut against its
+  > own plate tested as lying on it where its leg lies within 2° of it (it
+  > bolts flat by the owner's rule), measured first. (7) The plates into
+  > steel left (1 517 ends; bent flats, short plates, plates in their
+  > members' own planes) → Recommended: trace next, kind by kind. (8) Not
+  > written: the tests L8 could not write (the bolts already there away
+  > from the origin; an end keeping its partner's bolts — on the invented
+  > split joint no cut and move keeps them: the pieces' bolts lie nearer
+  > the redundant's end than their end distance) → Recommended: with the
+  > next step, from an invented joint built for them.
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

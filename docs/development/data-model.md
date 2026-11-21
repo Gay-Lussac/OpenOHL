@@ -2483,7 +2483,11 @@ shapes, naming them). `Section::properties()` computes area,
 centroid, second moments about the geometric and principal axes, torsion
 constant, shear centre and warping constant (thin-walled, from the
 midlines; not given in the file), elastic and plastic moduli, radii of
-gyration and shear areas; `Shape::symmetry()` the shape's symmetry for
+gyration and shear areas; `Section::elastic_properties()` (2026-11-21,
+speed only) the same without the plastic moduli worked out (only as given
+in the file) — `ohl_structures_fe::Section::from_library`, which never
+reads them, takes it (a model built many times over, as the joint
+layout's rounds build it); `Shape::symmetry()` the shape's symmetry for
 buckling (angle, double, about y, about z, point, closed, unknown: which
 torsional modes a code checks — ASCE 10-97 3.9.4–3.9.6 in the bundled
 plugin `asce10`, `plugins/codes/asce10`);
