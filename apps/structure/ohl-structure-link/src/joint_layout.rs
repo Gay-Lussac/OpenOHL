@@ -274,6 +274,28 @@ pub struct LayoutSettings {
     /// joint details draw it, still runs into nothing — else none, said (as
     /// before: none on a short plate). On by default; off: as before.
     pub short_holds: bool,
+    /// L10, 2026-11-21 (the owner's idea from photographs of real towers:
+    /// members on either side of a leg's flange): where two or more ends on
+    /// one face of a leg's flange go onto a plate there, or one is left for
+    /// want of room beside another, one of them tried on the flange's other
+    /// face — half a turn of its member (the module `other_face`) —, kept
+    /// where its joints then lay out more ends, or as many on fewer plates
+    /// (none fewer at any of them), and only where its leg then lies no
+    /// farther from the work point across the flange than it lies now
+    /// (otherwise proposed in the run's notes, not applied). On by default;
+    /// off: as before.
+    pub other_face: bool,
+    /// L10: of a face's ends, those following the photographs' pattern
+    /// tried first — a diagonal onto the inner face, a horizontal onto the
+    /// outer one —, else the later class first. On by default; off: the
+    /// later class first (for the comparison).
+    pub face_pattern: bool,
+    /// L10 (the owner, 2026-11-21: bolts drawn at a laid-out joint that
+    /// join nothing): a joint where an end left as it is bolts onto nothing
+    /// but has bolts drawn there (given, or its member's design data) is
+    /// not laid out whole — that member by hand, said with why. On by
+    /// default; off: as before (such a joint could count as whole).
+    pub nothing_joined: bool,
 }
 
 impl Default for LayoutSettings {
@@ -307,6 +329,9 @@ impl Default for LayoutSettings {
             partner_bolts: true,
             reach_clear: true,
             short_holds: true,
+            other_face: true,
+            face_pattern: true,
+            nothing_joined: true,
         }
     }
 }
@@ -3400,6 +3425,44 @@ fn plan_once(
             bolts: x.give.clone(),
         });
     }
+    // L10 (the owner, 2026-11-21: "here there are 2 bolts not used in the
+    // laid out joint"): an end left as it is that bolts onto nothing here
+    // but has bolts drawn (given, or its member's design data) — they join
+    // nothing. The joint is then not laid out whole: that member by hand,
+    // said (its splice or what it bolts onto given, the pieces confirmed
+    // one part, or its bolts there taken out by hand).
+    if s.nothing_joined && !plan.ends.is_empty() {
+        for a in &j.arrivals {
+            let n = a.bolt_points.len() + a.other_points.len();
+            if n == 0
+                || a.onto.value.is_some()
+                || a.continuous.is_some()
+                || except.contains_key(&a.member)
+                || plan.hand_members.contains(&a.member)
+                || plan.ends.iter().any(|e| e.member == a.member)
+            {
+                continue;
+            }
+            let whose = match a.bolts.source {
+                Source::Given => "given at this end",
+                _ => "its member's design data",
+            };
+            let legs = if a.other_points.is_empty() {
+                String::new()
+            } else {
+                format!(", {} on each leg", a.bolt_points.len())
+            };
+            plan.by_hand(
+                &a.member,
+                format!(
+                    "{}: {BOLTS_JOIN_NOTHING} — its {n} bolt(s) ({whose}{legs}) are drawn \
+                     at this joint, but it bolts onto nothing here; by hand: what it bolts \
+                     onto or its splice given, or the pieces in line confirmed one part",
+                    a.member
+                ),
+            );
+        }
+    }
     // The members left whose bolted leg lies off its flange (the plate
     // case of the estimated eccentricities, O45 A1).
     plan.off_flange = plan
@@ -5515,6 +5578,10 @@ fn place(
         ),
     })
 }
+
+/// Said of an end left as it is whose bolts drawn join nothing at the
+/// joint (L10, [`LayoutSettings::nothing_joined`]).
+pub const BOLTS_JOIN_NOTHING: &str = "its bolts join nothing";
 
 /// A plane: its normal and offset (mm, rounded).
 type PlaneKey = (i64, i64, i64, i64);

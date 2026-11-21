@@ -1183,29 +1183,27 @@ fn lay_out_once(
     // distances), each planned.
     // (`s`: the settings planned with — the half turns' check without the
     // bent plates, J2b.)
+    // (`g`: the guard the plans are told to — a scratch one for a plan only
+    // weighed, L10.)
+    let planned_in = |turns: &BTreeMap<&String, f64>,
+                      s: &LayoutSettings,
+                      g: &std::cell::RefCell<Guard>|
+     -> Result<Planned, String> {
+        let mut d = planning.borrow().clone();
+        for (m, turn) in turns {
+            ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+        }
+        let (details, model) = crate::joints::joint_details_and_model(
+            &text_of(&d, &keep_targets),
+            ask.library,
+            ask.bolts,
+            Some(&targets),
+        )?;
+        let plans = plans_of(&details, model.as_ref(), &targets, s, &joins, &order, g);
+        Ok((details, model, plans))
+    };
     let planned_with =
-        |turns: &BTreeMap<&String, f64>, s: &LayoutSettings| -> Result<Planned, String> {
-            let mut d = planning.borrow().clone();
-            for (m, turn) in turns {
-                ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
-            }
-            let (details, model) = crate::joints::joint_details_and_model(
-                &text_of(&d, &keep_targets),
-                ask.library,
-                ask.bolts,
-                Some(&targets),
-            )?;
-            let plans = plans_of(
-                &details,
-                model.as_ref(),
-                &targets,
-                s,
-                &joins,
-                &order,
-                &guard,
-            );
-            Ok((details, model, plans))
-        };
+        |turns: &BTreeMap<&String, f64>, s: &LayoutSettings| planned_in(turns, s, &guard);
     // The half turns are checked as before the bent plates (the owner's
     // order: a member flat on the flange or a flat plate before a bent
     // plate); their plans then made again with them.
@@ -1418,6 +1416,100 @@ fn lay_out_once(
         } else {
             None
         };
+        // 2c. L10 (the owner's idea of 2026-11-21, from photographs of real
+        // towers: the horizontals on the outer face of a leg's flange, the
+        // diagonal on its inner face, meeting at one point without a
+        // plate): where two or more ends on one face of a leg's flange go
+        // onto a plate, or one is left for want of room beside another,
+        // one of them half a turn — onto the flange's other face
+        // ([`crate::other_face`]). Weighed on the whole plan (with the bent
+        // plates): kept for a member only where its joints lay out more
+        // ends, or as many on fewer plates, and none fewer at any of them;
+        // applied only where its leg then lies no farther from the work
+        // point across the flange than now at every end so asked (the
+        // analysis leaves every such seat out, the outer face's as the
+        // inner's: nothing more left out than before) — else proposed in
+        // the notes with the bending that offset would add.
+        if settings.other_face {
+            let turns: BTreeMap<&String, f64> = turned.iter().map(|(m, x)| (m, *x)).collect();
+            let base = match first.take() {
+                Some(p) => p,
+                None => planned_with(&turns, &settings)?,
+            };
+            let may_turn = |m: &str| -> bool {
+                // (One part with another, given or joined — as planned: its
+                // roll stays alike with its partner's.)
+                if held.contains(m)
+                    || one_part.contains(m)
+                    || members_here.get(m).is_some_and(|n| {
+                        n.iter().any(|j| {
+                            base.0.joint(j).is_some_and(|d| {
+                                d.arrivals
+                                    .iter()
+                                    .any(|a| a.member == m && a.continuous.is_some())
+                            })
+                        })
+                    })
+                    || chosen.contains(m)
+                    || mirrored.contains(m)
+                    || !members_here.contains_key(m)
+                    || laid_elsewhere(m).is_some()
+                    || class_of(m) == crate::joint_layout::ClassRank::Leg as u8
+                    || record
+                        .oriented
+                        .get(m)
+                        .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
+                {
+                    return false;
+                }
+                let automatic = record.rolled.contains_key(m) || record.oriented.contains_key(m);
+                let by_hand = member(m).is_some_and(|x| x.roll.is_some()) && !automatic;
+                !by_hand || ask.replace_hand
+            };
+            let host_class = |m: &str| -> u8 {
+                if record
+                    .oriented
+                    .get(m)
+                    .is_some_and(|(_, k)| *k == crate::OrientKind::Chord)
+                {
+                    crate::joint_layout::ClassRank::Leg as u8
+                } else {
+                    class_of(m)
+                }
+            };
+            let tries = crate::other_face::face_tries(
+                &base.2,
+                &base.0,
+                &crate::other_face::MemberAsk {
+                    may_turn: &may_turn,
+                    class: &host_class,
+                },
+                settings.face_pattern,
+            );
+            let (kept, words, plan) =
+                other_faces(&tries, &base, &turned, &members_here, &targets, &|t| {
+                    let scratch = std::cell::RefCell::new(Guard {
+                        changed: BTreeMap::new(),
+                        plain: guard.borrow().plain.clone(),
+                    });
+                    let turns: BTreeMap<&String, f64> = t.iter().map(|(m, x)| (m, *x)).collect();
+                    let p = planned_in(&turns, &settings, &scratch)?;
+                    Ok((p, scratch.into_inner()))
+                })?;
+            notes.extend(words);
+            match plan {
+                Some((p, g)) => {
+                    for m in &kept {
+                        let x = turned.get(m).copied().unwrap_or(0.0);
+                        turned.insert(m.clone(), half(x));
+                    }
+                    // (As if planned with the run's guard.)
+                    guard.borrow_mut().changed.extend(g.changed);
+                    first = Some(p);
+                }
+                None => first = Some(base),
+            }
+        }
     }
     // (L1 d: what each end bolted onto before, at the joints where it
     // changed.)
@@ -1987,6 +2079,157 @@ fn lay_out_once(
         });
     }
 }
+
+/// What [`other_faces`] keeps: the members turned half a turn, the notes,
+/// and the plan with exactly those turned and the scratch guard it was
+/// planned with (none: nothing kept).
+type FacesKept = (Vec<String>, Vec<String>, Option<(Planned, Guard)>);
+
+/// The joints planned with the turns given, and the scratch guard they were
+/// planned with ([`other_faces`]).
+type PlanTurned<'a> = &'a dyn Fn(&BTreeMap<String, f64>) -> Result<(Planned, Guard), String>;
+
+/// L10: the ends `tries` on their flange's other face weighed against
+/// `base` (planned with `turned`): each member half a turn, all at once,
+/// then kept where its joints (of `members_here` asked, `targets`) lay out
+/// more ends, or as many on fewer plates, none fewer at any of them, and
+/// every end of it so moved lies no farther from the work point across the
+/// flange than now; planned again with only those until each kept still
+/// helps (at most [`FACE_ROUNDS`] plans). Those that help but lie farther
+/// out are proposed in the notes. `plan`: the joints planned with the turns
+/// given (a scratch guard).
+fn other_faces(
+    tries: &[crate::other_face::FaceTry],
+    base: &Planned,
+    turned: &BTreeMap<String, f64>,
+    members_here: &BTreeMap<&str, &[String; 2]>,
+    targets: &BTreeSet<String>,
+    plan: PlanTurned<'_>,
+) -> Result<FacesKept, String> {
+    use crate::other_face::{counts_at, ends_moved, helps, stress_ratio};
+    if tries.is_empty() {
+        return Ok((Vec::new(), Vec::new(), None));
+    }
+    let half = |x: f64| {
+        let mut d = x.to_degrees() + 180.0;
+        if d > 180.0 {
+            d -= 360.0;
+        }
+        ((d * 100.0).round() / 100.0).to_radians()
+    };
+    let joints_of = |m: &str| -> Vec<&str> {
+        members_here
+            .get(m)
+            .map(|n| {
+                n.iter()
+                    .filter(|j| targets.contains(*j))
+                    .map(String::as_str)
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let with = |set: &BTreeSet<String>| -> BTreeMap<String, f64> {
+        let mut w = turned.clone();
+        for m in set {
+            let x = w.get(m).copied().unwrap_or(0.0);
+            w.insert(m.clone(), half(x));
+        }
+        w
+    };
+    let all: BTreeSet<String> = tries.iter().map(|t| t.member.clone()).collect();
+    let (p1, g1) = plan(&with(&all))?;
+    let mut words = Vec::new();
+    let mut auto: BTreeSet<String> = BTreeSet::new();
+    let mm = |v: f64| v.abs() * 1000.0;
+    for m in &all {
+        let js = joints_of(m);
+        let (b, a) = (counts_at(&base.2, &js), counts_at(&p1.2, &js));
+        if !helps(&b, &a) {
+            continue;
+        }
+        let moved = ends_moved(m, &js, &base.2, &base.0);
+        let farther = moved
+            .iter()
+            .filter(|x| x.4.abs() > x.3.abs() + 1e-4)
+            .max_by(|x, y| (x.4.abs() - x.3.abs()).total_cmp(&(y.4.abs() - y.3.abs())));
+        let sum = |v: &[(usize, usize)]| v.iter().fold((0, 0), |(e, p), (x, y)| (e + x, p + y));
+        let ((e0, p0), (e1, p1)) = (sum(&b), sum(&a));
+        match farther {
+            None => {
+                auto.insert(m.clone());
+            }
+            Some((j, host, to_inner, now, then)) => {
+                let e = then.abs() - now.abs();
+                let ratio = base
+                    .0
+                    .joint(j)
+                    .and_then(|d| d.arrivals.iter().find(|x| &x.member == m))
+                    .and_then(|x| stress_ratio(x, e));
+                words.push(format!(
+                    "{m}: half a turn onto the {} face of {host}'s flange at {j} would lay out \
+                     {e1} ends on {p1} plates at its joints (now {e0} on {p0}; planned with the \
+                     other faces tried) — proposed, not applied (L10, members on either side of \
+                     a leg's flange): its leg {:.0} mm from the work point across the flange \
+                     there, now {:.0} mm — {:.0} mm farther{}, not in the analysis",
+                    if *to_inner { "inner" } else { "outer" },
+                    mm(*then),
+                    mm(*now),
+                    e * 1000.0,
+                    ratio.map_or(String::new(), |r| format!(
+                        " (its bending stress e·A/W {r:.2} of its axial stress more)"
+                    ))
+                ));
+            }
+        }
+    }
+    // Planned again with only those kept, until each still helps.
+    let mut set = auto;
+    let mut last = if set == all { Some((p1, g1)) } else { None };
+    for _ in 0..FACE_ROUNDS {
+        if set.is_empty() || last.is_some() {
+            break;
+        }
+        let (p, g) = plan(&with(&set))?;
+        let keep: BTreeSet<String> = set
+            .iter()
+            .filter(|m| {
+                let js = joints_of(m);
+                helps(&counts_at(&base.2, &js), &counts_at(&p.2, &js))
+            })
+            .cloned()
+            .collect();
+        if keep == set {
+            last = Some((p, g));
+        } else {
+            set = keep;
+        }
+    }
+    let Some(last) = last.filter(|_| !set.is_empty()) else {
+        return Ok((Vec::new(), words, None));
+    };
+    for m in &set {
+        let js = joints_of(m);
+        let sum = |v: Vec<(usize, usize)>| v.iter().fold((0, 0), |(e, p), (x, y)| (e + x, p + y));
+        let (e0, p0) = sum(counts_at(&base.2, &js));
+        let (e1, p1) = sum(counts_at(&last.0.2, &js));
+        for (j, host, to_inner, now, then) in ends_moved(m, &js, &base.2, &base.0) {
+            words.push(format!(
+                "{m}: half a turn onto the {} face of {host}'s flange at {j} (L10, members on \
+                 either side of a leg's flange): its joints lay out {e1} ends on {p1} plates \
+                 (before {e0} on {p0}); its leg {:.0} mm from the work point across the flange, \
+                 before {:.0} mm (no farther: nothing more left out of the analysis)",
+                if to_inner { "inner" } else { "outer" },
+                mm(then),
+                mm(now),
+            ));
+        }
+    }
+    Ok((set.into_iter().collect(), words, Some(last)))
+}
+
+/// L10: the most plans [`other_faces`] makes to confirm the members it
+/// keeps (the program's bound).
+const FACE_ROUNDS: usize = 3;
 
 /// Either leg of `a` may be its leg bolted (J3, [`crate::whole_roll`]): a
 /// single equal-leg angle whose leg bolted is not given as both (an

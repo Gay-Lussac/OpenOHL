@@ -188,6 +188,15 @@ impl LayoutWindow {
             // fit.
             reach_clear: true,
             short_holds: true,
+            // L10 (2026-11-21): one of two ends on a face of a leg's flange
+            // tried on its other face (half a turn), a diagonal onto the
+            // inner face first, kept where it lays out more or as many on
+            // fewer plates and its leg lies no farther out than now.
+            other_face: true,
+            face_pattern: true,
+            // L10 (2026-11-21): a joint with an end's bolts drawn that join
+            // nothing is not laid out whole (that member by hand, said).
+            nothing_joined: true,
         }
     }
 

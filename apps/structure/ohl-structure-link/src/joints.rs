@@ -3099,12 +3099,43 @@ fn plate(
             pts.push(add(base, scale(across.0, across.1)));
         }
     }
-    let outline = match onto
-        .iter()
-        .find_map(|a| a.bolt_points.first().map(|q| (*q, a)))
-    {
-        Some((at, a)) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.0),
-        None => hull_around(&pts, joint, &onto, 0.03),
+    // (L10, L9's question 6) On a single angle's flange with every member
+    // on it lying within the flatness allowed ([`FLAT_OFF`]) of that
+    // flange: in the flange's plane — its face against the flange's face
+    // the members lie over, the members' face a plate's thickness out.
+    // Before (and otherwise): in the plane of its first member's leg, up to
+    // that flatness off the flange, so that the other members' heads and
+    // nuts ran into it where they lie off that leg the other way.
+    let flange_plane = flange.and_then(|(l, heel, across)| {
+        let p = l.profile.as_ref()?;
+        let g = p.angle?;
+        let nl = if dot(across.0, p.axes[1]) > 0.5 {
+            p.axes[2]
+        } else {
+            p.axes[1]
+        };
+        let flat = FLAT_OFF.to_radians().cos() - 1e-9;
+        let bolted: Vec<&&Arrival> = onto.iter().filter(|a| !a.bolt_points.is_empty()).collect();
+        if bolted.is_empty() || bolted.iter().any(|a| dot(a.bolt_axis, nl).abs() < flat) {
+            return None;
+        }
+        let first = bolted[0].bolt_points[0];
+        let h = dot(heel, nl);
+        let face = if dot(first, nl) - h <= g.t / 2.0 {
+            h - seat.map_or(0.0, |s| s.thickness)
+        } else {
+            h + g.t + seat.map_or(0.0, |s| s.thickness)
+        };
+        Some((add(first, scale(nl, face - dot(first, nl))), nl))
+    });
+    let outline = match (
+        flange_plane,
+        onto.iter()
+            .find_map(|a| a.bolt_points.first().map(|q| (*q, a))),
+    ) {
+        (Some((at, n)), Some(_)) => face_hull(&pts, at, n, onto[0].direction, 0.0),
+        (None, Some((at, a))) => face_hull(&pts, at, a.bolt_axis, onto[0].direction, 0.0),
+        (_, None) => hull_around(&pts, joint, &onto, 0.03),
     };
     // Kept by construction; said should the bolts' planes differ.
     let notes = bolts_near_edge(&outline, &keeps, &p.id);

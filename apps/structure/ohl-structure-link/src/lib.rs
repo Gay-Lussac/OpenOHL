@@ -83,6 +83,9 @@ mod member_view;
 mod orient;
 #[cfg(test)]
 mod orient_tests;
+mod other_face;
+#[cfg(test)]
+mod other_face_tests;
 mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;

@@ -169,15 +169,24 @@ fn diagonal() -> String {
 /// The layout before and after confirming (a diagonal to the middle of a
 /// horizontal in two pieces): not confirmed, the pieces end at the joint —
 /// the diagonal is laid onto the piece on its side (whose steel lies under
-/// its bolts), the splice whose place is not known said; confirmed, the
-/// horizontal runs on through, nothing said of a splice; a run again
-/// changes nothing either way.
+/// its bolts), the splice whose place is not known said, and (L10) the
+/// joint not whole: the pieces' own bolts (their design data) join
+/// nothing there; confirmed, the horizontal runs on through, nothing said
+/// of a splice, laid out whole; a run again changes nothing either way.
 #[test]
 fn the_layout_before_and_after_confirming() {
     let text = diagonal();
     let r = run(&text);
     let m = r.joints.iter().find(|o| o.joint == "M").unwrap();
-    assert!(m.written && m.hand.is_empty(), "{m:?}");
+    assert!(m.written, "{m:?}");
+    for p in ["H1", "H2"] {
+        assert!(
+            m.hand.iter().any(|h| h.starts_with(&format!("{p}: "))
+                && h.contains(crate::joint_layout::BOLTS_JOIN_NOTHING)),
+            "{:?}",
+            m.hand
+        );
+    }
     let host = |p: &crate::JointPlan| match &p.ends[0].onto {
         Onto::Member(h) => h.clone(),
         Onto::Plate(k) => p.plates[*k].on.clone(),

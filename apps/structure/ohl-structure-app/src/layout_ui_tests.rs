@@ -878,6 +878,168 @@ kind = "continuous"
 onto = "L2"
 "#;
 
+/// L10 (2026-11-21): a leg 150 × 13 running through N2, two diagonals and a
+/// horizontal 65 × 5 with two bolts each, all from one side in the face
+/// y = 0 (invented).
+const FACE_K: &str = r#"id = "K"
+name = "Both faces example"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["1.5 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N5"
+point = ["1.5 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "N6"
+point = ["1.5 m", "0 m", "3 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-150x13"
+orientation = "x+y+"
+design = { class = "leg" }
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-150x13"
+orientation = "x+y+"
+design = { class = "leg" }
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "EA-65x5"
+orientation = "y-z+"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "EA-65x5"
+orientation = "z-y-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[member]]
+id = "H1"
+nodes = ["N2", "N6"]
+section = "EA-65x5"
+orientation = "y-z-"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+
+[[connection]]
+member = "L1"
+joint = "N2"
+kind = "continuous"
+onto = "L2"
+"#;
+
+/// L10 (2026-11-21, the owner's photographs of real towers): the window
+/// turns the two diagonals of the invented joint half a turn onto the leg
+/// flange's inner face, the horizontal staying on its outer face — all
+/// three bolted directly, no plate (all on the outer face: one plate); its
+/// picture (the close-up before and after) for the user guide.
+#[test]
+fn members_on_either_side_of_a_flange_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-faces");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    let sections = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("Sections/example-sections.ohlsec"),
+        format!(
+            "{sections}\n[[section]]\nid = \"EA-150x13\"\nname = \"Equal angle 150 × 13 (invented)\"\n\
+             shape = \"equal_angle\"\nh = \"150 mm\"\nt = \"13 mm\"\nr = \"16 mm\"\n\
+             \n[[section]]\nid = \"EA-65x5\"\nname = \"Equal angle 65 × 5 (invented)\"\n\
+             shape = \"equal_angle\"\nh = \"65 mm\"\nt = \"5 mm\"\nr = \"7 mm\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("both-faces.ohls");
+    std::fs::write(&tower, FACE_K).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    // (The window opened as Joint details' Lay out joint… opens it; that
+    // button is clicked in the tests above.)
+    h.state_mut()
+        .open_layout_window(crate::layout_window::Scope::Joint("N2".into()));
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let n2 = p.run.joints.iter().find(|o| o.joint == "N2").unwrap();
+        assert!(n2.written && n2.hand.is_empty(), "{:?}", n2.hand);
+        assert!(n2.plan.plates.is_empty(), "{:?}", n2.plan);
+        assert_eq!(n2.plan.ends.len(), 3, "{:?}", n2.plan);
+        assert!(
+            p.run
+                .notes
+                .iter()
+                .filter(|x| x.contains("onto the inner face"))
+                .count()
+                >= 2,
+            "{:?}",
+            p.run.notes
+        );
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        // Turned to look at the flange's edge from the side the members
+        // leave to: both faces seen.
+        if let Some(w) = h.state_mut().layout_window.as_mut() {
+            for v in [&mut w.views.0, &mut w.views.1] {
+                v.yaw += 0.8;
+                v.pitch += 0.3;
+                v.zoom = 0.5;
+            }
+        }
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(
+            &mut h,
+            "Lay out joints",
+            "lay-out-joints-both-faces",
+        );
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// J6 (2026-11-20): the window lays the K-brace's diagonals onto a plate on
 /// the angle of a built-up leg (four angles in a cross) facing them — the
 /// plate drawn on that angle, nothing running into the leg's other angles;

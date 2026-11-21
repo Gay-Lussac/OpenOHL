@@ -678,6 +678,24 @@ fn clashes_of(
                     {
                         Together::ShankOnly
                     }
+                    // (L10, L9's question 6) Its own plate, its leg lying
+                    // within the flatness allowed of it ([`crate::FLAT_OFF`]:
+                    // drawn and checked as flat on it, the bolts pulling it
+                    // flat): its head and nut lie on the plate's faces —
+                    // they touch, as on a flange.
+                    Plate(m)
+                        if Some(m.as_str()) == onto
+                            && plates
+                                .iter()
+                                .find(|q| &q.id == m)
+                                .and_then(|q| q.through)
+                                .is_some_and(|n| {
+                                    let axis = if other_leg { e.other_axis } else { e.bolt_axis };
+                                    dot(axis, n).abs() >= crate::FLAT_OFF.to_radians().cos() - 1e-9
+                                }) =>
+                    {
+                        Together::Yes
+                    }
                     Plate(m) if Some(m.as_str()) == onto => Together::ShankOnly,
                     // A bolt of the leg a plate lies on (a splice's, at a
                     // leg running on through the joint): through the plate
