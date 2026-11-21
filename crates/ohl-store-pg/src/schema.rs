@@ -15,7 +15,7 @@
 //! (`YYYY-MM-DDTHH:MM:SS.sssZ`, [`TIME`]).
 
 /// The newest schema this build knows.
-pub const SCHEMA: i32 = 7;
+pub const SCHEMA: i32 = 8;
 
 /// A time column as the project file writes it.
 pub const TIME: &str = "ohl_time";
@@ -431,6 +431,18 @@ CREATE TABLE net_backup (
 -- migration accepts, hours.
 INSERT INTO net_meta (key, value) VALUES ('backup_max_age_hours', '24')
   ON CONFLICT (key) DO NOTHING;
+"#,
+    ),
+    (
+        8,
+        "the spatial index of the main lines only (2026-11-21)",
+        r#"
+-- Since 2026-11-20 a network's database keeps the spatial index of each
+-- model's main line only (a branch's is kept in memory by the session):
+-- nothing reads or writes a branch's rows. Those written before are
+-- deleted (each went with its branch only; PostgreSQL's autovacuum gives
+-- their space back).
+DELETE FROM spatial WHERE branch <> 'main';
 "#,
     ),
 ];

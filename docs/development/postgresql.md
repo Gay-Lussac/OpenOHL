@@ -131,7 +131,13 @@ About 8 s for the seven tests (two programs, `network` and `library`):
   file, rows differing from the manifest), **migrations after a backup**
   (`migrations_wait_for_a_recent_backup`: none, too old, the setting, a
   real backup, `--i-have-a-backup` audited, an empty database made
-  without), `invitations_and_identities`, and **TLS**
+  without), **the old branch rows of the spatial index cleaned up**
+  (`old_branch_rows_of_the_spatial_index_cleaned_up_after_a_backup`,
+  2026-11-21: a database of schema 7 holding branch rows of two models —
+  refused without a backup, nothing changed; after a real backup
+  brought to schema 8, the branch rows gone, the main lines' rows kept
+  and still answering, in the audit; the same with
+  `--i-have-a-backup`), `invitations_and_identities`, and **TLS**
   (`tls_to_the_database`: the test cluster given a certificate of a CA
   made by the test — `ALTER SYSTEM SET ssl = on`, reset at the end —;
   `verify-full`, `verify-ca` and `require` encrypted, another CA and a
@@ -159,7 +165,12 @@ Built 2026-11-20, in active development, not approved yet
 - A migration (`Network::connect` on an older schema, the server's
   start, `ohl network migrate`) needs `last_backup` newer than
   `backup_max_age_hours` (24), else `--i-have-a-backup` (audited); a new
-  database is made without.
+  database is made without. **Schema 8** (2026-11-21) is such a
+  migration: it deletes the branches' rows of `spatial`, which nothing
+  reads since 2026-11-20 (the database keeps the main lines' index
+  only); a branch of the synthetic country as one model held 108 773
+  rows. PostgreSQL's autovacuum gives their space back; a `VACUUM
+  spatial` by the database's administrator does it at once.
 - **TLS** (`ohl_store_pg::connect`): libpq's `sslmode` and `sslrootcert`
   read from the connection string (key/value or URL), rustls with ring;
   a host that is not this computer is refused without TLS unless

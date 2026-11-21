@@ -257,12 +257,114 @@ fn schema_6(cluster: &Cluster, db: &str) -> String {
     url
 }
 
+/// A database of schema 7 (phase 13) whose branches wrote rows of the
+/// spatial index (before 2026-11-20), with a model and a network admin.
+fn schema_7_with_branch_rows(cluster: &Cluster, db: &str) -> String {
+    cluster.create_db(db);
+    let url = cluster.url(db);
+    let mut c = postgres::Client::connect(&url, postgres::NoTls).unwrap();
+    c.batch_execute(
+        "CREATE TABLE net_schema (version integer PRIMARY KEY,
+             time timestamptz NOT NULL DEFAULT clock_timestamp(), note text NOT NULL)",
+    )
+    .unwrap();
+    for (version, note, sql) in &ohl_store_pg::schema::MIGRATIONS[..7] {
+        c.batch_execute(sql).unwrap();
+        c.execute(
+            "INSERT INTO net_schema (version, note) VALUES ($1, $2)",
+            &[version, note],
+        )
+        .unwrap();
+    }
+    c.batch_execute(
+        "INSERT INTO line (id, name) VALUES ('A', 'a'), ('B', 'b');
+         INSERT INTO net_user (name, display) VALUES ('ana', 'ana');
+         INSERT INTO assignment (subject_kind, subject, role, scope_kind, by_user)
+             VALUES ('user', 'ana', 'network_admin', 'network', 'ana');
+         INSERT INTO spatial (line_id, branch, kind, id, level, tx, ty, x0, y0, x1, y1, geom)
+         SELECT l, b, 'structure', 'T' || n, 0, n, 0, n * 100, 0, n * 100 + 1, 1,
+                ST_MakeEnvelope(n * 100, 0, n * 100 + 1, 1)
+         FROM unnest(ARRAY['A', 'B']) AS l,
+              unnest(ARRAY['main', 'bob-1', 'offline-3']) AS b,
+              generate_series(1, 50) AS n;",
+    )
+    .unwrap();
+    url
+}
+
+/// The rows of the spatial index by branch.
+fn spatial_branches(url: &str) -> Vec<(String, i64)> {
+    postgres::Client::connect(url, postgres::NoTls)
+        .unwrap()
+        .query(
+            "SELECT branch, count(*) FROM spatial GROUP BY branch ORDER BY branch",
+            &[],
+        )
+        .unwrap()
+        .iter()
+        .map(|r| (r.get(0), r.get(1)))
+        .collect()
+}
+
+/// Schema 8 (2026-11-21): the branches' rows of the spatial index, which
+/// nothing reads since 2026-11-20, deleted by the migration — only after
+/// a recent backup (phase 13's guard), the main lines' rows kept, in the
+/// audit; refused, nothing changes.
+#[test]
+fn old_branch_rows_of_the_spatial_index_cleaned_up_after_a_backup() {
+    let Some(cluster) = Cluster::start("spatial8") else {
+        return;
+    };
+    let url = schema_7_with_branch_rows(&cluster, "old");
+    let all = vec![
+        ("bob-1".to_owned(), 100),
+        ("main".to_owned(), 100),
+        ("offline-3".to_owned(), 100),
+    ];
+    assert_eq!(spatial_branches(&url), all);
+    // No backup: refused, the rows as they were.
+    let e = Network::connect(&url).unwrap_err().to_string();
+    assert!(
+        e.contains("network schema 7") && e.contains("needs a backup"),
+        "{e}"
+    );
+    assert_eq!(spatial_branches(&url), all);
+    // A backup by this program on schema 7: the migration goes.
+    let dir = cluster.scratch().join("old-backup");
+    let r = backup::backup(&url, "ana", &dir).unwrap();
+    assert_eq!(r.manifest.schema, 7);
+    let net = Network::connect(&url).unwrap();
+    assert_eq!(net.schema().unwrap(), 8);
+    assert_eq!(spatial_branches(&url), vec![("main".to_owned(), 100)]);
+    let migrated = net
+        .audit_rows()
+        .unwrap()
+        .into_iter()
+        .find(|a| a[2] == "migrate")
+        .unwrap();
+    assert!(migrated[4].contains("7 brought to 8"), "{migrated:?}");
+    // The main lines' index still answers.
+    assert_eq!(
+        net.objects_in_area([0.0, 0.0, 10_000.0, 10.0]).unwrap(),
+        100
+    );
+    drop(net);
+    // --i-have-a-backup: the same, in the audit.
+    let url = schema_7_with_branch_rows(&cluster, "old2");
+    let (from, to) = Network::connect_as_is(&url)
+        .unwrap()
+        .migrate_now("ana", true)
+        .unwrap();
+    assert_eq!((from, to), (7, 8));
+    assert_eq!(spatial_branches(&url), vec![("main".to_owned(), 100)]);
+}
+
 #[test]
 fn migrations_wait_for_a_recent_backup() {
     let Some(cluster) = Cluster::start("migrate") else {
         return;
     };
-    assert_eq!(ohl_store_pg::schema::SCHEMA, 7);
+    assert_eq!(ohl_store_pg::schema::SCHEMA, 8);
     // No backup: refused (the server and every program connecting), the
     // database unchanged.
     let url = schema_6(&cluster, "old");
@@ -303,14 +405,14 @@ fn migrations_wait_for_a_recent_backup() {
     c.batch_execute("INSERT INTO net_meta (key, value) VALUES ('backup_max_age_hours', '48')")
         .unwrap();
     let net = Network::connect(&url).unwrap();
-    assert_eq!(net.schema().unwrap(), 7);
+    assert_eq!(net.schema().unwrap(), 8);
     let migrated = net
         .audit_rows()
         .unwrap()
         .into_iter()
         .find(|a| a[2] == "migrate")
         .unwrap();
-    assert!(migrated[4].contains("6 brought to 7") && migrated[4].contains("yesterday"));
+    assert!(migrated[4].contains("6 brought to 8") && migrated[4].contains("yesterday"));
 
     // A real backup made by this program on the old schema lets it go.
     let url = schema_6(&cluster, "old2");
@@ -318,9 +420,9 @@ fn migrations_wait_for_a_recent_backup() {
     let r = backup::backup(&url, "ana", &dir).unwrap();
     assert_eq!(r.manifest.schema, 6);
     let net = Network::connect_writer(&url).unwrap();
-    assert_eq!(net.schema().unwrap(), 7);
+    assert_eq!(net.schema().unwrap(), 8);
     drop(net);
-    // A backup of schema 6 is not restored by this program (schema 7).
+    // A backup of schema 6 is not restored by this program (schema 8).
     cluster.create_db("restore6");
     let e = backup::restore(&cluster.url("restore6"), "ana", &dir)
         .unwrap_err()
@@ -333,7 +435,7 @@ fn migrations_wait_for_a_recent_backup() {
         .unwrap()
         .migrate_now("ana", true)
         .unwrap();
-    assert_eq!((from, to), (6, 7));
+    assert_eq!((from, to), (6, 8));
     let net = Network::connect(&url).unwrap();
     let a = net
         .audit_rows()
@@ -350,7 +452,7 @@ fn migrations_wait_for_a_recent_backup() {
             .unwrap()
             .schema()
             .unwrap(),
-        7
+        8
     );
 
     // The setting: network admins only, checked, in the audit.

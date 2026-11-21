@@ -4503,9 +4503,9 @@ See [OHL-Structure](../user-guide/structure-app.md#libraries).
 
 ### Server database (PostgreSQL)
 
-**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9, 11, 12 and 13** ([ADR-0013](../adr/0013-country-server.md),
+**Built 2026-11-19 for phases 4 to 6, 2026-11-20 for phases 7, 9, 11, 12 and 13, 2026-11-21 schema 8** ([ADR-0013](../adr/0013-country-server.md),
 in active development, not approved yet): the crate `ohl-store-pg`,
-network schema 7 (schema 1: phase 4's tables; schema 2: what the server
+network schema 8 (schema 1: phase 4's tables; schema 2: what the server
 on the network keeps for its clients' interest — `object.routes`,
 `oplog.lines`, `oplog.tiles`, `stream`; schema 3, phase 6: saved working
 sets — `working_set.line_id`, `working_set.picks`; schema 4, phase 7:
@@ -4517,7 +4517,9 @@ schema 5, phase 9: country libraries — `lib_kind`, `lib_file.text`,
 `branch`, `released`, `net_meta` `library_rev`; schema 6, phase 12:
 offline working sets — `offline_export`; schema 7, phase 13: security
 and operations — `net_user.invitation`, `net_identity`, `net_backup`,
-`net_meta` `backup_max_age_hours` and `last_backup`). A schema migration
+`net_meta` `backup_max_age_hours` and `last_backup`; schema 8,
+2026-11-21: no new column — the branches' rows of `spatial`, which
+nothing reads since 2026-11-20, deleted). A schema migration
 needs a backup newer than `backup_max_age_hours` recorded (`last_backup`,
 which every schema's `net_meta` holds), or an admin's
 `--i-have-a-backup` (in the audit). A country server keeps every model and model element of
@@ -4551,7 +4553,7 @@ kept; times given as the project file writes them,
 | `model_object` | `object` | + `line_id`; the JSON as text, as the session wrote it; ids unique in the network; + `routes` (schema 2) |
 | `oplog` | `oplog` | + `line_id`; `seq` numbered across the network; + `lines`, `tiles` (schema 2) |
 | — | `stream` | every change the server applied and broadcast, logged or not, at its position (schema 2) |
-| `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree); since 2026-11-20 **the main line's rows only** (`Store::spatial_kept`: a branch's index is worked out in memory — nothing reads it from the database, and writing a whole model's index for each new branch was most of bringing a bundle back); rows of branches written before are not read, and go with their branch |
+| `spatial_index` | `spatial` | + a PostGIS geometry (GiST) beside the tile key (B-tree); since 2026-11-20 **the main line's rows only** (`Store::spatial_kept`: a branch's index is worked out in memory — nothing reads it from the database, and writing a whole model's index for each new branch was most of bringing a bundle back); rows of branches written before were not read and are deleted by network schema 8 (2026-11-21, a migration after a backup) |
 | `vc_blob` | `vc_blob`, `vc_blob_use` | a blob kept once for the network, each model's use of it noted |
 | `vc_revision`, `vc_ref`, `vc_review`, `vc_review_note` | the same, + `line_id` | since phase 11 (2026-11-20) a model's revisions are written as split trees (a trie by the hash of kind and id, its nodes blobs; above); library reviews later |
 | `edit_grant` | `edit_grant`, + `line_id` | a project's edit grants as imported: still checked by the session beside the assignments (phase 7; turned into assignments at import later) |
@@ -4656,6 +4658,8 @@ spatial        (line_id text REFERENCES line, branch text, kind text, id text,
                 geom geometry NOT NULL,                      -- the same bounds (GiST)
                 PRIMARY KEY (line_id, branch, kind, id))
                -- INDEX on (line_id, branch, level, tx, ty); GiST on geom
+               -- branch: 'main' only since 2026-11-20 (schema 8 deletes
+               -- the branches' rows written before)
 working_set    (owner text, name text, routes jsonb NOT NULL, time timestamptz NOT NULL,
                 line_id text REFERENCES line,                -- schema 3: the model
                 picks text NOT NULL DEFAULT '[]',            -- schema 3: the picks (JSON as
