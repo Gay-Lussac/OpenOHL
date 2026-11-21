@@ -8,6 +8,90 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-21 (joint layout: members on either side of a leg's flange, L10)
+
+**Members on either side of a leg's flange, bolts that join nothing, a
+plate drawn in its flange's plane, an end's own head and nut touching its
+own plate** (roadmap O44 L10: the owner's idea from photographs of real
+towers, the owner's picture of two bolts at a laid-out joint joining
+nothing, and L9's questions 6 to 8 as the owner answered them; the owner
+busy; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#members-on-either-side-of-a-legs-flange-bolts-that-join-nothing-a-plate-in-its-flanges-plane-l10),
+[user guide](../user-guide/joint-layout.md),
+[joint details](joint-details.md)). No format change.
+
+- **Members on either side of a leg's flange** (`LayoutSettings::other_face`
+  and `face_pattern`, on): where two or more ends on one face of a leg's
+  (or chord's) flange go onto a plate, or one is left for want of room
+  beside another, some of them are tried on the flange's other face — half
+  a turn of the member, the same leg bolted —, the diagonals onto the inner
+  face first (the photographs' pattern). Kept for a member only where its
+  joints then lay out more ends, or as many on fewer plates, joint by joint
+  none worse (the owner's weighing rule); applied only where every end so
+  moved lies no farther from the work point across the flange than it lies
+  now (on its plate or on the flange) — onto the inner face it lies nearer;
+  the other way only proposed in the run's notes, with the bending stress
+  the offset would add (e·A/W). Members one part with another, held,
+  turned already in the run, legs and chords, rolls given by hand: not
+  tried.
+- **The move across the flange is a seat, not a `shift`** (a departure from
+  the brief, which asked for the shift): the format's `shift` moves an end
+  in the face (towards what it bolts onto) and the analysis takes it so;
+  written there the member would be drawn and analysed beside its place.
+  The analysis leaves out every seat across a flange (outer face, inner
+  face, a gusset's thickness — O45 D): NOT ON THE SAFE SIDE in that sense
+  for every end, as before; an end moved onto the inner face lies nearer
+  the work point than before, so less is left out.
+- **Bolts that join nothing** (`LayoutSettings::nothing_joined`, on; the
+  owner's picture, traced): an end left as it is that bolts onto nothing at
+  the joint (two pieces in line not confirmed one part, their splice not
+  given) is drawn with its bolts — given, or its member's design data,
+  often on both legs —, which join nothing. Such a joint was counted as
+  laid out whole; now that member is by hand, said with why. Its bolts are
+  not moved onto the layout's plate as the plate's holding bolts (they are
+  the end's own, checked as such): a question to the owner.
+- **A plate in its flange's plane** (the joint details; every file; L9's
+  question 6): a plate without an outline given, on a single angle's
+  flange, its members all within 2° of that flange, is drawn in the
+  flange's plane (before: in its first member's plane, up to 2° off).
+  **An end's own head and nut on its own plate** (the clash check): within
+  2° of the plate they touch it (the owner's 2° rule), as on a flange.
+  Measured first: the plate's plane alone laid out less; with the heads and
+  nuts touching, the most.
+- **L9's question 7 traced, not fixed**: of the plates into steel after
+  writing that take ends back, two in three run into a piece running on as
+  one part through the joint (mostly bent plates at crossings left for a
+  hand detail anyway); none clearly safe to change without planning that
+  plate against that piece.
+- **L9's question 8**: tests from invented joints for the bolts already
+  there far from the origin and a short plate's own bolts; an end keeping
+  its partner's bolts still not (no invented joint reaches it).
+- **The owner's second picture** (two diagonals on both faces of one plate
+  instead of a flat and a bent plate): traced — on the same tower laid out
+  as the measurements run, that joint lays out both diagonals directly, no
+  plate; ends on both faces of one plate not built (L11).
+- Measured on the 78 private real towers (with the bundled plugin):
+  joints laid out whole 55.8 % → 55.1 %, ends
+  128 092 → 130 329, plates 69 295 → 70 140, nuts into plates after writing
+  776 → 20 ends, joints not fitting as given 53 → 48, a run again identical
+  78/78; the face step alone (ends +145, joints whole −28, plates +25); the time per tower (six towers, back
+  to back) median 33 → 35 s, the largest 34.5 → 38 s (load 2 to 3).
+
+## 2026-11-21 (owner): joint layout L9 — kept, move forward
+
+The owner, 2026-11-21, on the eight questions of the joint layout's
+[L9](#2026-11-21-joint-layout-a-plate-read-in-its-own-plane-plates-planned-as-written-l9)
+(roadmap O44; the owner: "Keep what's built and move forward"):
+
+1. A plate's plane read from all its corners: kept as built.
+2. An end on a plate seated on the plate's member where that member is drawn: kept as built.
+3. A welded plate's flat plate planned as written, else short, else its ends in their own planes left; its clashes after writing its welded members': kept as built.
+4. Holding bolts on plates stopping short of the work point (`short_holds`, on): kept as built.
+5. The speed-up (`ohl_sections::Section::elastic_properties` in the section crate): kept as built.
+6. The heads and nuts left against plates (an end's own nut a few millimetres into its own plate): go ahead — the plate in the plane of its flange, an end's own head and nut on its own plate touching it within 2°, measured first (built with L10).
+7. The plates into steel left after writing: go ahead — traced kind by kind (with L10).
+8. The tests L8 could not write: go ahead — from invented joints (with L10).
+
 ## 2026-11-21 (country server: the web viewer's sign-in, the Offline working set window, schema 8)
 
 **The web viewer's "Sign in with your organisation", OHL-Design's

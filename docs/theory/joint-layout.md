@@ -2077,6 +2077,217 @@ towers: the same. The time per tower (six private towers, back to back)
 went from 45 s (L8) to 42.5 s with L9's other changes and to 33 s with
 these (the median; the largest 50 → 45 → 34.5 s): below.
 
+## Members on either side of a leg's flange; bolts that join nothing; a plate in its flange's plane (L10)
+
+(The owner, 2026-11-21: L9's questions answered "Keep what's built and
+move forward"; the owner's photographs of real towers — horizontals bolted
+on the outer face of the leg's flange, the diagonal on its inner face,
+meeting at one point without a plate —; the owner's picture of two bolts
+at a laid-out joint joining nothing. Built 2026-11-21, in active
+development, not approved yet. The code: `other_face` and `layout_run`
+(`other_faces`; the switches `LayoutSettings::other_face`, `face_pattern`,
+`nothing_joined`, on by default), `joint_layout` (`BOLTS_JOIN_NOTHING`),
+`joints` (`plate`) and `clash`. **No format change**.)
+
+### Members on either side of a leg's flange (the owner's idea)
+
+Until L10 an end kept the face of the flange its member's roll gave it
+(Orient angles puts a face's bracing on the outer faces of the legs); the
+layout turned a member half a turn only where an end of it could not be
+laid out at all on the face it had (above, *Half a turn*). Now, where two
+or more ends lie on **one face of a leg's (or chord's) flange** and go
+onto a plate there, or one of them is left for want of room beside
+another, the run tries some of them on the flange's **other face** —
+half a turn of its member, its outstanding leg to the other side, the same
+leg bolted —, all such tries of the tower at once:
+
+- **Which ends**: of a face's ends (single angles flat on the flange,
+  their face not given by hand, their member not a leg or chord, not one
+  part with another, its roll not given by hand, not turned already in
+  this run), with `face_pattern` (on) **those following the photographs'
+  pattern** — the diagonals from the outer face onto the inner one (all of
+  them, while one end at least stays), a horizontal from the inner face
+  onto the outer one —; else one end, the later class first (of two
+  members in one clash the later class gives way), the narrower leg, the
+  id.
+- **The guard** (the owner's weighing rule): a member is kept turned only
+  where its joints then lay out **more ends, or as many on fewer plates**,
+  and none of them fewer; planned once more with only those kept, until
+  each still helps (at most three plans). A half turn moves every end of
+  the member, so the guard weighs all its joints.
+- **What the end must keep** on the other face is what every end on a
+  face keeps (the search's own rules): on the inner face clear of the
+  angle's other leg and its root (by half the gap), its bolts on the
+  flange at least the angle's thickness, root radius and the nut's corner
+  radius from the heel and the edge distance from the toe (the code's,
+  else the structure's default minimums — assumed), clear of the bolts
+  and nuts of the ends on the other face.
+
+*The offset, and why it is not written as a shift.* On the other face the
+end's leg lies the flange's thickness and its own (t_F + t_m) from where
+it lay — **across the flange, out of the face**, along its bolts. The
+connection's `shift` is a move *in* the face (across the member towards
+what it bolts onto, [Moved sideways](#moved-sideways-the-shift)), which
+the analysis takes as a rigid end offset; written there, the member would
+be drawn and analysed that far beside its place in the face, where it is
+not. The move across the flange is a **seat**, as every end's on a face:
+the analysis takes the members' axes through the work point and leaves
+out every seat across a flange — the outer face's as the inner's, and a
+gusset plate's thickness (O45 D) —, **NOT ON THE SAFE SIDE in that sense,
+for every end, before as now**. Measured from the work point across the
+flange, an end on the **inner** face lies **nearer** than on the outer
+one: the angle's centroid (on the work line) lies inside its heel by c
+(about 0.28 of an equal angle's leg), and the end's leg then lies at
+c − t_F − t_m/2 instead of c + t_m/2 — nearer whenever t_F ≤ 2c, which
+holds for every rolled angle —, and nearer still than on the plate it
+saves (a plate's thickness farther out). L5 limited a move in the face to
+the plate's thickness, so that its force passes the work point by no more
+than the plate would have put it out. The same rule here: the half turn
+is **applied only where every end of the member so moved lies no farther
+from the work point across the flange than it lies now** (on its plate, or
+on the flange) — then less is left out of the analysis than before. The
+other way, an end from the inner face onto the outer one (t_F + t_m
+farther out), is **only proposed** in the run's notes, with the bending
+stress that offset would add at the member's far fibre over its axial
+stress (e·A/W, from its outline), not applied.
+
+Measured on the private towers: on every thirteenth (six), the step alone: ends laid
+out 9 519 → 9 541, joints whole the same (2 615), plates 5 085 → 5 109,
+a run again identical 6/6. With all of L10, the time per tower (six
+towers, back to back, twice, load 2 to 3) median 33 → 35 s, the largest
+34.5 → 38 s (the step plans the tower once or twice more). The
+plan's guard holds joint by joint (tried: weighing the member's joints
+together, the same result); the plates written grow where a joint then
+lays out more ends (an end that was left now on a bent plate, say), and
+where the clash check after writing puts an end bolted directly in the
+plan onto a plate. The photographs' pattern against the later class first:
+the same ends, 8 more plates — no gain measured; kept (the owner's
+pattern, no end lost). On the 78 towers, alone: ends 128 092 → 128 237, joints
+whole 36 130 → 36 102, plates 69 295 → 69 320, joints not fitting as
+given 53 → 51, a run again identical 78/78; 1 586 ends turned onto the
+other face (1 385 onto the inner one), 166 proposed the other way. Small:
+on most faces going onto a plate the ends lie too close for either face
+alone (the bolts and nuts of the other face in the way), and where the
+plan saves a plate the clash check after writing takes some of it back
+(to trace next).
+
+### Bolts drawn that join nothing (the owner's picture)
+
+An end left as it is that bolts onto nothing at the joint — of two pieces
+in line not confirmed one part, the splice there not given — is drawn
+with its bolts where it has them: given at the end, else its member's
+design data (often a splice's, on both legs). They join nothing: no
+member's or plate's steel under them. The layout counted such a joint as
+laid out whole when its other ends were laid out (the owner's picture: two
+bolts standing on a leg joined to nothing, a plate beside them that could
+not get its own holding bolts for their holes). Now (`nothing_joined`, on)
+such a joint is **not whole**: that member by hand, said with why ("its
+bolts join nothing — its 4 bolt(s) (its member's design data, 2 on each
+leg) are drawn at this joint, but it bolts onto nothing here; by hand:
+what it bolts onto or its splice given, or the pieces in line confirmed
+one part"). Its bolts are **not** moved onto the layout's plate as the
+plate's holding bolts: they are the end's own (in the member's design
+data, for a splice's two shear planes, say), checked as such — using them
+as the plate's would change what they are and what is checked (a question
+to the owner). Confirming the pieces one part (J9) or giving the splice
+removes them. On the safe side (a joint said not whole that the drawing
+showed whole).
+
+Measured: before, on the 78 private towers 1 289 such ends (3 217 bolts) lay in joints
+counted whole (of 13 473 such ends at 9 558 laid-out joints); after, none in a
+joint counted whole (on six towers the joints whole 2 615 → 2 533 for it,
+nothing else changed; most such ends — nine in ten — already lay in joints
+with a hand detail).
+
+### A plate in its flange's plane; an end's own head and nut touching its own plate (L9's question 6)
+
+L9 left about 790 heads and nuts against plates after writing, nearly all
+an end's own nut 1–4 mm into its own plate where two ends on one plate lie
+a few degrees off each other (each within the owner's 2°). Traced (a
+private measuring hook, removed): a plate the layout leaves to the joint
+details to draw round its bolts lay in the plane of **its first member's
+leg** — up to 2° off the flange it lies on; a second member 1–2° the other
+way then lay into the plate by up to 4 mm over its bolts (the members are
+seated on the flange at the work point, and a plate's thickness out along
+their own leg's normal), and its nut, a grip's length behind its leg, with
+it. Measured first, on six towers: the plate drawn in its flange's plane
+alone made it worse (every end a little off the flange then had its nut
+in the plate); with an end's own head and nut on its own plate touching
+it, both together laid out the most.
+
+- **The plate in its flange's plane** (the joint details; every file): a
+  plate not given an outline, on a single angle's flange, all of whose
+  members lie within the flatness allowed (`FLAT_OFF`, 2°) of that flange,
+  is drawn in the flange's plane — its face against the flange's face its
+  members lie over, their face a plate's thickness out. Otherwise (a member
+  more than 2° off: a hand-made plate, perhaps bent) as before, in its first
+  member's plane. The layout writes such a plate's outline so, and reads it
+  back in that plane.
+- **An end's own head and nut on its own plate** (the clash check): where
+  the end's leg lies within 2° of the plate (its bolts' axis within 2° of
+  the plate's normal), its head and nut lie on the plate's faces — they
+  touch, as on a flange; checked as clashing only beyond that. This is the
+  owner's 2° rule (a leg within 2° of its face is drawn and checked as
+  flat on it, the bolts pulling it flat — **an assumption**, the smaller
+  the nearer the safe side): drawn, such a leg lies up to its 2° off the
+  plate, so its nut a few millimetres into it.
+
+Measured: on six towers (with the steps above), the heads and nuts
+against plates after writing (ends taken back or left as they were)
+58 → 17 with the touching alone, → 5 with the plate in its flange's plane
+as well; the joints whole
+2 533 → 2 565 → 2 578, ends 9 541 → 9 622 → 9 694, plates 5 109 → 5 131
+→ 5 180 (more ends kept on their plates); the plane alone (tried first)
+2 531 → 2 187 joints whole — not kept alone. On the 78 towers (all of
+L10): nuts into plates after writing 776 → 20 ends, heads 19 → 5, and
+taken back for them 47 → 27 and 31 → 21; members left after the clash
+rounds 10 619 → 9 438.
+
+### Plates into steel after writing traced (L9's question 7)
+
+Traced (a private measuring hook, removed; two private towers, every
+clash of a plate the run made with a member's steel over all the run's
+rounds, about 2 900 pairs): seven in ten are against members left for a
+hand detail at that joint (said with that member, no end taken back for
+it: J2's rule), three in ten against members left as they are, a few
+against ends laid out. Of those that take ends back, two in three are
+**plates into a piece running on as one part through the joint** — a bent
+plate's flat (the most), its flap in the member's own plane, a flat plate
+—, mostly at crossings where the other pieces lie 20° to 45° off the
+continuous piece's flange (no roll lays them flat) and the joint ends as a
+hand detail anyway; then plates into the member the plate's end bolts onto
+at its other leg, and others. A plate's own bolts outside its outline:
+counted (below), not traced further. **Not fixed**: no kind was clearly
+safe to change without the plan seeing that plate as written against that
+piece (as L9 did for the welded plates' flat plates) — the next step
+(a question to the owner).
+
+### The tests L8 could not write (L9's question 8)
+
+Built from invented joints: the bolts already there kept clear of far from
+the structure's origin (an end pulled back further past a lapped leg's
+bolts, the same with the whole tower a kilometre away; before L8 they were
+missed there); a plate stopping short of the work point (a channel beside
+it) given its own holding bolts with `short_holds`, none without. **Not
+built**: an end keeping its partner's bolts — on every invented joint
+tried (a horizontal in two pieces and a redundant, of narrow and wide
+angles, one or two bolts, gauges given) the end goes onto a plate past the
+other member's toe, its cut then always past the partner's bolts (left
+for L11).
+
+### Both faces of one plate (the owner's second picture): traced, left
+
+The owner asked of a joint on a real tower whether two diagonals could lie
+on the two faces of one plate, bolted on different sides, instead of a flat
+plate and a bent one. On the same tower laid out as the measurements run
+(Orient angles, the pieces in line confirmed one part), that joint lays out
+both diagonals bolted directly onto the horizontal's flange, no plate; the
+picture's state came from other rolls. Ends on both faces of one plate (the
+plate standing beyond the flange's heel, an end on its back face, bolts
+taking both plies and the plate where they share holes) are a new kind of
+plate for the planner, the clash check and the joint checks: **not built**
+(left for L11).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

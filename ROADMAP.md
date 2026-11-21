@@ -2774,6 +2774,89 @@ only where it helps):
   > split joint no cut and move keeps them: the pieces' bolts lie nearer
   > the redundant's end than their end distance) → Recommended: with the
   > next step, from an invented joint built for them.
+  > **Answered 2026-11-21: keep what's built and move forward** (the
+  > owner: "Keep what's built and move forward": (1)–(5) kept as built,
+  > (6)–(8) go ahead — with L10 below).
+- [x] L10. **Members on either side of a leg's flange, bolts that join
+  nothing, a plate in its flange's plane** (the owner's idea from
+  photographs of real towers, the owner's picture of two bolts joining
+  nothing, and L9's questions 6 to 8; the owner busy: built on its own,
+  reported). **Built 2026-11-21, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#members-on-either-side-of-a-legs-flange-bolts-that-join-nothing-a-plate-in-its-flanges-plane-l10),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-21-joint-layout-members-on-either-side-of-a-legs-flange-l10);
+  no format change). **The owner's idea built**: where two or more ends
+  on one face of a leg's flange go onto a plate (or one is left for want
+  of room beside another), some of them half a turn onto the flange's other
+  face — the diagonals onto the inner face first, as in the photographs —,
+  kept where the member's joints then lay out more ends, or as many on
+  fewer plates (joint by joint, none worse), and applied only where every
+  end so moved lies no farther from the work point across the flange than
+  now (onto the inner face: nearer); the other way only proposed, with the
+  bending it would add. The move across the flange is a seat, not a
+  `shift` (the analysis leaves every face's seat out, as before; NOT ON THE
+  SAFE SIDE in that sense for every end, as before). **The owner's picture
+  traced and fixed**: an end left as it is that bolts onto nothing (pieces
+  in line not one part) is drawn with its design data's bolts, which join
+  nothing; such a joint is no longer counted whole, the member by hand,
+  said; the bolts are not moved onto the plate (a question). **L9's
+  question 6 built**: a plate on a flange, its members within 2°, drawn in
+  the flange's plane, and an end's own head and nut on its own plate
+  touching it within 2° (the owner's 2° rule). **L9's question 7 traced,
+  not fixed**: two in three of the plates into steel that take ends back
+  run into a piece running on as one part through the joint (mostly at
+  crossings left for a hand detail anyway). **L9's question 8**: the bolts
+  already there far from the origin and a short plate's own bolts tested on
+  invented joints; an end keeping its partner's bolts still not (no
+  invented joint reaches it). **The owner's second picture (two diagonals
+  on both faces of one plate) traced, not built**: on the same tower laid
+  out as measured that joint lays out both diagonals directly, no plate;
+  ends on both faces of one plate are left for L11. On the 78 real
+  towers (kept privately; with the bundled plugin), L9 → the face step alone → L10: joints laid out whole 55.8 % →
+  55.7 % → 55.1 % (the joints with bolts joining nothing no longer counted
+  whole), ends 128 092 → 128 237 → 130 329 (71.0 % of more asked), plates
+  69 295 → 69 320 → 70 140 (their steel 120.6 → 123.1 t), nuts into plates
+  after writing 776 → 20 ends, members left after the clash rounds 10 619 →
+  9 438, joints not fitting as given 53 → 48, as assumed 11 633 → 11 461,
+  bolts joining nothing in joints counted whole 1 289 ends (3 217 bolts)
+  → 0, a run again identical 78/78; the time per tower (six towers, back to back, twice)
+  median 33 → 35 s, the largest 34.5 → 38 s (load 2 to 3).
+  > **Owner:** (1) The members on either side of a leg's flange
+  > (the half turn tried, kept where the member's joints lay out more ends,
+  > or as many on fewer plates, and only where every end so moved lies no
+  > farther from the work point across the flange): on the 78 towers,
+  > alone, ends laid out 128 092 → 128 237, joints whole 36 130 → 36 102, plates 69 295
+  > → 69 320 (1 586 ends turned, 1 385 onto the inner face; 166 proposed
+  > the other way); small, as the clash check after writing takes back
+  > some of what the plan saved → Recommended:
+  > keep on. (2) The move across the flange written as the end's seat, not
+  > as a `shift` (the brief asked for the shift; the format's `shift` lies in
+  > the face, and the analysis leaves every face's seat out, the inner
+  > face's nearer the work point than the outer's) → Recommended: keep;
+  > every end's offset across its flange into the analysis later, with
+  > O45 D (a new field, structure file version 24). (3) The photographs'
+  > pattern first (the diagonals onto the inner face): no gain measured on
+  > six towers (the same ends, 8 more plates than the later class first) →
+  > Recommended: keep (the owner's pattern, no end lost). (4) The half turns
+  > the other way (onto the outer face, the flange's and the end's thickness
+  > farther out) only proposed in the notes with e·A/W (166 notes on the 78
+  > towers) → Recommended: keep as proposals; a list in the window to take
+  > them by hand later. (5) A joint with bolts joining nothing not counted
+  > whole (the joints whole 55.7 → 55.1 % on the 78 towers with (6)'s gain
+  > in: those said honestly); the bolts
+  > not moved onto the layout's plate as its holding bolts → Recommended:
+  > keep; confirm the pieces in line one part where proposed (J9), which
+  > takes them away; using an end's own bolts as a plate's holding bolts
+  > only with a format decision. (6) A plate drawn in its flange's plane
+  > and an end's own head and nut on its own plate touching it within 2°
+  > (every file) → Recommended: keep. (7) L9's question 7: plates into a
+  > piece running on as one part (two in three of the plate clashes that
+  > take ends back) → Recommended: next, a bent plate's flat and flap
+  > planned against such a piece as written (as L9 did for the welded
+  > plates' flat plates). (8) Both faces of one plate (the owner's second
+  > picture) → Recommended: L11, counted first (how often a flat and a bent
+  > plate on one face could be one plate). (9) An end keeping its
+  > partner's bolts: no invented joint reaches it → Recommended: write the
+  > test from a joint kind found on the real towers, reproduced invented.
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

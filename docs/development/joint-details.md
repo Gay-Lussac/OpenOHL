@@ -1619,6 +1619,50 @@ that order; "plan ideas to get the automatic layout working"):
   `joints_tests::an_end_on_a_plate_on_a_member_drawn_off_its_line_lies_on_it_where_drawn`,
   `layout_run_tests::a_welded_plates_flat_plate_is_planned_as_written_clear_of_a_run_on_its_face`
   (each fails without its change).
+- **L10: members on either side of a leg's flange, bolts that join
+  nothing, a plate in its flange's plane** (2026-11-21; in active
+  development, not approved yet;
+  [theory](../theory/joint-layout.md#members-on-either-side-of-a-legs-flange-bolts-that-join-nothing-a-plate-in-its-flanges-plane-l10)).
+  The owner's idea (photographs of real towers): `LayoutSettings::other_face`
+  and `face_pattern`, on — in `layout_run::lay_out_once` after the half
+  turns (2b) and L3b's quarter turns, step 2c: `other_face::face_tries`
+  takes the whole plan's flat plates (no `own`, no `reach`) of two or more
+  ends on a leg's or chord's flange (`ClassRank::Leg`, or Orient angles'
+  `Chord`) and the "no room on one plate" pairs, and per face the ends to
+  turn half a turn (with the pattern every diagonal on an outer face while
+  one end stays, else one end); `layout_run::other_faces` plans the tower
+  with them all turned (`planned_in` with a scratch `Guard`, its
+  `changed` merged into the run's when kept), keeps a member where
+  `other_face::helps` (joint by joint: none fewer ends, none as many on
+  more plates; in all more ends, or as many on fewer plates) and every end
+  of it lies no farther from the work point across the flange
+  (`other_face::face_places`, `ends_moved`: the end's leg's middle plane
+  on the outer face `h − t_m/2`, on the inner one `h + t_F + t_m/2`, `h`
+  the host's heel along its flange's normal into its thickness, the host
+  where drawn; a plate's thickness out where on one), plans again with
+  only those (at most `FACE_ROUNDS` = 3), and says the rest it would help
+  as proposals with `other_face::stress_ratio` (e·A/W about the axis along
+  the leg bolted, from the outline). A member one part with another (as
+  planned: an arrival's `continuous`), held, turned already (2b, L3b), a
+  leg or chord, or with a roll given by hand, is not tried. The turn is a
+  roll (the record's `rolled`), no `shift`. The owner's picture: a joint
+  with an end left as it is that bolts onto nothing (`onto` none, not
+  `continuous`) but has bolts drawn is not whole —
+  `LayoutSettings::nothing_joined`, on, `plan_once` puts that member
+  `by_hand` with `BOLTS_JOIN_NOTHING`. L9's question 6: `joints::plate`
+  draws a plate without an outline on a single angle's flange, all its
+  bolted members within `FLAT_OFF` of that flange, in the flange's plane
+  (the members' face at the flange's face ± the plate's thickness, by
+  which side the first member's bolt lies), else as before in its first
+  member's plane; `clash::clashes_of` (`together`) excuses a bolt's head
+  and nut against the plate its end bolts onto where the bolt's axis lies
+  within `FLAT_OFF` of the plate's normal (`PlateDetail::through`). No
+  format change. Tests: `other_face_tests` (the diagonals onto the inner
+  face saving the plate, with a run again; bolts that join nothing; a
+  plate in its flange's plane and its ends' nuts touching it; the bolts
+  already there far from the origin; a short plate's own bolts) and
+  `layout_ui_tests::members_on_either_side_of_a_flange_in_the_window` (the
+  user guide's picture).
 ## Detail levels
 
 Joint details exist at **level 3** only (full design). At levels 1 and 2
