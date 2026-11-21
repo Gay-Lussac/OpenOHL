@@ -171,6 +171,75 @@ window for your tower):
   [theory](../theory/estimated-eccentricities.md)); a welded plate's
   offset is taken there too.
 
+## Solve the clashes
+
+![The Solve the clashes window on an invented joint: the clashes before and after, what the solution changes (steel stopping short, a plate added), the joint's close-up before and after, Apply and Cancel](../images/structure-tools/tool-solve-the-clashes.png)
+
+(2026-11-21, O44 L11; built, in active development.) **What it is for:**
+one click that clears a joint's clashes and problems as a whole, instead
+of fixing them one by one. Joint details lists a joint's problems in
+**Problems (n)**, closed until you open it, grouped by kind with their
+counts (clashes of steel into steel, of a plate, of a bolt's head, nut or
+shank; a bolted face off what it bolts onto; an outstanding leg through
+the leg it bolts onto; nested angles that do not fit; a cut given that
+leaves too little; other), each problem said once. Beside it, **Solve the
+clashes…** opens this window.
+
+**How to use it:**
+
+1. In Joint details, pick the joint; beside *Problems (n)* the counts by
+   kind.
+2. Click **Solve the clashes…**. The window works out the solution on
+   copies of the structure (a few seconds on a large tower; "Working out
+   the solution…" meanwhile). Nothing is written yet.
+3. Read the result: the clashes and other problems **before → after**,
+   which way was chosen, **What it changes** (each change at the joint,
+   the marked ones in the warning colour), the joint's close-up **before
+   and after** (drag to turn both), and on request the members' **usage
+   before and after** for the last run's cases.
+4. **Apply** writes it as one undo step; **Cancel** or **Escape** closes
+   the window, nothing changed.
+
+**What it tries**, each on a copy, in this order:
+
+| Way | What it does |
+|---|---|
+| The layout of the joint | [Lay out joints](#lay-out-joints) on this joint alone, values given by hand kept |
+| … values given by hand replaced | the same, your cuts, shifts, rolls and *onto* replaced by the layout's |
+| The layout's proposals here confirmed, then the layout | where the layout proposes pieces in line one part or a leg splice place at this joint, those confirmed first (**marked**: never silent), then the layout (both ways) |
+| Then the fixes of what is left | on the best so far, the fixes of the problems left (the other face, a turn, the gauge or end distance that keeps the code's distances, nesting the other way, lapping instead of nesting), one at a time, each kept only where the joint has fewer problems after it |
+
+The best is the one leaving the **fewest clashes**, then the fewest other
+problems, then the fewest members left for a hand detail. A way is
+**refused** (said under *Everything tried*) where it:
+
+- pulls back a **leg** or a member **running on through the joint** (one
+  part, or a piece in line with another there);
+- **turns a leg** (only proposed, below), changes a member's **section** or
+  moves its ends;
+- leaves more clashes and problems at the **other joints** of the members
+  meeting here (a member the layout turns turns at its other end too).
+
+Where nothing tried is better, the window says so and why: each way's
+clashes and problems, and what blocks the layout (the reasons it leaves
+members for a hand detail).
+
+**What it changes, marked** (in the warning colour): a member **turned**
+about its axis (its other end and its axes for the analysis follow), an
+end **moved sideways** (an eccentricity the analysis takes — see *What it
+changes in the results* above), a proposal of the layout **confirmed**.
+Unmarked: where a member's steel stops, what it bolts onto, plates added
+or taken away. A member **left** for a hand detail is said with why.
+
+**Good to know:**
+
+- It solves **this joint** (the layout of it alone, not its similar
+  joints: [Lay out joints](#lay-out-joints) does those).
+- It never changes a member's size, a work point or a leg's turn on its
+  own. A leg piece its joints say is turned is only **proposed** (see
+  *Leg turned against its joints* below).
+- **Undo** takes the whole solution back in one step.
+
 ## Apply this joint's detail to similar joints
 
 ![The Apply this joint's detail to similar joints window: the joints like J10 of an invented body, each turned a quarter turn, with what changes there, ticked](../images/structure-tools/tool-apply-detail.png)

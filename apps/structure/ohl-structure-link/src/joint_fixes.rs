@@ -4,20 +4,24 @@
 
 //! A joint's problems and their fixes (owner, 2026-11-08: "the joint is
 //! giving a lot of errors and i would like to have a tool to help resolve
-//! errors"). Each problem the joint details find
-//! ([`ohl_structure_link::Problem`]) gets the changes that could fix it —
-//! the other face, a turn, the gauge or end distance that keeps the
-//! code's distances, nesting the other way, a cut worked out — and each is
-//! **tried on a copy of the structure** first: offered only when the
-//! problems of the joint are fewer after it and none is added elsewhere.
-//! A fix is applied as one undo step.
-
-use std::sync::mpsc::{Receiver, channel};
+//! errors"). Each problem the joint details find ([`crate::Problem`]) gets
+//! the changes that could fix it — the other face, a turn, the gauge or end
+//! distance that keeps the code's distances, nesting the other way, a cut
+//! worked out — and each is **tried on a copy of the structure** first:
+//! kept only when the problems of the joint are fewer after it and none is
+//! added elsewhere. Since O44 L11 (2026-11-21, the owner: not "this huge
+//! list … where buttons don't seem to do much") they are no longer offered
+//! one by one: Joint details' **Solve the clashes** ([`crate::solve`])
+//! tries them after the layout, as one solution. Never a member's steel
+//! pulled back where it is a leg or runs on through the joint (the owner:
+//! a main leg's "steel stops at 17 mm (pulled back)" at a splice was
+//! nonsense).
 
 use ohl_structure_edit::connection_edits::{self, FieldValue};
-use ohl_structure_link::{Arrival, JointDetails, Problem};
 use ohl_structures::{LibraryItem, StructureType};
 use toml_edit::DocumentMut;
+
+use crate::{Arrival, JointDetail, JointDetails, Problem};
 
 /// One change of a fix.
 #[derive(Debug, Clone, PartialEq)]
@@ -138,9 +142,29 @@ fn deg(turn: f64) -> String {
     format!("{:.0}°", turn.to_degrees())
 }
 
-/// The fixes to try for problem `p` of `a` (member end at `joint`) of
+/// `a` is a leg, or runs on through joint `j` (one part with another, or a
+/// piece in line with another there: a splice whose place may not be
+/// given): its steel is never pulled back by a fix.
+pub fn runs_on(j: &JointDetail, a: &Arrival) -> bool {
+    a.class.as_deref() == Some("leg")
+        || a.continuous.is_some()
+        || j.arrivals
+            .iter()
+            .any(|b| b.member != a.member && dot(a.direction, b.direction) <= -IN_LINE_COS)
+}
+
+/// Two members run on in line through a joint where their directions lie
+/// within 10° of opposite (the cosine), as Orient angles takes them.
+const IN_LINE_COS: f64 = 0.984_807_753_012_208;
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// The fixes to try for problem `p` of `a` (member end at joint `j`) of
 /// structure `t`.
-pub fn candidates(t: &StructureType, joint: &str, a: &Arrival, p: &Problem) -> Vec<Fix> {
+pub fn candidates(t: &StructureType, j: &JointDetail, a: &Arrival, p: &Problem) -> Vec<Fix> {
+    let joint = j.id.as_str();
     let m = a.member.clone();
     let field = |member: &str, f: &'static str, v: Option<FieldValue>| Change::Field {
         member: member.to_owned(),
@@ -149,7 +173,11 @@ pub fn candidates(t: &StructureType, joint: &str, a: &Arrival, p: &Problem) -> V
         value: v,
     };
     let word = |w: &str| Some(FieldValue::Word(w.to_owned()));
-    let roll = crate::roll_ui::roll_of(t, &m);
+    let roll = t
+        .members
+        .iter()
+        .find(|x| x.id == m)
+        .map_or(0.0, ohl_structure_edit::edits::member_roll);
     let turn = |by: f64| Fix {
         label: format!("Turn {m} {}", deg(by)),
         changes: vec![Change::Roll {
@@ -282,7 +310,9 @@ pub fn candidates(t: &StructureType, joint: &str, a: &Arrival, p: &Problem) -> V
         // depth and 5 mm (tried on a copy as every fix: offered only when
         // the joint has fewer problems after it).
         Problem::Clash { depth, .. } => {
-            if a.profile.is_none() || a.continuous.is_some() {
+            // Never a leg, nor a member running on through the joint (one
+            // part, or a piece in line with another here: a splice).
+            if a.profile.is_none() || runs_on(j, a) {
                 return Vec::new();
             }
             let now = a.cut.value.unwrap_or(0.0).max(0.0);
@@ -320,7 +350,7 @@ pub fn find(
     bolts: &ohl_structures::bolts::BoltLibrary,
     joint: &str,
 ) -> Vec<Found> {
-    let Ok(details) = ohl_structure_link::joint_details(text, sections, bolts) else {
+    let Ok(details) = crate::joint_details(text, sections, bolts) else {
         return Vec::new();
     };
     let Ok(t) = StructureType::parse(std::path::Path::new("structure.ohls"), text) else {
@@ -330,20 +360,20 @@ pub fn find(
     let mut out: Vec<Found> = Vec::new();
     let mut tried: Vec<(Fix, Option<(usize, usize)>)> = Vec::new();
     for (member, p, words) in problems(&details, joint) {
-        let Some(a) = details
-            .joint(joint)
-            .and_then(|j| j.arrivals.iter().find(|a| a.member == member))
-        else {
+        let Some(j) = details.joint(joint) else {
+            continue;
+        };
+        let Some(a) = j.arrivals.iter().find(|a| a.member == member) else {
             continue;
         };
         let mut fixes = Vec::new();
-        for fix in candidates(&t, joint, a, &p) {
+        for fix in candidates(&t, j, a, &p) {
             // A fix found for an earlier problem: its trial again.
             let after = match tried.iter().find(|x| x.0 == fix) {
                 Some(x) => x.1,
                 None => {
                     let r = applied(text, &fix)
-                        .and_then(|x| ohl_structure_link::joint_details(&x, sections, bolts).ok())
+                        .and_then(|x| crate::joint_details(&x, sections, bolts).ok())
                         .map(|d| count(&d, joint));
                     tried.push((fix.clone(), r));
                     r
@@ -369,87 +399,13 @@ pub fn find(
     out
 }
 
-/// What the fixes are found for: the file's revision, the libraries'
-/// stamp, the joint.
-pub type FixKey = (u64, u64, String);
-
-/// What a search needs: the structure's text and its libraries.
-pub type FixInput = (
-    String,
-    ohl_sections::SectionLibrary,
-    ohl_structures::bolts::BoltLibrary,
-);
-
-/// The fixes of a joint, found in the background.
-#[derive(Debug, Default)]
-pub struct Finder {
-    /// The fixes found, and for what.
-    pub found: Option<(FixKey, Vec<Found>)>,
-    /// The search under way, and for what.
-    pending: Option<(FixKey, Receiver<Vec<Found>>)>,
-}
-
-impl Finder {
-    /// Whether a search for `key` must start (neither found nor under
-    /// way): its input is then needed.
-    pub fn needs(&mut self, key: &FixKey) -> bool {
-        if let Some((k, rx)) = &self.pending
-            && let Ok(found) = rx.try_recv()
-        {
-            self.found = Some((k.clone(), found));
-            self.pending = None;
-        }
-        !self.found.as_ref().is_some_and(|(k, _)| k == key)
-            && !self.pending.as_ref().is_some_and(|(k, _)| k == key)
-    }
-
-    /// The problems and fixes of `key`: found, else searched for in the
-    /// background with `input` (none until then; `ctx` asked to draw
-    /// again when they are).
-    pub fn get(
-        &mut self,
-        key: FixKey,
-        input: Option<FixInput>,
-        ctx: &eframe::egui::Context,
-    ) -> Option<&[Found]> {
-        if let Some((k, rx)) = &self.pending {
-            if let Ok(found) = rx.try_recv() {
-                self.found = Some((k.clone(), found));
-                self.pending = None;
-            } else if *k == key {
-                ctx.request_repaint_after(std::time::Duration::from_millis(100));
-                return None;
-            }
-        }
-        if self.found.as_ref().is_some_and(|(k, _)| *k == key) {
-            return self.found.as_ref().map(|(_, f)| f.as_slice());
-        }
-        let (text, sections, bolts) = input?;
-        // Tests draw frames without waiting: found at once there.
-        if cfg!(test) {
-            let found = find(&text, &sections, &bolts, &key.2);
-            self.found = Some((key, found));
-            return self.found.as_ref().map(|(_, f)| f.as_slice());
-        }
-        let (tx, rx) = channel();
-        let joint = key.2.clone();
-        let c = ctx.clone();
-        std::thread::spawn(move || {
-            let _ = tx.send(find(&text, &sections, &bolts, &joint));
-            c.request_repaint();
-        });
-        self.pending = Some((key, rx));
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// The example sections and a 45 × 5 angle to nest in the 61 × 7 legs.
     fn nest_library() -> ohl_sections::SectionLibrary {
-        let mut lib = ohl_structure_link::section_library(
+        let mut lib = crate::section_library(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../libraries/sections/example-sections.ohlsec"),
         )
@@ -474,7 +430,7 @@ mod tests {
 
     /// `gauge` from the heel, the first `end` from the joint.
     fn nested_leg(gauge: &str, end: &str) -> String {
-        crate::joint_ui_tests::ANGLES.replacen(
+        crate::solve_tests::ANGLES.replacen(
             "id = \"L2\"\nnodes = [\"N2\", \"N3\"]\nsection = \"EA-61x7\"",
             "id = \"L2\"\nnodes = [\"N2\", \"N3\"]\nsection = \"EA-45x5\"",
             1,
@@ -522,12 +478,12 @@ mod tests {
     /// applied the problem is gone.
     #[test]
     fn a_nested_member_not_in_line_is_fixed_by_lapping_it() {
-        let lib = ohl_structure_link::section_library(
+        let lib = crate::section_library(
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../../libraries/sections/example-sections.ohlsec"),
         )
         .unwrap();
-        let text = crate::joint_ui_tests::ANGLES.replace(
+        let text = crate::solve_tests::ANGLES.replace(
             "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"",
             "member = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\nface = \"nested\"",
         ) + H1_APART;

@@ -98,6 +98,21 @@ fn escape_closes_a_tool_window() {
     std::fs::remove_dir_all(path.parent().unwrap()).ok();
 }
 
+/// The whole screen as `screen-<name>.png` (with `OHL_RENDER_PNG`): a
+/// panel's picture (Joint details' Problems, O44 L11).
+pub(crate) fn panel_shot(h: &mut Harness<'static, StructureApp>, name: &str) {
+    let Some(dir) =
+        ohl_core::env::var_os("OHL_RENDER_PNG").filter(|_| ohl_render::headless_device().is_ok())
+    else {
+        return;
+    };
+    h.run_steps(4);
+    h.render()
+        .unwrap()
+        .save(std::path::PathBuf::from(dir).join(format!("screen-{name}.png")))
+        .unwrap();
+}
+
 /// The window titled `title` (its largest node), for the picture.
 fn window_rect(h: &Harness<'static, StructureApp>, title: &str) -> Option<egui::Rect> {
     h.query_all_by_label_contains(title)

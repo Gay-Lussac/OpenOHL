@@ -220,6 +220,8 @@ pub struct StructureApp {
     pub quantities: crate::quantities_panel::QuantitiesTab,
     /// The Lay out joints window ([`crate::layout_window`]).
     pub layout_window: Option<crate::layout_window::LayoutWindow>,
+    /// Joint details' Solve the clashes window ([`crate::solve_window`]).
+    pub solve_window: Option<crate::solve_window::SolveWindow>,
     /// The Orient angles window ([`crate::orient_window`]).
     pub orient_window: Option<crate::orient_window::OrientWindow>,
     /// The Apply this joint's detail to similar joints window
@@ -314,6 +316,7 @@ impl StructureApp {
             joint_tools: Default::default(),
             quantities: Default::default(),
             layout_window: None,
+            solve_window: None,
             orient_window: None,
             apply_window: None,
             bolt_grade_window: None,
@@ -604,12 +607,14 @@ impl StructureApp {
             || self.joint_tools.offer.is_some()
             || self.joint_tools.continuous.is_some()
             || self.layout_window.is_some()
+            || self.solve_window.is_some()
             || self.orient_window.is_some()
             || self.apply_window.is_some()
             || self.bolt_grade_window.is_some()
             || self.inventory;
         self.confirm = None;
         self.layout_window = None;
+        self.solve_window = None;
         self.orient_window = None;
         self.apply_window = None;
         self.bolt_grade_window = None;
@@ -1210,6 +1215,7 @@ impl eframe::App for StructureApp {
         self.inventory_window(&ctx);
         self.continuous_window(&ctx);
         self.layout_window(&ctx);
+        self.solve_window(&ctx);
         self.orient_window(&ctx);
         self.apply_window(&ctx);
         self.bolt_grade_window(&ctx);

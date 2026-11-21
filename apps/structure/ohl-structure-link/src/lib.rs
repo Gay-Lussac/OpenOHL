@@ -54,6 +54,7 @@ mod export;
 pub mod in_line;
 #[cfg(test)]
 mod in_line_tests;
+pub mod joint_fixes;
 mod joint_groups;
 #[cfg(test)]
 mod joint_groups_tests;
@@ -73,6 +74,9 @@ mod joints_tests;
 mod layout_run;
 #[cfg(test)]
 mod layout_run_tests;
+pub mod leg_roll;
+#[cfg(test)]
+mod leg_roll_tests;
 pub mod leg_splices;
 #[cfg(test)]
 mod leg_splices_tests;
@@ -96,6 +100,9 @@ mod reduce;
 pub use ohl_member_check as plugin_check;
 mod quantities;
 mod run;
+pub mod solve;
+#[cfg(test)]
+mod solve_tests;
 mod volumes;
 mod welds;
 pub mod whole_roll;
@@ -133,6 +140,7 @@ pub use layout_run::{
     RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
     plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };
+pub use leg_roll::{LegRoll, RollEstimate, leg_rolls};
 pub use leg_splices::{LegSplice, leg_splices};
 pub use member_solids::{
     BoltSolid, MemberSolid, PlateSolid, SolidFace, bolt_solids, ear_clip, member_solids,
@@ -164,6 +172,7 @@ pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,
 };
+pub use solve::{Candidate, Counts, Effect, EffectKind, LegTurn, Solution, SolveAsk, solve_joint};
 pub use volumes::{VolumeMesh, string_volumes};
 pub use welds::{Flat, PlannedPlate, Weld, flat_roll, joint_legs, seam, welded_plan};
 

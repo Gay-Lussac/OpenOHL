@@ -80,7 +80,7 @@ pub struct UsageCompare {
     pub seconds: f64,
 }
 
-type Job<T> = Option<(u64, Receiver<Result<T, String>>)>;
+pub(crate) type Job<T> = Option<(u64, Receiver<Result<T, String>>)>;
 
 /// The Lay out joints window.
 pub struct LayoutWindow {
@@ -218,9 +218,14 @@ impl StructureApp {
     /// Opens the Lay out joints window for `scope`, its settings those of
     /// the last run (the file's record), else the starting values.
     pub(crate) fn open_layout_window(&mut self, scope: Scope) {
-        let Some(f) = self.file.as_ref() else {
-            return;
-        };
+        self.layout_window = self.new_layout_window(scope);
+    }
+
+    /// The Lay out joints window for `scope` as it opens (the settings of
+    /// the last run, else the starting values); also the settings Solve
+    /// the clashes runs the layout with.
+    pub(crate) fn new_layout_window(&mut self, scope: Scope) -> Option<LayoutWindow> {
+        let f = self.file.as_ref()?;
         let rec = LayoutRecord::of(f.structure()).settings;
         let bolts = self.bolt_library();
         let first = bolts
@@ -234,7 +239,7 @@ impl StructureApp {
             Some((id, d)) => (id, d * 1000.0),
             None => (first, BOLT_START_MM),
         };
-        self.layout_window = Some(LayoutWindow {
+        Some(LayoutWindow {
             scope,
             similar: true,
             gap_mm: rec.as_ref().map_or(GAP_START, |r| r.gap) * 1000.0,
@@ -261,7 +266,27 @@ impl StructureApp {
             },
             usage: None,
             usage_job: None,
-        });
+        })
+    }
+
+    /// The layout's settings as the Lay out joints window would run them
+    /// now (the last run's, else the starting values), the presets' fields
+    /// by class and a leg splice's provisional bolt.
+    pub(crate) fn layout_settings_now(
+        &mut self,
+    ) -> Option<(
+        LayoutSettings,
+        BTreeMap<String, toml_edit::Table>,
+        Option<BoltArea>,
+    )> {
+        let w = self.new_layout_window(Scope::Tower)?;
+        let bolts = self.bolt_library();
+        let presets = self.preset_list();
+        let mut s = w.settings(&bolts.0);
+        let (areas, fields) = ohl_structure_link::presets_by_class(&w.presets, &presets, &bolts.0);
+        let leg = areas.get("leg").cloned().or_else(|| s.bolt.clone());
+        s.presets = areas;
+        Some((s, fields, leg))
     }
 
     /// The joints the window's scope names (with the similar and
@@ -776,6 +801,23 @@ impl StructureApp {
     fn start_usage(&mut self, w: &mut LayoutWindow, ctx: &egui::Context) {
         let Some(p) = w.preview.as_ref() else { return };
         let Some(f) = self.file.as_ref() else { return };
+        let (before, after, key) = (f.text(), p.run.text.clone(), p.key);
+        if let Some(rx) = self.usage_thread(before, after, key) {
+            w.usage_job = Some((key, rx));
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
+    }
+
+    /// The members' largest usage over the last run's cases with the file
+    /// `before_text` and `after_text`, worked out on a thread of its own (the
+    /// analysis twice); none (said) when there is no run yet.
+    pub(crate) fn usage_thread(
+        &mut self,
+        before_text: String,
+        after_text: String,
+        key: u64,
+    ) -> Option<Receiver<Result<UsageCompare, String>>> {
+        let f = self.file.as_ref()?;
         let (table, recipes) = self.ran_with_of();
         let names: Vec<String> = match self.results.results.as_ref() {
             Some(Ok(r)) => r.cases.iter().map(|c| c.name.clone()).collect(),
@@ -788,21 +830,18 @@ impl StructureApp {
                     .into(),
                 true,
             ));
-            return;
+            return None;
         }
         let cases: Vec<_> = ohl_structure_link::cases_to_run(&table, &recipes, None)
             .into_iter()
             .filter(|c| names.iter().any(|n| n == &c.name))
             .collect();
-        let before_text = f.text();
-        let after_text = p.run.text.clone();
         let dir = f
             .path()
             .and_then(std::path::Path::parent)
             .map(std::path::Path::to_path_buf);
         let sections = self.loads.sections.clone();
         let bolts = self.bolt_library();
-        let key = p.key;
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let start = std::time::Instant::now();
@@ -863,26 +902,12 @@ impl StructureApp {
             })();
             let _ = tx.send(r);
         });
-        w.usage_job = Some((key, rx));
-        ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        Some(rx)
     }
 
     fn poll_usage(&mut self, w: &mut LayoutWindow, ctx: &egui::Context) {
-        if let Some((_, rx)) = &w.usage_job {
-            match rx.try_recv() {
-                Ok(Ok(u)) => {
-                    w.usage = Some(u);
-                    w.usage_job = None;
-                }
-                Ok(Err(e)) => {
-                    self.message = Some((format!("usage before and after: {e}"), true));
-                    w.usage_job = None;
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    ctx.request_repaint_after(std::time::Duration::from_millis(200));
-                }
-                Err(_) => w.usage_job = None,
-            }
+        if let Some(e) = poll_usage_job(&mut w.usage_job, &mut w.usage, ctx) {
+            self.message = Some((format!("usage before and after: {e}"), true));
         }
     }
 
@@ -1358,6 +1383,23 @@ fn layout_close_ups(
     let (Some(a), Some(b)) = (p.before.joint(&pick), p.after.joint(&pick)) else {
         return;
     };
+    before_after(ui, views, a, b, p.key, dark);
+}
+
+/// A joint's close-up before (`a`) and after (`b`) side by side, turned
+/// together by a drag, each with its clashes counted (Lay out joints,
+/// Solve the clashes).
+pub(crate) fn before_after(
+    ui: &mut egui::Ui,
+    views: &mut (
+        crate::joint_panel::JointPanel,
+        crate::joint_panel::JointPanel,
+    ),
+    a: &ohl_structure_link::JointDetail,
+    b: &ohl_structure_link::JointDetail,
+    key: u64,
+    dark: bool,
+) {
     let width = ((ui.available_width() - 8.0) / 2.0).max(120.0);
     let size = egui::vec2(width, 200.0);
     ui.horizontal(|ui| {
@@ -1379,7 +1421,7 @@ fn layout_close_ups(
                 let painter = ui.painter_at(rect);
                 painter.rect_filled(rect, 2.0, ui.visuals().extreme_bg_color);
                 let view = if k == 0 { &mut views.0 } else { &mut views.1 };
-                crate::close_up::paint(&painter, rect, j, view, (p.key, k), dark, 0);
+                crate::close_up::paint(&painter, rect, j, view, (key, k), dark, 0);
                 let clashes = j.clashes.len();
                 ui.label(
                     egui::RichText::new(format!("{clashes} clash(es)"))
@@ -1395,9 +1437,43 @@ fn layout_close_ups(
     });
 }
 
+/// A usage job polled: its result into `usage` when done; the error when
+/// it failed.
+pub(crate) fn poll_usage_job(
+    job: &mut Job<UsageCompare>,
+    usage: &mut Option<UsageCompare>,
+    ctx: &egui::Context,
+) -> Option<String> {
+    let (_, rx) = job.as_ref()?;
+    match rx.try_recv() {
+        Ok(Ok(u)) => {
+            *usage = Some(u);
+            *job = None;
+            None
+        }
+        Ok(Err(e)) => {
+            *job = None;
+            Some(e)
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+            None
+        }
+        Err(_) => {
+            *job = None;
+            None
+        }
+    }
+}
+
 /// The usage before and after (asked by a button: the analysis of the last
 /// run's cases twice); true when asked.
-fn layout_usage(ui: &mut egui::Ui, u: Option<&UsageCompare>, key: u64, busy: bool) -> bool {
+pub(crate) fn layout_usage(
+    ui: &mut egui::Ui,
+    u: Option<&UsageCompare>,
+    key: u64,
+    busy: bool,
+) -> bool {
     let mut asked = false;
     ui.horizontal(|ui| {
         ohl_ui::tool_window::label(

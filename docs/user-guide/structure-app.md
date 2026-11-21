@@ -1342,21 +1342,22 @@ between the legs is not known; [theory](../theory/joint-plates.md)). Not given: 
 legs onto Onto, as before. Set with one leg, or naming no plate there:
 said, not used.
 
-**Problems** (2026-11-08; built, in active development, not approved
-yet). When something at the joint does not fit — a member nested in one
-it is not in line with or turned across, too wide to nest, bolts nearer
-an edge or the end than the code allows in either part, a cut given
-that leaves too little, an outstanding leg through the leg it bolts
-onto, a bolted face off the face it lies on — the Joint details list it
-first, in red, under **Problems (n)**, each with the **fixes that work**:
-the other face, a turn of the member (90°, 180°, the one that lays it
-flat), the largest gauge that keeps both parts' edges, the bolts further
-from the end, nesting the other way, lapping instead of nesting, the cut
-worked out. Each fix is **tried on a copy of the structure first** (in
-the background; "trying the fixes on a copy…" meanwhile) and offered only
-when the joint has fewer problems after it and none is added elsewhere;
-its hover gives the joint's problems before and after. A click makes it
-(one undo step). A problem no fix helps says so: change it by hand.
+**Problems** (2026-11-08; since 2026-11-21 grouped, with one *Solve the
+clashes*; built, in active development, not approved yet). When
+something at the joint does not fit — a clash of steel, a plate or a
+bolt, a member nested in one it is not in line with or turned across,
+too wide to nest, bolts nearer an edge or the end than the code allows in
+either part, a cut given that leaves too little, an outstanding leg
+through the leg it bolts onto, a bolted face off the face it lies on —
+the Joint details list it under **Problems (n)**, closed until opened,
+**grouped by kind with counts**, each problem said once (no button per
+problem). Beside it **Solve the clashes…** works out the joint's best
+whole solution on copies of the structure — the layout, its proposals at
+the joint, then the fixes of what is left (the other face, a turn, the
+gauge or end distance that keeps both parts' edges, nesting the other way,
+lapping instead of nesting) — and applies it in one click (one undo step):
+[Solve the clashes](joint-layout.md#solve-the-clashes). It never pulls
+back a leg or a member running on through the joint.
 
 
 **The code's distances** (2026-11-03). The member view shows each end's

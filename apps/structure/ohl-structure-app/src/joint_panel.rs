@@ -52,8 +52,6 @@ pub enum Drawn {
 pub struct JointPanel {
     /// The details, for (file revision, libraries stamp).
     details: Option<((u64, u64), Details)>,
-    /// The fixes of the joint shown's problems, found in the background.
-    pub fixes: crate::joint_fixes::Finder,
     /// The joint shown (follows the selection).
     pub joint: Option<String>,
     /// The face of the face view (none: the joint's first).
@@ -336,7 +334,8 @@ impl StructureApp {
             return;
         }
         ui.add_space(4.0);
-        // What does not fit here, with the fixes that work (2026-11-08).
+        // What does not fit here, grouped, closed until opened, and one
+        // Solve the clashes (O44 L11, 2026-11-21).
         self.problems_box(ui, details, &chosen);
         // The automatic layout (2026-11-18): the button, what it set here
         // (automatic), the bolts provisional, a hand detail needed.
@@ -361,7 +360,8 @@ impl StructureApp {
         let Some(t) = t else {
             return;
         };
-        let mut acts = flat_notes(ui, &t, j);
+        member_notes(ui, j);
+        let mut acts = Vec::new();
         acts.extend(crate::joint_tools::joint_bar(
             ui,
             &t,
@@ -1160,64 +1160,28 @@ impl StructureApp {
     }
 }
 
-/// The members whose leg bolted does not lie flat on what it bolts onto,
-/// each with a one-click fix (its roll turned so it does; owner
-/// 2026-11-04), and the notes on the member ends.
-fn flat_notes(
-    ui: &mut egui::Ui,
-    t: &ohl_structures::StructureType,
-    j: &JointDetail,
-) -> Vec<crate::joint_tools::Act> {
-    let mut acts = Vec::new();
+/// The notes on the member ends that are not problems (those are in
+/// Problems, grouped): weak, one per line ("gauge lines: …", "runs on
+/// into … as one part").
+fn member_notes(ui: &mut egui::Ui, j: &JointDetail) {
     for a in &j.arrivals {
-        if let Some(f) = a.flat
-            && f.off > ohl_structure_link::FLAT_OFF
-            && let Some(o) = a.onto.value.as_ref()
-        {
-            let what = if j.plates.iter().any(|p| &p.id == o) {
-                "plate"
-            } else {
-                "leg of"
-            };
-            ui.horizontal_wrapped(|ui| {
-                ui.colored_label(
-                    ui.visuals().warn_fg_color,
-                    format!(
-                        "{}: {}{} bolted face {:.0}° off the {what} {o} — turn it",
-                        j.id,
-                        a.member,
-                        a.profile
-                            .as_ref()
-                            .map_or(String::new(), |p| format!(" ({})", p.section)),
-                        f.off
-                    ),
-                );
-                if ui
-                    .small_button("Turn it flat")
-                    .on_hover_text(format!(
-                        "Its roll turned by {:+.1}° so its leg bolted lies flat on {o} (one undo \
-                         step; its other end follows, and its axes for the analysis)",
-                        f.turn.to_degrees()
-                    ))
-                    .clicked()
-                {
-                    let roll = crate::roll_ui::roll_of(t, &a.member) + f.turn;
-                    acts.push(crate::joint_tools::Act::Roll(a.member.clone(), roll));
-                }
-            });
+        for n in a.notes.iter().filter(|n| {
+            !n.ends_with("— turn it")
+                && !a
+                    .problems
+                    .iter()
+                    .any(|(_, t)| t == *n || n.ends_with(t.as_str()))
+                && !a.misfit
+        }) {
+            ui.label(
+                egui::RichText::new(format!("{}: {n}", a.member))
+                    .small()
+                    .weak(),
+            );
         }
-        // A member end that does not fit as given (2026-11-05: a nested
-        // angle too large, its leg through another's): its notes red.
-        for n in a.notes.iter().filter(|n| !n.ends_with("— turn it")) {
-            let text = egui::RichText::new(format!("{}: {n}", a.member)).small();
-            if a.misfit {
-                ui.colored_label(ui.visuals().error_fg_color, text);
-            } else {
-                ui.label(text.weak());
-            }
-        }
+        // A member end not fitting as given: its notes that are no
+        // problem of the list are in Problems (Other).
     }
-    acts
 }
 
 fn kind_words(k: ohl_structures::structures::StructureKind) -> &'static str {
@@ -1392,82 +1356,179 @@ fn rules_caption(ui: &mut egui::Ui, rules: &crate::detail_tools::Rules) {
 
 impl crate::app::StructureApp {
     /// **Problems** of joint `joint` (owner, 2026-11-08: "a tool to help
-    /// resolve errors"): each member end's in words, red, with the fixes
-    /// that worked when tried on a copy of the structure (each a button:
-    /// one undo step; its hover: the joint's problems before and after).
+    /// resolve errors"; O44 L11, 2026-11-21: not "this huge list that's a
+    /// bit unreadable and where buttons don't seem to do much" but "all the
+    /// errors in a menu that can be opened" and one solution): closed until
+    /// opened, grouped by kind with counts, no button per problem; beside
+    /// it **Solve the clashes…** ([`crate::solve_window`]).
     fn problems_box(&mut self, ui: &mut egui::Ui, details: &JointDetails, joint: &str) {
-        let n = crate::joint_fixes::problems(details, joint).len();
+        let Some(j) = details.joint(joint) else {
+            return;
+        };
+        let groups = problem_groups(j);
+        let n: usize = groups.iter().map(|g| g.1.len()).sum();
         if n == 0 {
             return;
         }
-        let Some(f) = self.file.as_ref() else {
-            return;
-        };
-        let key = (f.revision(), self.libs_stamp, joint.to_owned());
-        let input = if self.joints.fixes.needs(&key) {
-            let text = f.text_ref().to_owned();
-            let sections = self.loads.sections.clone();
-            let bolts = self.bolt_library().0.clone();
-            Some((text, sections, bolts))
-        } else {
-            None
-        };
-        let ctx = ui.ctx().clone();
-        let found = self.joints.fixes.get(key, input, &ctx).map(<[_]>::to_vec);
-        let mut apply = None;
+        let mut open = false;
+        ui.horizontal(|ui| {
+            if ui
+                .button("Solve the clashes…")
+                .on_hover_text(
+                    "Works out the best whole solution for this joint on copies of the \
+                     structure (the layout, its proposals here, the fixes of what is left), \
+                     with what it changes and the joint before and after: one click applies it \
+                     (one undo step)",
+                )
+                .clicked()
+            {
+                open = true;
+            }
+            let counts: Vec<String> = groups
+                .iter()
+                .map(|(k, list)| format!("{} {}", list.len(), k.short()))
+                .collect();
+            ui.label(
+                egui::RichText::new(counts.join(", "))
+                    .small()
+                    .color(ui.visuals().error_fg_color),
+            );
+        });
         egui::CollapsingHeader::new(
             egui::RichText::new(format!("Problems ({n})")).color(ui.visuals().error_fg_color),
         )
         .id_salt("joint-problems")
-        .default_open(true)
+        .default_open(false)
         .show(ui, |ui| {
-            let Some(found) = found else {
-                ui.horizontal(|ui| {
-                    ui.spinner();
-                    ui.label("trying the fixes on a copy…");
-                });
-                return;
-            };
-            for p in &found {
-                ui.horizontal_wrapped(|ui| {
-                    ui.colored_label(ui.visuals().error_fg_color, format!("{}:", p.member));
-                    ui.label(egui::RichText::new(&p.text).small());
-                });
-                ui.horizontal_wrapped(|ui| {
-                    ui.add_space(12.0);
-                    if p.fixes.is_empty() {
-                        ui.label(
-                            egui::RichText::new("no fix found that works: change it by hand")
-                                .small()
-                                .weak(),
-                        );
-                    }
-                    for (fix, before, after) in &p.fixes {
-                        if ui
-                            .small_button(&fix.label)
-                            .on_hover_text(format!(
-                                "Tried on a copy: the joint's problems {before}, after it {after}; one \
-                                 undo step"
-                            ))
-                            .clicked()
-                        {
-                            apply = Some(fix.clone());
-                        }
-                    }
-                });
+            for (kind, list) in &groups {
+                egui::CollapsingHeader::new(format!("{} ({})", kind.words(), list.len()))
+                    .id_salt(("joint-problems-kind", kind.short()))
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .id_salt(("joint-problems-list", kind.short()))
+                            .max_height(160.0)
+                            .show(ui, |ui| {
+                                for t in list {
+                                    ui.label(egui::RichText::new(t).small());
+                                }
+                            });
+                    });
             }
         });
-        if let Some(fix) = apply
-            && let Some(f) = self.file.as_mut()
-        {
-            f.edit(&fix.label, |doc, _| {
-                for c in &fix.changes {
-                    c.apply(doc);
-                }
-            });
-            self.message = Some((format!("{joint}: {}", fix.label), false));
+        if open {
+            self.open_solve_window(joint);
         }
     }
+}
+
+/// The kinds a joint's problems are grouped by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ProblemKind {
+    /// Steel into steel.
+    Steel,
+    /// A plate into steel or another plate.
+    Plate,
+    /// A bolt's head, nut or shank into steel or a plate.
+    Bolt,
+    /// A bolted face off what it bolts onto.
+    NotFlat,
+    /// An outstanding leg through the leg it bolts onto.
+    Through,
+    /// Nested angles that do not fit.
+    Nested,
+    /// A cut given leaving too little.
+    Cut,
+    /// Anything else not fitting as given.
+    Other,
+}
+
+impl ProblemKind {
+    /// The group's title.
+    pub fn words(self) -> &'static str {
+        match self {
+            Self::Steel => "Clashes: steel into steel",
+            Self::Plate => "Clashes: a plate into steel or a plate",
+            Self::Bolt => "Clashes: a bolt's head, nut or shank in the way",
+            Self::NotFlat => "A bolted face off what it bolts onto",
+            Self::Through => "An outstanding leg through the leg it bolts onto",
+            Self::Nested => "Nested angles that do not fit",
+            Self::Cut => "A cut given that leaves too little",
+            Self::Other => "Other: not fitting as given",
+        }
+    }
+
+    /// Short, for the counts beside the button.
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::Steel => "steel",
+            Self::Plate => "plate",
+            Self::Bolt => "bolt",
+            Self::NotFlat => "off flat",
+            Self::Through => "leg through",
+            Self::Nested => "nesting",
+            Self::Cut => "cut",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// A joint's problems grouped by kind, each said once ("D1: …"; a clash of
+/// two members is listed at both: once here), in the kinds' order.
+pub fn problem_groups(j: &JointDetail) -> Vec<(ProblemKind, Vec<String>)> {
+    use ohl_structure_link::Problem as P;
+    let mut out: std::collections::BTreeMap<ProblemKind, Vec<String>> = Default::default();
+    let mut seen: std::collections::BTreeSet<String> = Default::default();
+    for a in &j.arrivals {
+        for (p, t) in &a.problems {
+            let kind = match p {
+                P::Clash { with, .. } => {
+                    let w = format!("{with} {t}");
+                    if w.contains("the head of")
+                        || w.contains("the nut of")
+                        || w.contains("the shank of")
+                    {
+                        ProblemKind::Bolt
+                    } else if w.contains("plate ") {
+                        ProblemKind::Plate
+                    } else {
+                        ProblemKind::Steel
+                    }
+                }
+                P::NotFlat { .. } => ProblemKind::NotFlat,
+                P::ThroughLeg { .. } => ProblemKind::Through,
+                P::NotNestable { .. }
+                | P::NestTurned { .. }
+                | P::NestTooWide { .. }
+                | P::NestEdge { .. }
+                | P::NestEnd { .. } => ProblemKind::Nested,
+                P::HostCut { .. } => ProblemKind::Cut,
+            };
+            // A clash's words name both parts: said once.
+            let key = if matches!(p, P::Clash { .. }) {
+                t.clone()
+            } else {
+                format!("{}: {t}", a.member)
+            };
+            if seen.insert(key.clone()) {
+                out.entry(kind).or_default().push(key);
+            }
+        }
+        if a.misfit {
+            for n in a.notes.iter().filter(|n| {
+                !a.problems
+                    .iter()
+                    .any(|(_, t)| t == *n || n.ends_with(t.as_str()))
+                    && !n.starts_with("gauge lines:")
+            }) {
+                let key = format!("{}: {n}", a.member);
+                if seen.insert(key.clone()) {
+                    out.entry(ProblemKind::Other).or_default().push(key);
+                }
+            }
+        }
+    }
+    out.into_iter().collect()
 }
 
 impl crate::app::StructureApp {

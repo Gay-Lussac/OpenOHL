@@ -1177,3 +1177,103 @@ fn ends_moved_to_bolt_directly_in_the_window() {
     assert!(f.structure().plates.is_empty(), "{}", f.text());
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// Runs frames until Solve the clashes has its solution (at most ~60 s).
+pub(crate) fn wait_solved(h: &mut Harness<'static, StructureApp>) {
+    for _ in 0..1200 {
+        h.step();
+        if h.state()
+            .solve_window
+            .as_ref()
+            .is_some_and(|w| w.solved.is_some())
+        {
+            h.run_steps(3);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("no solution");
+}
+
+/// Apply in Solve the clashes clicked (enabled), the window then closed.
+pub(crate) fn apply_solved(h: &mut Harness<'static, StructureApp>) {
+    use egui_kittest::kittest::NodeT;
+    // (The window settles where it is drawn first.)
+    h.run_steps(6);
+    let b = h.get_by_label("Apply");
+    assert!(!b.accesskit_node().is_disabled(), "nothing to apply");
+    b.click();
+    h.run_steps(3);
+    assert!(h.state().solve_window.is_none(), "{:?}", h.state().message);
+}
+
+/// O44 L11 (the owner, 2026-11-21): Joint details' Problems closed until
+/// opened, grouped by kind with counts, no button per problem; **Solve the
+/// clashes…** works out one whole solution for the invented joint (D1 and H1
+/// running into each other at N2) — fewer clashes, what changes said, the
+/// close-ups before and after — and Apply is one undo step; Escape cancels
+/// another. The window's pictures for the user guide (`OHL_RENDER_PNG`).
+#[test]
+fn the_clashes_of_a_joint_are_solved_in_one_click() {
+    let (mut h, dir) = open("solve-window");
+    let before = h.state().file.as_ref().unwrap().text();
+    h.get_by_label("Solve the clashes…");
+    h.get_by_label_contains("Problems (");
+    assert!(
+        h.query_all_by_label_contains("Clashes: ").next().is_none(),
+        "closed until opened"
+    );
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label_contains("Problems (").click();
+        h.run_steps(3);
+        // (The pointer out of the picture.)
+        h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
+            1290.0, 890.0,
+        )));
+        crate::tool_window_tests::panel_shot(&mut h, "joint-problems-grouped");
+    }
+    h.get_by_label("Solve the clashes…").click();
+    h.step();
+    assert!(h.state().solve_window.is_some());
+    wait_solved(&mut h);
+    {
+        let w = h.state().solve_window.as_ref().unwrap();
+        let s = &w.solved.as_ref().unwrap().solution;
+        let best = s.best().unwrap_or_else(|| panic!("{:?}", s.why_none));
+        assert!(best.counts.clashes < s.before.clashes, "{:?}", best.counts);
+    }
+    h.get_by_label_contains("Clashes ");
+    h.get_by_label("Before and after:");
+    h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
+        1290.0, 890.0,
+    )));
+    crate::tool_window_tests::window_shot(&mut h, "Solve the clashes", "solve-the-clashes");
+    // Nothing written before Apply; Escape cancels.
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    h.key_press(eframe::egui::Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().solve_window.is_none());
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    // Again, applied: one undo step.
+    h.get_by_label("Solve the clashes…").click();
+    wait_solved(&mut h);
+    apply_solved(&mut h);
+    assert_ne!(h.state().file.as_ref().unwrap().text(), before);
+    let d = h.state_mut().joint_details().unwrap();
+    let after = d
+        .as_ref()
+        .as_ref()
+        .unwrap()
+        .joint("N2")
+        .unwrap()
+        .clashes
+        .len();
+    let d0 =
+        ohl_structure_link::joint_details(&before, &h.state().loads.sections, &Default::default())
+            .unwrap();
+    assert!(after < d0.joint("N2").unwrap().clashes.len());
+    h.get_by_label("Undo").click();
+    h.run_steps(2);
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    std::fs::remove_dir_all(dir).ok();
+}

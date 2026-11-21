@@ -1165,8 +1165,9 @@ fn the_roll_buttons_turn_a_member_and_undo() {
     h.run();
     let after = off(&mut h, "D1").unwrap();
     assert!(after < 0.5, "{before}° off before, {after}° after");
-    // Joint details: D1 turned a quarter off is named, Turn it flat lays
-    // it flat again (one undo step).
+    // Joint details: D1 turned a quarter off is named among the joint's
+    // Problems, grouped, closed until opened (O44 L11: no button per
+    // problem; Solve the clashes beside them).
     h.get_all_by_label("+90°").next().unwrap().click();
     h.run();
     h.run();
@@ -1175,33 +1176,18 @@ fn the_roll_buttons_turn_a_member_and_undo() {
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.run();
     h.run();
-    h.get_by_label_contains("N2: D1 (");
-    let turned = roll(&h, "D1");
-    let fix = h.get_all_by_label("Turn it flat").count();
-    assert!(fix >= 1);
-    // The fix of D1: the first row named D1.
-    let d = h.state_mut().joint_details().unwrap();
-    let first_off = d
-        .as_ref()
-        .as_ref()
-        .unwrap()
-        .joint("N2")
-        .unwrap()
-        .arrivals
-        .iter()
-        .find(|a| a.flat.is_some_and(|f| f.off > ohl_structure_link::FLAT_OFF))
-        .map(|a| a.member.clone())
-        .unwrap();
-    h.get_all_by_label("Turn it flat").next().unwrap().click();
+    h.get_by_label("Solve the clashes…");
+    assert!(h.query_all_by_label("Turn it flat").next().is_none());
+    assert!(
+        h.query_all_by_label_contains("bolted face")
+            .next()
+            .is_none(),
+        "closed until opened"
+    );
+    h.get_by_label_contains("Problems (").click();
     h.run();
     h.run();
-    assert!(off(&mut h, &first_off).unwrap() < 0.5);
-    if first_off == "D1" {
-        assert!((roll(&h, "D1") - turned).abs() > 45.0);
-    }
-    h.get_by_label("Undo").click();
-    h.run();
-    assert!(off(&mut h, &first_off).unwrap() > ohl_structure_link::FLAT_OFF);
+    h.get_by_label_contains("A bolted face off what it bolts onto (");
     std::fs::remove_dir_all(dir).ok();
 }
 
@@ -1923,15 +1909,10 @@ fn problems_are_fixed_bolts_change_leg_and_two_plates_are_drawn() {
     menu(&mut h, "Design", "Joint details");
     h.state_mut().selected = vec![Handle::Joint("N2".into())];
     h.run_steps(3);
-    h.get_by_label_contains("Problems (");
-    // The fixes (tried in the background in the app; here at once).
+    // Grouped, closed until opened (O44 L11); the nesting among them.
+    h.get_by_label_contains("Problems (").click();
     h.run_steps(2);
-    assert!(
-        h.query_all_by_label_contains("instead of nesting")
-            .next()
-            .is_some(),
-        "a fix offered"
-    );
+    h.get_by_label_contains("Nested angles that do not fit (");
     if let Some(dir) = &shots {
         h.run_steps(3);
         h.render()
@@ -1939,19 +1920,21 @@ fn problems_are_fixed_bolts_change_leg_and_two_plates_are_drawn() {
             .save(dir.join("joint-problems.png"))
             .unwrap();
     }
+    // Solve the clashes: one solution, its nesting problem gone, one undo
+    // step.
     let before = h.state().file.as_ref().unwrap().text_ref().to_owned();
-    h.get_all_by_label_contains("instead of nesting")
-        .next()
-        .unwrap()
-        .click();
-    h.run_steps(3);
+    h.get_by_label("Solve the clashes…").click();
+    crate::layout_ui_tests::wait_solved(&mut h);
+    crate::layout_ui_tests::apply_solved(&mut h);
     let d = h.state_mut().joint_details().unwrap();
     let d = d.as_ref().as_ref().unwrap();
-    // The fixture's D1 and H1 running into each other (a clash,
-    // 2026-11-18) is not what is tested here.
-    let left: Vec<_> = crate::joint_fixes::problems(d, "N2")
-        .into_iter()
-        .filter(|p| !matches!(p.1, ohl_structure_link::Problem::Clash { .. }))
+    let left: Vec<_> = d
+        .joint("N2")
+        .unwrap()
+        .arrivals
+        .iter()
+        .flat_map(|a| &a.problems)
+        .filter(|p| !matches!(p.0, ohl_structure_link::Problem::Clash { .. }))
         .collect();
     assert!(left.is_empty(), "{:?}", left);
     h.get_by_label("Undo").click();
