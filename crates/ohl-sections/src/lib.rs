@@ -905,6 +905,19 @@ impl Section {
     /// the final area and second moments; principal values not given from
     /// the final iy, iz and the computed product.
     pub fn properties(&self) -> Properties {
+        self.properties_with(true)
+    }
+
+    /// [`Section::properties`] without the plastic moduli worked out from
+    /// the shape (`wpl_y`, `wpl_z` only as given in the file): the same
+    /// values for every other property, without the search for the plastic
+    /// neutral axes (2026-11-21: for a model built many times over, as the
+    /// joint layout's rounds build it; speed only).
+    pub fn elastic_properties(&self) -> Properties {
+        self.properties_with(false)
+    }
+
+    fn properties_with(&self, plastic: bool) -> Properties {
         let g = &self.given;
         let o = self.shape.outline();
         let m = o.moments();
@@ -970,8 +983,12 @@ impl Section {
             wel_z: g.wel_z.or_else(|| elastic(iz, [1.0, 0.0])),
             wel_u: elastic(iu, v),
             wel_v: elastic(iv, u),
-            wpl_y: g.wpl_y.or_else(|| (!general).then(|| o.plastic_modulus(1))),
-            wpl_z: g.wpl_z.or_else(|| (!general).then(|| o.plastic_modulus(0))),
+            wpl_y: g
+                .wpl_y
+                .or_else(|| (plastic && !general).then(|| o.plastic_modulus(1))),
+            wpl_z: g
+                .wpl_z
+                .or_else(|| (plastic && !general).then(|| o.plastic_modulus(0))),
             gyration_y: g.gyration_y.unwrap_or_else(|| gyr(iy)),
             gyration_z: g.gyration_z.unwrap_or_else(|| gyr(iz)),
             gyration_u: g.gyration_u.unwrap_or_else(|| gyr(iu)),

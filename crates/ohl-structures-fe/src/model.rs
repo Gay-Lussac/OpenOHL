@@ -491,7 +491,8 @@ impl Section {
             ),
             None => format!("section {}: no material", p.id),
         })?;
-        let q = p.properties();
+        // (The plastic moduli are not read here: not worked out.)
+        let q = p.elastic_properties();
         Ok(Self {
             id: p.id.clone(),
             area: q.area,

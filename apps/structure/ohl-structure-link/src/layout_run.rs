@@ -2690,11 +2690,23 @@ fn write_rounds(
             // cover of a splice it made: the two it joins).
             let ours = |x: &crate::ClashPart| -> Vec<String> {
                 match x {
+                    // (L9, 2026-11-21: a flat plate with plates in their
+                    // members' own planes welded to it — nothing bolted on
+                    // it, perhaps — is those members' too: before, its
+                    // clashes were nobody's and stayed written.)
                     crate::ClashPart::Plate(id) => o
                         .plates
                         .iter()
                         .position(|p| p == id)
-                        .map(|k| o.plan.plates[k].members.clone())
+                        .map(|k| {
+                            let mut m = o.plan.plates[k].members.clone();
+                            for q in &o.plan.plates {
+                                if q.own.as_ref().is_some_and(|w| w.welded_to == k) {
+                                    m.extend(q.members.iter().cloned());
+                                }
+                            }
+                            m
+                        })
                         .unwrap_or_default(),
                     crate::ClashPart::Cover(id, _) => j
                         .splices
@@ -3639,7 +3651,10 @@ fn strip_joint(
         .and_then(Item::as_array_of_tables)
         .is_some_and(|a| {
             a.iter().any(|t| {
-                t.get("joint").and_then(Item::as_str) == Some(j)
+                // (L9, speed only) More than two fields: not empty, without
+                // looking its joint up.
+                t.len() <= 2
+                    && t.get("joint").and_then(Item::as_str) == Some(j)
                     && t.iter().all(|(k, _)| k == "member" || k == "joint")
             })
         });

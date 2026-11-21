@@ -1614,3 +1614,112 @@ fn an_end_on_a_seated_member_is_drawn_on_it_where_it_is_drawn() {
     });
     assert!(ok, "R's heel {h}, D1's heel {f} across R's face");
 }
+
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+/// L9 (2026-11-21): a plate's outline given whose first three corners lie
+/// (nearly) in a line — as one written round its bolts to a tenth of a
+/// millimetre often does where it runs straight — lies in the plane of
+/// all its corners: the end on it flat on it as before, its bolts square to
+/// the plate, nothing said about turning it (before: its plane taken from
+/// those three corners, far off, and the end drawn on its other leg).
+#[test]
+fn a_plate_whose_first_corners_lie_in_a_line_lies_in_the_plane_of_its_outline() {
+    let plate = "[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n";
+    let at = AT_N2.replace("leg = \"long\"", "leg = \"long\"\nonto = \"G1\"");
+    let text = format!("{TOWER}{at}{plate}");
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let a0 = n2
+        .arrivals
+        .iter()
+        .find(|a| a.member == "D1")
+        .unwrap()
+        .clone();
+    let p0 = n2.plates[0].clone();
+    let n = p0.through.expect("its plane");
+    // Its outline given: two corners put between its first two, in a line
+    // with them (the first a tenth of a millimetre off the plane).
+    let o = &p0.outline;
+    let (a, b) = (o[0], o[1]);
+    let at3 = |t: f64, off: f64| [0, 1, 2].map(|k| a[k] + (b[k] - a[k]) * t + n[k] * off);
+    let mut given = vec![a, at3(1.0 / 3.0, 1e-4), at3(2.0 / 3.0, 0.0)];
+    given.extend(o[1..].iter().copied());
+    let words: Vec<String> = given
+        .iter()
+        .map(|q| format!("[\"{:.6} m\", \"{:.6} m\", \"{:.6} m\"]", q[0], q[1], q[2]))
+        .collect();
+    let with = format!("{TOWER}{at}{plate}outline = [{}]\n", words.join(", "));
+    let d1 = joint_details(&with, &library(), &Default::default()).unwrap();
+    let j1 = d1.joint("N2").unwrap();
+    let a1 = j1.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let p1 = &j1.plates[0];
+    assert!(p1.outline_given);
+    // The same leg bolted, flat on the plate, its bolts square to it.
+    assert_eq!(a1.leg_y, a0.leg_y);
+    assert!(dot3(a1.bolt_axis, a0.bolt_axis) > 0.9999, "{a1:?}");
+    let n1 = p1.through.expect("its plane");
+    assert!(
+        dot3(n1, a1.bolt_axis).abs() > 0.9999,
+        "{n1:?} {:?}",
+        a1.bolt_axis
+    );
+    assert!(a1.flat.is_none_or(|f| f.off < 0.5), "{:?}", a1.flat);
+    assert!(
+        !a1.notes.iter().any(|w| w.contains("turn it")),
+        "{:?}",
+        a1.notes
+    );
+    // Drawn where it was round its bolts.
+    for (p, q) in a1.bolt_points.iter().zip(&a0.bolt_points) {
+        assert!((0..3).all(|k| (p[k] - q[k]).abs() < 1e-6), "{p:?} {q:?}");
+    }
+}
+
+/// L9 (2026-11-21): an end on a plate lying on a member that is itself
+/// drawn off its work line (lapped on the leg) — nothing bolting onto that
+/// member directly — is seated on it where it is drawn: the plate lies on
+/// that member's face as drawn, the end on the plate (before: as if that
+/// member lay on its work line, the plate and the end off it by its seat).
+#[test]
+fn an_end_on_a_plate_on_a_member_drawn_off_its_line_lies_on_it_where_drawn() {
+    // The K-brace: D1 lapped on L1's flange (seated across it), D2 on a
+    // plate lying on D1.
+    let text = format!(
+        "{}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\non = \"D1\"\n\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\", grade = \"8.8\" }}\n\n\
+         [[connection]]\nmember = \"D2\"\njoint = \"N2\"\nonto = \"G1\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\", grade = \"8.8\" }}\n",
+        crate::joint_layout_tests::K
+    );
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let n2 = d.joint("N2").unwrap();
+    let d1 = n2.arrivals.iter().find(|a| a.member == "D1").unwrap();
+    let d2 = n2.arrivals.iter().find(|a| a.member == "D2").unwrap();
+    // D1 drawn off its work line across its face (lapped on the leg).
+    assert!(
+        dot3(d1.offset, d1.bolt_axis).abs() > 0.002,
+        "{:?}",
+        d1.offset
+    );
+    let p = n2.plates.iter().find(|p| p.id == "G1").unwrap();
+    assert!(!p.outline.is_empty());
+    assert!(
+        dot3(d2.bolt_axis, d1.bolt_axis).abs() > 0.999,
+        "{:?} {:?}",
+        d2.bolt_axis,
+        d1.bolt_axis
+    );
+    // D1's face away from the leg: its bolts' plane and its leg's
+    // thickness; the plate on it (its far face, D2's, the plate's
+    // thickness from it), D2's bolts there.
+    let n = d1.bolt_axis;
+    let face = [0, 1, 2].map(|k| d1.bolt_points[0][k] + n[k] * 0.007);
+    let to_plate = dot3([0, 1, 2].map(|k| p.outline[0][k] - face[k]), n).abs();
+    assert!((to_plate - 0.008).abs() < 1e-4, "{to_plate}");
+    let to_d2 = dot3([0, 1, 2].map(|k| d2.bolt_points[0][k] - face[k]), n).abs();
+    assert!((to_d2 - 0.008).abs() < 1e-4, "{to_d2}");
+}

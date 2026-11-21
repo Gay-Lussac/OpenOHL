@@ -1871,3 +1871,88 @@ fn a_plate_on_a_built_up_leg_lies_on_the_angle_facing_the_ends() {
     let again = run(&r.text, &settings(), Some(&["N2"]), false);
     assert_eq!(again.text, r.text);
 }
+
+/// L9 (2026-11-21, L8's question 5): D1 no roll lays flat on L1 goes onto
+/// a plate in its own plane welded to a flat plate on L1's flange; a
+/// horizontal running through the joint as one part (HA into HB) lies
+/// across that flange where the flat plate would reach round the work
+/// point. The plan now sees the flat plate as it will be written (before:
+/// not checked, found after writing and D1 taken back): it stops short of
+/// the work point clear of the horizontal, or D1 is left for a hand detail
+/// in the plan, said — nothing written runs into the horizontal. Off: as
+/// before.
+#[test]
+fn a_welded_plates_flat_plate_is_planned_as_written_clear_of_a_run_on_its_face() {
+    let text = format!(
+        "{}\n[[node]]\nid = \"N7\"\npoint = [\"-2 m\", \"0 m\", \"3 m\"]\nsupport = \"fixed\"\n\
+         \n[[node]]\nid = \"N8\"\npoint = [\"2 m\", \"0 m\", \"3 m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"HA\"\nnodes = [\"N7\", \"N2\"]\nsection = \"EA-61x7\"\n\
+         design = {{ class = \"bracing\" }}\n\
+         \n[[member]]\nid = \"HB\"\nnodes = [\"N2\", \"N8\"]\nsection = \"EA-61x7\"\n\
+         design = {{ class = \"bracing\" }}\n\
+         \n[[connection]]\nmember = \"HA\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"HB\"\n\
+         \n[[connection]]\nmember = \"HB\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"HA\"\n\
+         \n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n\
+         \n[[connection]]\nmember = \"L2\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L1\"\n\
+         \n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"L1\"\n\
+         \n[[connection]]\nmember = \"D2\"\njoint = \"N2\"\nonto = \"L2\"\n",
+        d1_spoiled(10.0)
+    );
+    let welded = |reach_clear: bool| LayoutSettings {
+        small_bends: false,
+        reach_clear,
+        ..settings()
+    };
+    let on = run(&text, &welded(true), Some(&["N2"]), false);
+    let off = run(&text, &welded(false), Some(&["N2"]), false);
+    let o_on = on.joints.iter().find(|j| j.joint == "N2").unwrap();
+    let o_off = off.joints.iter().find(|j| j.joint == "N2").unwrap();
+    // Nothing written runs into the horizontal, either way.
+    let into_run = |t: &str| -> Vec<String> {
+        let d = joint_details(t, &library(), &Default::default()).unwrap();
+        d.joint("N2")
+            .unwrap()
+            .clashes
+            .iter()
+            .filter(|c| {
+                let run = |x: &crate::ClashPart| x.member().is_some_and(|m| m.starts_with('H'));
+                let plate = |x: &crate::ClashPart| matches!(x, crate::ClashPart::Plate(_));
+                (run(&c.a) && plate(&c.b)) || (run(&c.b) && plate(&c.a))
+            })
+            .map(crate::Clash::words)
+            .collect()
+    };
+    assert!(into_run(&on.text).is_empty(), "{:?}", into_run(&on.text));
+    assert!(into_run(&off.text).is_empty(), "{:?}", into_run(&off.text));
+    // Planned so: no end taken back after writing for it (laid out on a
+    // flat plate stopping short of the work point, or left in the plan).
+    assert!(
+        !o_on
+            .hand
+            .iter()
+            .any(|h| h.contains("would run") && h.contains('H')),
+        "{:?}",
+        o_on.hand
+    );
+    for e in &o_on.plan.ends {
+        if let crate::Onto::Plate(k) = e.onto
+            && let Some(w) = &o_on.plan.plates[k].own
+        {
+            assert!(o_on.plan.plates[w.welded_to].short, "{:?}", o_on.plan);
+        }
+    }
+    // Off: found after writing only (the flat plate, nothing bolted on it,
+    // now its welded plates' members' too: before, written so), the ends
+    // on it taken back.
+    assert!(
+        !o_off.plan.ends.iter().any(|e| matches!(
+            e.onto,
+            crate::Onto::Plate(k) if o_off.plan.plates[k].own.is_some()
+        )),
+        "{:?}",
+        o_off.plan
+    );
+    // A run again: the same file.
+    let again = run(&on.text, &welded(true), Some(&["N2"]), false);
+    assert_eq!(again.text, on.text);
+}

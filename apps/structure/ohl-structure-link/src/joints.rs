@@ -949,14 +949,25 @@ pub(crate) fn joint_details_and_model(
                     }
                 }
             }
-            // Again only where a member some end bolts onto moved.
+            // Again only where a member some end bolts onto moved — or the
+            // member a plate some end bolts onto lies on (L9, 2026-11-21:
+            // an end on a plate is seated on that member where it is drawn,
+            // as one lapped on it directly; before, such a member's own
+            // offset was not followed when nothing bolted onto it directly,
+            // and the plate and the ends on it were drawn where that member
+            // would lie on its work line — off it).
+            let bears = |m: &str| {
+                arrivals.iter().any(|b| {
+                    b.onto.value.as_deref().is_some_and(|o| {
+                        o == m || seats.get(o).is_some_and(|s| s.leg.as_deref() == Some(m))
+                    })
+                })
+            };
             let moved = level3
-                && arrivals.iter().zip(&drawn).any(|(a, d)| {
-                    norm(sub(a.offset, d.offset)) > SEAT_STILL
-                        && arrivals
-                            .iter()
-                            .any(|b| b.onto.value.as_deref() == Some(a.member.as_str()))
-                });
+                && arrivals
+                    .iter()
+                    .zip(&drawn)
+                    .any(|(a, d)| norm(sub(a.offset, d.offset)) > SEAT_STILL && bears(&a.member));
             if !moved {
                 break;
             }
@@ -1615,10 +1626,12 @@ fn plate_seats(
             .as_ref()
             .and_then(|l| all.iter().find(|a| &a.member == l))
             .map(|a| a.direction);
-        let given = (p.outline.len() >= 3).then(|| {
-            let q: Vec<[f64; 3]> = p.outline.iter().map(|x| x.map(|v| v.si())).collect();
-            cross(sub(q[1], q[0]), sub(q[2], q[0]))
-        });
+        // An outline given: its own plane, by Newell's method over all its
+        // corners (L9, 2026-11-21: before, its first three corners — in a
+        // line, or nearly, where the outline runs straight there, as one
+        // written to a tenth of a millimetre round its bolts often does:
+        // a plane far off, or none).
+        let given = outline_normal(p).map(|(n, _)| n);
         let mut dirs: Vec<[f64; 3]> = on.iter().map(|a| a.direction).collect();
         dirs.extend(leg_dir);
         let spanned = dirs.iter().enumerate().find_map(|(k, d)| {
@@ -2862,11 +2875,11 @@ fn bolts_near_edge(outline: &[[f64; 3]], onto: &[(&Arrival, Keep)], id: &str) ->
     if outline.len() < 3 {
         return Vec::new();
     }
-    let n = cross(sub(outline[1], outline[0]), sub(outline[2], outline[0]));
-    if norm(n) < 1e-12 {
+    // Its plane by Newell's method over all its corners (L9: before, its
+    // first three, which may lie in a line).
+    let Some(n) = crate::welds::polygon_normal(outline) else {
         return Vec::new();
-    }
-    let n = scale(n, 1.0 / norm(n));
+    };
     let u = scale(
         sub(outline[1], outline[0]),
         1.0 / norm(sub(outline[1], outline[0])),

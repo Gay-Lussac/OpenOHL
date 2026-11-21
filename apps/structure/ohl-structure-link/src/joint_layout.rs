@@ -258,6 +258,22 @@ pub struct LayoutSettings {
     /// (before: laid out, then taken back after writing). On by default;
     /// off: as before.
     pub partner_bolts: bool,
+    /// L9, 2026-11-21 (L8's question 5): a flat plate with plates in their
+    /// members' own planes welded to it (step 4) planned with its outline
+    /// as the run will write it — round the seams and the flange under them
+    /// and the work point, and the bolts of the ends flat on it — clear of
+    /// the fixed steel and of what the planes before laid out; else stopping
+    /// short of the work point and cut straight short of what it would
+    /// still run into; else the ends in their own planes left for a hand
+    /// detail in the plan (before: not checked, found after writing). On by
+    /// default; off: as before.
+    pub reach_clear: bool,
+    /// L9, 2026-11-21 (the owner's answer to L6's question 2): a flat plate
+    /// stopping short of the work point given its own provisional bolts onto
+    /// the member it lies on (L5o) where its outline, grown round them as the
+    /// joint details draw it, still runs into nothing — else none, said (as
+    /// before: none on a short plate). On by default; off: as before.
+    pub short_holds: bool,
 }
 
 impl Default for LayoutSettings {
@@ -289,6 +305,8 @@ impl Default for LayoutSettings {
             built_up_plates: true,
             as_drawn: true,
             partner_bolts: true,
+            reach_clear: true,
+            short_holds: true,
         }
     }
 }
@@ -1383,6 +1401,7 @@ fn plate_holds(
     s: &LayoutSettings,
     from: Option<f64>,
     n: usize,
+    ring_min: f64,
 ) -> Result<Vec<[f64; 2]>, String> {
     let nut = x0.nut;
     let [_, spacing, _] = s.defaults.of(x0.d);
@@ -1402,7 +1421,8 @@ fn plate_holds(
         .iter()
         .filter(|p| strips[p.k].plane == x0.plane)
         .map(|p| strips[p.k].keep_plate.0.max(strips[p.k].keep_plate.1))
-        .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max);
+        .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max)
+        .max(ring_min);
     let head = nut + s.gap / 2.0;
     let poly = room.poly;
     let sgn = (0..poly.len())
@@ -1535,6 +1555,14 @@ struct HoldAt<'a> {
     poly: Option<&'a [[f64; 2]]>,
     seams3: &'a [([f64; 3], [f64; 3])],
     laid_cut: &'a BTreeMap<String, f64>,
+    /// (L9) What a plate's outline (in its plane's axes) would run into
+    /// (none: clear) — a plate stopping short of the work point checked
+    /// with its outline grown round its holding bolts.
+    clear: &'a dyn Fn(&[[f64; 2]]) -> Option<String>,
+    /// (L9) The edge and end distances the holding bolts keep in the plate
+    /// (the code's for the member it lies on, in the plate's thickness;
+    /// none: not known).
+    host_keep: Option<(f64, f64)>,
 }
 
 /// L5o (2026-11-20): flat plate `flat` of the ends `placed` given its own
@@ -1576,7 +1604,10 @@ fn hold_flat(
     // round its members' legs from the flange's toe, cut straight short of
     // what it runs into — its own bolts would change that outline (measured
     // on the private real towers: their members then left after writing).
-    if flat.short {
+    // L9 (2026-11-21, the owner's answer to L6's question 2): since then
+    // given them where its outline, grown round them as `joints` draws it,
+    // still runs into nothing (below); off: as before.
+    if flat.short && !s.short_holds {
         notes.push(format!(
             "a plate on {} stopping short of the work point: no provisional bolts of its own \
              onto {} (its outline would change); how it is held not checked (lay them out by \
@@ -1658,7 +1689,17 @@ fn hold_flat(
         .unwrap_or(2)
         .max(2);
     let d = x0.d;
-    let pts = match plate_holds(strips, x0, &room, s, from, n) {
+    // (L9) A plate stopping short of the work point, cut straight: its
+    // holding bolts kept from its edge by the larger of their own end and
+    // edge distances in it too (the code's for the member it lies on, as
+    // the joint checks take them): its outline does not grow round them
+    // past its cuts.
+    let ring_min = if flat.short {
+        at.host_keep.map_or(0.0, |(e, d)| e.max(d))
+    } else {
+        0.0
+    };
+    let pts = match plate_holds(strips, x0, &room, s, from, n, ring_min) {
         Ok(p) => p,
         Err(e) => {
             notes.push(format!(
@@ -1669,6 +1710,70 @@ fn hold_flat(
             return;
         }
     };
+    // (L9) A plate stopping short of the work point: its outline as
+    // `joints` will draw it with them — round its members' legs from the
+    // flange's toe and their bolts, each holding bolt with its distances,
+    // the flange under them as far along as those reach, cut at the heel
+    // and by its straight cuts — clear of what it could run into; else none
+    // (as before), said.
+    if flat.short {
+        let grown = short_round_holds(
+            strips,
+            placed,
+            (s.gap, ring_min),
+            x0,
+            &pts,
+            flat,
+            j.position,
+        );
+        if let Some(by) = (at.clear)(&grown) {
+            notes.push(format!(
+                "a plate on {} stopping short of the work point: no provisional bolts of its own \
+                 onto {} (round them its outline would run into {by}); how it is held not \
+                 checked (lay them out by hand)",
+                x0.host, x0.host
+            ));
+            return;
+        }
+        // Each of them inside that outline, cut, by its distances too.
+        let keep = ring_min.max(
+            placed
+                .iter()
+                .filter(|p| strips[p.k].tilted.is_none())
+                .map(|p| strips[p.k].keep_plate.0.max(strips[p.k].keep_plate.1))
+                .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max),
+        );
+        let sgn = (0..grown.len())
+            .map(|i| {
+                let (a, b) = (grown[i], grown[(i + 1) % grown.len()]);
+                a[0] * b[1] - a[1] * b[0]
+            })
+            .sum::<f64>()
+            .signum();
+        let deep = |q: [f64; 2]| {
+            (0..grown.len())
+                .map(|i| {
+                    let (a, b) = (grown[i], grown[(i + 1) % grown.len()]);
+                    let e = sub2(b, a);
+                    let l = dot2(e, e).sqrt();
+                    if l < 1e-12 {
+                        f64::INFINITY
+                    } else {
+                        sgn * (e[0] * (q[1] - a[1]) - e[1] * (q[0] - a[0])) / l
+                    }
+                })
+                .fold(f64::INFINITY, f64::min)
+        };
+        if grown.len() < 3 || pts.iter().any(|q| deep(*q) < keep - 1e-9) {
+            notes.push(format!(
+                "a plate on {} stopping short of the work point: no provisional bolts of its own \
+                 onto {} (cut straight, its outline would not keep their distances); how it is \
+                 held not checked (lay them out by hand)",
+                x0.host, x0.host
+            ));
+            return;
+        }
+    }
     let host = j.arrivals.iter().find(|a| a.member == x0.host);
     // The flange it lies on named (`long` or `short`; an equal-leg angle:
     // `long` its leg along the section's y, as the joint details read it):
@@ -1729,6 +1834,81 @@ fn hold_flat(
             })
             .collect(),
     });
+}
+
+/// (L9) The outline (in `x0`'s plane) a flat plate stopping short of the
+/// work point will be drawn with when it has its own bolts `holds` onto the
+/// member it lies on (as `joints` draws a plate with `[plate.leg_bolts]`):
+/// the short outline of its ends ([`plate_outline2`]), each holding bolt
+/// with the largest edge or end distance its plane's ends keep in a plate
+/// (*an assumption, on the safe side for the fit*: the plate as large as the
+/// largest of them asks), the flange under all of it as far along as those
+/// reach, cut at the heel as the short outline is and by its straight cuts.
+fn short_round_holds(
+    strips: &[Strip],
+    placed: &[Placed],
+    (gap, ring_min): (f64, f64),
+    x0: &Strip,
+    holds: &[[f64; 2]],
+    flat: &PlatePlan,
+    wp: [f64; 3],
+) -> Vec<[f64; 2]> {
+    let flat_now: Vec<Placed> = placed
+        .iter()
+        .filter(|p| strips[p.k].tilted.is_none())
+        .cloned()
+        .collect();
+    let mut pts = plate_outline2(strips, &flat_now, gap, Outline::Short);
+    let ring = flat_now
+        .iter()
+        .map(|p| strips[p.k].keep_plate.0.max(strips[p.k].keep_plate.1))
+        .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max)
+        .max(ring_min);
+    const N: usize = 16;
+    let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
+    for q in holds {
+        for i in 0..N {
+            let a = i as f64 * std::f64::consts::TAU / N as f64;
+            pts.push([q[0] + ring * grow * a.cos(), q[1] + ring * grow * a.sin()]);
+        }
+    }
+    // (A flat plate with plates in their own planes welded to it: the seams
+    // and the flange under them too, kept to their sides.)
+    let to2 = |q: [f64; 3]| {
+        let d = sub(sub(q, wp), x0.heel3);
+        [dot(d, x0.x3), dot(d, x0.y3)]
+    };
+    if let Some(rc) = &flat.reach {
+        pts.extend(rc.points.iter().map(|q| to2(*q)));
+    }
+    let lo = pts.iter().map(|q| q[0]).fold(f64::INFINITY, f64::min);
+    let hi = pts.iter().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max);
+    for xq in [lo, hi] {
+        pts.push([xq, 0.0]);
+        pts.push([xq, x0.width]);
+    }
+    let mut poly = crate::joint_sheet::hull(pts);
+    if let Some(rc) = &flat.reach {
+        for (at, side) in &rc.keep_to {
+            let a2 = to2(*at);
+            let s2 = [dot(*side, x0.x3), dot(*side, x0.y3)];
+            poly = clip(&poly, |q| dot2(sub2(q, a2), s2) + 1e-9);
+        }
+    }
+    if flat_now.iter().all(|p| strips[p.k].u[1] > 1e-6) {
+        let yc = if x0.inside { x0.t + x0.r } else { 0.0 } + gap / 2.0;
+        poly = clip(&poly, |q| q[1] - yc);
+    }
+    for (at, n) in &flat.cuts {
+        poly = clip(&poly, |q| {
+            let q3 = add(
+                add(add(wp, x0.heel3), scale(x0.x3, q[0])),
+                scale(x0.y3, q[1]),
+            );
+            -dot(sub(q3, *at), *n)
+        });
+    }
+    poly
 }
 
 /// A member end whose leg bolted lies off the flange (step 4), in 3D: from
@@ -2669,7 +2849,7 @@ fn plan_once(
                 }
             }
             kept.retain(|p| !dropped.contains(&p.k));
-            let placed = kept;
+            let mut placed = kept;
             if placed.is_empty() {
                 continue;
             }
@@ -2835,6 +3015,8 @@ fn plan_once(
             };
             let mut own_plates: Vec<PlatePlan> = Vec::new();
             let mut seams3: Vec<([f64; 3], [f64; 3])> = Vec::new();
+            let mut short_reach: Vec<[f64; 3]> = Vec::new();
+            let mut seam_pts: Vec<[f64; 3]> = Vec::new();
             for (k, g0) in &owns {
                 let x = &strips[*k];
                 let t = x.tilted.as_ref().expect("tilted");
@@ -2857,7 +3039,17 @@ fn plan_once(
                     normal: scale(t.out, -1.0),
                     keep_to: Vec::new(),
                 });
-                r.points.extend(own_reach(x, &geo, thickness, j.position));
+                let all = own_reach(x, &geo, thickness, j.position);
+                // (L9) Stopping short of the work point: the seams and the
+                // flange under them only (not under the work point).
+                short_reach.extend(
+                    all.iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != 2 && *i != 3)
+                        .map(|(_, q)| *q),
+                );
+                seam_pts.extend(all.iter().take(2).copied());
+                r.points.extend(all);
                 r.keep_to.push((abs(geo.seam_at), geo.side));
                 let seam = norm(sub(geo.seam[1], geo.seam[0]));
                 seams3.push((geo.seam_at, geo.side));
@@ -2897,11 +3089,163 @@ fn plan_once(
                     cuts: Vec::new(),
                 });
             }
+            // L9 (L8's question 5, 2026-11-21): a flat plate with plates in
+            // their members' own planes welded to it, its outline as the run
+            // will write it — round the bolts of the ends flat on it, the
+            // seams and the flange under them and under the work point,
+            // kept to the seams' sides, cut at the heel —, clear of the fixed
+            // steel and of what the planes before laid out (before: not
+            // checked; it ran into a run lapped on the same face, found after
+            // writing). Else stopping short of the work point — the seams
+            // and the flange under them only — and cut straight short of what
+            // it would still run into (the seams and the flat ends' legs over
+            // their bolts kept), where it then still lies on the flange over
+            // half a square of its width. Else the ends in their own planes
+            // left for a hand detail, said; the ends flat on it keep their
+            // plate (checked above).
+            if s.reach_clear
+                && s.exact_plan
+                && let Some(rc) = flat.reach.clone()
+            {
+                let x0 = &strips[placed[0].k];
+                let to2 = |q: [f64; 3]| {
+                    let d = sub(sub(q, j.position), x0.heel3);
+                    [dot(d, x0.x3), dot(d, x0.y3)]
+                };
+                let keep = |poly: Vec<[f64; 2]>| -> Vec<[f64; 2]> {
+                    let mut poly = poly;
+                    for (at, side) in &rc.keep_to {
+                        let a2 = to2(*at);
+                        let s2 = [dot(*side, x0.x3), dot(*side, x0.y3)];
+                        poly = clip(&poly, |q| dot2(sub2(q, a2), s2) + 1e-9);
+                    }
+                    if let Some((heel, across)) = flat.heel {
+                        let half = s.gap / 2.0;
+                        poly = clip(&poly, |q| {
+                            let q3 = add(
+                                add(add(j.position, x0.heel3), scale(x0.x3, q[0])),
+                                scale(x0.y3, q[1]),
+                            );
+                            dot(sub(q3, heel), across) - half
+                        });
+                    }
+                    poly
+                };
+                let flat_now: Vec<Placed> = placed
+                    .iter()
+                    .filter(|p| strips[p.k].tilted.is_none())
+                    .cloned()
+                    .collect();
+                let hull_of = |pts: &[[f64; 3]], form: Outline| {
+                    let mut q: Vec<[f64; 2]> = pts.iter().map(|p| to2(*p)).collect();
+                    if !flat_now.is_empty() {
+                        q.extend(plate_outline2(&strips, &flat_now, s.gap, form));
+                    }
+                    keep(crate::joint_sheet::hull(q))
+                };
+                let on: BTreeSet<&str> =
+                    placed.iter().map(|p| strips[p.k].member.as_str()).collect();
+                let excused: BTreeSet<String> = plan.hand_members.iter().cloned().collect();
+                let hits = |poly: &[[f64; 2]]| {
+                    plate_hits(
+                        x0, &on, j, &pieces, &fixed, &excused, &laid3, poly, thickness,
+                    )
+                };
+                let round = hull_of(&rc.points, Outline::Round);
+                if let Some((by, _)) = hits(&round) {
+                    // Short of the work point, cut straight.
+                    let mut poly = hull_of(&short_reach, Outline::Short);
+                    let core = hull_of(&seam_pts, Outline::Core);
+                    let mut lines: Vec<([f64; 2], f64)> = Vec::new();
+                    let mut clear = false;
+                    let mut also: Option<String> = None;
+                    for _ in 0..=CUT_TRIES {
+                        match hits(&poly) {
+                            None => {
+                                clear = true;
+                                break;
+                            }
+                            Some((b2, foot)) => {
+                                also.get_or_insert(b2);
+                                if lines.len() == CUT_TRIES {
+                                    break;
+                                }
+                                let Some((ax, lim)) = separate(&core, &foot, s.gap) else {
+                                    break;
+                                };
+                                poly = clip(&poly, |q| lim - dot2(q, ax));
+                                lines.push((ax, lim));
+                            }
+                        }
+                    }
+                    if clear && poly.len() >= 3 && on_flange(&poly, x0) {
+                        if let Some(r) = flat.reach.as_mut() {
+                            r.points.clone_from(&short_reach);
+                        }
+                        flat.short = true;
+                        short_poly = Some(poly.clone());
+                        for (ax, lim) in &lines {
+                            let n = add(scale(x0.x3, ax[0]), scale(x0.y3, ax[1]));
+                            let at = add(
+                                j.position,
+                                add(
+                                    x0.heel3,
+                                    add(scale(x0.x3, ax[0] * lim), scale(x0.y3, ax[1] * lim)),
+                                ),
+                            );
+                            flat.cuts.push((at, n));
+                        }
+                    } else {
+                        let by = match also {
+                            Some(b2) if b2 != by => {
+                                format!("{by} (stopping short of the work point: {b2})")
+                            }
+                            Some(_) => format!("{by} (stopping short of the work point too)"),
+                            None => by,
+                        };
+                        for (k, _) in &owns {
+                            let m = strips[*k].member.clone();
+                            plan.by_hand(
+                                &m,
+                                format!(
+                                    "{m}: on a plate in its own plane welded to a plate on {}, \
+                                     that plate would run into {by} (its outline round the \
+                                     seams, the flange under them and the work point; lay it \
+                                     out by hand)",
+                                    x0.host
+                                ),
+                            );
+                        }
+                        let gone: Vec<usize> = owns.iter().map(|(k, _)| *k).collect();
+                        owns.clear();
+                        own_plates.clear();
+                        seams3.clear();
+                        placed.retain(|p| !gone.contains(&p.k));
+                        flat.reach = None;
+                        if placed.is_empty() {
+                            continue;
+                        }
+                        flat.thickness = tf(&placed);
+                    }
+                }
+            }
             // L5o (2026-11-20): its own provisional bolts onto the member
             // it lies on, where nothing of the joint's legs bolts onto it.
             // (Not where the run's guard plans the joint as before: the
             // after-writing checks found it laid out worse.)
             if s.hold_plates && !ctx.plain {
+                let excused: BTreeSet<String> = plan.hand_members.iter().cloned().collect();
+                let on: BTreeSet<&str> =
+                    placed.iter().map(|p| strips[p.k].member.as_str()).collect();
+                let x0 = placed
+                    .iter()
+                    .map(|p| &strips[p.k])
+                    .find(|x| x.tilted.is_none());
+                let tp = flat.thickness;
+                let clear = |poly: &[[f64; 2]]| -> Option<String> {
+                    let x0 = x0?;
+                    plate_hits(x0, &on, j, &pieces, &fixed, &excused, &laid3, poly, tp).map(|h| h.0)
+                };
                 hold_flat(
                     &mut flat,
                     &mut plan.notes,
@@ -2914,6 +3258,10 @@ fn plan_once(
                         poly: short_poly.as_deref(),
                         seams3: &seams3,
                         laid_cut: &laid_cut,
+                        clear: &clear,
+                        host_keep: x0
+                            .and_then(|x| j.arrivals.iter().find(|a| a.member == x.host))
+                            .and_then(|h| edge(h, tp)),
                     },
                 );
             }
@@ -5378,11 +5726,21 @@ fn footprint_in(x: &Strip, pts: &[[f64; 3]], slab: (f64, f64)) -> Option<Vec<[f6
 /// length), and the gap; minus infinity where they never meet.
 fn poly_need(x: &Strip, lat: [f64; 2], poly: &[[f64; 2]], gap: f64) -> f64 {
     let rel = |p: [f64; 2]| sub2(p, x.w);
-    let q = clip(poly, |p| dot2(rel(p), x.v) - (lat[0] - gap));
-    let q = clip(&q, |p| (lat[1] + gap) - dot2(rel(p), x.v));
-    let q = clip(&q, |p| x.half - dot2(rel(p), x.u));
-    if q.is_empty() {
-        return f64::NEG_INFINITY;
+    let f0 = |p: [f64; 2]| dot2(rel(p), x.v) - (lat[0] - gap);
+    let f1 = |p: [f64; 2]| (lat[1] + gap) - dot2(rel(p), x.v);
+    let f2 = |p: [f64; 2]| x.half - dot2(rel(p), x.u);
+    // (L9, speed only: the same numbers) Each cut made only where it cuts:
+    // a footprint wholly on the kept side of it stays as it is, one wholly
+    // on the other is gone — as [`clip`] gives them, without its copies.
+    let mut q: std::borrow::Cow<'_, [[f64; 2]]> = std::borrow::Cow::Borrowed(poly);
+    for f in [&f0 as &dyn Fn([f64; 2]) -> f64, &f1, &f2] {
+        let kept = q.iter().filter(|p| f(**p) >= 0.0).count();
+        if kept == 0 {
+            return f64::NEG_INFINITY;
+        }
+        if kept < q.len() {
+            q = std::borrow::Cow::Owned(clip(&q, f));
+        }
     }
     q.iter()
         .map(|p| dot2(rel(*p), x.u))
@@ -5647,7 +6005,8 @@ fn clear_of(x: &Strip, lat: [f64; 2], b: &Strip, q: &Placed, gap: f64) -> f64 {
 /// `poly` (convex, 2D) clipped to where `f` ≥ 0 (`f` linear).
 fn clip(poly: &[[f64; 2]], f: impl Fn([f64; 2]) -> f64) -> Vec<[f64; 2]> {
     let n = poly.len();
-    let mut out = Vec::new();
+    // (At most one corner more: a convex polygon cut by a line.)
+    let mut out = Vec::with_capacity(n + 1);
     for i in 0..n {
         let (a, b) = (poly[i], poly[(i + 1) % n]);
         let (fa, fb) = (f(a), f(b));
