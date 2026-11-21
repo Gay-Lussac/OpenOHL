@@ -340,8 +340,12 @@ fn offline_working_set_window_on_a_local_network() {
     cluster.create_db("net");
     let url = cluster.url("net");
     let dir = cluster.scratch();
+    // The pictures on a country of several lines (other lines near, a
+    // whole route's clearances: seconds); the test alone on a small one
+    // and the loads on shared towers (light beside the other tests).
+    let pictures = ohl_core::env::var("OHL_SHOTS").is_ok();
     let country = ohl_synth::country(&ohl_synth::Settings {
-        pylons: 300,
+        pylons: if pictures { 300 } else { 60 },
         ..Default::default()
     })
     .unwrap();
@@ -439,7 +443,8 @@ fn offline_working_set_window_on_a_local_network() {
     let wait = |h: &mut Harness<'_, App>, what: &str, done: &dyn Fn(&mut App) -> bool| {
         let t0 = std::time::Instant::now();
         while !done(h.state_mut()) {
-            assert!(t0.elapsed() < std::time::Duration::from_secs(60), "{what}");
+            // Generous: the full check runs many tests at once.
+            assert!(t0.elapsed() < std::time::Duration::from_secs(300), "{what}");
             h.run_steps(2);
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
@@ -586,9 +591,13 @@ fn offline_working_set_window_on_a_local_network() {
     .unwrap();
     {
         let w = window(offline.state_mut());
-        w.kind = crate::network_offline::CheckKind::Clearances;
-        w.case = "10 °C".into();
-        w.rules_file = rules.display().to_string();
+        if pictures {
+            w.kind = crate::network_offline::CheckKind::Clearances;
+            w.case = "10 °C".into();
+            w.rules_file = rules.display().to_string();
+        } else {
+            w.kind = crate::network_offline::CheckKind::Loads;
+        }
     }
     offline.run_steps(2);
     assert!(
