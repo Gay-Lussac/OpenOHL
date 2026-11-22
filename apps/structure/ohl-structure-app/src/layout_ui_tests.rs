@@ -1106,6 +1106,119 @@ fn a_plate_on_a_built_up_leg_in_the_window() {
     std::fs::remove_dir_all(dir).ok();
 }
 
+/// An invented built-up diagonal (two angles back to back, a 9 mm gap) in
+/// two pieces B1, B2 through joint N, one part there, and a redundant R
+/// arriving at N in the plane of the gap, its leg across it (L15).
+const BETWEEN: &str = r#"format = "ohl-structure"
+version = 18
+id = "B"
+name = "Built-up diagonal example"
+kind = "lattice"
+
+[[node]]
+id = "N0"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N"
+point = ["2 m", "0 m", "2 m"]
+
+[[node]]
+id = "N1"
+point = ["4 m", "0 m", "4 m"]
+support = "fixed"
+
+[[node]]
+id = "F"
+point = ["2.4243 m", "-1.5 m", "2.4243 m"]
+support = "fixed"
+
+[[member]]
+id = "B1"
+nodes = ["N0", "N"]
+section = "2L-83x52x6"
+design = { class = "bracing" }
+
+[[member]]
+id = "B2"
+nodes = ["N", "N1"]
+section = "2L-83x52x6"
+design = { class = "bracing" }
+
+[[member]]
+id = "R"
+nodes = ["N", "F"]
+section = "EA-61x7"
+roll = "43 deg"
+design = { class = "redundant" }
+
+[[connection]]
+member = "B1"
+joint = "N"
+kind = "continuous"
+onto = "B2"
+"#;
+
+/// L15 (2026-11-22): the window lays the redundant across the gap of a
+/// built-up diagonal (two angles back to back) onto a plate between the
+/// angles, as thick as the gap; its picture for the user guide.
+#[test]
+fn a_plate_between_a_built_up_members_angles_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-between");
+    let dir = path.parent().unwrap().to_path_buf();
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../libraries");
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        examples.join("sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        examples.join("bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("built-up-diagonal.ohls");
+    std::fs::write(&tower, BETWEEN).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let n = p.run.joints.iter().find(|o| o.joint == "N").unwrap();
+        assert!(n.written && n.hand.is_empty(), "{:?}", n.hand);
+        let pl = n
+            .plan
+            .plates
+            .iter()
+            .find(|q| q.between)
+            .expect("a plate between");
+        assert!((pl.thickness - 0.009).abs() < 1e-9, "{}", pl.thickness);
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        // Turned to look across the gap, the plate between the angles seen.
+        if let Some(w) = h.state_mut().layout_window.as_mut() {
+            for v in [&mut w.views.0, &mut w.views.1] {
+                v.yaw -= 0.5;
+                v.pitch += 0.6;
+                v.zoom = 0.8;
+            }
+        }
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(&mut h, "Lay out joints", "lay-out-joints-between");
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
 /// L5 (2026-11-20): the window bolts both diagonals of the wide-leg K-brace
 /// directly onto the leg, no plate; its picture (the close-up before and after) for the user
 /// guide.

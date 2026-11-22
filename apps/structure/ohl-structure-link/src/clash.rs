@@ -608,10 +608,15 @@ fn clashes_of(
                 let pl = plates.iter().find(|q| &q.id == id);
                 let on = e.onto.value.as_deref() == Some(id.as_str())
                     || e.other_onto.as_deref() == Some(id.as_str())
-                    || pl.is_some_and(|q| q.members.contains(m));
+                    || pl.is_some_and(|q| {
+                        q.members.contains(m) && !(q.between && q.leg.as_deref() == Some(m))
+                    });
                 // The leg it lies on, and a leg running on through the
-                // joint in line with it.
+                // joint in line with it — (L15) not a built-up member it
+                // lies between the angles of: tested against them (it must
+                // lie in the gap, touching them only).
                 let leg = pl
+                    .filter(|q| !q.between)
                     .and_then(|q| q.leg.as_deref())
                     .is_some_and(|l| l == m || arrival(l).is_some_and(|el| in_line(el, e)));
                 if on || leg {

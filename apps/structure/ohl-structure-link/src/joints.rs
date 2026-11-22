@@ -534,6 +534,14 @@ pub struct PlateDetail {
     /// gusset lying on its flange): its bolts on the plate are the plate's
     /// holding bolts in the joint checks; none: held as before.
     pub held_by: Option<String>,
+    /// It lies between the angles of the built-up member it is on
+    /// (`between`, 2026-11-22, structure file version 25, the joint
+    /// layout's L15): in the gap between two of its angles, its members on
+    /// its face away from the angle it lies on; its own bolts onto that
+    /// member through the angle on each of its faces where one lies there.
+    /// False: as before (also where the file says so but the member is no
+    /// built-up member of angles with such a gap: said in `notes`).
+    pub between: bool,
 }
 
 /// A bent plate's bend, on the flat naming it (J2b, 2026-11-19).
@@ -1000,7 +1008,17 @@ pub(crate) fn joint_details_and_model(
                 let fu = fu_of(p.material.as_deref());
                 let rules = |a: &Arrival| rules_in(a, Some((p.thickness.si(), fu)));
                 let short = short_plates.contains(&p.id);
-                let d = plate(p, at, &arrivals, seats.get(&p.id), &rules, short);
+                let mut d = plate(p, at, &arrivals, seats.get(&p.id), &rules, short);
+                // (L15) Said between the angles, but not on a built-up
+                // member of angles: drawn as any plate on it.
+                if p.between && !d.between {
+                    d.notes.push(format!(
+                        "{}: between the angles of {}, but it is no built-up member of angles \
+                         (drawn on the member it is on, as any plate)",
+                        p.id,
+                        p.on.as_deref().unwrap_or("the member it is on")
+                    ));
+                }
                 if !level3 || p.leg_bolts.is_none() {
                     return d;
                 }
@@ -1011,9 +1029,12 @@ pub(crate) fn joint_details_and_model(
                     Ok(a) => {
                         let mut with = arrivals.clone();
                         with.push(a.clone());
-                        let mut d = plate(p, at, &with, seats.get(&p.id), &rules, short);
-                        d.leg_bolts = Some(Box::new(a));
-                        d
+                        let mut d2 = plate(p, at, &with, seats.get(&p.id), &rules, short);
+                        d2.leg_bolts = Some(Box::new(a));
+                        if p.between && !d2.between {
+                            d2.notes = d.notes;
+                        }
+                        d2
                     }
                     Err(w) => {
                         let mut d = d;
@@ -1572,6 +1593,10 @@ struct PlateSeat {
     /// Empty: all on one face (a plate on the inner face where all sit
     /// inside, as before).
     back: std::collections::BTreeSet<String>,
+    /// Between the angles of the built-up member it is on (`between`, O44
+    /// L15): on the back of the angle whose back faces the gap its members
+    /// look across ([`between_corner`]), as thick as the gap.
+    between: bool,
 }
 
 /// The plates of a joint by id.
@@ -1660,6 +1685,7 @@ fn plate_seats(
                     lift: Some((lift, at)),
                     on_given,
                     back: Default::default(),
+                    between: false,
                 },
             );
             continue;
@@ -1732,6 +1758,14 @@ fn plate_seats(
                 }
             }
         }
+        // (L15) Between the angles of the built-up member it is on.
+        let between = on_given
+            && p.between
+            && leg
+                .as_ref()
+                .and_then(|l| all.iter().find(|a| &a.member == l))
+                .and_then(|h| h.profile.as_ref())
+                .is_some_and(|q| q.angle.is_none() && q.part_angles.len() >= 2);
         out.insert(
             p.id.clone(),
             PlateSeat {
@@ -1741,6 +1775,7 @@ fn plate_seats(
                 lift: None,
                 on_given,
                 back,
+                between,
             },
         );
     }
@@ -1972,6 +2007,14 @@ fn seat(a: &Arrival, all: &[Arrival], seats: &PlateSeats, parts: bool) -> [f64; 
             return [0.0; 3];
         };
         let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+        // (L15) Between the angles of the built-up member it is on: on the
+        // back of the angle facing the gap its leg looks across, the
+        // plate's thickness (the gap) out — its leg on the plate's far face.
+        if s.between
+            && let Some(o) = s.leg.as_ref().and_then(|l| between_seat(a, all, l))
+        {
+            return add(o, scale(nb, s.thickness));
+        }
         let on_leg = s.leg.as_ref().map(|l| {
             let mut b = a.clone();
             b.onto = Valued::of(l.clone(), Source::WorkedOut);
@@ -2853,6 +2896,157 @@ fn flange_of(a: &Arrival, host: &Arrival, along: bool, other: bool) -> Option<Ho
     })
 }
 
+/// Where a plate between a built-up member's angles lies for end `a` (O44
+/// L15, [`between_corner`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BetweenSeat {
+    /// The angle whose back the plate lies on.
+    corner: Corner,
+    /// From that back to the next angle's across the gap (the plate's
+    /// thickness), m.
+    gap: f64,
+    /// That angle's leg lies straight across the gap from this one's (two
+    /// angles back to back): a bolt through the plate passes through both.
+    through: bool,
+}
+
+/// The angle of the built-up section `q` on whose back a plate between its
+/// angles would lie for end `a` (O44 L15): its leg that `a`'s leg bolted
+/// lies flat on (within 25°, as [`seat_on`]) has its back — its outer face,
+/// away from the angle's other leg — towards another angle of `q` across
+/// a gap, and `a`'s outstanding leg points out of that back, across the
+/// gap: `a` then lies on the plate's far face, in the plane of that other
+/// angle's back. The other angle: its leg flat like this one's, its other
+/// leg pointing on away from the gap (its steel wholly beyond the gap), the
+/// nearest such. Of several such angles (four in a cross), one `a` does not
+/// leave away from (along its leg from the heel), then the one moving `a`
+/// least, then the first. None: no such angle (a single angle, no gap, or
+/// `a` turned the other way).
+fn between_corner(a: &Arrival, q: &Profile) -> Option<BetweenSeat> {
+    let p = a.profile.as_ref()?;
+    let g = p.angle?;
+    if q.angle.is_some() {
+        return None;
+    }
+    let list = corners(q, true);
+    if list.len() < 2 {
+        return None;
+    }
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let flat = 25f64.to_radians().cos();
+    let other_of = |c: &Corner, across: [f64; 3]| {
+        if dot(across, c.ey).abs() > 0.5 {
+            c.ez
+        } else {
+            c.ey
+        }
+    };
+    let mut best: Option<((bool, i64, usize), BetweenSeat)> = None;
+    for (i, c) in list.iter().enumerate() {
+        let across = c.flange(nb);
+        let out = scale(other_of(c, across), -1.0);
+        if dot(nb, out) < flat {
+            continue;
+        }
+        let mut found: Option<(f64, bool)> = None;
+        for (k, d) in list.iter().enumerate() {
+            if k == i {
+                continue;
+            }
+            let off = sub(d.heel, c.heel);
+            let gap = dot(off, out);
+            let d_par = d.flange(nb);
+            if gap <= 1e-6 || dot(other_of(d, d_par), out) < 0.99 || dot(d_par, across).abs() < 0.99
+            {
+                continue;
+            }
+            let through = dot(d_par, across) > 0.0 && dot(off, across).abs() < 1e-4;
+            if found.is_none_or(|(g0, _)| gap < g0 - 1e-9) {
+                found = Some((gap, through));
+            }
+        }
+        let Some((gap, through)) = found else {
+            continue;
+        };
+        let away = dot(a.direction, across) <= 1e-6;
+        let moved = seat_on(a, p, g, c, Some(Face::Outside))
+            .map_or(i64::MAX, |m| (norm(m.offset) * 1e6).round() as i64);
+        let key = (away, moved, i);
+        if best.as_ref().is_none_or(|(k0, _)| key < *k0) {
+            best = Some((
+                key,
+                BetweenSeat {
+                    corner: *c,
+                    gap,
+                    through,
+                },
+            ));
+        }
+    }
+    best.map(|x| x.1)
+}
+
+/// [`HostFlange`] of the angle of built-up `host` whose back a plate
+/// between its angles lies on for `a` ([`between_corner`]; its `out` across
+/// the gap), with the gap (m) and whether the other angle's leg lies
+/// straight across it (O44 L15).
+pub(crate) fn host_flange_between(a: &Arrival, host: &Arrival) -> Option<(HostFlange, f64, bool)> {
+    let p = a.profile.as_ref()?;
+    let q = host.profile.as_ref()?;
+    let b = between_corner(a, q)?;
+    let c = b.corner;
+    let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+    let across = c.flange(nb);
+    let other = if dot(across, c.ey).abs() > 0.5 {
+        c.ez
+    } else {
+        c.ey
+    };
+    let mut width: f64 = 0.0;
+    for piece in q.pieces() {
+        for pt in piece {
+            let x = sub(
+                add(scale(q.axes[1], pt[0]), scale(q.axes[2], pt[1])),
+                c.heel,
+            );
+            if dot(x, other).abs() <= c.t + 1e-6 {
+                width = width.max(dot(x, across));
+            }
+        }
+    }
+    let r = q.part_angles.first().map_or(0.0, |g| g.r);
+    (width > 0.0).then_some((
+        HostFlange {
+            heel: add(host.offset, c.heel),
+            across,
+            out: scale(other, -1.0),
+            width,
+            t: c.t,
+            r,
+        },
+        b.gap,
+        b.through,
+    ))
+}
+
+/// The shift seating `a` on the back of built-up member `host`'s angle a
+/// plate between its angles lies on ([`between_corner`]; `a`'s outer face
+/// there, the plate's thickness still to add), where that member is drawn
+/// (as [`member_seat`]). None: no such angle.
+fn between_seat(a: &Arrival, all: &[Arrival], host: &str) -> Option<[f64; 3]> {
+    let h = all.iter().find(|b| b.member == host)?;
+    let q = h.profile.as_ref()?;
+    let p = a.profile.as_ref()?;
+    let g = p.angle?;
+    let c = between_corner(a, q)?.corner;
+    let mut s = seat_on(a, p, g, &c, Some(Face::Outside))?;
+    if h.onto.value.as_deref() != Some(a.member.as_str()) {
+        let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+        s.offset = add(s.offset, scale(nb, dot(h.offset, nb)));
+    }
+    Some(s.offset)
+}
+
 /// Where `a`'s steel must stop so it fits, m from the work point: its leg
 /// bolted lies on the flange of the angle it bolts onto, so its end stays
 /// on that flange's side of the other angle's heel (where its outstanding
@@ -3116,6 +3310,7 @@ fn plate(
             leg_bolts: None,
             bend: None,
             held_by: held_by_of(p),
+            between: seat.is_some_and(|s| s.between),
         };
     }
     // Nothing bolted onto it and no outline given: nothing to draw it
@@ -3140,6 +3335,7 @@ fn plate(
             leg_bolts: None,
             bend: None,
             held_by: held_by_of(p),
+            between: seat.is_some_and(|s| s.between),
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -3159,7 +3355,12 @@ fn plate(
         // its angle facing the members.
         let Some(g) = p.angle else {
             let a = onto.first().filter(|_| seat.is_some_and(|s| s.on_given))?;
-            let f = host_flange(a, l)?;
+            // (L15) Between its angles: the back of the angle facing the gap.
+            let f = if seat.is_some_and(|s| s.between) {
+                host_flange_between(a, l)?.0
+            } else {
+                host_flange(a, l)?
+            };
             return Some((l, add(joint, f.heel), (f.across, f.width)));
         };
         let n = onto.first().map_or([0.0, 0.0, 1.0], |a| a.bolt_axis);
@@ -3227,6 +3428,16 @@ fn plate(
     // nuts ran into it where they lie off that leg the other way.
     let flange_plane = flange.and_then(|(l, heel, across)| {
         let p = l.profile.as_ref()?;
+        // (L15) Between a built-up member's angles: in the gap, whatever
+        // the members on it lie off its back within the flatness allowed —
+        // its face against the back it lies on, its members' face its
+        // thickness out (the other angle's back).
+        if seat.is_some_and(|s| s.between) {
+            let (f, _, _) = onto.first().and_then(|a| host_flange_between(a, l))?;
+            let first = onto.iter().find_map(|a| a.bolt_points.first().copied())?;
+            let face = dot(heel, f.out) + seat.map_or(0.0, |s| s.thickness);
+            return Some((add(first, scale(f.out, face - dot(first, f.out))), f.out));
+        }
         let g = p.angle?;
         let nl = if dot(across.0, p.axes[1]) > 0.5 {
             p.axes[2]
@@ -3276,6 +3487,7 @@ fn plate(
         leg_bolts: None,
         bend: None,
         held_by: held_by_of(p),
+        between: seat.is_some_and(|s| s.between),
     }
 }
 
@@ -3317,9 +3529,41 @@ pub(crate) fn plate_leg_arrival(
             p.id, lb.member
         )
     })?;
-    let g = prof
-        .angle
-        .ok_or_else(|| format!("plate {}: its bolts onto {}: not an angle", p.id, lb.member))?;
+    // (L15) A plate between the angles of the built-up member it is on:
+    // its bolts through the back of the angle it lies on (and the angle
+    // across the gap, where one lies straight across).
+    let between = if prof.angle.is_none() && d.between {
+        let x = all
+            .iter()
+            .filter(|x| x.onto.value.as_deref() == Some(p.id.as_str()))
+            .find_map(|x| host_flange_between(x, a))
+            .ok_or_else(|| {
+                format!(
+                    "plate {}: its bolts onto {}: no member on it lies across a gap between \
+                     its angles",
+                    p.id, lb.member
+                )
+            })?;
+        Some(x)
+    } else {
+        None
+    };
+    let g = match (prof.angle, &between) {
+        (Some(g), _) => g,
+        (None, Some((f, _, _))) => Angle {
+            heel: [0.0; 2],
+            b: f.width,
+            h: f.width,
+            t: f.t,
+            r: f.r,
+        },
+        (None, None) => {
+            return Err(format!(
+                "plate {}: its bolts onto {}: not an angle",
+                p.id, lb.member
+            ));
+        }
+    };
     if lb.bolt_points.is_empty() {
         return Err(format!(
             "plate {}: its bolts onto {} have no places (bolt_points)",
@@ -3337,11 +3581,13 @@ pub(crate) fn plate_leg_arrival(
         .find(|x| x.onto.value.as_deref() == Some(p.id.as_str()) && !x.bolt_points.is_empty())
         .map(|x| x.bolt_axis)
         .or(d.through);
-    let along_y = match (given, normal) {
-        (Some(l), _) => along_y(g, Some(l)),
+    let along_y = match (&between, given, normal) {
+        // (L15) The back of the angle the plate lies on.
+        (Some((f, _, _)), _, _) => dot(f.across, ey).abs() > 0.5,
+        (None, Some(l), _) => along_y(g, Some(l)),
         // The flange whose normal is the plate's.
-        (None, Some(n)) => dot(ez, n).abs() >= dot(ey, n).abs(),
-        (None, None) => along_y(g, None),
+        (None, None, Some(n)) => dot(ez, n).abs() >= dot(ey, n).abs(),
+        (None, None, None) => along_y(g, None),
     };
     let leg = if along_y == (g.b >= g.h) {
         BoltedLeg::Long
@@ -3350,6 +3596,13 @@ pub(crate) fn plate_leg_arrival(
     };
     let base = add(joint, a.offset);
     let at = |s: f64, across: f64| {
+        if let Some((f, _, _)) = &between {
+            // (L15) Across the back from its heel, on that back.
+            return add(
+                add(joint, f.heel),
+                add(scale(a.direction, s), scale(f.across, across)),
+            );
+        }
         let (y, z) = if along_y {
             (g.heel[0] + across, g.heel[1])
         } else {
@@ -3405,13 +3658,26 @@ pub(crate) fn plate_leg_arrival(
             },
         ),
         bolts: Valued::of(set, Source::Given),
+        // (L15) Between two angles back to back: through the plate and both
+        // angles, two shear planes (unless given).
         planes: (
-            Valued::of(b.shear_planes.unwrap_or(1).max(1), Source::Given),
+            match (b.shear_planes, &between) {
+                (Some(n), _) => Valued::of(n.max(1), Source::Given),
+                (None, Some((_, _, true))) => Valued::of(2, Source::WorkedOut),
+                (None, _) => Valued::of(1, Source::Given),
+            },
             None,
         ),
         bolt_points: flat.iter().map(|q| at(q[0], q[1])).collect(),
-        bolt_axis: if along_y { ez } else { ey },
-        grip: [g.t, p.thickness.si()],
+        bolt_axis: match &between {
+            Some((f, _, _)) => scale(f.out, -1.0),
+            None if along_y => ez,
+            None => ey,
+        },
+        grip: match &between {
+            Some((f, _, true)) => [f.t, p.thickness.si() + f.t],
+            _ => [g.t, p.thickness.si()],
+        },
         leg_y: along_y,
         bolt_flat: flat,
         other_points: Vec::new(),

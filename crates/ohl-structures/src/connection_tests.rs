@@ -600,8 +600,7 @@ fn a_bent_plate_is_read_as_two_flats() {
 /// The member whose own end bolts hold a plate (`held_by`, version 24,
 /// 2026-11-22, the joint layout's L14): read; a member not at the joint, or
 /// one whose end there does not bolt onto the plate, said and kept; a
-/// plate without it reads as before; a file of version 24 is read, a newer
-/// one refused.
+/// plate without it reads as before; a file of version 24 is read.
 #[test]
 fn a_plate_held_by_a_members_end_bolts_is_read() {
     let text = format!(
@@ -636,5 +635,37 @@ fn a_plate_held_by_a_members_end_bolts_is_read() {
     let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n");
     assert!(parse(&plain).unwrap().plates[0].held_by.is_none());
     assert_eq!(crate::connections::PLATE_HELD_BY_VERSION, 24);
-    assert!(parse(&text.replace("version = 24", "version = 25")).is_err());
+}
+
+/// A plate between the angles of the built-up member it is on (`between`,
+/// version 25, 2026-11-22, the joint layout's L15): read; without the
+/// member it is on, said and kept; a plate without it reads as before; a
+/// file of version 25 is read, a newer one refused.
+#[test]
+fn a_plate_between_a_built_up_members_angles_is_read() {
+    let text = format!(
+        "format = \"ohl-structure\"\nversion = 25\n{BODY}\
+         [[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"6 mm\"\non = \"D1\"\n\
+         between = true\n\
+         [[connection]]\nmember = \"L1\"\njoint = \"N2\"\nonto = \"G1\"\n"
+    );
+    let t = parse(&text).unwrap();
+    assert!(t.plates[0].between);
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    let no_on = text.replace("on = \"D1\"\n", "");
+    let notes = parse(&no_on).unwrap().connection_notes();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("between") && n.contains("names no member it is on")),
+        "{notes:?}"
+    );
+    let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"6 mm\"\n");
+    assert!(!parse(&plain).unwrap().plates[0].between);
+    assert_eq!(crate::connections::PLATE_BETWEEN_VERSION, 25);
+    assert!(parse(&text.replace("version = 25", "version = 26")).is_err());
 }

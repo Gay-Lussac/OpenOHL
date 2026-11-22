@@ -3201,9 +3201,52 @@ only where it helps):
   > — the base's bolts against that end's holes) → Recommended: keep (the
   > layout writes nothing that does not fit); next, the base's bolts placed
   > clear of such an end's.
-- Not built yet, J6's rest: a plate between a built-up member's angles
-  (where the packing lies), built-up members arriving (as the end, not
-  what it bolts onto), holding bolts onto a built-up member.
+- [x] L15. **A plate between a built-up member's angles** (L14's item 3 —
+  J6's rest; L13's question 4; the owner busy: built on its own,
+  reported). **Built 2026-11-22, in active development, not approved
+  yet.**
+  **1. The plate between the angles**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plate-between-a-built-up-members-angles-l15),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-22-joint-layout-a-plate-between-a-built-up-members-angles-l15);
+  **structure file version 25**, a plate's `between`): an end whose leg
+  lies flat on the back of a built-up member's angle facing another across
+  a gap, its outstanding leg across it (L13's seat puts plan members
+  there), goes onto a plate in the gap, as thick as the gap (the
+  section's), where the gap is at least half the thickest leg on it; the
+  ends on its far face pulled back clear of the other angle (the member's
+  own steel across the gap now in their way); its own provisional bolts
+  through the plate and both angles back to back (two shear planes in the
+  joint checks), the plate grown along the member in the gap round them,
+  checked clear; the joint details seat it on that back, in its plane; the
+  clash check tests it against the member it lies between. Weighed: the
+  plan without where it lays out more ends or as many on fewer plates —
+  on a tie the plate between. On
+  the 78 real towers (kept privately; with the bundled plugin), L14 main
+  → with it: joints whole 35 964 → 37 059, ends 130 902 → 133 015, plates
+  67 928 → 69 226, members left after the clash rounds 12 260 → 11 670,
+  not fitting as given 50 → 50, a run again identical 78/78; joint by
+  joint 1 490 better and 218 worse; 3 327 plates between the angles; their
+  members' bolts' joint checks failing as often as the run's other
+  plates' (5 % against 6.9 % of rows, one vertical case).
+  > **Owner:** (1) The plate between as thick as the gap (the section's,
+  > fitted to its properties on imported sections: 3 to 15 mm, often
+  > thinner than the legs on it), laid out where the gap is at least half
+  > the thickest leg on it (the program's value) → Recommended: keep (the
+  > joint checks check it as thick as it is); set the real gusset thickness
+  > as the sections' gap where known. (2) On a tie the plate between kept
+  > (concentric, its bolts through both angles; an approved order changed)
+  > → Recommended: keep. (3) 218 joints worse (109 fewer ends: the plan with
+  > the plate between taken back after writing, the joint then planned as
+  > before L1 rather than as L14 made it; 109 more plates) → Recommended:
+  > next, the run's guards tried in turn (without the plates between, then
+  > as before L1) so that no joint ends worse than L14's. (4) Found: an end
+  > naming nothing it bolts onto, on a built-up member, planned on the outer
+  > face of the angle the joint details seat it on by its inner face →
+  > Recommended: next, plan it on the face the joint details seat it on
+  > where it lies across no gap.
+- Not built yet, J6's rest: built-up members arriving (as the end, not
+  what it bolts onto), holding bolts onto a built-up member's angle (a
+  plate on its outer face).
 - [ ] L4. **A joint's detail copied to the other towers of the line**
   (laid out or done by hand) onto their matching joints, not only within
   one tower.

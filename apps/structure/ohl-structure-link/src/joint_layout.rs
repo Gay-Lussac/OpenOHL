@@ -347,7 +347,27 @@ pub struct LayoutSettings {
     /// applied as a plan is written (`joint_layout::hold_by_base`). On by default; off:
     /// as before (that member by hand).
     pub base_holds: bool,
+    /// L15, 2026-11-22 (L14's item 3, J6's rest): an end onto a built-up
+    /// member whose leg bolted lies across a gap between two of its angles
+    /// (its outstanding leg pointing out of one angle's back, across the
+    /// gap — L13's seat by the plane its axis lies in) goes onto a plate
+    /// **between** those angles: on the back of the one, as thick as the gap
+    /// (the section's), the end on its far face clear of the other angle's
+    /// steel, the plate's own provisional bolts through both angles
+    /// ([`BETWEEN_LEAST`]; the plate's `between`, structure file version 25).
+    /// Kept at a joint only where it lays out more ends, or as many on fewer
+    /// plates, than without. On by default; off: as before (such an end
+    /// planned on the angle facing it).
+    pub between_plates: bool,
 }
+
+/// The least gap between a built-up member's angles a plate between them
+/// is laid out in, in thicknesses of the thickest leg on the plate (L15):
+/// **the program's value, not a code's** — the plate is as thick as the
+/// gap (the section's; fitted to its properties on imported sections), and
+/// the joint checks check it so (its bearing under every bolt, its edges,
+/// its own sections).
+pub const BETWEEN_LEAST: f64 = 0.5;
 
 impl Default for LayoutSettings {
     fn default() -> Self {
@@ -388,6 +408,7 @@ impl Default for LayoutSettings {
             chord_turns: false,
             plane_hosts: true,
             base_holds: true,
+            between_plates: true,
         }
     }
 }
@@ -539,6 +560,9 @@ pub struct PlatePlan {
     /// axes, m) and, in the plate's plane, the normal towards the part cut
     /// away (unit). Applied where the run writes the outline.
     pub cuts: Vec<([f64; 3], [f64; 3])>,
+    /// Between the angles of the built-up member it is on (L15, the
+    /// record's `between`): on the back of one of them, as thick as the gap.
+    pub between: bool,
 }
 
 /// A plate's own bolts onto the member whose flange it lies on (J2b,
@@ -851,6 +875,12 @@ struct Strip {
     /// bolts through it; directly only — a plate over the cover is not
     /// laid out (by hand).
     through: Option<String>,
+    /// L15: across a gap between the angles of the built-up member it bolts
+    /// onto — its face the back of one of them, onto a plate between them
+    /// as thick as the gap (the gap, m; whether the other angle's leg lies
+    /// straight across it, so that a bolt through the plate passes through
+    /// both).
+    between: Option<(f64, bool)>,
 }
 
 /// An end on a flange's inner face that leaves the joint over the heel —
@@ -1306,6 +1336,7 @@ fn bent_over(
         hold: Some(hold),
         short: false,
         cuts: Vec::new(),
+        between: false,
     };
     let bent = PlatePlan {
         members: placed.iter().map(|p| strips[p.k].member.clone()).collect(),
@@ -1333,6 +1364,7 @@ fn bent_over(
         hold: None,
         short: false,
         cuts: Vec::new(),
+        between: false,
     };
     Ok(BentOver {
         flat,
@@ -1454,6 +1486,10 @@ struct HoldRoom<'a> {
     seams: Vec<([f64; 2], [f64; 2])>,
     /// The plate's outline as it will be drawn (convex).
     poly: &'a [[f64; 2]],
+    /// (L15) The members its bolts pass through (a plate between a built-up
+    /// member's angles: that member and those in line with it), not in
+    /// their way.
+    through: BTreeSet<String>,
 }
 
 /// L5o (2026-11-20, the owner's decision of that day): the places of a
@@ -1566,7 +1602,11 @@ fn plate_holds(
         room.seams
             .iter()
             .all(|(at, side)| dot2(sub2(q, *at), *side) >= seam_keep)
-            && x0.fixed.iter().all(|(_, p)| off_poly(q, p, head))
+            && x0
+                .fixed
+                .iter()
+                .filter(|(m, _)| !room.through.contains(m))
+                .all(|(_, p)| off_poly(q, p, head))
             && x0.fixed_far.iter().all(|(_, p)| off_poly(q, p, head))
     };
     let (x_lo, x_hi) = poly
@@ -1698,12 +1738,15 @@ fn hold_flat(
         return;
     }
     // (J6) A built-up member: its plate's own bolts onto one of its angles
-    // are not read yet (`[plate.leg_bolts]` names a single angle's leg).
-    if j.arrivals
-        .iter()
-        .find(|a| a.member == x0.host)
-        .and_then(|h| h.profile.as_ref())
-        .is_some_and(|q| q.angle.is_none())
+    // are not read yet (`[plate.leg_bolts]` names a single angle's leg) —
+    // but (L15) a plate between its angles: through the back it lies on
+    // (and the angle across the gap).
+    if !flat.between
+        && j.arrivals
+            .iter()
+            .find(|a| a.member == x0.host)
+            .and_then(|h| h.profile.as_ref())
+            .is_some_and(|q| q.angle.is_none())
     {
         notes.push(format!(
             "a plate on built-up {}: no provisional bolts of its own onto it (bolts onto one of \
@@ -1719,6 +1762,36 @@ fn hold_flat(
             round = plate_outline2(strips, placed, s.gap, Outline::Round);
             &round
         }
+    };
+    // (L15) Between a built-up member's angles: the plate may grow along the
+    // member within the gap — its holding bolts placed on the flange beyond
+    // its outline too (as many as asked, the default spacing apart, their
+    // distances kept), the outline grown round them checked clear below.
+    let keep_ring = placed
+        .iter()
+        .filter(|p| strips[p.k].tilted.is_none())
+        .map(|p| strips[p.k].keep_plate.0.max(strips[p.k].keep_plate.1))
+        .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max);
+    let planned = poly;
+    let grown_room;
+    let poly = if flat.between && poly.len() >= 3 {
+        let [_, spacing, _] = s.defaults.of(x0.d);
+        let reach = 4.0 * spacing + 2.0 * keep_ring;
+        let (lo, hi) = poly
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), q| {
+                (lo.min(q[0]), hi.max(q[0]))
+            });
+        let ylo = poly.iter().map(|q| q[1]).fold(f64::INFINITY, f64::min);
+        let mut pts = poly.to_vec();
+        for xq in [lo - reach, hi + reach] {
+            pts.push([xq, ylo]);
+            pts.push([xq, x0.width]);
+        }
+        grown_room = crate::joint_sheet::hull(pts);
+        &grown_room
+    } else {
+        poly
     };
     let to2 = |q: [f64; 3]| {
         let d = sub(q, x0.heel3);
@@ -1759,6 +1832,19 @@ fn hold_flat(
             })
             .collect(),
         poly,
+        through: if flat.between {
+            let host = j.arrivals.iter().find(|a| a.member == x0.host);
+            j.arrivals
+                .iter()
+                .filter(|b| {
+                    b.member == x0.host
+                        || host.is_some_and(|h| angle_deg(h.direction, b.direction) > 160.0)
+                })
+                .map(|b| b.member.clone())
+                .collect()
+        } else {
+            BTreeSet::new()
+        },
     };
     let from = x0
         .host_ends
@@ -1791,6 +1877,33 @@ fn hold_flat(
             return;
         }
     };
+    // (L15) Between the angles, grown along the member round them: its
+    // outline (each bolt with its distances in it) clear of what it could
+    // run into; else none (as before), said.
+    if flat.between {
+        const N: usize = 16;
+        let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
+        let mut all = planned.to_vec();
+        for q in &pts {
+            for i in 0..N {
+                let a = i as f64 * std::f64::consts::TAU / N as f64;
+                all.push([
+                    q[0] + keep_ring * grow * a.cos(),
+                    q[1] + keep_ring * grow * a.sin(),
+                ]);
+            }
+        }
+        let grown = crate::joint_sheet::hull(all);
+        if let Some(by) = (at.clear)(&grown) {
+            notes.push(format!(
+                "a plate between {}'s angles: no provisional bolts of its own onto {} (round \
+                 them its outline would run into {by}); how it is held not checked (lay them \
+                 out by hand)",
+                x0.host, x0.host
+            ));
+            return;
+        }
+    }
     // (L9) A plate stopping short of the work point: its outline as
     // `joints` will draw it with them — round its members' legs from the
     // flange's toe and their bolts, each holding bolt with its distances,
@@ -2150,6 +2263,10 @@ pub(crate) struct PlanCtx {
     /// guard found the joint laid out with fewer ends after writing with
     /// them than without.
     pub no_l11: bool,
+    /// Planned without the plates between a built-up member's angles (L15):
+    /// the run's guard found the joint laid out with fewer ends after
+    /// writing with them than without.
+    pub no_between: bool,
 }
 
 /// How many faces bolted directly are tried on a plate per joint (L1 b,
@@ -2177,10 +2294,14 @@ pub(crate) fn plan_joint_ctx(
     // them is planned again without them (the owner: kept only where
     // better).
     let plain;
-    let s = if (ctx.plain || ctx.no_l11) && (s.plate_shift || s.both_faces) {
+    let l11_off = (ctx.plain || ctx.no_l11) && (s.plate_shift || s.both_faces);
+    // (L15) Without the plates between a built-up member's angles.
+    let between_off = ctx.no_between && s.between_plates;
+    let s = if l11_off || between_off {
         plain = LayoutSettings {
-            plate_shift: false,
-            both_faces: false,
+            plate_shift: s.plate_shift && !l11_off,
+            both_faces: s.both_faces && !l11_off,
+            between_plates: s.between_plates && !between_off,
             ..s.clone()
         };
         &plain
@@ -2248,6 +2369,22 @@ fn plan_joint_searched(
         (plan, direct)
     };
     let (mut plan, mut direct) = once(s);
+    // L15: the plates between a built-up member's angles kept unless the
+    // plan without them lays out more ends, or as many on fewer plates (only
+    // where some end was planned across such a gap): on a tie the plate
+    // between — in the member's own plane, its bolts through both angles —
+    // rather than one on an angle's outer face.
+    if s.between_plates && plan.notes.iter().any(|n| n.contains(BETWEEN_NOTE)) {
+        let s1 = LayoutSettings {
+            between_plates: false,
+            ..s.clone()
+        };
+        let (p1, d1) = once(&s1);
+        if better(&p1, &plan) {
+            plan = p1;
+            direct = d1;
+        }
+    }
     // J6: the plates on a built-up member's angle kept the same way; else
     // the plan without (those landing bolted, the others left).
     if s.built_up_plates
@@ -2388,13 +2525,32 @@ fn plan_once(
         let off = a.flat.filter(|f| f.off > FLAT_OFF).map(|f| f.off);
         // Off: on the flange in whose plane its axis lies most nearly, else
         // on the other.
-        let strip = strip_of(j, a, host, s, edge, (&others, except), off, false).or_else(|e| {
-            if off.is_some() {
-                strip_of(j, a, host, s, edge, (&others, except), off, true).map_err(|_| e)
-            } else {
-                Err(e)
-            }
-        });
+        // (L15) Across a gap between a built-up member's angles: onto a
+        // plate between them (laid flat only).
+        let between = (s.between_plates
+            && s.built_up_plates
+            && !ctx.plain
+            && off.is_none()
+            && host
+                .profile
+                .as_ref()
+                .is_some_and(|q| q.angle.is_none() && q.part_angles.len() >= 2))
+        .then(|| crate::joints::host_flange_between(a, host))
+        .flatten();
+        if between.is_some() {
+            plan.notes.push(format!(
+                "{}: {BETWEEN_NOTE} {}'s angles",
+                a.member, host.member
+            ));
+        }
+        let strip =
+            strip_of(j, a, host, s, edge, (&others, except), off, false, between).or_else(|e| {
+                if off.is_some() {
+                    strip_of(j, a, host, s, edge, (&others, except), off, true, None).map_err(|_| e)
+                } else {
+                    Err(e)
+                }
+            });
         match strip {
             Ok(x) => strips.push(x),
             Err(e) => {
@@ -2654,6 +2810,7 @@ fn plan_once(
             let x = &strips[p.k];
             let from = laid_cut.get(&x.host).copied().unwrap_or(x.host_cut);
             x.tilted.is_none()
+                && x.between.is_none()
                 && bolt_ys(x, p)
                     .iter()
                     .all(|&y| y >= x.t + x.r + x.nut - 1e-9 && y <= x.width - x.edge + 1e-9)
@@ -2718,7 +2875,11 @@ fn plan_once(
             let mut moved_ks: BTreeSet<usize> = BTreeSet::new();
             for i in 0..cur.len() {
                 let x = &strips[cur[i].k];
-                if landed.contains(&cur[i].k) || x.tilted.is_some() || x.over.is_some() {
+                if landed.contains(&cur[i].k)
+                    || x.tilted.is_some()
+                    || x.over.is_some()
+                    || x.between.is_some()
+                {
                     continue;
                 }
                 let others: Vec<Placed> = cur
@@ -3012,7 +3173,31 @@ fn plan_once(
             if placed.is_empty() {
                 continue;
             }
-            let thickness = tf(&placed);
+            let mut thickness = tf(&placed);
+            // (L15) Between a built-up member's angles: as thick as the gap,
+            // where that is at least BETWEEN_LEAST of the thickest leg on it.
+            let between = strips[placed[0].k].between;
+            if let Some((gap, _)) = between {
+                if gap + 1e-9 < BETWEEN_LEAST * thickness {
+                    let host = strips[placed[0].k].host.clone();
+                    for p in &placed {
+                        let m = strips[p.k].member.clone();
+                        plan.by_hand(
+                            &m,
+                            format!(
+                                "{m}: across the gap between {host}'s angles, a plate between \
+                                 them would be {} thick (the gap), less than {:.0} % of the \
+                                 thickest leg on it ({}; lay it out by hand)",
+                                mm_text(gap),
+                                BETWEEN_LEAST * 100.0,
+                                mm_text(thickness)
+                            ),
+                        );
+                    }
+                    continue;
+                }
+                thickness = gap;
+            }
             // (L2's follow-up a, 2026-11-20) Its outline stopping short of
             // the work point, where the one round it would run into
             // something (below).
@@ -3171,6 +3356,7 @@ fn plan_once(
                 hold: None,
                 short,
                 cuts,
+                between: between.is_some(),
             };
             let mut own_plates: Vec<PlatePlan> = Vec::new();
             let mut seams3: Vec<([f64; 3], [f64; 3])> = Vec::new();
@@ -3246,6 +3432,7 @@ fn plan_once(
                     hold: None,
                     short: false,
                     cuts: Vec::new(),
+                    between: false,
                 });
             }
             // L9 (L8's question 5, 2026-11-21): a flat plate with plates in
@@ -4482,14 +4669,18 @@ fn strip_of(
     (others, except): (&[&str], &BTreeMap<String, String>),
     tilt: Option<f64>,
     other: bool,
+    // (L15) Across a gap between built-up `host`'s angles: the back it lies
+    // on, the gap and whether the other angle's leg lies straight across.
+    between: Option<(crate::joints::HostFlange, f64, bool)>,
 ) -> Result<Strip, String> {
     let p = a.profile.as_ref().expect("checked");
     let g = p.angle.expect("checked");
     // Off the flange (step 4): the flange in whose plane its axis lies
     // (else the other).
-    let f = match tilt {
-        Some(_) => host_flange_along(a, host, other),
-        None => host_flange(a, host),
+    let f = match (tilt, &between) {
+        (None, Some((f, _, _))) => Some(*f),
+        (Some(_), _) => host_flange_along(a, host, other),
+        (None, None) => host_flange(a, host),
     }
     .ok_or("no flange to lie on")?;
     // On the flange's inner face: as it sits; off the flange (step 4),
@@ -4499,6 +4690,7 @@ fn strip_of(
     let behind = dot(a.direction, f.out);
     let sin_flat = FLAT_OFF.to_radians().sin();
     let inside = match tilt {
+        None if between.is_some() => false,
         None => a.sits.value == Some(Face::Inside),
         Some(_) => behind < -sin_flat || (behind <= sin_flat && dot(nb, f.out) < 0.0),
     };
@@ -4837,7 +5029,7 @@ fn strip_of(
     let host_t = f.t;
     // O44 J7: on a spliced member's outer face where the splice's outer
     // cover lies — on the cover.
-    let through = if inside || tilt.is_some() {
+    let through = if inside || tilt.is_some() || between.is_some() {
         None
     } else {
         outer_cover(j, a, host, &f)
@@ -4885,7 +5077,14 @@ fn strip_of(
         heel: add(j.position, f.heel),
         across: f.across,
         member: a.member.clone(),
-        plane: (mm(n[0] * 1.0), mm(n[1] * 1.0), mm(n[2] * 1.0), mm(off)),
+        // (L15) A plane of its own across a gap (never shared with ends
+        // lying on that back otherwise).
+        plane: (
+            mm(n[0] * 1.0),
+            mm(n[1] * 1.0),
+            mm(n[2] * 1.0),
+            mm(off) + if between.is_some() { BETWEEN_PLANE } else { 0 },
+        ),
         host: host.member.clone(),
         w,
         u,
@@ -4916,8 +5115,18 @@ fn strip_of(
         host_along: dot(x3, host.direction),
         host_end: edge_end(f.t).1,
         through: through.map(|c| c.0),
+        between: between.map(|b| (b.1, b.2)),
     })
 }
+
+/// (L15) Added to the plane key's offset of the ends across a gap between a
+/// built-up member's angles (mm): their plane apart from that back's other
+/// ends.
+const BETWEEN_PLANE: i64 = 1_000_000_000;
+
+/// (L15) The words of a plan's note naming an end planned across a gap
+/// between a built-up member's angles.
+pub(crate) const BETWEEN_NOTE: &str = "planned onto a plate in the gap between";
 
 /// The splice of joint `j` whose outer cover lies on the flange `f` of
 /// `host` that `a` bolts onto (`host` one of the splice's members, `a`
@@ -6405,7 +6614,14 @@ fn fixed_slab(
     for (part, pts) in pieces {
         let name = match part {
             ClashPart::Member(m) => {
-                if m == &x.member || !fixed.contains(m) || host_run(m) || onto_me(m) {
+                // (L15) Across a gap between the host's angles: its steel
+                // over the face (the angle across the gap) is in the way.
+                let across_gap = x.between.is_some() && host_run(m) && slab.1 > 0.0;
+                if m == &x.member
+                    || !fixed.contains(m)
+                    || (host_run(m) && !across_gap)
+                    || onto_me(m)
+                {
                     continue;
                 }
                 m.clone()
@@ -6881,10 +7097,12 @@ fn plate_hits(
                 {
                     continue;
                 }
-                if own_steel {
+                if own_steel && x0.between.is_some() {
+                    format!("{m}'s steel in the gap between its angles")
+                } else if own_steel {
                     format!(
-                        "{m}'s other angle (built up: a plate between its angles, where their \
-                         packing lies, is not laid out)"
+                        "{m}'s other angle (built up: a plate between its angles is laid out \
+                         only for ends across the gap)"
                     )
                 } else {
                     part.words()

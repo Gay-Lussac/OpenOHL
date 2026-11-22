@@ -142,6 +142,14 @@ the holding bolts' axis. By the plate's equilibrium the holding bolts carry
   the plate carries its own force through its own bolts, that is the
   plate check of each piece (its own force, ASCE 10-97 4.1) — not added
   here.
+- **A plate between a built-up member's angles** (`between`, structure
+  file version 25, the joint layout's L15): its own bolts onto that member
+  pass through the plate and the angle on each of its faces — two angles
+  back to back: checked on **two shear planes** (unless the file gives
+  them), the bearing on the plate under the whole force; in a star or a
+  cross, through one angle: one plane. The member's bearing under them is
+  checked on one angle's thickness with the whole force (**on the safe
+  side**: the two angles share it).
 - **A welded plate**: the members on any of its plates. The holding legs'
   bolts on several of its plates: each plate's bolts taken carrying the
   whole (**on the safe side**, said).

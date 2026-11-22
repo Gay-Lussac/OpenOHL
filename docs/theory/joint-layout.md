@@ -1697,11 +1697,10 @@ without naming its member stays through the work point, as before.
 - **Kept clear of the member's other angles**: the plan's plate check sees
   the built-up member's own steel in the plate's slab (the angle it lies on
   is under its face, or beyond its heel's cut). A plate **between the
-  angles**, where the packing lies, is not laid out: the gap is the
-  section's (fitted to its properties on imported sections), the packing's
-  thickness and place are not given — by hand, said ("…'s other angle
-  (built up: a plate between its angles, where their packing lies, is not
-  laid out)").
+  angles**, where the packing lies, was not laid out here (by hand, said);
+  since L15 it is for the ends whose leg lies across the gap
+  ([below](#a-plate-between-a-built-up-members-angles-l15)), as thick as
+  the gap.
 - **The guard — the clear rule**: each joint with a built-up member whose
   angles are known is planned with and without it; the plan with it is kept
   only where it lays out **more ends, or as many on fewer plates**.
@@ -2810,9 +2809,9 @@ confirmed, the rule stands as before.
 What this leaves: such an end now lies flat on the right flange — often
 on the **inner face** of one of the member's back-to-back angles, where it
 runs towards that angle's other leg ("turn it, or lay it out by hand"), or
-in the gap between the two angles where the gusset belongs. **Not built**
-(J6's rest): a plate between a built-up member's angles (in the gap, where
-the packing lies), onto which such ends would bolt.
+in the gap between the two angles where the gusset belongs. **Built since
+L15** ([below](#a-plate-between-a-built-up-members-angles-l15)): a plate
+between a built-up member's angles, in the gap, onto which such ends bolt.
 
 Measured on the same 78 towers, L13's first step → with this one: joints
 laid out whole 35 692 → 35 940 (248 newly whole, none lost), member ends
@@ -2933,6 +2932,107 @@ back for a clash — their bolts as drawn, near the work point, run into
 another member's steel — left by hand as before). Most such members lie at
 joints with other ends left by hand, so few joints become whole for this
 alone.
+
+## A plate between a built-up member's angles (L15)
+
+(L14's item 3, J6's rest; the owner busy: built on its own, reported. Built
+2026-11-22, in active development, not approved yet.
+`LayoutSettings::between_plates`, on; the plate's `between`, **structure
+file version 25**.)
+
+Since L13 an end on a built-up member lies with its leg in the plane of the
+angles' flange its axis lies in. Where that plane is the backs of two angles
+back to back (or heel to heel, in a star or a cross) and the end's
+outstanding leg points out of one back, across the gap, the end belongs on
+a plate **between the angles**, where the packing lies — the classical
+detail. Until now the layout laid such an end on the back of an angle with
+a plate as thick as its leg, which ran into the other angle across the gap
+(on the private real towers 342 ends so, and 15 more for a plate in the
+end's own plane).
+
+- **Which ends** (`joints::between_corner`): onto a built-up member whose
+  angles are known; its leg bolted lying flat (within the owner's 2°) on
+  the back of one of its angles — the back towards another angle of the
+  member across a gap, that angle's steel wholly beyond the gap — and its
+  outstanding leg pointing out of that back, across the gap (it then lies
+  on the plate's far face, the plane of the other angle's back). Of several
+  such angles (four in a cross) the one the end does not leave away from,
+  then the one moving it least.
+- **The plate**: on the back of the one angle, **as thick as the gap** —
+  the section's own (on imported sections fitted to its properties, and
+  then often thinner than the legs on the plate); laid out only where the
+  gap is at least **half the thickest leg on it** (`BETWEEN_LEAST`, *the
+  program's value, not a code's*; else the ends by hand, said). The joint
+  checks check the plate as thick as it is: the bearing under every bolt,
+  its edges, its own sections. A plane of its own, never shared with ends
+  lying on that back otherwise. Never bolted directly in the gap.
+- **Its ends clear of the other angle**: the end lies in the plane of the
+  other angle's back, so the plan now sees the member's own steel across
+  the gap as in its way (before, the member an end bolts onto was never
+  among what is in its way) and pulls the end back past it — beyond the
+  backs' toes, or past the heels where the end leaves that way (the gap is
+  open there between two angles back to back). Its bolts pass the angle
+  the plate lies on by their nuts and the gap, as on any plate.
+- **Its own bolts** (L5o) onto the member, through the plate and the angle
+  on each of its faces where one lies there: two back to back — through
+  both angles, **two shear planes** in the joint checks (unless the file
+  gives them); in a star the other angle lies beside, not across: one
+  plane. They lie on the angle's back within its flange by the rules of
+  every holding bolt; the plate may **grow along the member** in the gap
+  round them (nothing else lies there), its outline grown round them —
+  each bolt with its distances in it — checked clear; else none, said (its
+  holding *not checked*, as before).
+- **Weighed, never forced**: every joint where an end is so planned is
+  planned without too; the plan without is taken where it lays out more
+  ends, or as many on fewer plates. **On a tie the plate between is
+  kept** — it lies in the member's own plane (concentric with it), its
+  bolts through both angles, where the other lies on an angle's outer face
+  (an approved order changed, measured below). After writing, the run's
+  guard plans a joint again without them where it was laid out with fewer
+  ends than its plan without them (`PlanCtx::no_between`, as L11's guard),
+  before the guard that plans it as before L1.
+- **Drawn** (every file): a plate `between` on a built-up member is seated
+  on the back of the angle its members look across (the same rule), in the
+  plane of that back — its members within 2° of it lie flat on it, as on a
+  single angle's flange (L10) —, its members on its far face. A plate said
+  `between` on a member that is no built-up member of angles is drawn as any
+  plate on it, said.
+- **The clash check** tests a plate between the angles against the member
+  it lies between (before, a plate and the member it lies on were never
+  tested): it must lie in the gap, touching both angles only.
+- **On the safe side, as for direct bolting onto a built-up member**: the
+  ends' forces reach the member through the plate and its holding bolts
+  (checked); the member's angles take them as its design assumes (the
+  built-up section whole, as before). The member's bearing under the
+  holding bolts is checked on one angle's thickness with the whole force
+  (two angles back to back share it: on the safe side).
+
+**Found along the way**: an end naming nothing it bolts onto, on a built-up
+member, was planned on the *outer* face of the angle the joint details seat
+it on by that angle's *inner* face (the plan's face came from what the file
+says, the angle from the seat): its plate planned in the gap, drawn outside
+it. Every such end on two angles back to back lies across their gap and is
+now planned onto the plate between (or left, said, where the gap is too
+thin); the plan without — weighed as above — keeps the old face (traced, not
+changed further).
+
+**Measured** on the 78 private tower files (L14 main → with it; the bundled
+plugin, after Orient angles, L14's settings): joints laid out whole 35 964 →
+37 059 (+1 095), member ends laid out 130 902 → 133 015, plates 67 928 →
+69 226, the members left after the clash rounds 12 260 → 11 670, joints that
+do not fit as given 50 → 50 (as assumed 11 524 → 11 536), a run again
+identical 78 of 78; joint by joint 1 490 better and **218 worse** (109 with
+fewer ends — mostly where the plan with the plate between was taken back
+after writing and the joint then planned as before L1, its plan as L14 made
+it not reached again; 109 as many ends on more plates — a plate between and
+one more for an end laid onto its member). 3 327 plates between the angles
+written, 2 557 with their own bolts through the angles; the ends left with
+a plate "into the member's other angle" 342 → 119. The joint checks on the
+72 towers with loads (one vertical case): the rows of the plates between,
+the members' bolts on them median usage 0.06, 412 of 8 173 over 1 (5 %;
+the plates of the run as a whole 6.9 % — mostly the plate's buckling as a
+strut where its members are pulled back far), their holding bolts median
+0.07, 13 over 1.
 
 ## The clash check
 

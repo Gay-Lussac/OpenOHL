@@ -8,6 +8,57 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint layout: a plate between a built-up member's angles, L15)
+
+**An end across the gap between a built-up member's angles goes onto a plate
+between them, as thick as the gap** (roadmap O44 L15, L14's item 3 — J6's
+rest; the owner busy: built on its own, reported; built, in active
+development, not approved yet;
+[theory](../theory/joint-layout.md#a-plate-between-a-built-up-members-angles-l15)).
+**Format: structure file version 25**, a plate's `between` (it lies between
+the angles of the built-up member it is `on`); older files read unchanged,
+written at 25 only when a plate says so.
+
+- **Which ends** (`LayoutSettings::between_plates`, on): onto a built-up
+  member whose angles are known, the leg bolted flat (within 2°) on the
+  back of one angle that faces another across a gap, the outstanding leg
+  pointing across it (L13's seat by the plane puts plan members there).
+- **The plate**: on that back, as thick as the gap (the section's), laid
+  out only where the gap is at least half the thickest leg on it
+  (`BETWEEN_LEAST`, the program's value — owner question); a plane of its
+  own; the ends on its far face pulled back clear of the other angle (the
+  member's own steel across the gap now in their way); never bolted
+  directly in the gap.
+- **Its own bolts** through the plate and both angles back to back (two
+  shear planes in the joint checks, unless given; one in a star); the plate
+  may grow along the member in the gap round them, the grown outline
+  checked clear.
+- **Weighed**: the plan without is taken where it lays out more ends, or as
+  many on fewer plates; **on a tie the plate between** (concentric with the
+  member, its bolts in double shear) — an approved order (the clear rule's
+  tie to the plan without) changed, said.
+- **Drawn and checked**: the joint details seat such a plate on the back of
+  the angle its members look across, in that back's plane; the clash check
+  tests it against the member it lies between (before, a plate and the
+  member it lies on were never tested).
+- **Found**: an end naming nothing it bolts onto was planned on the outer
+  face of the angle the joint details seat it on by its inner face (the
+  plate planned in the gap, drawn outside it); such ends across a gap now
+  go onto the plate between.
+
+- **Measured** on the 78 private towers (L14 main → with it): joints whole
+  35 964 → 37 059, member ends 130 902 → 133 015, plates 67 928 → 69 226,
+  members left after the clash rounds 12 260 → 11 670, joints that do not
+  fit as given 50 → 50, a run again identical 78 of 78; joint by joint
+  1 490 better and 218 worse (owner question); 3 327 plates between the
+  angles; the joint checks of their members' bolts fail as often as the
+  run's other plates' (5 % of rows against 6.9 %), checked as thick as
+  they are.
+- **Also**: the run's guard (L11's way) plans a joint again without the
+  plates between where it was laid out with fewer ends after writing than
+  its plan without them (`PlanCtx::no_between`), tried before the guard
+  that plans it as before L1.
+
 ## 2026-11-22 (joint layout: the base member's end bolts as the gusset's holding bolts, L14)
 
 **Where nothing runs through a joint, the base member's own end bolts are

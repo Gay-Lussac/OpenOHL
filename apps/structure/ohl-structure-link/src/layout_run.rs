@@ -1741,6 +1741,8 @@ fn lay_out_once(
                         plain: guard.borrow().plain.clone(),
                         l11: BTreeMap::new(),
                         no_l11: guard.borrow().no_l11.clone(),
+                        between: BTreeMap::new(),
+                        no_between: guard.borrow().no_between.clone(),
                     });
                     let turns: BTreeMap<&String, f64> = t.iter().map(|(m, x)| (m, *x)).collect();
                     let p = planned_in(&turns, &settings, &scratch)?;
@@ -2048,6 +2050,7 @@ fn lay_out_once(
                     direct,
                     guard.borrow().plain.contains(joint),
                     guard.borrow().no_l11.contains(joint),
+                    guard.borrow().no_between.contains(joint),
                 ),
             );
             p.joins = joins
@@ -2128,13 +2131,32 @@ fn lay_out_once(
             // today's plan of it lays out — planned again as today.
             if useless.is_empty() {
                 let mut g = guard.borrow_mut();
+                // L15's guard (first: the plan without the plates between
+                // tried before the plan as today): a joint its plates between
+                // a built-up member's angles changed laid out with fewer ends
+                // than its plan without them lays out — planned again without
+                // them.
+                let mut back15: Vec<String> = Vec::new();
+                for o in &outcomes {
+                    let Some(&n) = g.between.get(&o.joint) else {
+                        continue;
+                    };
+                    let laid = if o.written { o.plan.ends.len() } else { 0 };
+                    if laid < n && !g.no_between.contains(&o.joint) && !g.plain.contains(&o.joint) {
+                        back15.push(o.joint.clone());
+                    }
+                }
+                for j in &back15 {
+                    g.no_between.insert(j.clone());
+                    touched.insert(j.clone());
+                }
                 let mut back: Vec<String> = Vec::new();
                 for o in &outcomes {
                     let Some(&n) = g.changed.get(&o.joint) else {
                         continue;
                     };
                     let laid = if o.written { o.plan.ends.len() } else { 0 };
-                    if laid < n && !g.plain.contains(&o.joint) {
+                    if laid < n && !g.plain.contains(&o.joint) && !back15.contains(&o.joint) {
                         back.push(o.joint.clone());
                     }
                 }
@@ -2147,7 +2169,11 @@ fn lay_out_once(
                         continue;
                     };
                     let laid = if o.written { o.plan.ends.len() } else { 0 };
-                    if laid < n && !g.no_l11.contains(&o.joint) && !back.contains(&o.joint) {
+                    if laid < n
+                        && !g.no_l11.contains(&o.joint)
+                        && !back.contains(&o.joint)
+                        && !back15.contains(&o.joint)
+                    {
                         back11.push(o.joint.clone());
                     }
                 }
@@ -2167,7 +2193,7 @@ fn lay_out_once(
                         }
                     }
                 }
-                if !back.is_empty() || !back11.is_empty() {
+                if !back.is_empty() || !back11.is_empty() || !back15.is_empty() {
                     drop(g);
                     if settings.onto_search {
                         (around_details, around_model) = crate::joints::joint_details_and_model(
@@ -2773,7 +2799,8 @@ fn plans_of(
     for j in &joints {
         let plain = g.plain.contains(&j.id);
         let no_l11 = g.no_l11.contains(&j.id);
-        let own_with = |plain: bool, no_l11: bool| {
+        let no_between = g.no_between.contains(&j.id);
+        let own_with3 = |plain: bool, no_l11: bool, no_between: bool| {
             crate::joint_layout::plan_joint_ctx(
                 j,
                 settings,
@@ -2789,13 +2816,15 @@ fn plans_of(
                     &BTreeSet::new(),
                     plain,
                     no_l11,
+                    no_between,
                 ),
             )
         };
+        let own_with = |plain: bool, no_l11: bool| own_with3(plain, no_l11, no_between);
         let own = |plain: bool| own_with(plain, no_l11);
         let mut p = match kinds
             .get(&j.id)
-            .filter(|_| !plain && !no_l11)
+            .filter(|_| !plain && !no_l11 && !no_between)
             .and_then(|l| planned.get(&l.of).map(|p| (l, p)))
         {
             Some((l, rep)) => {
@@ -2807,7 +2836,7 @@ fn plans_of(
             }
             None => {
                 let p = own(plain);
-                if !plain && !no_l11 {
+                if !plain && !no_l11 && !no_between {
                     planned.insert(j.id.clone(), p.clone());
                 }
                 p
@@ -2827,6 +2856,21 @@ fn plans_of(
             let pre = own_with(false, true);
             if pre.ends != p.ends || pre.plates != p.plates {
                 g.l11.insert(j.id.clone(), pre.ends.len());
+            }
+        }
+        // L15: the plan without the plates between a built-up member's
+        // angles, for the guard (only where an end was planned across a
+        // gap).
+        if !plain
+            && !no_between
+            && settings.between_plates
+            && p.notes
+                .iter()
+                .any(|n| n.contains(crate::joint_layout::BETWEEN_NOTE))
+        {
+            let pre = own_with3(false, no_l11, true);
+            if pre.ends != p.ends || pre.plates != p.plates {
+                g.between.insert(j.id.clone(), pre.ends.len());
             }
         }
         // L1 (b, c in the plan): today's plan of the joint, for the guard.
@@ -2849,6 +2893,7 @@ fn plans_of(
 /// What the run tells joint `j`'s plan: the members put onto a plate by the
 /// clash rounds (L1 b), those bolted directly instead of on a plate (L2 c),
 /// of the tower's body (L1 c), planned as today (the guard).
+#[allow(clippy::too_many_arguments)]
 fn ctx_of(
     settings: &LayoutSettings,
     order: &JointOrder,
@@ -2857,6 +2902,7 @@ fn ctx_of(
     direct: &BTreeSet<String>,
     plain: bool,
     no_l11: bool,
+    no_between: bool,
 ) -> crate::joint_layout::PlanCtx {
     crate::joint_layout::PlanCtx {
         plated: plated.clone(),
@@ -2864,6 +2910,7 @@ fn ctx_of(
         body: settings.direct_first && order.zone_of(j) == crate::Zone::Body,
         plain,
         no_l11,
+        no_between,
     }
 }
 
@@ -2885,6 +2932,13 @@ struct Guard {
     l11: BTreeMap<String, usize>,
     /// L11: the joints planned without L11's steps.
     no_l11: BTreeSet<String>,
+    /// L15: the joints whose plan its plates between a built-up member's
+    /// angles changed, with the ends their plan without them lays out; a
+    /// joint laid out with fewer ends after the clash rounds is planned
+    /// again without them ([`Guard::no_between`]).
+    between: BTreeMap<String, usize>,
+    /// L15: the joints planned without the plates between.
+    no_between: BTreeSet<String>,
 }
 
 /// Join `x` at joint `j` written into `doc` (its end's `kind` and `onto`,
@@ -4555,6 +4609,15 @@ fn write_plan(
             ohl_structure_edit::edits::raise_version(
                 doc,
                 i64::from(ohl_structures::connections::PLATE_HELD_BY_VERSION),
+            );
+        }
+        // L15: between the angles of the built-up member it is on.
+        if pl.between {
+            x.insert("between", toml_edit::value(true));
+            auto.insert("between".into());
+            ohl_structure_edit::edits::raise_version(
+                doc,
+                i64::from(ohl_structures::connections::PLATE_BETWEEN_VERSION),
             );
         }
         if ask.settings.welded && !ids.is_empty() {

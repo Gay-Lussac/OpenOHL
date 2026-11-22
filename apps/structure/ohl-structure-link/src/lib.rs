@@ -44,6 +44,8 @@ mod apply_detail_tests;
 mod bends;
 #[cfg(test)]
 mod bent_plate_tests;
+#[cfg(test)]
+mod between_plate_tests;
 mod both_faces;
 #[cfg(test)]
 mod both_faces_tests;

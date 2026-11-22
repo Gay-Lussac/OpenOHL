@@ -300,6 +300,10 @@ impl LayoutWindow {
             // base member's own end bolts hold the plate on its flange
             // (the plate's held_by) instead of joining nothing.
             base_holds: true,
+            // L15 (2026-11-22): an end across the gap between a built-up
+            // member's angles onto a plate between them (the plate's
+            // between), as thick as the gap.
+            between_plates: true,
         }
     }
 

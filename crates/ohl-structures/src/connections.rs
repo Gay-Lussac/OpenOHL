@@ -611,6 +611,12 @@ pub const PLATE_ON_VERSION: u32 = 23;
 /// file is written at 24 only when a plate names one.
 pub const PLATE_HELD_BY_VERSION: u32 = 24;
 
+/// The structure file version of a plate lying between the angles of the
+/// built-up member it is on (a plate's `between`, 2026-11-22, the
+/// automatic joint layout's L15): a file is written at 25 only when a plate
+/// says so.
+pub const PLATE_BETWEEN_VERSION: u32 = 25;
+
 /// A plate bent from another plate of its joint (`[plate.bend]`,
 /// 2026-11-19, structure file version 22): the two are the two flats of
 /// one bent plate, folded along `line`. Read as one part (its weight from
@@ -686,6 +692,14 @@ pub struct TypePlate {
     /// (the joint's leg, or `leg_bolts`).
     #[serde(default)]
     pub held_by: Option<String>,
+    /// It lies between the angles of the built-up member it is `on`
+    /// (2026-11-22, version 25, the automatic joint layout's L15): in the
+    /// gap between two of its angles, as thick as that gap — its own bolts
+    /// onto that member (`leg_bolts`) pass through the plate and the angle
+    /// on each of its faces where one lies there. False: on the angle of
+    /// that member facing its members, as before.
+    #[serde(default)]
+    pub between: bool,
 }
 
 impl TypePlate {
@@ -1100,6 +1114,12 @@ impl StructureType {
                 out.push(format!(
                     "plate {}: on {m}: it does not meet at joint {} (the joint's leg taken)",
                     p.id, p.joint
+                ));
+            }
+            if p.between && p.on.is_none() {
+                out.push(format!(
+                    "plate {}: between, but it names no member it is on (kept, not used)",
+                    p.id
                 ));
             }
             if let Some(m) = &p.held_by {

@@ -548,6 +548,7 @@ mod tests {
                 leg_bolts: None,
                 bend: None,
                 held_by: None,
+                between: false,
             }],
             splices: Vec::new(),
             completeness: ohl_structure_link::Completeness::Complete,

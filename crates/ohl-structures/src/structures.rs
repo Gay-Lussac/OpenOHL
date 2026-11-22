@@ -296,8 +296,13 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// layout's L14) adds the member whose own end bolts hold a plate (a
 /// plate's `held_by`: [`crate::connections::TypePlate::held_by`],
 /// [`crate::connections::PLATE_HELD_BY_VERSION`]); a file is written at 24
-/// only when a plate names one.
-pub const STRUCTURE_FILE_VERSION: u32 = 24;
+/// only when a plate names one. Version 25 (2026-11-22, the automatic joint
+/// layout's L15) adds a plate lying between the angles of the built-up
+/// member it is on (a plate's `between`:
+/// [`crate::connections::TypePlate::between`],
+/// [`crate::connections::PLATE_BETWEEN_VERSION`]); a file is written at 25
+/// only when a plate says so.
+pub const STRUCTURE_FILE_VERSION: u32 = 25;
 
 /// The structure file version of the bolt grades (`[[bolt_grade]]`, a
 /// member's `bolt_grade`; owner 2026-11-19).
