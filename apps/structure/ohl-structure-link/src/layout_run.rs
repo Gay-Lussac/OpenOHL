@@ -2468,9 +2468,9 @@ fn lay_out_once(
             notes.push(format!(
                 "{} end(s) laid out onto a member that ends at the joint ({}{}): their forces go \
                  through that member's own end bolts, checked so by the joint checks (its end \
-                 bolts' group and the bearing under them, L14); that member's own steel at those \
-                 bolts (its net section, its tearing out) and a plate's own checks under them take \
-                 its own force only — NOT ON THE SAFE SIDE there",
+                 bolts' group and the bearing under them, L14; since L14's question 2 also that \
+                 member's own steel at those bolts and a plate's own checks under them, under the \
+                 larger of its own force and the resultant)",
                 onto_ending.len(),
                 onto_ending
                     .iter()

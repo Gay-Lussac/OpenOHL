@@ -1053,9 +1053,13 @@ out. Each change is one undo step.
   member's own end bolts carry the end's force with its own: the bolt
   groups follow the force through, and the joint has a row *Part* "its end
   bolts with P1 laid onto it" (each bolt's shear and the member's bearing
-  under it, onto a plate the plate's too). Another row says what is still
-  checked under the member's own force only — its own steel at those bolts
-  (net section, tearing out) — NOT ON THE SAFE SIDE. How:
+  under it, onto a plate the plate's too). Since the owner's answer of the
+  same day, a row *Part* "its own steel at its end bolts with P1 laid onto
+  it" checks that member's net section and block shear there (its tension
+  capacity by the design code's plugin against the larger of its own force
+  and the resultant with the others'), and a plate's own checks under
+  those bolts take that force too — a resultant turned more than 15° off
+  the member's line said NOT ON THE SAFE SIDE on the plate's row. How:
   [the force through a member's own end bolts](../theory/joint-groups.md#the-force-through-a-members-own-end-bolts-l14).
 - **Since 2026-11-19** (in active development, not approved yet):
   - **Bolts in tension** are checked with their prying: where a member's

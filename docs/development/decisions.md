@@ -8,6 +8,49 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint checks: a member's own steel and its plate under the force followed through, L14's question 2)
+
+**The owner's answers of 2026-11-22**: L13's questions 1 to 7 approved as
+recommended ("for L13 go with recommendations"); L14's question 2 — **yes**
+("you should check the impact on the bolt on the other member to make it
+safe"); L14's other questions (1, 3 to 6) not answered explicitly: kept as
+built and recommended.
+
+**At a member's own end bolts that carry ends laid onto it, its own steel
+there and a plate's own checks under those bolts now take the force followed
+through** (built, in active development, not approved yet;
+[theory](../theory/joint-groups.md#the-force-through-a-members-own-end-bolts-l14)).
+No format change; **no plugin interface changed** (the code plugins'
+member capacities, read once per structure, and their joint checks as
+before).
+
+- **The member's own steel** (`joint_groups::EndSteel`, *Part* "its own
+  steel at its end bolts with … laid onto it"): its tension capacity as the
+  code's plugin gives it — the least over its ends of its net section, block
+  shear and bolts — times the case's strength factor, against the larger of
+  its own force alone and the resultant of its own and the riders' forces
+  (each along its line, the same case). On the safe side: the least
+  capacity, the resultant's whole size along the member. The member check
+  itself is unchanged.
+- **A plate's own checks under those bolts** (`plate_checks::bolted_force`):
+  the larger of the member's own force and the resultant's size, along the
+  member's line; where the resultant governs and turns more than 15° off
+  that line (`RESULTANT_TURN`, the program's value) the plate's sections
+  are taken across a line the force does not follow — said NOT ON THE SAFE
+  SIDE on the row with the angle.
+- **The NOT ON THE SAFE SIDE row** ("…'s own steel at its end bolts … is
+  checked under its own force only") is gone where covered. **What remains,
+  said**: no tension capacity from the code's plugin (or no plugin) — "NOT
+  CHECKED, NOT ON THE SAFE SIDE: …'s own steel at its end bolts …"; the
+  plate's sections under a resultant turned more than 15°; ends laid onto a
+  member that bolts onto nothing or whose bolts are not placed (as before).
+- **Measured** (the 72 private towers with loads, one vertical case, L14
+  main's laid files): 414 NOT ON THE SAFE SIDE rows → 0, replaced by 414
+  checked rows (usage median 0.12, the largest 0.47, none over 1); 28 plate
+  rows' usages change, all up (the largest +0.104, 0.016 → 0.120), none
+  newly failing; 10 of those said NOT ON THE SAFE SIDE for a resultant
+  turned more than 15°.
+
 ## 2026-11-22 (joint layout: a plate between a built-up member's angles, L15)
 
 **An end across the gap between a built-up member's angles goes onto a plate

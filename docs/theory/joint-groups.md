@@ -209,15 +209,41 @@ the force through:
   - a weld of a welded plate: the ends laid onto a member on the plate
     on that member's side of the weld (the larger of its loads with and
     without them).
-- **Not covered, said NOT ON THE SAFE SIDE** (a row of the joint without
-  a usage, "NOT ON THE SAFE SIDE: H1's own steel at its end bolts …"):
-  the member's own steel at those bolts — its net section and its tearing
-  out, checked by its member check under its own force only — and, onto a
-  plate, the plate's own checks under them (its tearing out, its
-  effective width) under the member's own force only. A member ending at
-  the joint with ends laid onto it that bolts onto nothing there, or whose
-  bolts are not placed: "NOT CHECKED, NOT ON THE SAFE SIDE: … where their
-  forces go is not given".
+- **The member's own steel at those bolts** (since 2026-11-22, the
+  owner's answer to L14's question 2: "check the impact on the bolt on the
+  other member to make it safe"; *Part* "its own steel at its end bolts
+  with … laid onto it"): its **tension capacity as the code's plugin gives
+  it** — the least over its ends of its net section, its block shear and
+  its bolts' (the member check's own) — times the case's strength factor,
+  against **the larger of its own force alone and the resultant**
+  \\( |\mathbf F_0 + \sum_i \mathbf F_i| \\) (each along its line, the
+  same case). *On the safe side*: the capacity is the least over both
+  ends and every mechanism; the resultant's whole size is taken along the
+  member however it turns (across its leg the leg is the stronger), each
+  bolt's distances along its own force being checked in its end bolts'
+  group. The member check itself is unchanged (its own force, as before);
+  this is a row of the joint checks, and **no plugin interface changed**
+  (the plugin's member capacities, read once per structure). Before, said
+  NOT ON THE SAFE SIDE without a usage.
+- **A plate's own checks under them** (since 2026-11-22, the same answer):
+  where the member's end bolts onto a plate, the plate's checks under its
+  bolts (bearing, edges, net and effective sections, buckling as a strut)
+  take **the larger of the member's own force and the resultant's size**,
+  along the member's line, its sense the resultant's along it (the
+  member's own where that governs). Where the resultant governs and turns
+  more than **15°** off the member's line (`RESULTANT_TURN`, *the
+  program's value, not a code's*) the plate's own sections are taken
+  across a line the force does not follow: **NOT ON THE SAFE SIDE**, said
+  on the row with the angle (the bolts' distances along their own forces
+  are checked in the end bolts' group). Before, under the member's own
+  force only, said NOT ON THE SAFE SIDE.
+- **What remains**: a member ending at the joint with ends laid onto it
+  that bolts onto nothing there, or whose bolts are not placed: "NOT
+  CHECKED, NOT ON THE SAFE SIDE: … where their forces go is not given"; a
+  member whose tension capacity the code's plugin does not give (or a
+  structure not checked by a code's plugin): "NOT CHECKED, NOT ON THE SAFE
+  SIDE: …'s own steel at its end bolts …"; the plate's sections under a
+  resultant turned more than 15° (above).
 
 ### Elastic sharing (Kulak, Fisher & Struik)
 
@@ -544,11 +570,12 @@ Never silently skipped — each a row of the joint without a usage,
   bolts onto nothing there (or is not bolted), or whose own end bolts are
   not placed: where their forces go is not given.
 
-And, without a usage, "NOT ON THE SAFE SIDE: …" (2026-11-22, L14): a
-member's own steel at its end bolts (its net section, its tearing out) and,
-onto a plate, the plate's own checks under them, where ends are laid onto
-that member near its end — checked under its own force only (its end
-bolts carry the others' forces, above).
+(2026-11-22, L14's question 2) A member's own steel at its end bolts with
+ends laid onto it near its end is checked (above); without a tension
+capacity from the code's plugin: "NOT CHECKED, NOT ON THE SAFE SIDE: …'s
+own steel at its end bolts …". A plate's own checks under such bolts with
+the resultant turned more than 15° off the member's line: said NOT ON THE
+SAFE SIDE on the row.
 
 The simple check checks no joint group (not a design code, said); a
 design code whose plugin was not run or has no `joint-check-groups`

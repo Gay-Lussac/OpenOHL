@@ -73,6 +73,10 @@ pub enum PlatePart {
     /// A bent plate's bend in bending (2026-11-19, the owner's decision of
     /// that day: `crate::bends`); the row's `plate` is the two flats.
     Bend,
+    /// A member's own steel at its end bolts (its net section, its block
+    /// shear) with the ends laid onto it near its end (L14's question 2,
+    /// 2026-11-22: those ends in words); the row's `plate` is the member.
+    EndSteel(String),
 }
 
 impl PlatePart {
@@ -86,6 +90,9 @@ impl PlatePart {
             PlatePart::EndBolts(w) => format!("its end bolts with {w} laid onto it"),
             PlatePart::NotChecked(_) => "not checked".to_owned(),
             PlatePart::Bend => "its bend".to_owned(),
+            PlatePart::EndSteel(w) => {
+                format!("its own steel at its end bolts with {w} laid onto it")
+            }
         }
     }
 }
@@ -152,6 +159,11 @@ enum Plan {
         free: Option<f64>,
         /// Where the member's end and bolts are.
         at: BoltPlace,
+        /// The ends laid onto the member near its end, where its end bolts
+        /// onto this plate (L14's question 2, 2026-11-22): the plate
+        /// checked under the larger of its own force and the resultant
+        /// through its bolts ([`bolted_force`]).
+        riding: Vec<SideMember>,
     },
     Weld {
         with: String,
@@ -414,6 +426,29 @@ pub fn plate_plans_in(
                             .into(),
                     );
                 }
+                // (L14's question 2) The ends laid onto it near its end,
+                // where its end bolts onto this plate: their forces through
+                // its bolts too.
+                let riding: Vec<SideMember> = if a.onto.value.as_deref() == Some(p.id.as_str()) {
+                    crate::joint_groups::riders(j, &a.member)
+                        .into_iter()
+                        .map(|r| (r.member.clone(), r.direction, j.position))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                if !riding.is_empty() {
+                    let words: Vec<&str> = riding.iter().map(|r| r.0.as_str()).collect();
+                    notes.push(format!(
+                        "{m} with {w} laid onto it near its end: the plate checked under the \
+                         larger of {m}'s own force and the resultant of its own and theirs \
+                         through its bolts (each along its line, the same case; L14's question \
+                         2) — its size taken along {m}'s line, its sense {m}'s own where that \
+                         force governs, else the resultant's along {m}",
+                        m = a.member,
+                        w = words.join(", ")
+                    ));
+                }
                 out.parts.push(Planned {
                     joint: j.id.clone(),
                     plate: p.id.clone(),
@@ -424,6 +459,7 @@ pub fn plate_plans_in(
                         share,
                         free,
                         at: BoltPlace::of(a, j),
+                        riding,
                     },
                     notes,
                 });
@@ -606,6 +642,7 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                         share,
                         free,
                         at: BoltPlace::of(a, j),
+                        riding: Vec::new(),
                     },
                     notes,
                 });
@@ -666,6 +703,7 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                         share: 1.0,
                         free,
                         at: BoltPlace::of(a, j),
+                        riding: Vec::new(),
                     },
                     notes,
                 });
@@ -1018,9 +1056,11 @@ pub fn plate_usage(
                     group,
                     steel,
                     share,
+                    riding,
+                    at,
                     ..
                 } => {
-                    let n = axial.get(member).copied().unwrap_or(0.0) * share;
+                    let n = bolted_force(member, *share, riding, at.along, axial);
                     (
                         PlatePart::Member(member.clone()),
                         n,
@@ -1140,7 +1180,13 @@ pub fn plate_usage_cases_with(
         return cases.iter().map(|c| plate_usage(plans, c.2, c.1)).collect();
     };
     let force = |x: &Planned, axial: &BTreeMap<String, f64>| match &x.plan {
-        Plan::Bolted { member, share, .. } => axial.get(member).copied().unwrap_or(0.0) * share,
+        Plan::Bolted {
+            member,
+            share,
+            riding,
+            at,
+            ..
+        } => bolted_force(member, *share, riding, at.along, axial),
         Plan::Unplaced { member } => axial.get(member).copied().unwrap_or(0.0),
         Plan::NoSeam { .. } => 0.0,
         Plan::Weld {
@@ -1347,6 +1393,12 @@ pub fn plate_usage_cases_with(
                             not_sent_words(&p.plugin, &x.plan)
                         ));
                     }
+                    // (L14's question 2) The resultant through the bolts
+                    // turned far off the member's line.
+                    if let Some(w) = turned_words(&x.plan, c.2) {
+                        row.governs
+                            .push_str(&format!(" {} {w}]", ohl_structures_fe::check::NOT_SAFE));
+                    }
                     row
                 })
                 .collect();
@@ -1366,6 +1418,88 @@ fn not_sent_words(plugin: &str, plan: &Plan) -> String {
         }
     };
     format!("{what} not sent: the plugin {plugin} has no joint-check-moments")
+}
+
+/// How far the resultant through a member's bolts may turn off its line
+/// before the plate's own checks under it — taken along that line — are
+/// said not on the safe side, degrees (L14's question 2): the program's
+/// value, not a code's.
+pub const RESULTANT_TURN: f64 = 15.0;
+
+/// A bolt group's resultant (L14's question 2, [`bolted_force`]) where it
+/// governs and turns more than [`RESULTANT_TURN`] off the member's line: in
+/// words (none: it does not).
+fn turned_words(plan: &Plan, axial: &BTreeMap<String, f64>) -> Option<String> {
+    let Plan::Bolted {
+        member,
+        share,
+        riding,
+        at,
+        ..
+    } = plan
+    else {
+        return None;
+    };
+    if riding.is_empty() {
+        return None;
+    }
+    let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
+    let mut r = scale(at.along, n(member));
+    for (m, d, _) in riding {
+        r = add(r, scale(*d, n(m)));
+    }
+    let size = norm(r);
+    if size * share <= (n(member) * share).abs() || size <= 0.0 {
+        return None;
+    }
+    let turn = (dot(r, at.along).abs() / size)
+        .clamp(-1.0, 1.0)
+        .acos()
+        .to_degrees();
+    (turn > RESULTANT_TURN).then(|| {
+        format!(
+            "the resultant through {member}'s bolts with the ends laid onto it turns {turn:.0}° \
+             off {member}'s line; the plate's own sections under it taken across that line (its \
+             bolts' distances along their own forces: in {member}'s end bolts' group)"
+        )
+    })
+}
+
+/// The force a member's bolt group in a plate takes (tension positive): its
+/// share of its own force — or, with ends laid onto it near its end
+/// (`riding`, L14's question 2), the larger of that and the resultant of
+/// its own force (along `along`) and theirs (each along its line, the same
+/// case) through its bolts, its size taken along the member's line, its
+/// sense the resultant's along it (the member's own where that is nil).
+fn bolted_force(
+    member: &str,
+    share: f64,
+    riding: &[SideMember],
+    along: [f64; 3],
+    axial: &BTreeMap<String, f64>,
+) -> f64 {
+    let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
+    let own = n(member) * share;
+    if riding.is_empty() {
+        return own;
+    }
+    let mut r = scale(along, n(member));
+    for (m, d, _) in riding {
+        r = add(r, scale(*d, n(m)));
+    }
+    let size = norm(r) * share;
+    if size <= own.abs() {
+        return own;
+    }
+    let along_r = dot(r, along);
+    let sense = if along_r.abs() > 1e-9 {
+        along_r.signum()
+    } else if own != 0.0 {
+        own.signum()
+    } else {
+        1.0
+    };
+    sense * size
 }
 
 /// `sides` with the ends `riding` on their members added (L14).

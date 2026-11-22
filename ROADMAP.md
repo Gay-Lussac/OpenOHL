@@ -3142,6 +3142,8 @@ only where it helps):
   > gusset's holding bolts, a format field — allowed 2026-11-22) →
   > Recommended: next, as its own step (a structure file version, the reader
   > keeping older files, the joint checks' holding group from those bolts).
+  > **Answered 2026-11-22** (owner: "for L13 go with recommendations"):
+  > questions 1 to 7 approved as recommended.
 - [x] L14. **The force through a host's own end bolts; the base member's
   end bolts as the gusset's holding bolts** (the owner's answers of
   2026-11-22: L13's question 3, L12's question 3 / L10's question 5; the
@@ -3201,6 +3203,23 @@ only where it helps):
   > — the base's bolts against that end's holes) → Recommended: keep (the
   > layout writes nothing that does not fit); next, the base's bolts placed
   > clear of such an end's.
+  > **Answered 2026-11-22**: question 2 **yes** (owner: "you should check
+  > the impact on the bolt on the other member to make it safe") — built
+  > the same day (in active development, not approved yet;
+  > [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-22-joint-checks-a-members-own-steel-and-its-plate-under-the-force-followed-through-l14s-question-2)):
+  > the member's own steel at those end bolts (its tension capacity by the
+  > code's plugin — the least over its ends of net section, block shear and
+  > bolts — against the larger of its own force and the resultant) and a
+  > plate's own checks under them (the larger of the two, along the
+  > member's line) now under the force followed through; no plugin
+  > interface changed; the NOT ON THE SAFE SIDE row gone where covered;
+  > still said: no tension capacity from the plugin (NOT CHECKED), the
+  > plate's sections under a resultant turned more than 15° off the
+  > member's line (NOT ON THE SAFE SIDE on the row). On the 72 private
+  > towers with loads (one vertical case): 414 such rows now checked
+  > (usage median 0.12, at most 0.47), 28 plate rows up (the largest
+  > +0.10), none newly failing. Questions 1, 3 to 6 not answered
+  > explicitly: kept as built and recommended.
 - [x] L15. **A plate between a built-up member's angles** (L14's item 3 —
   J6's rest; L13's question 4; the owner busy: built on its own,
   reported). **Built 2026-11-22, in active development, not approved

@@ -210,18 +210,54 @@ pub(crate) struct GroupPlan {
     ends_of: Option<String>,
 }
 
+/// A member's own steel at its end bolts with the ends laid onto it near
+/// its end (the owner's answer of 2026-11-22 to L14's question 2): its
+/// tension capacity as the code's plugin gives it — the least over its ends
+/// of its net section, its block shear and its bolts' — against the larger
+/// of its own force and the resultant through those bolts.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EndSteel {
+    pub(crate) joint: String,
+    pub(crate) member: String,
+    /// From the joint along it (unit).
+    pub(crate) direction: V3,
+    /// The ends laid onto it (and onto those in turn): each and its
+    /// direction from the joint.
+    pub(crate) riders: Vec<(String, V3)>,
+    /// Its tension capacity (N) and what governs it, the plugin's words.
+    pub(crate) capacity: f64,
+    pub(crate) governs: String,
+}
+
+impl EndSteel {
+    /// The force at its end bolts in a case (`axial`, tension positive): the
+    /// larger of its own force alone and the resultant of its own and the
+    /// riders' forces (each along its line), N (a size).
+    pub(crate) fn force(&self, axial: &BTreeMap<String, f64>) -> f64 {
+        let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
+        let mut r = scale(self.direction, n(&self.member));
+        for (m, d) in &self.riders {
+            r = add(r, scale(*d, n(m)));
+        }
+        n(&self.member).abs().max(norm(r))
+    }
+}
+
 /// The groups of a structure and what is not checked.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub(crate) struct GroupPlans {
     pub(crate) groups: Vec<GroupPlan>,
     /// What at a joint is not checked: (joint, part, words).
     pub(crate) not_checked: Vec<(String, String, String)>,
+    /// Members' own steel at their end bolts with ends laid onto them
+    /// (L14's question 2).
+    pub(crate) end_steel: Vec<EndSteel>,
 }
 
 impl GroupPlans {
     /// Nothing planned.
     pub(crate) fn is_empty(&self) -> bool {
-        self.groups.is_empty() && self.not_checked.is_empty()
+        self.groups.is_empty() && self.not_checked.is_empty() && self.end_steel.is_empty()
     }
 
     /// Every row's part in words, as the rows of a case name them.
@@ -721,11 +757,34 @@ pub(crate) fn group_plans(
     bolts: &BoltLibrary,
 ) -> GroupPlans {
     let mut out = GroupPlans::default();
+    // (L14's question 2) The members' tension capacities by the code's
+    // plugin, once (only where some member ending at a joint has ends laid
+    // onto it).
+    let wanted = details
+        .joints
+        .iter()
+        .any(|j| j.arrivals.iter().any(|a| !riders(j, &a.member).is_empty()));
+    let caps: Result<BTreeMap<String, (f64, String)>, String> = if !wanted {
+        Ok(BTreeMap::new())
+    } else if model.capacity_plugin.is_none() {
+        Err("the structure's member check is not a code plugin's".into())
+    } else {
+        ohl_member_check::capacities(model).map(|v| {
+            v.into_iter()
+                .filter_map(|g| {
+                    g.capacities
+                        .iter()
+                        .find(|c| c.0 == "tension")
+                        .map(|c| (g.id.clone(), (c.1, c.2.clone())))
+                })
+                .collect()
+        })
+    };
     for j in &details.joints {
         let first = out.groups.len();
         holding_groups(j, model, library, bolts, &mut out);
         bearing_groups(j, model, bolts, first, &mut out);
-        end_bolt_groups(j, model, library, bolts, &mut out);
+        end_bolt_groups(j, model, library, bolts, &caps, &mut out);
     }
     out
 }
@@ -849,6 +908,7 @@ fn end_bolt_groups(
     model: &Model,
     library: &SectionLibrary,
     bolt_lib: &BoltLibrary,
+    caps: &Result<BTreeMap<String, (f64, String)>, String>,
     out: &mut GroupPlans,
 ) {
     for h in j.arrivals.iter().filter(|a| !a.modelling) {
@@ -1120,24 +1180,39 @@ fn end_bolt_groups(
             misfit_given,
             ends_of: Some(words.clone()),
         });
-        // Not covered: the member's own steel at those bolts and the
-        // plate's own checks under them (each by its own force).
-        out.not_checked.push((
-            j.id.clone(),
-            h.member.clone(),
-            format!(
-                "NOT ON THE SAFE SIDE: {}'s own steel at its end bolts (its net section, its \
-                 tearing out){} is checked under its own force only — the forces of {words} laid \
-                 onto it near its end are not added there (its end bolts' shear and bearing carry \
-                 them, L14)",
-                h.member,
-                if plate.is_some() {
-                    format!(" and plate {onto}'s own checks under those bolts")
-                } else {
-                    String::new()
-                }
-            ),
-        ));
+        // (L14's question 2, the owner 2026-11-22) The member's own steel
+        // at those bolts under the force followed through: its tension
+        // capacity (the code's plugin's, the least over its ends of its net
+        // section, block shear and bolts) against the larger of its own
+        // force and the resultant; the plate's own checks under those bolts
+        // take that force too (`plate_checks`).
+        match caps.as_ref().map(|c| c.get(&h.member)) {
+            Ok(Some((cap, governs))) if *cap > 0.0 => out.end_steel.push(EndSteel {
+                joint: j.id.clone(),
+                member: h.member.clone(),
+                direction: h.direction,
+                riders: rid
+                    .iter()
+                    .map(|r| (r.member.clone(), r.direction))
+                    .collect(),
+                capacity: *cap,
+                governs: governs.clone(),
+            }),
+            other => out.not_checked.push((
+                j.id.clone(),
+                h.member.clone(),
+                format!(
+                    "NOT CHECKED, NOT ON THE SAFE SIDE: {}'s own steel at its end bolts (its net \
+                     section, its block shear) under the forces of {words} laid onto it near \
+                     its end — {}",
+                    h.member,
+                    match other {
+                        Err(e) => format!("no tension capacity: {e}"),
+                        _ => "the code's plugin gives it no tension capacity".to_owned(),
+                    }
+                ),
+            )),
+        }
     }
 }
 
@@ -2277,8 +2352,8 @@ pub(crate) fn group_rows(
         })
         .collect();
     // The rows without a usage first.
-    let said_rows = |_: usize| -> Vec<PlateUsage> {
-        plans
+    let said_rows = |n: usize| -> Vec<PlateUsage> {
+        let mut rows: Vec<PlateUsage> = plans
             .not_checked
             .iter()
             .map(|(joint, part, words)| PlateUsage {
@@ -2293,7 +2368,13 @@ pub(crate) fn group_rows(
                 does_not_fit: None,
                 misfit_assumed: false,
             })
-            .collect()
+            .collect();
+        // (L14's question 2) A member's own steel at its end bolts with the
+        // ends laid onto it: worked here from its tension capacity.
+        if let Some(c) = cases.get(n) {
+            rows.extend(plans.end_steel.iter().map(|e| end_steel_row(e, c)));
+        }
+        rows
     };
     let largest = |n: usize, k: usize| -> f64 {
         per_case[n][k]
@@ -2566,6 +2647,57 @@ fn bolt_load(g: &GroupPlan, b: &Bolt, f: V2) -> ohl_member_check::joints::groups
     }
 }
 
+/// The row of a member's own steel at its end bolts with the ends laid onto
+/// it in case `c` (L14's question 2): its tension capacity (times the case's
+/// strength factor) against the larger of its own force and the resultant
+/// through those bolts — *on the safe side*: the capacity the least over its
+/// ends of its net section, block shear and bolts as the code's plugin gives
+/// it, the resultant's whole size taken along the member however it turns
+/// (its distances along each bolt's own force are in its end bolts' group).
+fn end_steel_row(e: &EndSteel, c: &PlateCase) -> PlateUsage {
+    let f = e.force(c.2);
+    let r = e.capacity * c.1;
+    let usage = if r > 0.0 {
+        f / r
+    } else if f > 0.0 {
+        f64::INFINITY
+    } else {
+        0.0
+    };
+    let words: Vec<&str> = e.riders.iter().map(|r| r.0.as_str()).collect();
+    let words = words.join(", ");
+    let governs = format!(
+        "{}'s own steel at its end bolts with {words} laid onto it: {:.1} kN (the larger of its \
+         own force and the resultant with theirs) against its tension capacity {:.1} kN ({})",
+        e.member,
+        f / 1000.0,
+        r / 1000.0,
+        e.governs
+    );
+    PlateUsage {
+        joint: e.joint.clone(),
+        plate: e.member.clone(),
+        part: PlatePart::EndSteel(words.clone()),
+        force: f,
+        usage: Some(usage),
+        governs: governs.clone(),
+        checks: vec![(governs, usage)],
+        notes: vec![format!(
+            "{m}'s own steel at its end bolts (its net section, its block shear) under the \
+             forces of {words} laid onto it near its end (L14's question 2, the owner \
+             2026-11-22): its tension capacity as the code's plugin gives it — the least over its \
+             ends of its net section, block shear and bolts (on the safe side) — against the \
+             larger of its own force alone and the resultant of its own and theirs (each along \
+             its line, the same case), the resultant's whole size taken along {m} (on the safe \
+             side: across it the leg is the stronger; each bolt's distances along its own force \
+             are checked in its end bolts' group)",
+            m = e.member
+        )],
+        does_not_fit: None,
+        misfit_assumed: false,
+    }
+}
+
 fn sub(a: V3, b: V3) -> V3 {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
@@ -2698,6 +2830,7 @@ mod tests {
             let plans = GroupPlans {
                 groups: vec![g],
                 not_checked: Vec::new(),
+                end_steel: Vec::new(),
             };
             let f = case_forces(&plans, &axial, None);
             for v in &f[0].forces {
@@ -2755,6 +2888,7 @@ mod tests {
         let plans = GroupPlans {
             groups: vec![g],
             not_checked: Vec::new(),
+            end_steel: Vec::new(),
         };
         let axial = forces(&[("D1", 40e3), ("R1", 10e3)]);
         let f = case_forces(&plans, &axial, None);
@@ -2807,6 +2941,7 @@ mod tests {
         let plans = GroupPlans {
             groups: vec![g],
             not_checked: Vec::new(),
+            end_steel: Vec::new(),
         };
         let f = case_forces(&plans, &forces(&[("H1", 30e3), ("P1", 20e3)]), None);
         let v = &f[0].forces;
@@ -2856,6 +2991,7 @@ mod tests {
         let plans = GroupPlans {
             groups: vec![g],
             not_checked: Vec::new(),
+            end_steel: Vec::new(),
         };
         let f = case_forces(&plans, &forces(&[("H1", 30e3), ("P1", 20e3)]), None);
         for v in &f[0].forces {
@@ -2887,6 +3023,7 @@ mod tests {
         let plans = GroupPlans {
             groups: vec![g],
             not_checked: Vec::new(),
+            end_steel: Vec::new(),
         };
         let f = case_forces(
             &plans,
@@ -2958,6 +3095,7 @@ mod tests {
         let plans = GroupPlans {
             groups: vec![g],
             not_checked: Vec::new(),
+            end_steel: Vec::new(),
         };
         let f = case_forces(&plans, &forces(&[("D1", -30e3)]), None);
         for (v, t) in f[0].forces.iter().zip(&f[0].tension) {

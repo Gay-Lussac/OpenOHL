@@ -517,8 +517,9 @@ fn laid_onto_h1() -> String {
 /// that end's force too. H1's end bolts get a group of their own (shear,
 /// bearing on H1) under H1's and P1's forces; the leg's bearing under H1's
 /// bolts follows the force through (more with P1 pulling than without);
-/// what is not covered (H1's own steel at those bolts) said NOT ON THE
-/// SAFE SIDE; P1 at no force: H1's own force alone.
+/// (L14's question 2) H1's own steel at those bolts checked under the
+/// larger of its own force and the resultant (by hand); P1 at no force:
+/// H1's own force alone.
 #[test]
 fn a_members_end_bolts_carry_the_ends_laid_onto_it() {
     if !built("asce10") {
@@ -567,14 +568,104 @@ fn a_members_end_bolts_carry_the_ends_laid_onto_it() {
         "{:?}",
         l1.notes
     );
-    let said = r1
-        .iter()
-        .find(|x| matches!(&x.part, PlatePart::NotChecked(w) if w.contains("H1's own steel")))
-        .unwrap_or_else(|| panic!("{r1:?}"));
+    // (L14's question 2, the owner 2026-11-22) H1's own steel at its end
+    // bolts: checked under the larger of its own force and the resultant —
+    // nothing said NOT ON THE SAFE SIDE there any more.
     assert!(
-        said.governs.starts_with("NOT ON THE SAFE SIDE"),
-        "{}",
-        said.governs
+        !r1.iter()
+            .any(|x| matches!(&x.part, PlatePart::NotChecked(w) if w.contains("H1's own steel"))),
+        "{r1:?}"
     );
-    assert!(said.usage.is_none());
+    let steel = |r: &[PlateUsage]| {
+        r.iter()
+            .find(|x| x.part == PlatePart::EndSteel("P1".into()))
+            .cloned()
+            .unwrap_or_else(|| panic!("{r:?}"))
+    };
+    let (s0, s1) = (steel(&r0), steel(&r1));
+    assert_eq!(s1.plate, "H1");
+    // By hand: H1 along +x at 30 kN, P1 at 45° in the level plane at 20 kN:
+    // (30 + 20 cos 45°, 20 sin 45°) = (44.142, 14.142) kN, 46.352 kN;
+    // P1 at no force: H1's own 30 kN.
+    assert!((s1.force - 46_352.0).abs() < 1.0, "{s1:?}");
+    assert!((s0.force - 30_000.0).abs() < 1e-6, "{s0:?}");
+    let cap = crate::member_capacity(&text, &library(), &Default::default(), "H1")
+        .unwrap()
+        .tension
+        .expect("a tension capacity")
+        .0;
+    assert!(
+        (s1.usage.unwrap() - s1.force / cap).abs() < 1e-9,
+        "{s1:?} {cap}"
+    );
+    assert!(
+        !s1.governs.contains(ohl_structures_fe::check::NOT_SAFE),
+        "{}",
+        s1.governs
+    );
+}
+
+/// L14's question 2 (the owner 2026-11-22: "check the impact on the bolt on
+/// the other member to make it safe"): H1 ending at N2 bolted onto a plate
+/// on the leg, P1 laid onto H1 near its end — the plate's own checks under
+/// H1's bolts take the larger of H1's force and the resultant through them
+/// (by hand 46.352 kN with P1 at 20 kN; H1's own 30 kN with P1 at none,
+/// and with P1 pushing back the other way, never less than H1's own); a
+/// resultant turned more than 15° off H1's line said not on the safe side
+/// (the plate's sections taken across H1's line).
+#[test]
+fn a_plate_under_a_members_end_bolts_takes_the_force_followed_through() {
+    if !built("asce10") {
+        return;
+    }
+    let text = laid_onto_h1().replace(
+        "member = \"H1\"\njoint = \"N2\"\nonto = \"L2\"",
+        "member = \"H1\"\njoint = \"N2\"\nonto = \"G1\"",
+    ) + "\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\non = \"L2\"\n";
+    let with = |h1: f64, p1: f64| {
+        let f: BTreeMap<String, f64> = [
+            ("D1", 0.0),
+            ("L1", -100e3),
+            ("L2", -90e3),
+            ("H1", h1),
+            ("P1", p1),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect();
+        rows(&text, &f)
+    };
+    let on_plate = |r: &[PlateUsage]| {
+        r.iter()
+            .find(|x| x.plate == "G1" && x.part == PlatePart::Member("H1".into()))
+            .cloned()
+            .unwrap_or_else(|| panic!("{r:?}"))
+    };
+    let r0 = on_plate(&with(30e3, 0.0));
+    let r1 = on_plate(&with(30e3, 20e3));
+    let r2 = on_plate(&with(30e3, -5e3));
+    assert!((r0.force - 30_000.0).abs() < 1e-6, "{r0:?}");
+    assert!((r1.force - 46_352.0).abs() < 1.0, "{r1:?}");
+    // P1 at −5 kN: (30 − 3.536, −3.536) = 26.70 kN < 30 kN — H1's own.
+    assert!((r2.force - 30_000.0).abs() < 1e-6, "{r2:?}");
+    assert!(
+        r1.notes
+            .iter()
+            .any(|n| n.contains("H1 with P1 laid onto it")),
+        "{:?}",
+        r1.notes
+    );
+    // The resultant turns atan(14.142 / 44.142) = 17.8° off H1's line, more
+    // than 15°: the plate's sections taken across H1's line, said not on
+    // the safe side; P1 alone pulling (H1 at no force): along P1, 45° off.
+    let unsafe_mark = ohl_structures_fe::check::NOT_SAFE;
+    assert!(
+        r1.governs.contains(unsafe_mark) && r1.governs.contains("turns 18°"),
+        "{}",
+        r1.governs
+    );
+    assert!(!r0.governs.contains(unsafe_mark), "{}", r0.governs);
+    let r3 = on_plate(&with(0.0, 20e3));
+    assert!((r3.force - 20_000.0).abs() < 1.0, "{r3:?}");
+    assert!(r3.governs.contains("turns 45°"), "{}", r3.governs);
 }
