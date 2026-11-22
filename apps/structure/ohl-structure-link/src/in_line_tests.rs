@@ -289,6 +289,62 @@ fn the_layout_before_and_after_confirming() {
     assert_eq!(run(&r.text).text, r.text);
 }
 
+/// L16 (L15's item 4): the base member's end bolts hold the plate on its
+/// flange only where no end left as it is bolts onto it directly — also as
+/// the file written gives that end: a member the run named onto another
+/// only while planning, left as it is with no connection at the joint, is
+/// written without the name and bolts onto the joint's leg worked out for
+/// it; where that is the base member, the base member does not hold the
+/// plate (its bolts would share its flange with that end's).
+#[test]
+fn an_end_left_with_no_connection_onto_the_base_member_keeps_it_from_holding() {
+    let text = diagonal();
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let j = d.joint("M").unwrap();
+    let plan = plan_joint(j, &settings(), &|_, _| None);
+    // As the run plans it: H2 holds the plate on its flange.
+    let mut p = plan.clone();
+    assert_eq!(
+        crate::joint_layout::hold_by_base(&mut p, j, &|_| None),
+        1,
+        "{p:?}"
+    );
+    // An invented end left as it is (a copy of V's, "X"): named onto H1
+    // only while planning, its leg worked out as H2.
+    let mut j2 = j.clone();
+    let mut x = j.arrivals.iter().find(|a| a.member == "V").unwrap().clone();
+    x.member = "X".into();
+    x.onto = crate::Valued {
+        value: Some("H1".into()),
+        source: crate::Source::Given,
+    };
+    x.joint_leg = Some("H2".into());
+    j2.arrivals.push(x);
+    // Written without a connection there: onto H2 worked out — H2 holds
+    // nothing.
+    let mut p = plan.clone();
+    assert_eq!(
+        crate::joint_layout::hold_by_base(&mut p, &j2, &|_| None),
+        0,
+        "{p:?}"
+    );
+    assert!(
+        p.hand
+            .iter()
+            .any(|h| h.starts_with("H2: ") && h.contains(crate::joint_layout::BOLTS_JOIN_NOTHING)),
+        "{:?}",
+        p.hand
+    );
+    // Written onto H1 (given so in the file): H2 holds the plate.
+    let mut p = plan.clone();
+    let on_h1 = |m: &str| (m == "X").then(|| "H1".to_owned());
+    assert_eq!(
+        crate::joint_layout::hold_by_base(&mut p, &j2, &on_h1),
+        1,
+        "{p:?}"
+    );
+}
+
 /// The redundant standing on the horizontal in two pieces (the guard's
 /// joint): not confirmed, the pieces stay what it bolts onto, their own
 /// ends left (D16); confirmed, they run on as one part. Laid out either

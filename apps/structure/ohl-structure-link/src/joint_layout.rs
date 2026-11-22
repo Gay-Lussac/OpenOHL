@@ -6155,7 +6155,15 @@ pub const BASE_HOLDS: &str = "its end bolts hold the plate";
 /// of the plate's own that cannot be so written: left as before. Applied to
 /// a plan as it is written (after it has been weighed against others, so
 /// that the end gained never decides between plans); how many so laid.
-pub(crate) fn hold_by_base(plan: &mut JointPlan, j: &JointDetail) -> usize {
+/// `written_onto`: what a member's end at the joint bolts onto as the file
+/// written gives it (none: not given there — the joint's leg then worked
+/// out for it, [`Arrival::joint_leg`]); a name the run gave it only while
+/// planning is not written for an end left as it is (L16).
+pub(crate) fn hold_by_base(
+    plan: &mut JointPlan,
+    j: &JointDetail,
+    written_onto: &dyn Fn(&str) -> Option<String>,
+) -> usize {
     let mut n = 0;
     let flagged: Vec<String> = plan
         .hand
@@ -6170,7 +6178,7 @@ pub(crate) fn hold_by_base(plan: &mut JointPlan, j: &JointDetail) -> usize {
         if plan.ends.iter().any(|e| e.member == m) {
             continue;
         }
-        let Some(k) = base_plate(a, &plan.plates, &plan.ends, j) else {
+        let Some(k) = base_plate(a, &plan.plates, &plan.ends, j, written_onto) else {
             continue;
         };
         let cut = a.cut.value.unwrap_or(0.0);
@@ -6268,12 +6276,16 @@ fn hold_as_end(h: &HoldPlan, a: &Arrival, cut: f64) -> Option<BoltArea> {
 /// onto it; `a` an angle bolted by one leg. Its bolts go onto the flange the
 /// plate lies on (the joint details' leg lying flat against what it bolts
 /// onto) — unless its leg bolted is given as the other one. Not where an
-/// end left as it is bolts onto it directly. None: no such plate.
+/// end left as it is bolts onto it directly: as planned, or as the file
+/// written gives it (`written_onto`; not given there: the joint's leg
+/// worked out for it — L16, an end with no connection at the joint whose
+/// worked-out `onto` is `a`). None: no such plate.
 fn base_plate(
     a: &Arrival,
     plates: &[PlatePlan],
     ends: &[EndPlan],
     j: &JointDetail,
+    written_onto: &dyn Fn(&str) -> Option<String>,
 ) -> Option<usize> {
     if !a.other_points.is_empty() || a.bolt_points.is_empty() {
         return None;
@@ -6325,7 +6337,11 @@ fn base_plate(
         let direct = j.arrivals.iter().any(|x| {
             x.member != a.member
                 && !ends.iter().any(|e| e.member == x.member)
-                && x.onto.value.as_deref() == Some(a.member.as_str())
+                && (x.onto.value.as_deref() == Some(a.member.as_str())
+                    || written_onto(&x.member)
+                        .or_else(|| x.joint_leg.clone())
+                        .as_deref()
+                        == Some(a.member.as_str()))
         });
         // No end left as it is bolts onto it directly: its own bolts would
         // share its flange with theirs (measured: holes overlapping, bolts

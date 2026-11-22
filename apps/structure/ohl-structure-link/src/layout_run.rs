@@ -3344,16 +3344,6 @@ fn write_rounds(
         for o in outcomes.iter_mut() {
             o.written = false;
             o.plates.clear();
-            if !take_back.contains(&o.joint)
-                && o.plan.laid_out()
-                && ask.settings.base_holds
-                && let Some(j) = r.planned.joint(&o.joint)
-            {
-                // L14: the base member's end bolts as a plate's holding
-                // bolts, applied to a plan as it is written (the joint in
-                // detail as it was planned).
-                crate::joint_layout::hold_by_base(&mut o.plan, j);
-            }
             if !take_back.contains(&o.joint) {
                 o.hand = o.plan.hand.clone();
             }
@@ -3369,6 +3359,20 @@ fn write_rounds(
                 continue;
             }
             strip_joint(&mut doc, r.t, &mut rec, &o.joint, ask.replace_hand, &mut w);
+            if ask.settings.base_holds
+                && let Some(j) = r.planned.joint(&o.joint)
+            {
+                // L14: the base member's end bolts as a plate's holding
+                // bolts, applied to a plan as it is written (the joint in
+                // detail as it was planned). L16: what an end left as it is
+                // bolts onto as the file written gives it — the joint's old
+                // automatic values out (a name the run gave only while
+                // planning is not written for it).
+                let joint = o.joint.clone();
+                let bare = &doc;
+                crate::joint_layout::hold_by_base(&mut o.plan, j, &|m| onto_in(bare, m, &joint));
+                o.hand = o.plan.hand.clone();
+            }
             o.plates = write_plan(
                 &mut doc,
                 r.t,

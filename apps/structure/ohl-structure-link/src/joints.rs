@@ -212,6 +212,10 @@ pub struct Arrival {
     pub kind: Valued<ConnectionKind>,
     /// What it bolts onto.
     pub onto: Valued<String>,
+    /// The joint's leg as worked out for it (the member it bolts onto
+    /// when none is given), whatever its `onto` (L16: what a file without
+    /// its `onto` would give it). None: no leg found.
+    pub joint_leg: Option<String>,
     /// The angle's leg bolted.
     pub leg: Valued<BoltedLeg>,
     /// Its bolts.
@@ -818,6 +822,7 @@ pub(crate) fn joint_details_and_model(
                 angle: None,
                 kind: Valued::none(),
                 onto: Valued::none(),
+                joint_leg: None,
                 leg: Valued::none(),
                 bolts: Valued::none(),
                 planes: (Valued::none(), None),
@@ -1154,10 +1159,11 @@ fn condition(
         None => Valued::none(),
     };
     // Onto what: given, else the joint's leg.
+    a.joint_leg = leg_of(a, all, areas);
     a.onto = match c.and_then(|c| c.onto.clone()) {
         Some(o) => Valued::of(o, Given),
-        None => match leg_of(a, all, areas) {
-            Some(l) => Valued::of(l, WorkedOut),
+        None => match &a.joint_leg {
+            Some(l) => Valued::of(l.clone(), WorkedOut),
             None => Valued::none(),
         },
     };
