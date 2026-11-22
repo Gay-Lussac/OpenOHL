@@ -354,7 +354,7 @@ pub struct LayoutSettings {
     /// **between** those angles: on the back of the one, as thick as the gap
     /// (the section's), the end on its far face clear of the other angle's
     /// steel, the plate's own provisional bolts through both angles
-    /// ([`BETWEEN_LEAST`]; the plate's `between`, structure file version 25).
+    /// (`BETWEEN_LEAST`; the plate's `between`, structure file version 25).
     /// Kept at a joint only where it lays out more ends, or as many on fewer
     /// plates, than without. On by default; off: as before (such an end
     /// planned on the angle facing it).
