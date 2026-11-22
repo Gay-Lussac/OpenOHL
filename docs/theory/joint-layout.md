@@ -3014,8 +3014,9 @@ it on by that angle's *inner* face (the plan's face came from what the file
 says, the angle from the seat): its plate planned in the gap, drawn outside
 it. Every such end on two angles back to back lies across their gap and is
 now planned onto the plate between (or left, said, where the gap is too
-thin); the plan without — weighed as above — keeps the old face (traced, not
-changed further).
+thin); the plan without — weighed as above — kept the old face until L16
+([below](#the-newest-step-never-leaving-a-joint-worse-the-plans-face-as-drawn-l16)),
+which plans every end on the face the joint details seat it on.
 
 **Measured** on the 78 private tower files (L14 main → with it; the bundled
 plugin, after Orient angles, L14's settings): joints laid out whole 35 964 →
@@ -3034,6 +3035,77 @@ the members' bolts on them median usage 0.06, 412 of 8 173 over 1 (5 %;
 the plates of the run as a whole 6.9 % — mostly the plate's buckling as a
 strut where its members are pulled back far), their holding bolts median
 0.07, 13 over 1.
+
+## The newest step never leaving a joint worse; the plan's face as drawn (L16)
+
+(L15's questions 3 and 4 and its item 4; the owner busy: built on its own,
+reported. Built 2026-11-22, in active development, not approved yet. No
+format change.)
+
+- **A base member holds no plate where an end left with no connection
+  bolts onto it** (L15's item 4). L14 makes the base member's own end bolts
+  the holding bolts of the plate on its flange, but not where an end left
+  as it is bolts onto that member directly. An end the run named onto
+  another member only while planning (L8) is written without the name; the
+  joint details then work out what it bolts onto as the joint's leg — and
+  where that is the base member, its bolts were read on the base member's
+  flange (on the private towers one tower's pair of joints: "does not fit
+  as given"). The check now counts every end also as the file written
+  gives it: what it bolts onto there, else the joint's leg worked out for
+  it (`Arrival::joint_leg`).
+- **The turns weighed as before L15.** Most joints L15 left worse (184 of
+  218 on the private towers) had a member whose roll the run chose
+  otherwise: the half turns (an end on the inner face, L10's other faces)
+  are weighed on whole plans, and the plates between laid some ends out
+  without them, so a turn another joint needed was not made. The turns are
+  now weighed on plans without the plates between — the newest step
+  never changes a member's roll —, the plans then made with them.
+- **The run's fallback** (L15's question 3). A joint whose plan with the
+  plates between lays out, after writing, fewer ends — **or as many on more
+  plates** (the clash rounds' plates, before not counted) — than its plan
+  without them is planned again without them; that plan is now planned as
+  L14 planned it: the ends it leaves are searched for other members to
+  bolt onto (L1 d) too — before, an end the plate between laid out was
+  never searched —, the names written only when the joint falls back. Where
+  the fallback then lays out less than the plan with the plates between
+  did, that plan is taken again and kept: the best plan already known, no
+  third try. The guard's measures (the ends of the plan without the plates
+  between, without L11's steps, as before L1) are worked out again each
+  time a joint is planned (an earlier pass's left out), and those of the
+  plans weighed for L10's turns are kept (the plates between's were lost
+  there).
+- **The plan's face as drawn** (L15's question 4,
+  `LayoutSettings::seat_as_drawn`, on): an end is planned on the face of
+  the leg of what the layout lays it onto that the joint details then seat
+  it on — one rule for both (`joints::seat_face`, the details' seat: the
+  face given at the end, else the one turned towards its outer face; on a
+  built-up member the angle facing it, chosen with the face given). Before,
+  the plan took the face the end sat on what it bolted onto while planning
+  — for an end naming nothing the joint's leg worked out, and where it did
+  not lie flat on that leg no face at all (taken as the outer one): planned
+  on the outer face, drawn on the inner (on two private towers about 120
+  such ends each, every one where no face had been worked out).
+
+**Measured** on the 78 private tower files (the bundled plugin, after
+Orient angles, L14's settings; L15 main → items 1 and 2 → with the face as
+drawn): joints laid out whole 37 059 → 37 031 → 37 100, member ends laid
+out 133 015 → 133 060 → 133 075, plates 69 226 → 69 197 → 69 391, members
+left after the clash rounds 11 670 → 11 744 → 11 366, joints that do not
+fit as given 50 → 48 → 48, a run again identical 78 of 78 each. **Joint
+by joint against L14** (before the plates between): L15 1 490 better and
+218 worse; with items 1 and 2 1 517 better and **81 worse** (whole gained
+1 070, lost 3) — of the 81, 41 still have a member turned otherwise (a
+turn decided after writing, a member none of whose joints is laid out with
+it), 42 lie where nothing runs through the joint. Against L15: 185 better,
+43 worse (30 joints whole there no longer: the half turns L15 chose with
+the plates between). **The face as drawn** alone (items 1 and 2 → with
+it): 227 better and 221 worse (whole +69, ends +15, plates +194): the ends
+an inner face cannot take (it runs towards the angle's other leg) are now
+left, said, where before they were planned outside and drawn inside (left
+so 1 002 → 1 645), and the plans' plates into steel 4 580 → 3 997; worse
+mostly on built-up members (their angles' inner faces). The time per tower
+(six towers, two at a time, back to back, twice): median 40.8 and 39.8 s →
+41.7 and 41.1 s, the largest 41.9 and 40.7 s → 42.2 and 41.8 s.
 
 ## The clash check
 

@@ -3263,6 +3263,61 @@ only where it helps):
   > face of the angle the joint details seat it on by its inner face →
   > Recommended: next, plan it on the face the joint details seat it on
   > where it lies across no gap.
+- [x] L16. **The newest step never leaving a joint worse; the plan's face
+  as drawn** (L15's questions 3 and 4 and its item 4; the owner busy:
+  built on its own, reported). **Built 2026-11-22, in active development,
+  not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-newest-step-never-leaving-a-joint-worse-the-plans-face-as-drawn-l16),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-22-joint-layout-the-newest-step-never-leaving-a-joint-worse-the-plans-face-as-drawn-l16);
+  no format change). **1.** A base member holds no plate where an end
+  left with no connection bolts onto it as the file written gives it (its
+  `onto` there, else the joint's leg worked out: `Arrival::joint_leg`) —
+  L15's item 4: not fitting as given 50 → 48. **2.** The turns (the half
+  turns, L10's other faces) weighed on plans without the plates between
+  (184 of L15's 218 worse joints had a member turned otherwise); the
+  fallback without the plates between also where a joint lays out as many
+  ends on more plates, planned as L14 planned it (its ends searched for
+  other members to bolt onto, those names written only on the fallback),
+  and the plan with the plates between taken again and kept where the
+  fallback lays out less; the guard's measures worked out again at every
+  planning. **3.** An end planned on the face the joint details seat it
+  on (`joints::seat_face`, `LayoutSettings::seat_as_drawn`, on). On the 78
+  real towers (kept privately; with the bundled plugin), L15 main → 1 and
+  2 → 3: joints whole 37 059 → 37 031 → 37 100, ends 133 015 → 133 060 →
+  133 075, plates 69 226 → 69 197 → 69 391, members left after the clash
+  rounds 11 670 → 11 744 → 11 366, a run again identical 78/78; joint by
+  joint against L14 main: 218 worse → 81 (better 1 490 → 1 517); 1 and 2
+  against L15 185 better, 43 worse; 3 alone 227 better, 221 worse; the time
+  per tower +2 % to +3 % (median 40.8/39.8 → 41.7/41.1 s). **4. Traced,
+  not changed** (L15's question 6): a 60 mm leg's "22 mm from its heel and
+  41 mm from its toe" — the heel distance its thickness, root and the nut
+  (the program's clearance); the toe distance the bundled code plugin's
+  ASCE 10-97 edge distance (4.5.1 Eq. 4.5-1, 4.5.3 Eq. 4.5-7, a sheared edge
+  assumed) with the force per bolt, without an analysis, the bolt's own
+  design shear capacity (4.3.2; an M20 bolt on a 5 mm flange of steel with
+  f_u 490 MPa: 94 kN, end 46 mm, edge 41 mm). Item 5 (a level or bent
+  plate across two horizontals) not built.
+  > **Owner:** (1) The turns weighed without the plates between (the
+  > newest step never changes a roll; 30 joints whole under L15 no longer,
+  > 218 → 81 worse against L14) → Recommended: keep. (2) The remaining 81
+  > worse against L14 (41 a member turned otherwise after writing, 42 where
+  > nothing runs through) → Recommended: next, a turn refused after writing
+  > (no joint of it laid out with it) tried as before the plates between
+  > first; then look at the joints where nothing runs through with item 5.
+  > (3) The face as drawn: plan and drawing now agree (227 better, 221
+  > worse, +69 whole, members left after the clash rounds −378, ends an
+  > inner face cannot take now left and said) → Recommended: keep (a plan
+  > that the drawing does not follow is no sound layout); next, the ends on
+  > a built-up member's inner face (most of the worse) — their half turn or
+  > the plate between. (4) The force per bolt without an analysis for the
+  > code's end and edge distances: ASCE 10-97 4.4 limits the force a bolt
+  > passes into a part to 1.5 f_u d t (bearing), so 1.2 P/(f_u t) needs not
+  > exceed 1.8 d — on that 60 mm leg the edge 41 → 32 mm (31 mm for its
+  > rolled toe, Eq. 4.5-6), a band of 5.5 mm where there is none now →
+  > Recommended: yes, the plugin's force basis without an analysis the
+  > smaller of the bolt's shear capacity and its bearing in the part (a
+  > code plugin change, the source cited; the joint checks still check the
+  > bearing), and the toe of a rolled angle taken as a rolled edge.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

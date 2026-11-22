@@ -8,6 +8,56 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint layout: the newest step never leaving a joint worse; the plan's face as drawn, L16)
+
+**The plates between a built-up member's angles (L15) no longer change a
+member's roll nor leave a joint worse through the run's fallbacks; an end
+is planned on the face the joint details draw it on** (roadmap O44 L16,
+L15's questions 3 and 4 and its item 4; the owner busy: built on its own,
+reported; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-newest-step-never-leaving-a-joint-worse-the-plans-face-as-drawn-l16);
+no format change).
+
+- **A base member holds no plate where an end left with no connection
+  bolts onto it** (L15's item 4): L14's condition (no end left as it is
+  bolted onto the base member directly) now also reads each end as the
+  file written gives it — what it bolts onto there, else the joint's leg
+  worked out for it (`Arrival::joint_leg`, new) — not only as planned (a
+  name the run gave while planning is not written for an end left as it
+  is). The step is applied after the joint's old automatic values are out.
+- **The turns weighed without the plates between**: the half turns (an end
+  on the inner face, L10's other faces) are weighed on plans without the
+  plates between (as before L15), the plans then made with them. Found:
+  184 of L15's 218 worse joints had a member turned otherwise.
+- **The fallback** (L15's question 3): planned again without the plates
+  between also where the joint lays out as many ends on more plates; the
+  fallback's ends searched for other members to bolt onto as before L15
+  (L1 d), those names written only when the joint falls back; where the
+  fallback lays out less than the plan with the plates between, that plan
+  is taken again and kept (the best plan already known). The guard's
+  measures worked out again at every planning of a joint, and kept for the
+  plans weighed for L10's turns.
+- **The plan's face as drawn** (L15's question 4,
+  `LayoutSettings::seat_as_drawn`, on): the face from `joints::seat_face`,
+  the joint details' own seat rule, against the member the layout lays the
+  end onto (before: the face it sat on what it bolted onto while planning,
+  none for an end naming nothing that does not lie flat on the joint's
+  leg — the outer face taken).
+- **Traced, not changed** (L15's question 6): the 41 mm from a 60 mm leg's
+  toe is the bundled code plugin's edge distance (ASCE 10-97 4.5.1 Eq.
+  4.5-1 and 4.5.3 Eq. 4.5-7) with the force per bolt, without an analysis,
+  the bolt's own design shear capacity (4.3.2); more conservative than the
+  code needs where the bearing limit of 4.4 caps the force a bolt can pass
+  into the thin part (owner question; a plugin's value, not changed).
+- **Measured** on the 78 private towers (L15 main → items 1 and 2 → with
+  the face as drawn): joints whole 37 059 → 37 031 → 37 100, member ends
+  133 015 → 133 060 → 133 075, plates 69 226 → 69 197 → 69 391, members
+  left after the clash rounds 11 670 → 11 744 → 11 366, not fitting as
+  given 50 → 48 → 48, a run again identical 78 of 78; joint by joint
+  against L14 main 218 worse → 81 (1 490 → 1 517 better); the face as
+  drawn alone 227 better and 221 worse (owner question); the time per
+  tower +2 % to +3 %.
+
 ## 2026-11-22 (joint checks: a member's own steel and its plate under the force followed through, L14's question 2)
 
 **The owner's answers of 2026-11-22**: L13's questions 1 to 7 approved as

@@ -2101,7 +2101,11 @@ Lap joints, covers, continuous members, 2026-11-05 (OHL-Structure,
 `ohl_structure_link`, nothing stored; stages 2 and 4 of the proposal in
 joint-details.md; built, in active development, not approved yet):
 `Arrival::sits: Valued<Face>` (given, else worked out from the seat;
-none onto a plate or splice), `Arrival::continuous: Option<member>`
+none onto a plate or splice; since 2026-11-22, the layout's L16, the face
+a member it bolts onto would seat it on `joints::seat_face`, what the
+layout plans on), `Arrival::joint_leg: Option<member>` (2026-11-22, L16:
+the joint's leg as worked out for it whatever its `onto` — what a file
+without its `onto` gives it), `Arrival::continuous: Option<member>`
 (`StructureType::continuous_with`; no cut, shift, bolts or layout there),
 `Arrival::misfit` (drawn red, said in `notes`), `Arrival::planes:
 (Valued<u32>, Option<why>)` (the bolts' `shear_planes` given, else
