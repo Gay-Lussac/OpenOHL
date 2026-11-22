@@ -66,6 +66,83 @@ pub struct Preview {
     pub before: JointDetails,
     /// After.
     pub after: JointDetails,
+    /// O44 L13: the leg and chord pieces the joints asked say are turned
+    /// (from the file as it is, before any turn ticked), each with whether
+    /// it is a chord (not a leg) — proposed, applied only when ticked.
+    pub turns: Vec<(ohl_structure_link::LegRoll, bool)>,
+    /// With turns ticked: the run without them (joints laid out whole,
+    /// member ends laid out, plates) — their measured effect.
+    pub without: Option<(usize, usize, usize)>,
+}
+
+/// A run's joints laid out whole, member ends laid out and plates.
+fn run_counts(r: &LayoutRun) -> (usize, usize, usize) {
+    (
+        r.laid_out().filter(|o| o.hand.is_empty()).count(),
+        r.laid_out().map(|o| o.plan.ends.len()).sum(),
+        r.laid_out().map(|o| o.plates.len()).sum(),
+    )
+}
+
+/// The leg and chord pieces of `d` (the joints asked in detail) whose
+/// joints say they are turned, flagged, each with whether it is a chord.
+fn proposed_turns(d: &JointDetails) -> Vec<(ohl_structure_link::LegRoll, bool)> {
+    let legs = ohl_structure_link::leg_rolls(d);
+    let chords = ohl_structure_link::leg_roll::piece_rolls(
+        d,
+        &ohl_structure_link::joint_classes::chord_pieces,
+    );
+    let mut out: Vec<(ohl_structure_link::LegRoll, bool)> = Vec::new();
+    for (r, chord) in legs
+        .into_iter()
+        .map(|r| (r, false))
+        .chain(chords.into_iter().map(|r| (r, true)))
+    {
+        // (A piece in line with one listed is turned with it: once.)
+        if r.flagged()
+            && !out
+                .iter()
+                .any(|(x, _)| x.member == r.member || x.partners.contains(&r.member))
+        {
+            out.push((r, chord));
+        }
+    }
+    out
+}
+
+/// `text` with the turns `ticked` (by the proposal's piece) of `turns`
+/// applied: each piece and the pieces in line with it turned alike, its
+/// roll to a hundredth of a degree.
+fn with_turns(
+    text: &str,
+    turns: &[(ohl_structure_link::LegRoll, bool)],
+    ticked: &BTreeSet<String>,
+) -> Result<String, String> {
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+    let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+        std::path::Path::new("s.ohls"),
+        text,
+    )
+    .map_err(|e| e.message)?;
+    for (r, _) in turns.iter().filter(|(r, _)| ticked.contains(&r.member)) {
+        let Some(turn) = r.turn else { continue };
+        for m in std::iter::once(&r.member).chain(r.partners.iter()) {
+            let now = t
+                .members
+                .iter()
+                .find(|x| &x.id == m)
+                .map_or(0.0, ohl_structure_edit::edits::member_roll);
+            let mut deg = (now.to_degrees() + turn) % 360.0;
+            if deg > 180.0 {
+                deg -= 360.0;
+            } else if deg <= -180.0 {
+                deg += 360.0;
+            }
+            deg = (deg * 100.0).round() / 100.0;
+            ohl_structure_edit::edits::set_member_roll(&mut doc, m, deg.to_radians());
+        }
+    }
+    Ok(doc.to_string())
 }
 
 /// The members' usage before and after for the last run's cases.
@@ -120,6 +197,9 @@ pub struct LayoutWindow {
     /// The usage before and after.
     pub usage: Option<UsageCompare>,
     usage_job: Job<UsageCompare>,
+    /// O44 L13: the leg and chord turns ticked (by the proposal's piece):
+    /// applied with the run (one undo step); none by default.
+    pub turns: BTreeSet<String>,
 }
 
 impl LayoutWindow {
@@ -229,6 +309,7 @@ impl LayoutWindow {
             v.to_bits().hash(&mut h);
         }
         (&self.bolt, &self.presets, self.welded, self.replace).hash(&mut h);
+        self.turns.hash(&mut h);
         h.finish()
     }
 }
@@ -285,6 +366,7 @@ impl StructureApp {
             },
             usage: None,
             usage_job: None,
+            turns: BTreeSet::new(),
         })
     }
 
@@ -405,6 +487,7 @@ impl StructureApp {
             let bolts2 = bolts.clone();
             let replace = w.replace;
             let joints = targets.clone();
+            let ticked = w.turns.clone();
             let (tx, rx) = channel();
             std::thread::spawn(move || {
                 let ask = RunAsk {
@@ -416,13 +499,30 @@ impl StructureApp {
                     replace_hand: replace,
                 };
                 let r = (|| {
-                    let run = ohl_structure_link::lay_out(&text, &ask)?;
                     let before = ohl_structure_link::joint_details_at(
                         &text,
                         &lib,
                         &bolts2.0,
                         Some(&joints),
                     )?;
+                    // (O44 L13) The turns proposed, from the file as it is;
+                    // those ticked applied before the run, the run without
+                    // them kept for their effect.
+                    let turns = proposed_turns(&before);
+                    let ticked: BTreeSet<String> = ticked
+                        .into_iter()
+                        .filter(|m| turns.iter().any(|(r, _)| &r.member == m))
+                        .collect();
+                    let (run, without) = if ticked.is_empty() {
+                        (ohl_structure_link::lay_out(&text, &ask)?, None)
+                    } else {
+                        let plain = ohl_structure_link::lay_out(&text, &ask)?;
+                        let turned = with_turns(&text, &turns, &ticked)?;
+                        (
+                            ohl_structure_link::lay_out(&turned, &ask)?,
+                            Some(run_counts(&plain)),
+                        )
+                    };
                     let after = ohl_structure_link::joint_details_at(
                         &run.text,
                         &lib,
@@ -435,6 +535,8 @@ impl StructureApp {
                         run,
                         before,
                         after,
+                        turns,
+                        without,
                     })
                 })();
                 let _ = tx.send(r);
@@ -686,6 +788,7 @@ impl StructureApp {
                     }
                     Some(p) => {
                         layout_summary(ui, p);
+                        layout_turns(ui, p, &mut w.turns);
                         in_line = layout_in_line(ui, p);
                         leg_places = layout_leg_splices(ui, p);
                         layout_changes(ui, p);
@@ -1013,23 +1116,6 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
             .color(ui.visuals().warn_fg_color),
         );
     }
-    // L11: the leg pieces their joints say are turned (proposed only).
-    if !p.run.leg_rolls.is_empty() {
-        let words: Vec<String> = p.run.leg_rolls.iter().map(|r| r.words()).collect();
-        ui.horizontal_wrapped(|ui| {
-            ui.label(
-                egui::RichText::new(format!(
-                    "{} leg piece(s) turned against their joints (proposed, not applied: Joint \
-                     details › Solve the clashes offers the turn with its effect)",
-                    p.run.leg_rolls.len()
-                ))
-                .small()
-                .color(ui.visuals().warn_fg_color),
-            )
-            .on_hover_text(words.join("\n"));
-            ohl_ui::tool_window::question(ui, LEG_ROLL_HELP);
-        });
-    }
     for n in p.run.notes.iter().take(3) {
         ui.label(egui::RichText::new(n).small().weak());
     }
@@ -1042,14 +1128,71 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
     }
 }
 
+/// O44 L13 (the owner's answers to L12's questions 4 and 5): the leg and
+/// chord pieces the joints asked say are turned, each with a tick (off by
+/// default) applying its turn with the run; with turns ticked, the run with
+/// and without them (their measured effect).
+fn layout_turns(ui: &mut egui::Ui, p: &Preview, ticked: &mut BTreeSet<String>) {
+    if p.turns.is_empty() {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new(format!(
+                "{} leg or chord piece(s) turned against their joints — proposed, applied only \
+                 when ticked (with the run, one undo step)",
+                p.turns.len()
+            ))
+            .small()
+            .color(ui.visuals().warn_fg_color),
+        );
+        ohl_ui::tool_window::question(ui, LEG_ROLL_HELP);
+    });
+    for (r, chord) in &p.turns {
+        let mut on = ticked.contains(&r.member);
+        let words = if *chord {
+            format!(
+                "Chord: {}",
+                r.words().replacen("leg piece", "chord piece", 1).replacen(
+                    "one leg",
+                    "one chord",
+                    1
+                )
+            )
+        } else {
+            format!("Leg: {}", r.words())
+        };
+        if ui.checkbox(&mut on, words).changed() {
+            if on {
+                ticked.insert(r.member.clone());
+            } else {
+                ticked.remove(&r.member);
+            }
+        }
+    }
+    if let Some((w0, e0, p0)) = p.without {
+        let (w1, e1, p1) = run_counts(&p.run);
+        ui.label(
+            egui::RichText::new(format!(
+                "With the turns ticked: {w1} joint(s) laid out whole, {e1} member end(s), {p1} \
+                 plate(s); without them: {w0}, {e0}, {p0} (measured: the layout run both ways)"
+            ))
+            .small(),
+        );
+    }
+}
+
 /// The help of the leg pieces turned against their joints (O44 L11).
-pub const LEG_ROLL_HELP: &str = "A leg piece whose joints say it is turned about its axis: \
-     the member ends bolting onto it arrive in planes (the plane through the leg's axis and \
-     theirs) turned against its flanges by about the same angle — at least two members, all \
-     the same way, within 4° of each other, more than the owner's 2°. The tower's faces through \
-     the neighbouring legs (Orient angles) are said beside it as a hint only. Never applied: \
-     Joint details › Solve the clashes offers the turn (the pieces in line with it turned \
-     alike, one leg) with the joint's solution worked out with it.";
+pub const LEG_ROLL_HELP: &str = "A leg piece, or a chord running on through a joint (an arm's \
+     chord, a body's member running on), whose joints say it is turned about its axis: the \
+     member ends bolting onto it arrive in planes (the plane through its axis and theirs) turned \
+     against its flanges by about the same angle — at least two members, all the same way, \
+     within 4° of each other, more than the owner's 2°. The tower's faces through the \
+     neighbouring legs (Orient angles) are said beside a leg as a hint only. Never applied \
+     silently: tick it to apply its turn with the run (the pieces in line with it turned alike, \
+     one leg or chord; one undo step with the layout) — the preview then shows the run with and \
+     without the turns ticked. Joint details › Solve the clashes offers the same turns per \
+     joint with the joint's solution worked out with them.";
 
 /// The help of the pieces in line (O44 J9).
 pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a joint (within 1°, \

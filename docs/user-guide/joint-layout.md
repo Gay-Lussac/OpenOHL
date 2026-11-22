@@ -244,39 +244,54 @@ or taken away. A member **left** for a hand detail is said with why.
   *Leg turned against its joints* below).
 - **Undo** takes the whole solution back in one step.
 
-## Leg turned against its joints
+## Leg or chord turned against its joints
 
-(2026-11-21, O44 L11; built, in active development; the owner: "sometimes
-the main legs are rotated along their axis 5° out of what would be needed
-for the joints".) **What it is for:** finding a leg piece that is turned
+(2026-11-21, O44 L11; chords and the ticks 2026-11-22, L13; built, in
+active development; the owner: "sometimes the main legs are rotated along
+their axis 5° out of what would be needed for the joints".) **What it is
+for:** finding a leg piece — or a chord running on through a joint (an
+arm's chord, a body's horizontal or diagonal running on) — that is turned
 about its axis against the members bolting onto it, from **the joints
-themselves**. A bracing end can lie flat on a leg's flange only when its
-axis lies in that flange's plane; the plane through the leg's axis and the
+themselves**. A bracing end can lie flat on a flange only when its axis
+lies in that flange's plane; the plane through the piece's axis and the
 end's says how far the flange is turned from it. Where at least two
-members' ends at a leg piece's joints say the same turn (all the same way,
-within 4° of each other) and it is more than the 2° a leg bolts flat
+members' ends at a piece's joints say the same turn (all the same way,
+within 4° of each other) and it is more than the 2° a member bolts flat
 within, the piece is flagged with that turn; the pieces in line with it
-turned alike are named with it (one leg). The tower's faces through the
-neighbouring legs (what Orient angles turns a leg to) are said beside it
-as a hint only — never flagged on their own.
+turned alike are named with it (one leg or chord). For a leg, the tower's
+faces through the neighbouring legs (what Orient angles turns a leg to)
+are said beside it as a hint only — never flagged on their own.
 
 **Where it shows:**
 
-- **Lay out joints**: under the numbers, "*n* leg piece(s) turned against
-  their joints (proposed, not applied)", each in the hover with the
-  turn, the ends that say it and the faces' hint.
+- **Lay out joints**: under the numbers, "*n* leg or chord piece(s) turned
+  against their joints — proposed, applied only when ticked", then one
+  line per piece ("Leg: …" or "Chord: …", the turn and the ends that say
+  it) with a **tick, off by default**. Tick one or more: the preview is
+  worked out again with those pieces turned (each with the pieces in line
+  with it, alike), and says the run **with and without** the turns ticked
+  (joints laid out whole, member ends, plates — measured, the layout run
+  both ways). **Apply** then writes the turns with the layout, one undo
+  step.
+
+  ![Lay out joints on an invented K-brace whose chord is turned 5° against its joint: the chord's turn proposed with its tick, ticked, and the run with and without it](../images/structure-tools/tool-lay-out-joints-turns.png)
 - **Solve the clashes**: under *Proposed, not applied*, "Turn L2, L1 by
   −5.0°: with it clashes … → …, other problems … → …" — the joint's
-  solution worked out again with the whole leg turned (the piece and the
-  pieces in line with it, alike). **Tick it** to apply that solution
-  instead (one undo step); unticked, nothing of the leg changes.
+  solution worked out again with the whole leg or chord turned (the piece
+  and the pieces in line with it, alike). **Tick it** to apply that
+  solution instead (one undo step); unticked, nothing of it changes.
 
-**Good to know:** a leg's turn is never changed silently, by the layout
-or by Solve the clashes. Where Orient angles has not been run on an
-imported tower, most legs show as turned (an import carries no member
-orientation): run Orient angles first ([below](#orient-angles)); the check
-then shows the pieces Orient angles cannot place (where no faces are
-found) or the joints disagree with.
+**Good to know:** a leg's or chord's turn is never changed silently, by
+the layout or by Solve the clashes (the run's own chord turns, a setting,
+stay off). Where Orient angles has not been run on an imported tower,
+most legs show as turned (an import carries no member orientation): run
+Orient angles first ([below](#orient-angles)); the check then shows the
+pieces Orient angles cannot place (where no faces are found) or the joints
+disagree with. Where a chord's two faces meet off square (an arm's faces a
+few degrees from 90°), Orient angles leaves each flange half the
+difference off its face; the joints may then ask for one flange in the face
+their ends bolt onto — turning it lays that face flat and the other twice
+as far off, which the tick lets you weigh.
 
 ## A joint's group
 

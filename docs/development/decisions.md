@@ -8,6 +8,34 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint layout: leg and chord turns offered with a tick, L13)
+
+**The leg and chord turns the joints ask for are offered in Lay out joints'
+preview with a tick each, and the chord turns in Solve the clashes; the
+disagreement of Orient angles' chord turn with the joints traced** (roadmap
+O44 L13, the owner's answers to L12's questions 4 and 5; built, in active
+development, not approved yet;
+[theory](../theory/joint-layout.md#leg-and-chord-turns-offered-never-applied-silently),
+[user guide](../user-guide/joint-layout.md#leg-or-chord-turned-against-its-joints)).
+No format change.
+
+- **Lay out joints**: every leg piece (L11) and chord piece running on
+  (L12) whose joints say it is turned, from the file as it is, with a tick,
+  **off by default**; ticked, the preview is worked out with the turns (the
+  pieces in line turned alike) and says the run with and without them
+  (measured, the layout run both ways); Apply writes them with the layout,
+  one undo step. The run's own chord turns (`chord_turns`) stay off.
+- **Solve the clashes** offers a chord piece at the joint as it offers a
+  leg piece, its solution worked out with the turn, ticked off.
+- **Orient angles against the joints, traced** (78 private towers): every
+  flagged chord piece Orient angles set (839) is flagged by exactly half
+  its faces' difference from square — Orient puts the legs' bisector on the
+  faces' bisector; the joints' estimate counts only the ends bolting onto
+  the piece and asks for one flange in their face, the other then twice as
+  far off. A rule tried (a flange in the face that alone has members ending
+  on the chord) changed 2 of the 839: not a fix at no cost; left as built,
+  the turn weighed per chord (the tick).
+
 ## 2026-11-22 (joint layout: an end on a built-up member seated by the plane its axis lies in, L13)
 
 **The joint details choose an end's leg bolted on a built-up member by the

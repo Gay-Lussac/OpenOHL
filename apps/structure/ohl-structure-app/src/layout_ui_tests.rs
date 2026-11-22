@@ -1277,3 +1277,137 @@ fn the_clashes_of_a_joint_are_solved_in_one_click() {
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// O44 L13 (the owner's answers to L12's questions 4 and 5): an invented
+/// K-brace whose chord (bracing running on, not a leg) is turned 5° against
+/// its joint. The preview lists the chord's turn, not ticked: nothing turned;
+/// ticked, the run is worked out again with it (the run with and without it
+/// shown) and Apply writes the turn with the layout in one undo step.
+#[test]
+fn a_chord_turn_is_offered_with_a_tick_and_applied_with_the_run() {
+    let path = copy_of("type-02.ohls", "layout-chord-turn");
+    let dir = path.parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../libraries/sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    let tower = dir.join("chord.ohls");
+    std::fs::write(&tower, CHORD).unwrap();
+    let mut h = harness(&tower);
+    h.run_steps(3);
+    let before = h.state().file.as_ref().unwrap().text();
+    h.state_mut()
+        .open_layout_window(crate::layout_window::Scope::Tower);
+    wait_preview(&mut h);
+    h.run_steps(4);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        assert!(
+            p.turns
+                .iter()
+                .any(|(r, chord)| *chord && (r.member == "L1" || r.member == "L2")),
+            "{:?}",
+            p.turns
+        );
+        assert!(p.without.is_none());
+        assert!(p.run.text.contains("roll = \"5 deg\""));
+    }
+    h.get_by_label_contains("Chord: turn").click();
+    let mut done = false;
+    for _ in 0..600 {
+        h.step();
+        done = h
+            .state()
+            .layout_window
+            .as_ref()
+            .and_then(|w| w.preview.as_ref())
+            .is_some_and(|p| p.without.is_some());
+        if done {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(done, "no preview with the turn");
+    h.run_steps(4);
+    {
+        let p = h.state().layout_window.as_ref().unwrap();
+        let p = p.preview.as_ref().unwrap();
+        assert!(!p.run.text.contains("roll = \"5 deg\""), "{}", p.run.text);
+    }
+    crate::tool_window_tests::window_shot(&mut h, "Lay out joints", "lay-out-joints-turns");
+    // Nothing written by the preview.
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    wait_apply(&mut h);
+    h.get_by_label_contains("Apply (").click();
+    h.run_steps(3);
+    let after = h.state().file.as_ref().unwrap().text();
+    assert!(!after.contains("roll = \"5 deg\""));
+    h.state_mut().file.as_mut().unwrap().undo();
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// An invented K-brace: a chord C1–C2 (bracing running on through N2, not a
+/// leg) turned 5° against the diagonals D1 and D2 meeting it there.
+const CHORD: &str = r#"id = "K"
+name = "k"
+kind = "lattice"
+
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N2"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "N3"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "N4"
+point = ["2.5 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "N5"
+point = ["2.5 m", "0 m", "6 m"]
+support = "fixed"
+
+[[member]]
+id = "L1"
+nodes = ["N1", "N2"]
+section = "EA-61x7"
+orientation = "x+y+"
+roll = "5 deg"
+design = { class = "bracing" }
+
+[[member]]
+id = "L2"
+nodes = ["N2", "N3"]
+section = "EA-61x7"
+orientation = "x+y+"
+roll = "5 deg"
+design = { class = "bracing" }
+
+[[member]]
+id = "D1"
+nodes = ["N4", "N2"]
+section = "EA-61x7"
+orientation = "y-z+"
+design = { class = "bracing" }
+
+[[member]]
+id = "D2"
+nodes = ["N5", "N2"]
+section = "EA-61x7"
+orientation = "z-y-"
+design = { class = "bracing" }
+"#;

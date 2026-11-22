@@ -2822,6 +2822,47 @@ The time per tower (six towers, back to back, twice, nothing else
 running), L12 → L13 (both steps): median 38.4 → 37.8 s, the largest 40.3 →
 40.1 s — the same.
 
+### Leg and chord turns offered, never applied silently
+
+(The owner's answers to L12's questions 4 and 5; built 2026-11-22, in
+active development, not approved yet. The code: the application's
+`layout_window` (the preview's ticks), `solve` (Solve the clashes); the
+run's own chord turns, `LayoutSettings::chord_turns`, stay **off**. **No
+format change**: a turn applied is the member's roll, as any.)
+
+- **Lay out joints' preview** lists every leg piece (L11) and every chord
+  piece running on (L12, `joint_classes::chord_pieces`) whose joints say it
+  is turned ([above](#a-leg-turned-against-its-joints)), read from the
+  joints asked as the file is, each with a **tick, off by default**. With
+  turns ticked the preview is worked out on the file with them applied
+  (each piece and the pieces in line with it turned alike, to a hundredth
+  of a degree) and says the run **with and without** them — joints laid
+  out whole, member ends laid out, plates (measured: the layout run both
+  ways). Apply writes the turns with the layout, one undo step.
+- **Solve the clashes** offers a chord piece at the joint as it offers a
+  leg piece: the joint's solution worked out again with it turned, ticked
+  off.
+
+**Why Orient angles' chord turn and the joints disagree by a few degrees**
+(L12's question 4, traced on the 78 private towers after Orient angles):
+of the chord pieces flagged whose roll Orient angles set as a chord, **every
+one** (839) is flagged by exactly half the difference of its two faces from
+square — the turn that puts one flange in one face (Orient angles' rule
+puts the angle's legs' bisector on the faces' bisector, each flange half the
+difference off its face). The faces meet off square by a few degrees (half
+the difference under 2.5° for 422 of them, 2.5° to 5° for 136, 5° to 10°
+for 250, more for 31): the ends of **both** faces lie that far off their
+flanges; the joints' estimate counts only the ends bolting onto the piece
+(directly or onto a plate on it) — at a traced arm chord the ends of one
+face, laid out, said −2.4° and −1.8°, while those of the other face, left
+by hand, said nothing. Turning the chord lays that face's ends flat and
+puts the other face's twice as far off. **Not a fault of Orient angles to
+fix at no cost**: a tried rule (a flange in the face that alone has members
+ending on the chord) changed 2 of the 839 pieces — the faces carry members
+on both sides. The ends of such faces are for the bent plate (a few
+degrees), or the chord's turn weighed per chord (the ticks above, or the
+run's setting).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

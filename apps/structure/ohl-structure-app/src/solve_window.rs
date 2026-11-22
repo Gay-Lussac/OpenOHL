@@ -303,13 +303,15 @@ impl StructureApp {
                             ohl_ui::tool_window::heading(
                                 ui,
                                 "Proposed, not applied",
-                                "A leg piece whose joints say it is turned about its axis: the \
-                                 bracing ends meeting it lie in planes turned against its \
-                                 flanges by about the same angle (the tower's faces through \
-                                 the neighbouring legs are a hint only). Never applied \
-                                 silently: tick it to apply the solution worked out with that \
-                                 turn instead (the pieces in line with it turned alike, so \
-                                 that the whole leg keeps matching).",
+                                "A leg piece, or a chord running on through the joint (an \
+                                 arm's chord, a body's member running on), whose joints say it \
+                                 is turned about its axis: the bracing ends meeting it lie in \
+                                 planes turned against its flanges by about the same angle (the \
+                                 tower's faces through the neighbouring legs or chords are a \
+                                 hint only). Never applied silently: tick it to apply the \
+                                 solution worked out with that turn instead (the pieces in line \
+                                 with it turned alike, so that the whole leg or chord keeps \
+                                 matching).",
                             );
                             for (k, l) in sol.leg_turns.iter().enumerate() {
                                 let mut on = w.leg == Some(k);

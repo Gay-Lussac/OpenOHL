@@ -3112,6 +3112,36 @@ only where it helps):
   > **Owner:** (4) The built-up seat by the plane, on every file (301
   > joints worse, 601 better, +248 whole) → Recommended: keep; next, J6's
   > plate between a built-up member's angles (where such ends belong).
+
+  **C. Leg and chord turns offered with a tick** (the owner's answers to
+  L12's questions 4 and 5; [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#leg-or-chord-turned-against-its-joints)):
+  Lay out joints' preview lists the leg and chord pieces the joints say are
+  turned, a tick each (off by default); ticked, the preview is worked out
+  with the turns and says the run with and without them (measured); Apply
+  writes them with the layout, one undo step. Solve the clashes offers the
+  chord pieces as the leg pieces. The run's `chord_turns` stays off.
+  **Orient angles against the joints traced**: every flagged chord piece
+  Orient angles set (839 on the 78 towers) is flagged by exactly half its
+  faces' difference from square (Orient bisects; the joints' estimate counts
+  only the ends bolting onto the piece and asks for one flange in their
+  face, the other then twice as far off); a rule tried (a flange in the face
+  that alone has members ending on the chord) changed 2 of 839 — not a fix
+  at no cost, left as built.
+  **D. The few-degree bent plate, 5° to 20° (traced, not fixed)**: of the
+  ends 5° to 20° out of their host's flange plane after L12 (10 101), 7 704
+  left: the welded plate's tests after the bent plate — its outstanding leg
+  towards the flange (1 405), its axis farther out than a plate's thickness
+  (1 174) —, the inner face towards the angle's other leg (about 1 230),
+  measured against a flange its axis does not lie in (about 1 800, partly
+  what B now seats right).
+  > **Owner:** (5) The turns offered with a tick, the preview's run with and
+  > without them → Recommended: keep. (6) Orient angles' chord turn left as
+  > the bisector (faces off square: neither face flat within 2° where the
+  > difference is over 4°) → Recommended: keep; the ticks weigh per chord.
+  > (7) Not built: L12's question 3 (the base member's own bolts as the
+  > gusset's holding bolts, a format field — allowed 2026-11-22) →
+  > Recommended: next, as its own step (a structure file version, the reader
+  > keeping older files, the joint checks' holding group from those bolts).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

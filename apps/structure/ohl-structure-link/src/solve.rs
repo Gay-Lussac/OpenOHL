@@ -792,7 +792,8 @@ fn fix_rounds(
     Ok((now, made))
 }
 
-/// The leg pieces at the joint whose joints say they are turned
+/// The leg pieces (and, O44 L13, the chord pieces running on) at the joint
+/// whose joints say they are turned
 /// ([`crate::leg_roll`]), each with the solution worked out again with the
 /// turn (the piece and the pieces in line with it turned alike).
 fn leg_turns(
@@ -803,11 +804,21 @@ fn leg_turns(
     bases: &[Base],
     focus: &BTreeSet<String>,
 ) -> Result<Vec<LegTurn>, String> {
+    // (O44 L13) And the chord pieces running on through it (an arm's chord,
+    // a body's member running on: `joint_classes::chord_pieces`), their
+    // turn read as a leg's — proposed as the leg turns are (the owner's
+    // answer to L12's question 4: off in a run, offered with a tick).
+    let chord_at: Vec<&str> = crate::joint_classes::chord_pieces(j0)
+        .into_iter()
+        .filter_map(|i| j0.arrivals.get(i))
+        .map(|a| a.member.as_str())
+        .collect();
     let legs: Vec<&str> = j0
         .arrivals
         .iter()
         .filter(|a| a.class.as_deref() == Some("leg"))
         .map(|a| a.member.as_str())
+        .chain(chord_at.iter().copied())
         .collect();
     if legs.is_empty() {
         return Ok(Vec::new());
@@ -827,7 +838,14 @@ fn leg_turns(
         text.to_owned()
     };
     let d = crate::joint_details_at(&cut, ask.library, ask.bolts, Some(&joints))?;
-    let rolls = crate::leg_roll::with_faces(crate::leg_rolls(&d), text, ask.library);
+    let mut found = crate::leg_rolls(&d);
+    if !chord_at.is_empty() {
+        found.extend(crate::leg_roll::piece_rolls(
+            &d,
+            &crate::joint_classes::chord_pieces,
+        ));
+    }
+    let rolls = crate::leg_roll::with_faces(found, text, ask.library);
     let mut out = Vec::new();
     let mut done: BTreeSet<String> = BTreeSet::new();
     for r in rolls

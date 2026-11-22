@@ -198,3 +198,25 @@ fn pieces_in_line_with_bolts_joining_nothing_are_confirmed_one_part() {
         best.effects
     );
 }
+
+/// O44 L13 (the owner's answer to L12's question 4): a chord (bracing
+/// running on, not a leg) turned 5° against its joint is proposed turned
+/// back as a leg piece is — offered, never applied unless ticked.
+#[test]
+fn a_chord_turned_against_its_joint_is_offered() {
+    let text = crate::joint_layout_tests::K.replace(
+        "orientation = \"x+y+\"\ndesign = { class = \"leg\" }",
+        "orientation = \"x+y+\"\nroll = \"5 deg\"\ndesign = { class = \"bracing\" }",
+    );
+    let s = solve(&text, "N2");
+    let t = s
+        .leg_turns
+        .iter()
+        .find(|l| l.members.iter().any(|m| m == "L1" || m == "L2"))
+        .unwrap_or_else(|| panic!("{:?}", s.leg_turns));
+    assert!((t.roll.turn.unwrap() + 5.0).abs() < 0.1, "{t:?}");
+    // Not applied: the solution chosen keeps the chord's roll.
+    if let Some(c) = s.best() {
+        assert!(c.text.contains("roll = \"5 deg\""), "{}", c.label);
+    }
+}
