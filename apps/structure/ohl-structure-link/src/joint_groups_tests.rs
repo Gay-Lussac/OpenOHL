@@ -486,3 +486,95 @@ fn bolts() -> ohl_structures::bolts::BoltLibrary {
     )
     .unwrap()
 }
+
+/// The invented tower with a horizontal H1 ending at N2 (along +x, in the
+/// face y = 1 m), bolted onto the leg L2 by two M16, and a plan member P1
+/// (level, at 45° to H1) laid onto H1 near its end by two M16 (L14).
+fn laid_onto_h1() -> String {
+    let tower = TOWER.replace(
+        "[[member]]\nid = \"L1\"",
+        "[[node]]\nid = \"N5\"\npoint = [\"1.5 m\", \"1 m\", \"5 m\"]\nsupport = \"fixed\"\n\n\
+         [[node]]\nid = \"N6\"\npoint = [\"1.5 m\", \"2.5 m\", \"5 m\"]\nsupport = \"fixed\"\n\n\
+         [[member]]\nid = \"H1\"\nnodes = [\"N2\", \"N5\"]\nsection = \"EA-61x7\"\n\
+         design = { class = \"bracing\" }\n\n\
+         [[member]]\nid = \"P1\"\nnodes = [\"N6\", \"N2\"]\nsection = \"EA-61x7\"\n\
+         design = { class = \"bracing\" }\n\n\
+         [[member]]\nid = \"L1\"",
+    );
+    assert_ne!(tower, TOWER);
+    format!(
+        "{tower}\n[[connection]]\nmember = \"H1\"\njoint = \"N2\"\nonto = \"L2\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\", grade = \"8.8\" }}\n\
+         gauges = [\"30 mm\"]\ngauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n\
+         \n[[connection]]\nmember = \"P1\"\njoint = \"N2\"\nonto = \"H1\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\", grade = \"8.8\" }}\n\
+         gauges = [\"30 mm\"]\ngauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n"
+    )
+}
+
+/// L14 (the owner's answer of 2026-11-22 to L13's question 3): a member
+/// ending at the joint with an end laid onto it — its own end bolts carry
+/// that end's force too. H1's end bolts get a group of their own (shear,
+/// bearing on H1) under H1's and P1's forces; the leg's bearing under H1's
+/// bolts follows the force through (more with P1 pulling than without);
+/// what is not covered (H1's own steel at those bolts) said NOT ON THE
+/// SAFE SIDE; P1 at no force: H1's own force alone.
+#[test]
+fn a_members_end_bolts_carry_the_ends_laid_onto_it() {
+    if !built("asce10") {
+        return;
+    }
+    let text = laid_onto_h1();
+    let with = |p1: f64| {
+        let f: BTreeMap<String, f64> = [
+            ("D1", 0.0),
+            ("L1", -100e3),
+            ("L2", -90e3),
+            ("H1", 30e3),
+            ("P1", p1),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_owned(), v))
+        .collect();
+        rows(&text, &f)
+    };
+    let r0 = with(0.0);
+    let r1 = with(20e3);
+    let own = |r: &[PlateUsage]| {
+        r.iter()
+            .find(|x| x.part == PlatePart::EndBolts("P1".into()))
+            .cloned()
+            .unwrap_or_else(|| panic!("{r:?}"))
+    };
+    let (e0, e1) = (own(&r0), own(&r1));
+    assert_eq!(e1.plate, "H1");
+    assert_eq!(e1.joint, "N2");
+    assert!(e1.usage.is_some(), "{e1:?}");
+    // H1 alone: 15 kN a bolt; with P1 more.
+    assert!((e0.force - 15e3).abs() < 1e-6, "{e0:?}");
+    assert!(e1.force > e0.force + 1e3, "{e0:?} {e1:?}");
+    assert!(e1.usage.unwrap() > e0.usage.unwrap(), "{e0:?} {e1:?}");
+    let leg = |r: &[PlateUsage]| {
+        r.iter()
+            .find(|x| x.part == PlatePart::Bearing && x.plate == "L2")
+            .cloned()
+            .unwrap_or_else(|| panic!("{r:?}"))
+    };
+    let (l0, l1) = (leg(&r0), leg(&r1));
+    assert!(l1.force > l0.force + 1e3, "{l0:?} {l1:?}");
+    assert!(
+        l1.notes.iter().any(|n| n.contains("H1 with P1")),
+        "{:?}",
+        l1.notes
+    );
+    let said = r1
+        .iter()
+        .find(|x| matches!(&x.part, PlatePart::NotChecked(w) if w.contains("H1's own steel")))
+        .unwrap_or_else(|| panic!("{r1:?}"));
+    assert!(
+        said.governs.starts_with("NOT ON THE SAFE SIDE"),
+        "{}",
+        said.governs
+    );
+    assert!(said.usage.is_none());
+}

@@ -3142,6 +3142,37 @@ only where it helps):
   > gusset's holding bolts, a format field — allowed 2026-11-22) →
   > Recommended: next, as its own step (a structure file version, the reader
   > keeping older files, the joint checks' holding group from those bolts).
+- [x] L14. **The force through a host's own end bolts; the base member's
+  end bolts as the gusset's holding bolts** (the owner's answers of
+  2026-11-22: L13's question 3, L12's question 3 / L10's question 5; the
+  owner busy: built on its own, reported). **Built 2026-11-22, in active
+  development, not approved yet.**
+  **1. The force followed through**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md#the-force-through-a-members-own-end-bolts-l14),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-22-joint-checks-the-force-through-a-members-own-end-bolts-l14);
+  no format change, the plugins' interface unchanged): an end bolted onto a
+  member that ends at the joint (L1 d's and L13's names) — that member's
+  own end bolts carry its force and the end's (each along its line, their
+  moment about the bolts' centroid, shared elastically; each bolt the
+  larger of that and the member's own force alone, on the safe side), in
+  the group of what it bolts onto, a plate's holding bolts, a welded
+  plate's welds and a group of its own end bolts ("its end bolts with … laid
+  onto it": shear, bearing on the member and the plate). Still NOT ON THE
+  SAFE SIDE, said on a row and in the run's notes: the member's own steel at
+  those bolts (net section, tearing out) and a plate's own checks under them
+  (its own force only). On the 72 real towers with loads (kept privately,
+  one vertical case): 414 such groups (usage median 15 %, at most 78 %); 5
+  usages of the rows before change, all up (largest 54 % → 137 %, a plate's
+  holding bolts); 867 ends onto a member bolting onto nothing or whose
+  bolts are not placed now said NOT CHECKED (before silent); the layout
+  unchanged.
+  > **Owner:** (1) Each bolt the larger of the force followed through and
+  > the member's own alone (a relieving end not counted on) → Recommended:
+  > keep (on the safe side; a usage can only grow). (2) The member's own
+  > net section and tearing out at its end bolts still under its own force
+  > (said NOT ON THE SAFE SIDE) → Recommended: next, the member check
+  > given the force followed through at that end (a core change the code
+  > plugins' member check reads: asked first).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

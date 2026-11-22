@@ -64,6 +64,10 @@ pub enum PlatePart {
     /// Every bolt onto the member at the joint: its bearing (2026-11-19);
     /// the row's `plate` is the member.
     Bearing,
+    /// A member's own end bolts with the ends laid onto it near its end
+    /// (L14, 2026-11-22: those ends in words); the row's `plate` is the
+    /// member.
+    EndBolts(String),
     /// Something at the joint not checked, in words (2026-11-19).
     NotChecked(String),
     /// A bent plate's bend in bending (2026-11-19, the owner's decision of
@@ -79,6 +83,7 @@ impl PlatePart {
             PlatePart::Weld(o) => format!("weld to {o}"),
             PlatePart::Holding(h) => format!("its bolts onto {h}"),
             PlatePart::Bearing => "the bolts onto it (its bearing)".to_owned(),
+            PlatePart::EndBolts(w) => format!("its end bolts with {w} laid onto it"),
             PlatePart::NotChecked(_) => "not checked".to_owned(),
             PlatePart::Bend => "its bend".to_owned(),
         }
@@ -124,6 +129,9 @@ impl PlateUsage {
     pub fn what(&self) -> String {
         match &self.part {
             PlatePart::Bearing => format!("the bolts onto {} (its bearing)", self.plate),
+            PlatePart::EndBolts(w) => {
+                format!("{}'s end bolts with {w} laid onto it", self.plate)
+            }
             PlatePart::NotChecked(_) => format!("{}, not checked", self.plate),
             p => format!("plate {}, {}", self.plate, p.words()),
         }
@@ -151,6 +159,10 @@ enum Plan {
         /// The members on each side of the weld; one list (`ring`) when
         /// the welds close a ring.
         sides: [Vec<SideMember>; 2],
+        /// The ends laid onto those members near their ends, per side
+        /// (L14): the weld taken under the larger of its loads with and
+        /// without them.
+        riding: [Vec<SideMember>; 2],
         ring: bool,
         /// Where the weld is.
         at: WeldPlace,
@@ -446,7 +458,7 @@ pub fn plate_plans_in(
                     (Some(a), Some(b)) => Some(a.min(b)),
                     _ => None,
                 };
-                let (sides, ring) = weld_sides(j, &p.id, &q.id);
+                let (sides, riding, ring) = weld_sides(j, &p.id, &q.id);
                 let mut notes = Vec::new();
                 notes.push(if ring {
                     "the welds close a ring: the weld taken carrying every member's force on \
@@ -458,6 +470,16 @@ pub fn plate_plans_in(
                      side)"
                         .to_owned()
                 });
+                let rid: Vec<&str> = riding.iter().flatten().map(|r| r.0.as_str()).collect();
+                if !rid.is_empty() {
+                    notes.push(format!(
+                        "the ends laid onto a member on the welded plate near its end ({}): \
+                         their forces reach the plate through that member's bolts — the weld \
+                         taken under the larger of its loads with and without them (on the safe \
+                         side; L14)",
+                        rid.join(", ")
+                    ));
+                }
                 if w.length.is_some_and(|l| l < w.seam_length() - 1e-6) {
                     notes.push(
                         "the weld shorter than the seam: taken where along it its moment is \
@@ -489,6 +511,7 @@ pub fn plate_plans_in(
                             thickness: [p.thickness, q.thickness],
                         },
                         sides,
+                        riding,
                         ring,
                         at,
                     },
@@ -906,7 +929,11 @@ fn bolt_group(
 /// the joint and a point of their force's line (their bolts' centroid,
 /// else the joint); a ring (b reached from a without that weld): every
 /// member of the welded plate on one side.
-fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<SideMember>; 2], bool) {
+fn weld_sides(
+    j: &JointDetail,
+    a: &str,
+    b: &str,
+) -> ([Vec<SideMember>; 2], [Vec<SideMember>; 2], bool) {
     let linked = |x: &str, y: &str| {
         j.plates
             .iter()
@@ -927,7 +954,18 @@ fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<SideMember>; 2], bool)
         }
         seen
     };
-    let members = |plates: &[String]| -> Vec<SideMember> {
+    let side = |x: &Arrival| -> SideMember {
+        let point = if x.bolt_points.is_empty() {
+            j.position
+        } else {
+            let n = x.bolt_points.len() as f64;
+            x.bolt_points
+                .iter()
+                .fold([0.0; 3], |s, q| add(s, scale(*q, 1.0 / n)))
+        };
+        (x.member.clone(), x.direction, point)
+    };
+    let on = |plates: &[String]| -> Vec<&Arrival> {
         j.arrivals
             .iter()
             .filter(|x| {
@@ -935,24 +973,29 @@ fn weld_sides(j: &JointDetail, a: &str, b: &str) -> ([Vec<SideMember>; 2], bool)
                     || x.other_onto.as_ref().is_some_and(|o| plates.contains(o)))
                     && !x.modelling
             })
-            .map(|x| {
-                let point = if x.bolt_points.is_empty() {
-                    j.position
-                } else {
-                    let n = x.bolt_points.len() as f64;
-                    x.bolt_points
-                        .iter()
-                        .fold([0.0; 3], |s, q| add(s, scale(*q, 1.0 / n)))
-                };
-                (x.member.clone(), x.direction, point)
-            })
             .collect()
+    };
+    let members = |plates: &[String]| -> Vec<SideMember> {
+        on(plates).into_iter().map(side).collect()
+    };
+    // L14: the ends laid onto those members near their ends (their forces
+    // reach the plate through those members' bolts).
+    let riding = |plates: &[String]| -> Vec<SideMember> {
+        let mut v: Vec<SideMember> = Vec::new();
+        for x in on(plates) {
+            for r in crate::joint_groups::riders(j, &x.member) {
+                if !v.iter().any(|y| y.0 == r.member) {
+                    v.push(side(r));
+                }
+            }
+        }
+        v
     };
     let (sa, sb) = (reach(a), reach(b));
     if sa.iter().any(|x| x == b) {
-        return ([members(&sa), Vec::new()], true);
+        return ([members(&sa), Vec::new()], [riding(&sa), Vec::new()], true);
     }
-    ([members(&sa), members(&sb)], false)
+    ([members(&sa), members(&sb)], [riding(&sa), riding(&sb)], false)
 }
 
 /// The plate checks of one case: `axial` each member's axial force (N,
@@ -995,10 +1038,11 @@ pub fn plate_usage(
                     with,
                     input,
                     sides,
+                    riding,
                     ring,
                     ..
                 } => {
-                    let f = weld_force(sides, *ring, axial);
+                    let f = weld_force_riding(sides, riding, *ring, axial);
                     (
                         PlatePart::Weld(with.clone()),
                         f,
@@ -1096,19 +1140,28 @@ pub fn plate_usage_cases_with(
         Plan::Bolted { member, share, .. } => axial.get(member).copied().unwrap_or(0.0) * share,
         Plan::Unplaced { member } => axial.get(member).copied().unwrap_or(0.0),
         Plan::NoSeam { .. } => 0.0,
-        Plan::Weld { sides, ring, .. } => weld_force(sides, *ring, axial),
+        Plan::Weld {
+            sides,
+            riding,
+            ring,
+            ..
+        } => weld_force_riding(sides, riding, *ring, axial),
     };
     // What acts on a part beside its force, per case (2026-11-18): a
     // weld's moments about it.
     let extra_of = |x: &Planned| -> by_plugin::Extra {
         match &x.plan {
             Plan::Weld {
-                sides, ring, at, ..
+                sides,
+                riding,
+                ring,
+                at,
+                ..
             } => by_plugin::Extra {
                 moments: cases
                     .iter()
                     .map(|c| {
-                        let l = weld_loads(sides, *ring, at, c.2);
+                        let l = weld_loads_riding(sides, riding, *ring, at, c.2);
                         [0.0, l[1], l[2], 0.0]
                     })
                     .collect(),
@@ -1314,6 +1367,47 @@ fn not_sent_words(plugin: &str, plan: &Plan) -> String {
 
 /// The force a weld carries: the larger resultant of the member forces on
 /// its two sides (a ring: the sum of every member's force), N.
+/// `sides` with the ends `riding` on their members added (L14).
+fn with_riding(sides: &[Vec<SideMember>; 2], riding: &[Vec<SideMember>; 2]) -> [Vec<SideMember>; 2] {
+    let mut out = sides.clone();
+    for (o, r) in out.iter_mut().zip(riding) {
+        o.extend(r.iter().cloned());
+    }
+    out
+}
+
+/// [`weld_force`] with and without the ends laid onto the members on the
+/// welded plate near their ends (L14): the larger.
+fn weld_force_riding(
+    sides: &[Vec<SideMember>; 2],
+    riding: &[Vec<SideMember>; 2],
+    ring: bool,
+    axial: &BTreeMap<String, f64>,
+) -> f64 {
+    let own = weld_force(sides, ring, axial);
+    if riding.iter().all(Vec::is_empty) {
+        return own;
+    }
+    own.max(weld_force(&with_riding(sides, riding), ring, axial))
+}
+
+/// [`weld_loads`] with and without the ends laid onto the members on the
+/// welded plate near their ends (L14): each the larger.
+fn weld_loads_riding(
+    sides: &[Vec<SideMember>; 2],
+    riding: &[Vec<SideMember>; 2],
+    ring: bool,
+    at: &WeldPlace,
+    axial: &BTreeMap<String, f64>,
+) -> [f64; 3] {
+    let own = weld_loads(sides, ring, at, axial);
+    if riding.iter().all(Vec::is_empty) {
+        return own;
+    }
+    let with = weld_loads(&with_riding(sides, riding), ring, at, axial);
+    [own[0].max(with[0]), own[1].max(with[1]), own[2].max(with[2])]
+}
+
 fn weld_force(sides: &[Vec<SideMember>; 2], ring: bool, axial: &BTreeMap<String, f64>) -> f64 {
     weld_loads_with(sides, ring, None, axial)[0]
 }

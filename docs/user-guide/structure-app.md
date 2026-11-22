@@ -1047,6 +1047,16 @@ out. Each change is one undo step.
   onto reads NOT CHECKED, NOT ON THE SAFE SIDE (how it is held is not
   given). How the forces are gathered and each code's rules:
   [Joint bolt groups and the leg's bearing](../theory/joint-groups.md).
+- **Since 2026-11-22** (in active development, not approved yet): where
+  an end is bolted onto a member that **ends** at the joint (the joint
+  layout lays a plan member onto a horizontal's level leg, say), that
+  member's own end bolts carry the end's force with its own: the bolt
+  groups follow the force through, and the joint has a row *Part* "its end
+  bolts with P1 laid onto it" (each bolt's shear and the member's bearing
+  under it, onto a plate the plate's too). Another row says what is still
+  checked under the member's own force only — its own steel at those bolts
+  (net section, tearing out) — NOT ON THE SAFE SIDE. How:
+  [the force through a member's own end bolts](../theory/joint-groups.md#the-force-through-a-members-own-end-bolts-l14).
 - **Since 2026-11-19** (in active development, not approved yet):
   - **Bolts in tension** are checked with their prying: where a member's
     force or moment pulls the plies apart, each bolt's pull, the prying of

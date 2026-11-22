@@ -2408,7 +2408,8 @@ fn lay_out_once(
         }
         // L13: the ends laid onto a member that ends at the joint (not one
         // part, not running through): that member's own end bolts carry
-        // their force too, checked for its own force only.
+        // their force too — followed through by the joint checks since L14
+        // (`joint_groups::riders`); that member's own steel there not.
         let mut onto_ending: Vec<String> = Vec::new();
         for o in outcomes.iter().filter(|o| o.written) {
             let Some(j) = details.joint(&o.joint) else {
@@ -2438,9 +2439,11 @@ fn lay_out_once(
         }
         if !onto_ending.is_empty() {
             notes.push(format!(
-                "{} end(s) laid out onto a member that ends at the joint ({}{}): that member's own \
-                 end bolts carry their force too but are checked for its own force only — NOT ON \
-                 THE SAFE SIDE there (check those bolts by hand)",
+                "{} end(s) laid out onto a member that ends at the joint ({}{}): their forces go \
+                 through that member's own end bolts, checked so by the joint checks (its end \
+                 bolts' group and the bearing under them, L14); that member's own steel at those \
+                 bolts (its net section, its tearing out) and a plate's own checks under them take \
+                 its own force only — NOT ON THE SAFE SIDE there",
                 onto_ending.len(),
                 onto_ending
                     .iter()

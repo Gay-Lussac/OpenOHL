@@ -56,6 +56,13 @@ the same part** at a joint, its bolts carry their forces **together**:
   sum** of the forces of every part it holds. Checked: each bolt's shear
   under that sum, the member's bearing under it and its edges along and
   square to it.
+- **A member's own end bolts with the ends laid onto it** (2026-11-22,
+  L14; *Part* "its end bolts with … laid onto it"): a member ending at
+  the joint that other ends are bolted onto near its end — its own end
+  bolts carry their forces with its own
+  ([below](#the-force-through-a-members-own-end-bolts-l14)). Checked: each
+  bolt's shear, its bearing on the member and, onto a plate, on the plate,
+  and the distances along and square to its force.
 
 Each bolt is checked — in shear and bearing, and (2026-11-19) in tension
 with prying where the forces pull it ([below](#bolts-in-tension-with-prying));
@@ -141,6 +148,65 @@ the holding bolts' axis. By the plate's equilibrium the holding bolts carry
   through the plate: the analysis puts them on the node, and a load on
   the plate itself (a string's attachment) would be a plate's member of
   its own.
+
+### The force through a member's own end bolts (L14)
+
+Since the joint layout's L1 (d) and L13 an end may be laid onto a member
+that **ends** at the joint (a plan diagonal onto a face horizontal's level
+leg, say). Its force enters that member near its end and leaves through
+**that member's own end bolts** — together with the member's own force.
+Before 2026-11-22 those bolts were checked for the member's own force
+only (**NOT ON THE SAFE SIDE**, said in the layout's notes). Now (the
+owner's answer of 2026-11-22 to L13's question 3) the bolt groups follow
+the force through:
+
+- **Which ends**: every end bolted onto a member (`onto`) that ends at
+  the joint — not a leg (the joint's leg, or a member a plate's own bolts
+  onto the leg name: its force goes on through its splice or the plate
+  it holds), not running on as one part (`continuous`); pieces in line
+  not said continuous each end at the joint (as everywhere here, on the
+  safe side). A chain is followed (an end laid onto an end laid onto the
+  member), each member once. Left out: an end said one part with
+  another, a modelling member, an end not bolted, and two members lapped
+  onto each other (their one connection).
+- **The force**: the member's own end force at its bolts' centroid
+  \\( \mathbf c_0 \\) plus each such end's force \\( \mathbf F_i \\) along
+  its line through its own bolts' centroid \\( \mathbf c_i \\), the same
+  case:
+
+  \\[ \mathbf F = \mathbf F_0 + \sum_i \mathbf F_i,\qquad
+  M = M_0 + \sum_i \left( M_i + (\mathbf c_i - \mathbf c_0) \times \mathbf F_i \right)\cdot \mathbf n \\]
+
+  shared by the member's end bolts **elastically** (below), as a plate's
+  holding bolts share theirs. Each bolt is then taken under **the larger
+  of that and the member's own force alone** (bolt by bolt): where another
+  end's force relieves the bolts (pulling against the member's own), the
+  relief is not counted on — **on the safe side**; so a bolt's force can
+  only grow. Its pull out of the plies' plane likewise the larger.
+- **Where it is checked**:
+  - the group of the member it bolts onto (`bearing`): its bearing under
+    those bolts, each bolt's shear, the distances along and square to the
+    force — the bolts now carrying the forces followed through;
+  - a plate's holding bolts (`holding`): the ends laid onto a member on
+    the plate added to the plate's resultant, each along its line (the
+    larger of with and without them, bolt by bolt);
+  - **its own end bolts' group** (new, *Part* "its end bolts with … laid
+    onto it"): each bolt's shear, its bearing on the member itself and,
+    onto a plate, on the plate — with the distances to the member's end
+    (where its steel stops, or the code's conservative case where not
+    given) and edges;
+  - a weld of a welded plate: the ends laid onto a member on the plate
+    on that member's side of the weld (the larger of its loads with and
+    without them).
+- **Not covered, said NOT ON THE SAFE SIDE** (a row of the joint without
+  a usage, "NOT ON THE SAFE SIDE: H1's own steel at its end bolts …"):
+  the member's own steel at those bolts — its net section and its tearing
+  out, checked by its member check under its own force only — and, onto a
+  plate, the plate's own checks under them (its tearing out, its
+  effective width) under the member's own force only. A member ending at
+  the joint with ends laid onto it that bolts onto nothing there, or whose
+  bolts are not placed: "NOT CHECKED, NOT ON THE SAFE SIDE: … where their
+  forces go is not given".
 
 ### Elastic sharing (Kulak, Fisher & Struik)
 
@@ -462,7 +528,16 @@ Never silently skipped — each a row of the joint without a usage,
   "continuous"`) has no bolts at that end: give the plate's own bolts onto
   it (`[plate.leg_bolts]`, structure file version 20, 2026-11-19);
 - a holding leg whose bolts on the plate are not placed or not known;
-- a member others bolt onto whose thickness is not known.
+- a member others bolt onto whose thickness is not known;
+- (2026-11-22, L14) ends laid onto a member that ends at the joint and
+  bolts onto nothing there (or is not bolted), or whose own end bolts are
+  not placed: where their forces go is not given.
+
+And, without a usage, "NOT ON THE SAFE SIDE: …" (2026-11-22, L14): a
+member's own steel at its end bolts (its net section, its tearing out) and,
+onto a plate, the plate's own checks under them, where ends are laid onto
+that member near its end — checked under its own force only (its end
+bolts carry the others' forces, above).
 
 The simple check checks no joint group (not a design code, said); a
 design code whose plugin was not run or has no `joint-check-groups`

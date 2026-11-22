@@ -174,6 +174,10 @@ struct Source {
     centroid: V3,
     /// Bearing groups: its bolts here, (index in the group, where).
     bolts: Vec<(usize, V3)>,
+    /// The member ends laid onto this member near its end whose forces
+    /// reach these bolts too (L14, [`riders`]): each along its line
+    /// through its own bolts' centroid, the same case.
+    riders: Vec<Source>,
 }
 
 /// One group, planned once per structure.
@@ -200,6 +204,10 @@ pub(crate) struct GroupPlan {
     /// layout); false with misfits: they lie only on placements assumed —
     /// "does not fit as assumed — not detailed" (D14, 2026-11-19).
     misfit_given: bool,
+    /// A member's own end bolts with the ends laid onto it (L14,
+    /// [`end_bolt_groups`]): those ends in words; the group's `part` is
+    /// the member.
+    ends_of: Option<String>,
 }
 
 /// The groups of a structure and what is not checked.
@@ -221,6 +229,8 @@ impl GroupPlans {
         let g = &self.groups[k];
         if g.holding {
             PlatePart::Holding(g.holders.clone())
+        } else if let Some(w) = &g.ends_of {
+            PlatePart::EndBolts(w.clone())
         } else {
             PlatePart::Bearing
         }
@@ -715,9 +725,419 @@ pub(crate) fn group_plans(
         let first = out.groups.len();
         holding_groups(j, model, library, bolts, &mut out);
         bearing_groups(j, model, bolts, first, &mut out);
+        end_bolt_groups(j, model, library, bolts, &mut out);
     }
     out
 }
+
+/// The member ends whose forces pass through `host`'s own end bolts at
+/// joint `j` (L14, the owner's answer of 2026-11-22 to L13's question 3).
+/// Since L1 (d) and L13 the joint layout lays an end onto a member that
+/// **ends** at the joint; its force enters that member near its end and
+/// leaves through that member's own end bolts — with the forces of the
+/// ends laid onto those ends in turn (a chain, each member once). None
+/// for a leg ([`crate::welds::joint_legs`], or a member a plate's own
+/// bolts onto the leg name: its force goes on through its splice) or a
+/// member running on through the joint as one part (`continuous`). An end
+/// said one part with another, a modelling member, an end not bolted, and
+/// one `host` itself bolts onto (two members lapped onto each other: their
+/// one connection) are left out.
+pub(crate) fn riders<'a>(j: &'a JointDetail, host: &str) -> Vec<&'a Arrival> {
+    let mut seen = vec![host.to_owned()];
+    let mut out: Vec<&Arrival> = Vec::new();
+    riders_into(j, host, &mut seen, &mut out);
+    out
+}
+
+fn riders_into<'a>(
+    j: &'a JointDetail,
+    host: &str,
+    seen: &mut Vec<String>,
+    out: &mut Vec<&'a Arrival>,
+) {
+    let Some(h) = j.arrivals.iter().find(|a| a.member == host) else {
+        return;
+    };
+    if h.modelling
+        || crate::welds::joint_legs(j).iter().any(|l| l.member == host)
+        || j.plates
+            .iter()
+            .any(|p| p.leg_bolts.as_deref().is_some_and(|l| l.member == host))
+        || run_at(j, host).0.len() > 1
+    {
+        return;
+    }
+    for e in j.arrivals.iter().filter(|e| {
+        e.onto.value.as_deref() == Some(host)
+            && !e.modelling
+            && e.continuous.is_none()
+            && h.onto.value.as_deref() != Some(e.member.as_str())
+            && e.kind
+                .value
+                .is_none_or(|k| k == ohl_structures::connections::ConnectionKind::Bolted)
+    }) {
+        if seen.contains(&e.member) {
+            continue;
+        }
+        seen.push(e.member.clone());
+        out.push(e);
+        riders_into(j, &e.member, seen, out);
+    }
+}
+
+/// [`riders`] of `host` as sources: each along its line through its bolts'
+/// centroid (the joint where its bolts are not placed).
+fn rider_sources(j: &JointDetail, host: &str) -> Vec<Source> {
+    riders(j, host)
+        .into_iter()
+        .map(|e| Source {
+            member: e.member.clone(),
+            end: e.end,
+            direction: e.direction,
+            centroid: centroid3(&e.bolt_points, j.position),
+            bolts: Vec::new(),
+            riders: Vec::new(),
+        })
+        .collect()
+}
+
+/// The note of a group whose sources carry ends laid onto them (L14).
+fn riders_note(sources: &[Source], part: &str) -> Option<String> {
+    let with: Vec<String> = sources
+        .iter()
+        .filter(|s| !s.riders.is_empty())
+        .map(|s| {
+            format!(
+                "{} with {}",
+                s.member,
+                s.riders
+                    .iter()
+                    .map(|r| r.member.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+        .collect();
+    (!with.is_empty()).then(|| {
+        format!(
+            "on {part}, the forces of the ends laid onto a member ending at the joint go through \
+             that member's own bolts ({}): each along its line through its bolts' centroid, the \
+             same case, with its moment about those bolts' centroid, shared elastically — each \
+             bolt taken under the larger of that and the member's own force alone (another's \
+             force relieving it not counted on: on the safe side; L14)",
+            with.join("; ")
+        )
+    })
+}
+
+/// The groups of a member's own end bolts with the ends laid onto it
+/// (L14): per member ending at joint `j` with [`riders`] and its own bolts
+/// placed onto a member or a plate, its bolts under its force and theirs
+/// together — each bolt's shear, its bearing on the member itself and
+/// (onto a plate) on the plate, their distances to the member's end and
+/// edges. The member it bolts onto has its bearing under these bolts in
+/// its own group ([`bearing_groups`], the forces followed the same way).
+/// What is not covered is said: the member's own steel at those bolts (its
+/// net section, its tearing out) and the plate's own checks under them
+/// take its own force only — NOT ON THE SAFE SIDE there; a member ending at
+/// the joint with ends laid onto it but bolting onto nothing, or its bolts
+/// not placed: the path of their forces not checked.
+fn end_bolt_groups(
+    j: &JointDetail,
+    model: &Model,
+    library: &SectionLibrary,
+    bolt_lib: &BoltLibrary,
+    out: &mut GroupPlans,
+) {
+    for h in j.arrivals.iter().filter(|a| !a.modelling) {
+        let rid = riders(j, &h.member);
+        if rid.is_empty() {
+            continue;
+        }
+        let names: Vec<&str> = rid.iter().map(|r| r.member.as_str()).collect();
+        let words = names.join(", ");
+        let bolted = h
+            .kind
+            .value
+            .is_none_or(|k| k == ohl_structures::connections::ConnectionKind::Bolted);
+        let Some(onto) = h.onto.value.as_deref().filter(|_| bolted) else {
+            out.not_checked.push((
+                j.id.clone(),
+                h.member.clone(),
+                format!(
+                    "NOT CHECKED, NOT ON THE SAFE SIDE: {words} laid onto {}, which ends at the \
+                     joint and {} here: where their forces go is not given (its end bolted onto \
+                     a part, or the pieces in line said one part)",
+                    h.member,
+                    if bolted {
+                        "bolts onto nothing"
+                    } else {
+                        "is not bolted"
+                    }
+                ),
+            ));
+            continue;
+        };
+        let unchecked = |why: &str| {
+            (
+                j.id.clone(),
+                h.member.clone(),
+                format!(
+                    "NOT CHECKED, NOT ON THE SAFE SIDE: {}'s end bolts with {words} laid onto it \
+                     — {why}",
+                    h.member
+                ),
+            )
+        };
+        if h.bolt_points.is_empty() {
+            out.not_checked.push(unchecked("its bolts are not placed"));
+            continue;
+        }
+        let Some((t, fy, fu, redundant)) = member_ply(h, model) else {
+            out.not_checked.push(unchecked("its thickness is not known"));
+            continue;
+        };
+        let plate = j.plates.iter().find(|p| p.id == onto);
+        let mut notes = Vec::new();
+        let d = h.bolts.value.as_ref().map_or(0.016, |b| b.diameter);
+        let end = h.cut.known().then(|| h.cut.value.unwrap_or(0.0));
+        let tees = own_tees(h, model, end, d);
+        let width = h
+            .profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map(|g| if h.leg_y { g.b } else { g.h });
+        let across = h
+            .profile
+            .as_ref()
+            .map(|p| if h.leg_y { p.axes[1] } else { p.axes[2] });
+        let mut bolts: Vec<Bolt> = Vec::new();
+        let mut mine: Vec<(usize, V3)> = Vec::new();
+        let mut misfits: Vec<String> = Vec::new();
+        let mut misfit_given = false;
+        let outline = plate.map(|pd| pd.outline.clone()).unwrap_or_default();
+        for (i, q) in h.bolt_points.iter().enumerate() {
+            let Some(mut b) = bolt_of(h, model, *q, bolt_lib) else {
+                continue;
+            };
+            for r in &names {
+                b.carries.push(format!("{r} laid onto it"));
+            }
+            b.flange = h
+                .bolt_flat
+                .get(i)
+                .zip(width)
+                .zip(across)
+                .map(|((f, w), c)| (f[1], w, toward_toe(c, h)));
+            // Does not fit (as the other groups say it): a hole off its own
+            // flange, a bolt beyond its steel's known end, a bolt outside
+            // the plate it bolts onto.
+            if let Some((g, w, _)) = b.flange
+                && off_flange(g, w, hole_of(&b))
+            {
+                misfit_given |= b.given;
+                push_once(
+                    &mut misfits,
+                    format!(
+                        "a bolt of {} {:.0} mm from its heel: its hole ({:.1} mm) is not within \
+                         its flange (0 to {:.0} mm)",
+                        h.member,
+                        g * 1000.0,
+                        hole_of(&b) * 1000.0,
+                        w * 1000.0
+                    ),
+                );
+            }
+            if let Some(cut) = end {
+                let s = dot(sub(*q, j.position), h.direction);
+                if s < cut - 0.001 {
+                    misfit_given |= b.given;
+                    push_once(
+                        &mut misfits,
+                        format!(
+                            "a bolt of {} lies beyond the end of its steel at the joint ({:.0} mm \
+                             from the work point, the steel from {:.0} mm)",
+                            h.member,
+                            s * 1000.0,
+                            cut * 1000.0
+                        ),
+                    );
+                }
+            }
+            if outline.len() >= 3
+                && crate::plate_checks::ray_to_outline(&outline, *q, h.direction).is_none()
+            {
+                misfit_given |= b.given;
+                push_once(
+                    &mut misfits,
+                    format!(
+                        "a bolt of {} onto plate {onto} lies outside the plate's outline",
+                        h.member
+                    ),
+                );
+            }
+            match tees.as_ref().map(|t| t.get(i).cloned().flatten()) {
+                Some(Some(t)) => b.tees.push(t),
+                Some(None) => {}
+                None => b.unknown.push(format!(
+                    "{}'s flange (not an angle, or bolts on more than two gauge lines)",
+                    h.member
+                )),
+            }
+            let k = add_bolt(&mut bolts, b, &mut notes);
+            mine.push((k, *q));
+        }
+        if bolts.is_empty() {
+            out.not_checked.push(unchecked("its bolts not known"));
+            continue;
+        }
+        let c = centroid3(&bolts.iter().map(|b| b.at).collect::<Vec<_>>(), j.position);
+        let Some(plane) = Plane::new(c, h.bolt_axis, Some(h.direction)) else {
+            continue;
+        };
+        // Every hole in its flange here: its own and those of the ends laid
+        // onto it through the same flange.
+        let mut holes: Vec<V3> = h.bolt_points.clone();
+        for r in &rid {
+            if r.onto.value.as_deref() == Some(h.member.as_str())
+                && dot(r.bolt_axis, h.bolt_axis).abs() >= 10f64.to_radians().cos()
+            {
+                holes.extend(r.bolt_points.iter().copied());
+            }
+        }
+        // Holes overlapping in its flange (its own and those of the ends laid
+        // onto it there).
+        {
+            let d0 = bolts.iter().map(hole_of).fold(f64::INFINITY, f64::min);
+            let mut list: Vec<(V3, f64, String, bool)> = bolts
+                .iter()
+                .map(|b| (b.at, hole_of(b), format!("a bolt of {}", h.member), b.given))
+                .collect();
+            for x in holes.iter().skip(h.bolt_points.len()) {
+                if !bolts
+                    .iter()
+                    .any(|b| norm(sub(b.at, *x)) <= same_hole(b.diameter))
+                {
+                    list.push((*x, d0, "a bolt laid onto it".into(), true));
+                }
+            }
+            for (w, g) in overlaps(&h.member, &list) {
+                misfit_given |= g;
+                push_once(&mut misfits, w);
+            }
+        }
+        let mut plies = vec![Ply {
+            part: h.member.clone(),
+            member: true,
+            thickness: t,
+            fy,
+            fu,
+            redundant,
+            known: h.cut.known() && bolts.iter().all(|b| b.flange.is_some()),
+            edges: Edges::Flange {
+                dir: h.direction,
+                origin: j.position,
+                end,
+            },
+            holes,
+            // Its bolts push it against their force on what it bolts onto.
+            sign: -1.0,
+        }];
+        if let Some(pd) = plate {
+            let (steel, steel_note) = crate::plate_checks::plate_steel_of(pd, j, model, library);
+            notes.extend(steel_note);
+            if outline.len() < 3 {
+                notes.push(format!(
+                    "plate {onto} has no outline: its edges' distances not known"
+                ));
+            }
+            plies.push(Ply {
+                part: onto.to_owned(),
+                member: false,
+                thickness: steel.thickness,
+                fy: steel.fy,
+                fu: steel.fu,
+                redundant: false,
+                known: outline.len() >= 3,
+                edges: Edges::Outline(outline.clone()),
+                holes: onto_plate(j, onto)
+                    .iter()
+                    .flat_map(|a| a.bolt_points.clone())
+                    .collect(),
+                sign: 1.0,
+            });
+        }
+        if !h.cut.known() {
+            notes.push(format!(
+                "{} ends at {}: where its steel stops is not given (taken at the work point; the \
+                 code's conservative case)",
+                h.member, j.id
+            ));
+        }
+        notes.push(format!(
+            "{m}'s own end bolts onto {onto} carry its force and those of {words} laid onto it \
+             near its end (each along its line through its bolts' centroid, the same case) with \
+             their moment about these bolts' centroid, shared elastically — each bolt under the \
+             larger of that and {m}'s own force alone (on the safe side; L14). Checked here: \
+             each bolt's shear, its bearing on {m}{p} and the distances along and square to its \
+             force; {onto}'s bearing under them {w}",
+            m = h.member,
+            p = if plate.is_some() {
+                format!(" and on plate {onto}")
+            } else {
+                String::new()
+            },
+            w = if plate.is_some() {
+                "here"
+            } else {
+                "in its own group"
+            }
+        ));
+        notes.extend(grade_notes(&bolts));
+        out.groups.push(GroupPlan {
+            joint: j.id.clone(),
+            holding: false,
+            part: h.member.clone(),
+            holders: String::new(),
+            position: j.position,
+            plane,
+            bolts,
+            plies,
+            sources: vec![Source {
+                member: h.member.clone(),
+                end: h.end,
+                direction: h.direction,
+                centroid: centroid3(&h.bolt_points, j.position),
+                bolts: mine,
+                riders: rider_sources(j, &h.member),
+            }],
+            from: Vec::new(),
+            notes,
+            misfits,
+            misfit_given,
+            ends_of: Some(words.clone()),
+        });
+        // Not covered: the member's own steel at those bolts and the
+        // plate's own checks under them (each by its own force).
+        out.not_checked.push((
+            j.id.clone(),
+            h.member.clone(),
+            format!(
+                "NOT ON THE SAFE SIDE: {}'s own steel at its end bolts (its net section, its \
+                 tearing out){} is checked under its own force only — the forces of {words} laid \
+                 onto it near its end are not added there (its end bolts' shear and bearing carry \
+                 them, L14)",
+                h.member,
+                if plate.is_some() {
+                    format!(" and plate {onto}'s own checks under those bolts")
+                } else {
+                    String::new()
+                }
+            ),
+        ));
+    }
+}
+
 
 /// The member ends bolted onto plate `q` at joint `j`: those of
 /// [`crate::joints::bolted_onto`], then the plate's own bolts onto the
@@ -957,9 +1377,13 @@ fn holding_groups(
                             direction: a.direction,
                             centroid: centroid3(&a.bolt_points, j.position),
                             bolts: Vec::new(),
+                            riders: rider_sources(j, &a.member),
                         }
                     })
                     .collect();
+                if let Some(w) = riders_note(&sources, &format!("plate {words}")) {
+                    notes.push(w);
+                }
                 notes.extend(steel_note);
                 let holes: Vec<V3> = onto_plate(j, q)
                     .iter()
@@ -1051,6 +1475,7 @@ fn holding_groups(
                     notes,
                     misfits,
                     misfit_given,
+                    ends_of: None,
                 });
             }
         }
@@ -1292,6 +1717,7 @@ fn bearing_groups(
                             direction: e.a.direction,
                             centroid: centroid3(&e.a.bolt_points, j.position),
                             bolts: mine,
+                            riders: rider_sources(j, &e.a.member),
                         });
                     }
                 }
@@ -1351,6 +1777,9 @@ fn bearing_groups(
                 "the bolts onto {part}: each member's force shared equally by its own bolts \
                  (ASCE 10-97 4.1; a frame member's end moment elastically), summed bolt by bolt"
             ));
+            if let Some(w) = riders_note(&sources, &part) {
+                notes.push(w);
+            }
             let unsaid: Vec<String> =
                 list.iter()
                     .flat_map(|e| e.unsaid.iter().cloned())
@@ -1427,6 +1856,7 @@ fn bearing_groups(
                 notes,
                 misfits,
                 misfit_given,
+                ends_of: None,
             });
         }
     }
@@ -1475,6 +1905,38 @@ fn source_load(
             (f, add(m, cross(in_plane(plane, position, s.centroid), v)))
         }
         None => (scale(s.direction, n), [0.0; 3]),
+    }
+}
+
+/// The forces of the ends laid onto source `s`'s member (L14, its
+/// `riders`) on the group, and their moment about `about`: each its end
+/// force ([`source_load`]) along its line through its own bolts'
+/// centroid, the levers laid into `plane`.
+fn riders_load(
+    s: &Source,
+    plane: &Plane,
+    position: V3,
+    about: V3,
+    axial: &BTreeMap<String, f64>,
+    ends: Option<&EndForces>,
+) -> (V3, V3) {
+    let mut f3 = [0.0; 3];
+    let mut m3 = [0.0; 3];
+    for r in &s.riders {
+        let (f, m) = source_load(r, plane, position, axial, ends);
+        f3 = add(f3, f);
+        m3 = add(m3, add(m, cross(in_plane(plane, r.centroid, about), f)));
+    }
+    (f3, m3)
+}
+
+/// Each bolt's force in `forces` replaced by the one in `other` where that
+/// is larger (the larger of two loadings, bolt by bolt: L14).
+fn larger(forces: &mut [V2], other: &[V2]) {
+    for (x, y) in forces.iter_mut().zip(other) {
+        if y[0].hypot(y[1]) > x[0].hypot(x[1]) {
+            *x = *y;
+        }
     }
 }
 
@@ -1557,11 +2019,22 @@ fn case_forces(
             let c3 = g.plane.origin;
             let mut f3 = [0.0; 3];
             let mut m3 = [0.0; 3];
+            // Without the ends laid onto the plate's members (L14): the
+            // larger, bolt by bolt, is taken.
+            let mut f3_own = [0.0; 3];
+            let mut m3_own = [0.0; 3];
             for s in &g.sources {
                 let (f, m) = source_load(s, &g.plane, g.position, axial, ends);
+                let mo = add(m, cross(in_plane(&g.plane, s.centroid, c3), f));
                 f3 = add(f3, f);
-                m3 = add(m3, add(m, cross(in_plane(&g.plane, s.centroid, c3), f)));
+                m3 = add(m3, mo);
+                f3_own = add(f3_own, f);
+                m3_own = add(m3_own, mo);
+                let (fr, mr) = riders_load(s, &g.plane, g.position, c3, axial, ends);
+                f3 = add(f3, fr);
+                m3 = add(m3, mr);
             }
+            let ridden = g.sources.iter().any(|s| !s.riders.is_empty());
             let f2 = g.plane.vector(f3);
             let mn = dot(m3, g.plane.n);
             let e = bg::elastic(
@@ -1573,6 +2046,17 @@ fn case_forces(
                 },
             );
             c.forces = e.forces.clone();
+            if ridden {
+                let own = bg::elastic(
+                    &pts,
+                    &PlaneLoad {
+                        force: g.plane.vector(f3_own),
+                        at: bg::centroid(&pts),
+                        moment: dot(m3_own, g.plane.n),
+                    },
+                );
+                larger(&mut c.forces, &own.forces);
+            }
             let l = lever(&pts, d);
             let size = f2[0].hypot(f2[1]);
             if !e.shared && mn.abs() / l >= 0.01 * size.max(1e-9) && mn.abs() > 1e-6 {
@@ -1584,6 +2068,12 @@ fn case_forces(
             }
             let (t, left) = pull(&g.plane, &pts, f3, m3);
             c.tension = t;
+            if ridden {
+                let (t_own, _) = pull(&g.plane, &pts, f3_own, m3_own);
+                for (x, y) in c.tension.iter_mut().zip(t_own) {
+                    *x = x.max(y);
+                }
+            }
             let normal = dot(f3, g.plane.n).abs();
             let out_m = norm(sub(m3, scale(g.plane.n, mn)));
             if normal + out_m / l >= 0.01 * size.max(1e-9) && normal + out_m > 1e-6 {
@@ -1604,14 +2094,18 @@ fn case_forces(
             }
         } else {
             for s in &g.sources {
-                let (f, m) = source_load(s, &g.plane, g.position, axial, ends);
+                let (f_own, m_own) = source_load(s, &g.plane, g.position, axial, ends);
                 let pts: Vec<V2> = s.bolts.iter().map(|x| g.plane.point(x.1)).collect();
                 if pts.is_empty() {
                     continue;
                 }
+                // With the ends laid onto it (L14): their forces about its
+                // bolts' centroid, the larger bolt by bolt.
+                let (fr, mr) = riders_load(s, &g.plane, g.position, s.centroid, axial, ends);
+                let (f, m) = (add(f_own, fr), add(m_own, mr));
                 let f2 = g.plane.vector(f);
                 let mn = dot(m, g.plane.n);
-                let e = bg::elastic(
+                let mut e = bg::elastic(
                     &pts,
                     &PlaneLoad {
                         force: f2,
@@ -1619,11 +2113,26 @@ fn case_forces(
                         moment: mn,
                     },
                 );
+                let (mut t, left) = pull(&g.plane, &pts, f, m);
+                if !s.riders.is_empty() {
+                    let own = bg::elastic(
+                        &pts,
+                        &PlaneLoad {
+                            force: g.plane.vector(f_own),
+                            at: bg::centroid(&pts),
+                            moment: dot(m_own, g.plane.n),
+                        },
+                    );
+                    larger(&mut e.forces, &own.forces);
+                    let (t_own, _) = pull(&g.plane, &pts, f_own, m_own);
+                    for (x, y) in t.iter_mut().zip(t_own) {
+                        *x = x.max(y);
+                    }
+                }
                 for ((k, _), v) in s.bolts.iter().zip(&e.forces) {
                     c.forces[*k][0] += v[0];
                     c.forces[*k][1] += v[1];
                 }
-                let (t, left) = pull(&g.plane, &pts, f, m);
                 for ((k, _), v) in s.bolts.iter().zip(&t) {
                     // Several parts' pulls on one bolt: added (on the
                     // safe side).
@@ -2106,6 +2615,7 @@ mod tests {
             direction,
             centroid,
             bolts,
+            riders: Vec::new(),
         }
     }
 
@@ -2136,6 +2646,7 @@ mod tests {
             notes: Vec::new(),
             misfits: Vec::new(),
             misfit_given: false,
+            ends_of: None,
         }
     }
 
@@ -2248,6 +2759,140 @@ mod tests {
         assert!(l1.ahead[0].is_none());
         let l0 = bolt_load(g, &g.bolts[0], v[0]);
         assert!((l0.ahead[0].unwrap() - 0.05).abs() < 1e-9, "{l0:?}");
+    }
+
+    /// L14: a member's end bolts carry the forces of an end laid onto it
+    /// (invented, by hand). H1 pulls 30 kN along +x through its two bolts
+    /// at x = 50 and 100 mm (centroid 75 mm); P1, laid onto H1 near its end,
+    /// pulls 20 kN along +y through its bolts' centroid at x = 150 mm. On
+    /// H1's bolts: (30, 20) kN with M = 0.075 × 20 = 1.5 kN m about their
+    /// centroid; Σr² = 2 × 0.025² = 0.00125 m², the moment's share
+    /// 1.5 × 0.025 / 0.00125 = 30 kN square to each radius. The bolt at
+    /// 100 mm (nearer P1's line): (15, 10 + 30) → 42.72 kN; at 50 mm:
+    /// (15, 10 − 30) → 25 kN (H1 alone: 15 kN each). Their sum is the
+    /// resultant (30, 20) kN.
+    #[test]
+    fn an_end_laid_onto_a_member_loads_its_end_bolts() {
+        let b0 = m16([0.05, 0.0, 0.0], &["H1"]);
+        let b1 = m16([0.10, 0.0, 0.0], &["H1"]);
+        let mut h1 = source(
+            "H1",
+            [1.0, 0.0, 0.0],
+            [0.075, 0.0, 0.0],
+            vec![(0, [0.05, 0.0, 0.0]), (1, [0.10, 0.0, 0.0])],
+        );
+        h1.riders = vec![source("P1", [0.0, 1.0, 0.0], [0.15, 0.0, 0.0], Vec::new())];
+        let g = group(
+            false,
+            vec![b0, b1],
+            vec![h1],
+            Edges::Flange {
+                dir: [1.0, 0.0, 0.0],
+                origin: [0.0; 3],
+                end: None,
+            },
+        );
+        let plans = GroupPlans {
+            groups: vec![g],
+            not_checked: Vec::new(),
+        };
+        let f = case_forces(&plans, &forces(&[("H1", 30e3), ("P1", 20e3)]), None);
+        let v = &f[0].forces;
+        assert!(
+            (v[0][0] - 15e3).abs() < 1e-6 && (v[0][1] + 20e3).abs() < 1e-6,
+            "{v:?}"
+        );
+        assert!(
+            (v[1][0] - 15e3).abs() < 1e-6 && (v[1][1] - 40e3).abs() < 1e-6,
+            "{v:?}"
+        );
+        assert!((v[1][0].hypot(v[1][1]) - 42.72e3).abs() < 10.0);
+        // P1 pushing 20 kN: (15, −10 + 30) at 50 mm and (15, −10 − 30) at
+        // 100 mm — mirrored, the same sizes.
+        let f = case_forces(&plans, &forces(&[("H1", 30e3), ("P1", -20e3)]), None);
+        let v = &f[0].forces;
+        assert!((v[0][0].hypot(v[0][1]) - 25e3).abs() < 1e-6, "{v:?}");
+        assert!((v[1][0].hypot(v[1][1]) - 42.72e3).abs() < 10.0, "{v:?}");
+    }
+
+    /// L14: another's force relieving a member's end bolts is not counted
+    /// on (invented, by hand): P1 pulling 20 kN along −x on H1's line
+    /// leaves (10, 0) kN on H1's two bolts, 5 kN each — each bolt keeps H1's
+    /// own 15 kN (the larger, bolt by bolt).
+    #[test]
+    fn a_relieving_end_is_not_counted_on() {
+        let mut h1 = source(
+            "H1",
+            [1.0, 0.0, 0.0],
+            [0.075, 0.0, 0.0],
+            vec![(0, [0.05, 0.0, 0.0]), (1, [0.10, 0.0, 0.0])],
+        );
+        h1.riders = vec![source("P1", [-1.0, 0.0, 0.0], [0.15, 0.0, 0.0], Vec::new())];
+        let g = group(
+            false,
+            vec![m16([0.05, 0.0, 0.0], &["H1"]), m16([0.10, 0.0, 0.0], &["H1"])],
+            vec![h1],
+            Edges::Flange {
+                dir: [1.0, 0.0, 0.0],
+                origin: [0.0; 3],
+                end: None,
+            },
+        );
+        let plans = GroupPlans {
+            groups: vec![g],
+            not_checked: Vec::new(),
+        };
+        let f = case_forces(&plans, &forces(&[("H1", 30e3), ("P1", 20e3)]), None);
+        for v in &f[0].forces {
+            assert!((v[0] - 15e3).abs() < 1e-6 && v[1].abs() < 1e-6, "{v:?}");
+        }
+    }
+
+    /// L14: a plate's holding bolts carry the ends laid onto a member on
+    /// the plate too (the first test's plate, invented): D1 as there, D2
+    /// with R1 laid onto it near its end — R1 pushing 30 kN along −y through
+    /// (120, 0) mm. The resultant on the plate (0, 84.85 − 30) kN through
+    /// the holding bolts' centroid at (0, 0) (R1's line passes through it
+    /// along y): 27.43 kN each, against 42.43 kN without R1 — each bolt
+    /// keeps the larger, 42.43 kN.
+    #[test]
+    fn a_holding_group_follows_the_force_through() {
+        let s = 0.5f64.sqrt();
+        let mut d2 = source("D2", [s, -s, 0.0], [0.12, -0.12, 0.0], Vec::new());
+        d2.riders = vec![source("R1", [0.0, 1.0, 0.0], [0.0, 0.12, 0.0], Vec::new())];
+        let g = group(
+            true,
+            vec![
+                m16([0.0, -0.05, 0.0], &["plate G1"]),
+                m16([0.0, 0.05, 0.0], &["plate G1"]),
+            ],
+            vec![
+                source("D1", [s, s, 0.0], [0.12, 0.12, 0.0], Vec::new()),
+                d2,
+            ],
+            Edges::Outline(Vec::new()),
+        );
+        let plans = GroupPlans {
+            groups: vec![g],
+            not_checked: Vec::new(),
+        };
+        let f = case_forces(
+            &plans,
+            &forces(&[("D1", 60e3), ("D2", -60e3), ("R1", -30e3)]),
+            None,
+        );
+        for v in &f[0].forces {
+            assert!((v[0].hypot(v[1]) - 60e3 * s).abs() < 1e-6, "{v:?}");
+        }
+        // R1 pulling 30 kN (along +y): (0, 114.85) kN, 57.43 kN each.
+        let f = case_forces(
+            &plans,
+            &forces(&[("D1", 60e3), ("D2", -60e3), ("R1", 30e3)]),
+            None,
+        );
+        for v in &f[0].forces {
+            assert!((v[0].hypot(v[1]) - (60e3 * s + 15e3)).abs() < 1e-6, "{v:?}");
+        }
     }
 
     /// A holding bolt pushes the plate against its force: the end distance

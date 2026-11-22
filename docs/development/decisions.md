@@ -8,6 +8,50 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint checks: the force through a member's own end bolts, L14)
+
+**Where an end is bolted onto a member that ends at the joint, that
+member's own end bolts carry the end's force with its own** (roadmap O44
+L14, the owner's answer of 2026-11-22 to L13's question 3; built, in
+active development, not approved yet;
+[theory](../theory/joint-groups.md#the-force-through-a-members-own-end-bolts-l14)).
+No format change; the code plugins' interface unchanged (`joint-check-groups`
+takes the new group as any bearing group).
+
+- **Which ends** (`joint_groups::riders`): every end bolted onto a member
+  that ends at the joint — not a leg, not a member a plate's own bolts
+  name, not running on as one part; pieces in line not said continuous
+  end there (on the safe side, as before); a chain followed, each member
+  once; two members lapped onto each other left out (their one
+  connection).
+- **The force**: the member's own end force at its bolts plus each such
+  end's along its line through its own bolts' centroid, the same case,
+  with their moment about the bolts' centroid, shared elastically — each
+  bolt the **larger** of that and the member's own force alone (another's
+  force relieving the bolts not counted on: on the safe side; a bolt's
+  force can only grow). Followed through in the group of what the member
+  bolts onto, a plate's holding bolts (the ends added to the plate's
+  resultant) and a welded plate's welds (the ends on the member's side).
+- **A group of its own** (`PlatePart::EndBolts`, "its end bolts with … laid
+  onto it"): each bolt's shear, its bearing on the member and, onto a plate,
+  on the plate, the distances along and square to its force; "does not
+  fit" as the other groups say it.
+- **Still NOT ON THE SAFE SIDE, said** (a row of the joint without a
+  usage): the member's own steel at those bolts (net section, tearing out)
+  and a plate's own checks under them take the member's own force only.
+  Ends laid onto a member that bolts onto nothing at the joint, or whose
+  bolts are not placed: NOT CHECKED, NOT ON THE SAFE SIDE (before: silent).
+  The layout run's note says what is left.
+- **Measured** on the 72 private towers with loads (L13 main's laid-out
+  files, one vertical case, the bundled plugin): 414 members' end bolts
+  get their own group (usage median 15 %, the largest 78 %, none over
+  100 %); of the rows before, 5 usages change (3 holding, 2 bearing), all
+  up — the largest a plate's holding bolts 54 % → 137 % (now failing) —,
+  200 rows that do not fit carry a larger force; 685 ends laid onto a
+  member bolting onto nothing and 182 onto a member whose bolts are not
+  placed now said not checked. The layout is unchanged (only the words
+  of the run's note).
+
 ## 2026-11-22 (joint layout: leg and chord turns offered with a tick, L13)
 
 **The leg and chord turns the joints ask for are offered in Lay out joints'

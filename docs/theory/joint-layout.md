@@ -2719,15 +2719,21 @@ What an end bolts onto is what its restraint is worked out from (the
 code's stiffness rule, as before): the analysis takes the new host as it
 takes any member an end is laid out onto.
 
-**NOT ON THE SAFE SIDE**: an end laid out onto a member that **ends** at
-the joint (this rule's names, and L1 d's before them) brings its force into
-that member near its end; that member's own end bolts (a member not a leg) then carry it too,
-but the joint checks check them for that member's own force only (the
-analysis meets every member at the work point; the [bolt groups](joint-groups.md)
-sum the forces of what bolts onto one part, not of what bolts onto a part
-that itself bolts on). Said in the run's notes (how many such ends, the
-first five) — to be checked by hand until the bolt groups follow the
-force through.
+An end laid out onto a member that **ends** at the joint (this rule's
+names, and L1 d's before them) brings its force into that member near its
+end; that member's own end bolts (a member not a leg) then carry it too.
+Until L14 the joint checks checked them for that member's own force only
+(NOT ON THE SAFE SIDE, said). **Since 2026-11-22 (L14) the bolt groups
+follow the force through** ([joint groups](joint-groups.md#the-force-through-a-members-own-end-bolts-l14)):
+that member's end bolts carry its force and those of the ends laid onto it
+(each along its line, with their moment about the bolts' centroid, shared
+elastically; each bolt the larger of that and its own force alone), in the
+group of what it bolts onto, a plate's holding bolts, a weld of a welded
+plate and a group of its own end bolts (its bearing). **Still NOT ON THE
+SAFE SIDE**, said in the run's notes (how many such ends, the first five)
+and on a row of the joint: that member's own steel at those bolts (its net
+section, its tearing out) and, onto a plate, the plate's own checks under
+them take its own force only.
 
 ### Measured (L13's first step, 2026-11-22)
 
