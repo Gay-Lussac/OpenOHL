@@ -3718,7 +3718,7 @@ pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
 /// [`LayoutSettings::plane_hosts`] (L13), an end whose axis lies in
 /// neither flange's plane of today's choice nor of a member running
 /// through is named onto a member ending at the joint in a flange's plane
-/// of which its axis lies ([`host_ending_in_plane`]), before today's
+/// of which its axis lies (`host_ending_in_plane`), before today's
 /// choice.
 pub fn hosts_to_name_by(j: &JointDetail, s: &LayoutSettings) -> Vec<(String, String)> {
     named_hosts(j, s.plane_hosts)
