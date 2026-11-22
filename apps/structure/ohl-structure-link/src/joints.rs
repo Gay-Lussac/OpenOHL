@@ -2848,11 +2848,33 @@ pub(crate) fn host_flange_along(a: &Arrival, host: &Arrival, other: bool) -> Opt
     flange_of(a, host, true, other)
 }
 
+/// The face of `host`'s leg `a` lies on when bolted onto it, as the joint
+/// details seat it ([`member_seat`]: the face given at the end, else the one
+/// turned towards `a`'s outer face; on a built-up member the angle facing
+/// `a`) — whatever `a`'s `onto` is now (O44 L16: the layout plans an end
+/// naming nothing onto `host` on the face the details then draw it on).
+/// None: `a` or `host` no angle, or their legs not near parallel.
+pub(crate) fn seat_face(a: &Arrival, host: &Arrival) -> Option<Face> {
+    let q = host.profile.as_ref()?;
+    facing(a, q, given_face(a), true)?.1.map(|s| s.face)
+}
+
+/// The face `a` is given to sit on (`face` at the end; inside or outside
+/// only), none: not given.
+fn given_face(a: &Arrival) -> Option<Face> {
+    (a.sits.source == Source::Given)
+        .then_some(a.sits.value)
+        .flatten()
+        .filter(|f| matches!(f, Face::Inside | Face::Outside))
+}
+
 fn flange_of(a: &Arrival, host: &Arrival, along: bool, other: bool) -> Option<HostFlange> {
     let p = a.profile.as_ref()?;
     p.angle?;
     let q = host.profile.as_ref()?;
-    let (c, _) = facing(a, q, None, true)?;
+    // (L16) The angle as the joint details choose it (the face given at
+    // the end taken into account, as [`member_seat`] does).
+    let (c, _) = facing(a, q, given_face(a), true)?;
     let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
     let across = if along {
         // The flange along y has its normal along z, and the other way

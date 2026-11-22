@@ -304,6 +304,9 @@ impl LayoutWindow {
             // member's angles onto a plate between them (the plate's
             // between), as thick as the gap.
             between_plates: true,
+            // L16 (2026-11-22): an end planned on the face the joint details
+            // then seat it on.
+            seat_as_drawn: true,
         }
     }
 

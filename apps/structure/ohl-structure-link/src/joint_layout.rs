@@ -359,6 +359,16 @@ pub struct LayoutSettings {
     /// plates, than without. On by default; off: as before (such an end
     /// planned on the angle facing it).
     pub between_plates: bool,
+    /// L16, 2026-11-22 (L15's question 4): an end is planned on the face
+    /// of the leg of what the layout lays it onto that the joint details
+    /// then seat it on (`joints::seat_face`: the face given at
+    /// the end, else the one turned towards its outer face, on a built-up
+    /// member the angle facing it) — before, the face it sat on what it
+    /// bolted onto while planning (for an end naming nothing, the joint's
+    /// leg worked out: on a built-up member often the other face, the end
+    /// planned on the outer face and drawn on the inner). On by default;
+    /// off: as before.
+    pub seat_as_drawn: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -409,6 +419,7 @@ impl Default for LayoutSettings {
             plane_hosts: true,
             base_holds: true,
             between_plates: true,
+            seat_as_drawn: true,
         }
     }
 }
@@ -4689,8 +4700,15 @@ fn strip_of(
     let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
     let behind = dot(a.direction, f.out);
     let sin_flat = FLAT_OFF.to_radians().sin();
+    // (L16) The face as the joint details seat it on this host
+    // ([`crate::joints::seat_face`]; before: as it sat on what it bolted
+    // onto while planning — for an end naming nothing, the joint's leg
+    // worked out, not always this host).
     let inside = match tilt {
         None if between.is_some() => false,
+        None if s.seat_as_drawn => {
+            crate::joints::seat_face(a, host).or(a.sits.value) == Some(Face::Inside)
+        }
         None => a.sits.value == Some(Face::Inside),
         Some(_) => behind < -sin_flat || (behind <= sin_flat && dot(nb, f.out) < 0.0),
     };

@@ -112,3 +112,50 @@ fn an_end_on_a_built_up_member_is_seated_by_the_plane_its_axis_lies_in() {
         );
     }
 }
+
+/// O44 L16 (L15's question 4): an end naming nothing it bolts onto is
+/// planned on the face the joint details then seat it on. With a leg `V`
+/// at the joint (the joint's leg worked out for the redundant `R`), the
+/// layout plans R onto the diagonal running through: the face the plan
+/// takes there ([`crate::joints::seat_face`]) is the one the joint details
+/// seat R on once the file names the diagonal as what it bolts onto — at
+/// every roll compared — and at some rolls not the one R sat on while it
+/// named nothing (before L16 the plan's).
+#[test]
+fn an_end_naming_nothing_is_planned_on_the_face_it_is_drawn_on() {
+    use ohl_structures::connections::Face;
+    let leg = "\n\n[[node]]\nid = \"T\"\npoint = [\"2 m\", \"0 m\", \"4 m\"]\nsupport = \"fixed\"\n\n\
+               [[member]]\nid = \"V\"\nnodes = [\"N\", \"T\"]\nsection = \"EA-61x7\"\n\
+               design = { class = \"leg\" }\n";
+    let named = "\n\n[[connection]]\nmember = \"R\"\njoint = \"N\"\nonto = \"B1\"\n";
+    let at = |text: &str| {
+        let d = joint_details(text, &library(), &Default::default()).unwrap();
+        let j = d.joint("N").unwrap().clone();
+        let r = j.arrivals.iter().find(|a| a.member == "R").unwrap().clone();
+        let b1 = j
+            .arrivals
+            .iter()
+            .find(|a| a.member == "B1")
+            .unwrap()
+            .clone();
+        (r, b1)
+    };
+    let (mut compared, mut moved) = (0, 0);
+    for roll in (0..72).map(|k| k * 5) {
+        let extra = format!("\nroll = \"{roll} deg\"\n{leg}");
+        let (r, b1) = at(&diagonal([2.0, 1.5, 2.0], &extra));
+        assert_eq!(r.onto.value.as_deref(), Some("V"), "roll {roll}: {r:?}");
+        let (r2, _) = at(&diagonal([2.0, 1.5, 2.0], &format!("{extra}{named}")));
+        assert_eq!(r2.onto.value.as_deref(), Some("B1"));
+        let plan = crate::joints::seat_face(&r, &b1);
+        if r.leg_y != r2.leg_y || r2.sits.value.is_none() {
+            continue;
+        }
+        compared += 1;
+        assert_eq!(plan, r2.sits.value, "roll {roll}: {r:?} {r2:?}");
+        if r.sits.value.unwrap_or(Face::Outside) != plan.unwrap_or(Face::Outside) {
+            moved += 1;
+        }
+    }
+    assert!(compared > 0 && moved > 0, "{compared} {moved}");
+}
