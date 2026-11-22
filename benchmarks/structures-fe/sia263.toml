@@ -14,6 +14,11 @@
 # precision (chi = 1/(phi + sqrt(phi^2 - lb^2)), phi = 0.5 (1 + 0.76 (lb -
 # 0.2) + lb^2), lb = (L/r)/(pi sqrt(E/fy))). They run only where the
 # plugin is built (the full check builds it; packages ship it).
+#
+# The first calls of a plugin the full check has just built take seconds
+# more on a loaded computer (its process started for the first time):
+# these cases allow 30 s (max_seconds; 5 s until 2026-11-22), the values
+# unchanged.
 
 [[case]]
 id = "sia263-001"
@@ -21,7 +26,7 @@ title = "Compression, concentric, L/r_v 212 (curve d): N_K,Rd = chi f_y A / gamm
 calculation = "structures.fe"
 reference = "SIA 263:2013, Construction en acier (SIA), formulas (7) and (8), Table 8, evaluated by hand"
 notes = "L = 3 m, fy = 355 MPa: lambda_K = 212.1320 about v, lambda_bar = 2.776265, N_K,Rd = 34.19956 kN; 20 kN"
-max_seconds = 5.0
+max_seconds = 30.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -65,7 +70,7 @@ title = "Compression, concentric, L/r_v 106 (curve d), S 235"
 calculation = "structures.fe"
 reference = "SIA 263:2013, Construction en acier (SIA), formulas (7) and (8), Table 8, evaluated by hand"
 notes = "L = 1.5 m, fy = 235 MPa: lambda_K = 106.0660 about v, lambda_bar = 1.129408, N_K,Rd = 90.82097 kN; 20 kN"
-max_seconds = 5.0
+max_seconds = 30.0
 inputs.model = '''
 [analysis]
 nonlinear = false
@@ -109,7 +114,7 @@ title = "Tension without bolts: the gross section (38), f_y A / gamma_M1"
 calculation = "structures.fe"
 reference = "SIA 263:2013, Construction en acier (SIA), formula (38), evaluated by hand"
 notes = "fy = 355 MPa, A = 10 cm2: N_Rd = 338.0952 kN; 20 kN"
-max_seconds = 5.0
+max_seconds = 30.0
 inputs.model = '''
 [analysis]
 nonlinear = false
