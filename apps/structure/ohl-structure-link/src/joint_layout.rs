@@ -324,6 +324,18 @@ pub struct LayoutSettings {
     /// at any of them. **Off by default** (a chord's roll is Orient
     /// angles'; the owner decides); on: measured.
     pub chord_turns: bool,
+    /// L13, 2026-11-22 (L12's finding: an end's axis out of its host's
+    /// flanges' planes leaves most ends for a hand detail): an end whose
+    /// axis lies in neither flange's plane of what today's rule names for
+    /// it, nor of a member running through the joint, named onto a member
+    /// **ending** at the joint in a flange's plane of which its axis lies
+    /// (a plan or hip member onto a face horizontal's level leg; a face
+    /// member onto another of its face) — of a class at least its own, as
+    /// wide, before today's choice ([`hosts_to_name_by`]); weighed joint by
+    /// joint after writing (the run's as-drawn pass: the joint planned
+    /// again without these names, today's kept where the new is not
+    /// better). On by default; off: as before.
+    pub plane_hosts: bool,
 }
 
 impl Default for LayoutSettings {
@@ -363,6 +375,7 @@ impl Default for LayoutSettings {
             plate_shift: false,
             both_faces: true,
             chord_turns: false,
+            plane_hosts: true,
         }
     }
 }
@@ -3698,6 +3711,42 @@ fn through_member<'a>(j: &'a JointDetail, a: &Arrival) -> Option<&'a Arrival> {
 ///   through the joint in a flange's plane of which its axis lies (the
 ///   horizontal running through), if there is one (`host_in_plane`).
 pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
+    hosts_to_name_by(j, &LayoutSettings::default())
+}
+
+/// [`hosts_to_name`] with the settings `s`: with
+/// [`LayoutSettings::plane_hosts`] (L13), an end whose axis lies in
+/// neither flange's plane of today's choice nor of a member running
+/// through is named onto a member ending at the joint in a flange's plane
+/// of which its axis lies ([`host_ending_in_plane`]), before today's
+/// choice.
+pub fn hosts_to_name_by(j: &JointDetail, s: &LayoutSettings) -> Vec<(String, String)> {
+    named_hosts(j, s.plane_hosts)
+        .into_iter()
+        .map(|(m, h, _)| (m, h))
+        .collect()
+}
+
+/// [`hosts_to_name_by`]'s names, each with whether it is L13's (a member
+/// ending at the joint, chosen by the plane the end's axis lies in).
+pub(crate) fn named_hosts(j: &JointDetail, plane_hosts: bool) -> Vec<(String, String, bool)> {
+    let first = named_hosts_except(j, plane_hosts, &BTreeSet::new());
+    // (No chain of such names: an end another is named onto by its plane
+    // keeps today's choice — measured on the private real towers, renaming
+    // both lost more joints than it gained.)
+    let hosts: BTreeSet<String> = first.iter().filter(|x| x.2).map(|x| x.1.clone()).collect();
+    if !first.iter().any(|x| x.2 && hosts.contains(&x.0)) {
+        return first;
+    }
+    named_hosts_except(j, plane_hosts, &hosts)
+}
+
+/// [`named_hosts`], the ends `keep` never named by their plane.
+fn named_hosts_except(
+    j: &JointDetail,
+    plane_hosts: bool,
+    keep: &BTreeSet<String>,
+) -> Vec<(String, String, bool)> {
     let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
     j.arrivals
         .iter()
@@ -3720,19 +3769,148 @@ pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
                     .onto
                     .value
                     .is_none()
-                    .then(|| (a.member.clone(), h.member.clone()));
+                    .then(|| (a.member.clone(), h.member.clone(), false));
             }
             match host_in_plane(&j.arrivals, a) {
                 Some(h) if h0.is_none_or(|x| x.member != h.member) => {
-                    Some((a.member.clone(), h.member.clone()))
+                    Some((a.member.clone(), h.member.clone(), false))
                 }
-                _ => match (a.onto.value.is_none(), h0) {
-                    (true, Some(h)) => Some((a.member.clone(), h.member.clone())),
-                    _ => None,
-                },
+                _ => {
+                    // (Not an end in line with a member at the joint: the
+                    // plan leaves such an end as it is.)
+                    let in_line = j.arrivals.iter().any(|c| {
+                        c.member != a.member && angle_deg(a.direction, c.direction) > 160.0
+                    });
+                    // (Not an end lying within a few degrees of today's
+                    // choice's flange: a bent plate lays most of those out.)
+                    let near = h0.is_some_and(|h| plane_off(a, h) <= PLANE_HOST_OFF);
+                    // (Where nothing runs through the joint, only a plan or
+                    // hip member: the base of such a joint waits for the
+                    // owner's decision on its own bolts — measured on the
+                    // private real towers, the face members named there made
+                    // more joints worse than better.)
+                    let level =
+                        a.direction[2].abs() <= crate::joints::HORIZONTAL_OFF.to_radians().sin();
+                    let through_here = j.arrivals.iter().any(|b| {
+                        b.continuous.is_some()
+                            || j.arrivals.iter().any(|c| {
+                                c.member != b.member && angle_deg(b.direction, c.direction) > 160.0
+                            })
+                    });
+                    if plane_hosts
+                        && !in_line
+                        && !near
+                        && (through_here || level)
+                        && !keep.contains(&a.member)
+                        && let Some(h) = host_ending_in_plane(&j.arrivals, a)
+                    {
+                        return Some((a.member.clone(), h.member.clone(), true));
+                    }
+                    match (a.onto.value.is_none(), h0) {
+                        (true, Some(h)) => Some((a.member.clone(), h.member.clone(), false)),
+                        _ => None,
+                    }
+                }
             }
         })
         .collect()
+}
+
+/// L13: an end lying within this of a flange's plane of today's choice
+/// for it (degrees) keeps that choice — a bent plate by a few degrees lays
+/// many of those out (measured on the 78 private real towers: named onto
+/// a member ending at the joint, the ends 5° to 10° out made 250 joints
+/// worse and 137 better; those farther out 1 to 4 times more better than
+/// worse, those with no choice today none worse). The program's value, not
+/// a standard's.
+pub const PLANE_HOST_OFF: f64 = 10.0;
+
+/// How far `a`'s axis runs out of the nearer of `h`'s flanges' planes
+/// (an angle's, or a built-up section's angles' along its axes), degrees;
+/// 90 for a member of another section.
+fn plane_off(a: &Arrival, h: &Arrival) -> f64 {
+    match h.profile.as_ref() {
+        Some(p) if p.angle.is_some() || !p.parts.is_empty() => dot(a.direction, p.axes[1])
+            .abs()
+            .min(dot(a.direction, p.axes[2]).abs())
+            .min(1.0)
+            .asin()
+            .to_degrees(),
+        _ => 90.0,
+    }
+}
+
+/// L13 (2026-11-22): of the single angles **ending** at the joint (not
+/// one part with a member there, not running through it in line with
+/// another of its members) and not in line with `a`, one in a flange's
+/// plane of which `a`'s axis lies ([`FLAT_OFF`]): not bolting onto `a`,
+/// of a class at least `a`'s (leg, bracing, redundant), as wide as `a`
+/// where of its class (the id deciding between equals: never two ends
+/// named onto each other) — the class first, then the wider, the id. A
+/// plan or hip member at a leg finds a face horizontal ending there whose
+/// outstanding leg it lies on; none: today's choice stays.
+fn host_ending_in_plane<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arrival> {
+    let rank = |b: &Arrival| match b.class.as_deref() {
+        Some("leg") => 0,
+        Some("bracing") | Some("crossing") => 1,
+        Some("redundant") => 2,
+        _ => 3,
+    };
+    let width = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map_or(0, |g| -((g.b.max(g.h) * 1e6) as i64))
+    };
+    let key = |b: &'a Arrival| (rank(b), width(b), b.member.as_str());
+    // Its leg bolted already flat on the flange whose plane holds its axis
+    // (no turn needed: its member's other ends keep theirs) first.
+    let flat_now = |b: &Arrival| -> bool {
+        let (Some(pa), Some(pb)) = (a.profile.as_ref(), b.profile.as_ref()) else {
+            return false;
+        };
+        let Some(g) = pa.angle else {
+            return false;
+        };
+        let s = FLAT_OFF.to_radians().sin();
+        let c = FLAT_OFF.to_radians().cos();
+        let either = (g.b - g.h).abs() < 1e-9
+            && !matches!(a.leg.value, Some(ohl_structures::connections::BoltedLeg::Long | ohl_structures::connections::BoltedLeg::Short) if a.leg.known());
+        let legs: Vec<[f64; 3]> = if either {
+            vec![pa.axes[1], pa.axes[2]]
+        } else if a.leg_y {
+            vec![pa.axes[2]]
+        } else {
+            vec![pa.axes[1]]
+        };
+        [pb.axes[1], pb.axes[2]]
+            .into_iter()
+            .filter(|n| dot(a.direction, *n).abs() < s)
+            .any(|n| legs.iter().any(|l| dot(*l, n).abs() > c))
+    };
+    let runs = |b: &Arrival| {
+        b.continuous.is_some()
+            || all
+                .iter()
+                .any(|c| c.member != b.member && angle_deg(b.direction, c.direction) > 160.0)
+    };
+    let own = (rank(a), width(a), a.member.as_str());
+    all.iter()
+        .filter(|b| b.member != a.member)
+        .filter(|b| {
+            b.profile
+                .as_ref()
+                .is_some_and(|p| p.angle.is_some() && p.parts.is_empty())
+        })
+        .filter(|b| (20.0..=160.0).contains(&angle_deg(a.direction, b.direction)))
+        .filter(|b| !runs(b))
+        .filter(|b| {
+            b.onto.value.as_deref() != Some(a.member.as_str())
+                && b.continuous.as_deref() != Some(a.member.as_str())
+        })
+        .filter(|b| key(b) < own)
+        .filter(|b| in_flange_plane(a, b))
+        .min_by(|x, y| (!flat_now(x), key(x)).cmp(&(!flat_now(y), key(y))))
 }
 
 /// The members end `a` at joint `j` could bolt onto (L1 d, owner
@@ -4126,6 +4304,11 @@ pub(crate) fn through_of<'a>(all: &'a [Arrival], a: &Arrival) -> Option<&'a Arri
 }
 
 /// The angle between two directions, degrees.
+/// The angle between two directions, degrees.
+pub(crate) fn angle_between_deg(a: [f64; 3], b: [f64; 3]) -> f64 {
+    angle_deg(a, b)
+}
+
 fn angle_deg(a: [f64; 3], b: [f64; 3]) -> f64 {
     dot(a, b).clamp(-1.0, 1.0).acos().to_degrees()
 }

@@ -1043,6 +1043,10 @@ fn lay_out_once(
     // (member, joint), with what the copy gave before (none: nothing) — a
     // name written only where the end is laid out.
     let mut run_named: BTreeMap<(String, String), Option<String>> = BTreeMap::new();
+    // L13: those of them named by the plane their axis lies in, onto a
+    // member ending at the joint (weighed after writing: the as-drawn pass
+    // plans their joint again without them).
+    let mut plane_named: BTreeSet<(String, String)> = BTreeSet::new();
     for j in around_details
         .joints
         .iter()
@@ -1062,10 +1066,13 @@ fn lay_out_once(
             named = true;
         }
         let joined: BTreeSet<&str> = js.iter().map(|x| x.member.as_str()).collect();
-        for (m, host) in crate::joint_layout::hosts_to_name(j) {
+        for (m, host, by_plane) in crate::joint_layout::named_hosts(j, settings.plane_hosts) {
             let in_line_here = js.iter().any(|x| x.member == m || x.onto == m);
             if in_line_here || joined.contains(m.as_str()) {
                 continue;
+            }
+            if by_plane {
+                plane_named.insert((m.clone(), j.id.clone()));
             }
             run_named
                 .entry((m.clone(), j.id.clone()))
@@ -1164,6 +1171,11 @@ fn lay_out_once(
     };
     let mut turned: BTreeMap<String, f64> = BTreeMap::new();
     let mut unknown_class: BTreeSet<String> = BTreeSet::new();
+    // (L13: a name by the plane taken back below.)
+    let mut plane_back = false;
+    // L13: a member turned with an end named by its plane: its turn without
+    // that end (none: not turned).
+    let mut plane_alt: BTreeMap<String, Option<f64>> = BTreeMap::new();
     let mut stage_details: Option<JointDetails> = None;
     let mut changed = false;
     for stage in [
@@ -1274,8 +1286,38 @@ fn lay_out_once(
             if all.is_empty() {
                 continue;
             }
-            let turns: Vec<EndTurn> = all.iter().map(|(_, e)| *e).collect();
-            let whole = whole_roll(&turns, crate::FLAT_OFF);
+            let mut turns: Vec<EndTurn> = all.iter().map(|(_, e)| *e).collect();
+            let mut whole = whole_roll(&turns, crate::FLAT_OFF);
+            // L13: a name by the plane its axis lies in (onto a member
+            // ending at the joint) whose turn no one roll gives with its
+            // member's other ends is taken back (today's choice there):
+            // it never costs the member's other ends their turn.
+            if whole.is_none() {
+                let back: Vec<String> = all
+                    .iter()
+                    .filter(|(j, _)| plane_named.contains(&(m.clone(), j.clone())))
+                    .map(|(j, _)| j.clone())
+                    .collect();
+                if !back.is_empty() {
+                    let mut doc = planning.borrow_mut();
+                    let mut c = connection_edits::Connections::of(&doc);
+                    for j in &back {
+                        let key = (m.clone(), j.clone());
+                        plane_named.remove(&key);
+                        let plain = run_named.remove(&key).flatten();
+                        let _ = c.set(&mut doc, m, j, "onto", plain.map(FieldValue::Word).as_ref());
+                        plane_back = true;
+                    }
+                    drop(doc);
+                    changed = true;
+                    all.retain(|(j, _)| !back.contains(j));
+                    if all.is_empty() {
+                        continue;
+                    }
+                    turns = all.iter().map(|(_, e)| *e).collect();
+                    whole = whole_roll(&turns, crate::FLAT_OFF);
+                }
+            }
             // L1 (a), bottom up, then out (owner 2026-11-19: "More things
             // align on the body from the bottom up and then less at the
             // mast ends"): no one roll lays every end flat and none lies
@@ -1347,6 +1389,26 @@ fn lay_out_once(
                 ));
                 continue;
             }
+            // L13: its turn without its ends named by their plane (none:
+            // not turned) — what the as-drawn pass plans it with when it
+            // takes such a name back (the joint planned as without it).
+            if all
+                .iter()
+                .any(|(j, _)| plane_named.contains(&(m.clone(), j.clone())))
+            {
+                let rest: Vec<EndTurn> = all
+                    .iter()
+                    .filter(|(j, _)| !plane_named.contains(&(m.clone(), j.clone())))
+                    .map(|(_, e)| *e)
+                    .collect();
+                let alt = if rest.is_empty() {
+                    None
+                } else {
+                    whole_roll(&rest, crate::FLAT_OFF)
+                        .map(|(x, _)| ((x.to_degrees() * 100.0).round() / 100.0).to_radians())
+                };
+                plane_alt.insert(m.clone(), alt);
+            }
             turned.insert(m.clone(), mid.to_radians());
             changed = true;
         }
@@ -1356,6 +1418,14 @@ fn lay_out_once(
             "{m}: no class given: turned with the secondary bracing (after the diagonals, \
              before the redundants)"
         ));
+    }
+    if plane_back {
+        (around_details, around_model) = crate::joints::joint_details_and_model(
+            &text_of(&planning.borrow(), &keep_around),
+            ask.library,
+            ask.bolts,
+            Some(&around),
+        )?;
     }
     // The joints asked in detail with `turns` (their model: the code's edge
     // distances), each planned.
@@ -1877,10 +1947,26 @@ fn lay_out_once(
     type Names = Vec<(String, Option<String>)>;
     type Laid = (usize, usize, BTreeSet<String>);
     let mut as_drawn: BTreeMap<String, (Laid, Names)> = BTreeMap::new();
+    // L13: the turns the as-drawn pass changed with a name by the plane
+    // taken out, per joint (member, its turn with the name), to put back
+    // when the joint is not better without; and the changes to make to the
+    // turns before the next pass.
+    let mut as_drawn_turns: BTreeMap<String, Vec<(String, Option<f64>)>> = BTreeMap::new();
+    let mut pending_turns: Vec<(String, Option<f64>)> = Vec::new();
     let mut as_drawn_done: BTreeSet<String> = BTreeSet::new();
     let mut as_drawn_passes = 0;
     let mut as_drawn_plan: Option<Planned> = None;
     loop {
+        for (m, x) in pending_turns.drain(..) {
+            match x {
+                Some(x) => {
+                    turned.insert(m, x);
+                }
+                None => {
+                    turned.remove(&m);
+                }
+            }
+        }
         let turns: BTreeMap<&String, f64> = turned
             .iter()
             .filter(|(m, _)| !refused.contains(*m))
@@ -2120,6 +2206,18 @@ fn lay_out_once(
                     (ends, plates, asked)
                 };
                 let mut again = false;
+                // (L13: the turns changed in this pass, applied to its plan
+                // and before the next.)
+                let mut changes: BTreeMap<String, Option<f64>> = BTreeMap::new();
+                let joints_of = |m: &str| -> Vec<String> {
+                    members_here
+                        .get(m)
+                        .into_iter()
+                        .flat_map(|n| n.iter())
+                        .filter(|j| targets.contains(*j))
+                        .cloned()
+                        .collect()
+                };
                 let mut doc = planning.borrow_mut();
                 let mut c = connection_edits::Connections::of(&doc);
                 for (j, (before, names)) in std::mem::take(&mut as_drawn) {
@@ -2131,6 +2229,7 @@ fn lay_out_once(
                     // left as it is, unsaid.)
                     let keep = now.2.is_superset(&before.2)
                         && (now.0 > before.0 || (now.0 == before.0 && now.1 <= before.1));
+                    let put_back = as_drawn_turns.remove(&j).unwrap_or_default();
                     if keep {
                         let ms: Vec<&str> = names.iter().map(|(m, _)| m.as_str()).collect();
                         notes.push(format!(
@@ -2142,6 +2241,10 @@ fn lay_out_once(
                     }
                     for (m, v) in names {
                         let _ = c.set(&mut doc, &m, &j, "onto", v.map(FieldValue::Word).as_ref());
+                    }
+                    for (m, x) in put_back {
+                        touched.extend(joints_of(&m));
+                        changes.insert(m, x);
                     }
                     touched.insert(j);
                     again = true;
@@ -2155,7 +2258,8 @@ fn lay_out_once(
                             .iter()
                             .filter(|((m, j), plain)| {
                                 j == &o.joint
-                                    && !(o.written && o.plan.ends.iter().any(|e| &e.member == m))
+                                    && (!(o.written && o.plan.ends.iter().any(|e| &e.member == m))
+                                        || plane_named.contains(&(m.clone(), j.clone())))
                                     && onto_in(&doc, m, j) != **plain
                                     // (The face it lies on given by hand:
                                     // given for the member named, kept so.)
@@ -2176,6 +2280,26 @@ fn lay_out_once(
                                 plain.map(FieldValue::Word).as_ref(),
                             );
                         }
+                        // L13: a member named by its plane planned with its
+                        // turn without that name (the joint as without it).
+                        for (m, _) in &names {
+                            if !plane_named.contains(&(m.clone(), o.joint.clone())) {
+                                continue;
+                            }
+                            let Some(alt) = plane_alt.get(m).copied() else {
+                                continue;
+                            };
+                            let now = turned.get(m).copied();
+                            if now == alt || changes.contains_key(m) {
+                                continue;
+                            }
+                            as_drawn_turns
+                                .entry(o.joint.clone())
+                                .or_default()
+                                .push((m.clone(), now));
+                            touched.extend(joints_of(m));
+                            changes.insert(m.clone(), alt);
+                        }
                         as_drawn_done.insert(o.joint.clone());
                         as_drawn.insert(o.joint.clone(), (laid(o), names));
                         touched.insert(o.joint.clone());
@@ -2190,8 +2314,22 @@ fn lay_out_once(
                     // turns); the others as in this pass.
                     let mut d = planning.borrow().clone();
                     for (m, turn) in &turns {
-                        ohl_structure_edit::edits::set_member_roll(&mut d, m, roll_of(m) + turn);
+                        if !changes.contains_key(*m) {
+                            ohl_structure_edit::edits::set_member_roll(
+                                &mut d,
+                                m,
+                                roll_of(m) + turn,
+                            );
+                        }
                     }
+                    for (m, x) in &changes {
+                        ohl_structure_edit::edits::set_member_roll(
+                            &mut d,
+                            m,
+                            roll_of(m) + x.unwrap_or(0.0),
+                        );
+                    }
+                    pending_turns.extend(changes);
                     let (dd, _) = crate::joints::joint_details_and_model(
                         &text_of(&d, &keep_for(&touched)),
                         ask.library,
@@ -2267,6 +2405,51 @@ fn lay_out_once(
                     "{m}: its automatic roll taken back (no joint of it laid out with it)"
                 ));
             }
+        }
+        // L13: the ends laid onto a member that ends at the joint (not one
+        // part, not running through): that member's own end bolts carry
+        // their force too, checked for its own force only.
+        let mut onto_ending: Vec<String> = Vec::new();
+        for o in outcomes.iter().filter(|o| o.written) {
+            let Some(j) = details.joint(&o.joint) else {
+                continue;
+            };
+            for e in &o.plan.ends {
+                let host = match &e.onto {
+                    crate::joint_layout::Onto::Member(h) => h.as_str(),
+                    crate::joint_layout::Onto::Plate(k) => match o.plan.plates.get(*k) {
+                        Some(p) => p.on.as_str(),
+                        None => continue,
+                    },
+                };
+                let Some(h) = j.arrivals.iter().find(|a| a.member == host) else {
+                    continue;
+                };
+                let runs = h.continuous.is_some()
+                    || j.arrivals.iter().any(|c| {
+                        c.member != h.member
+                            && crate::joint_layout::angle_between_deg(h.direction, c.direction)
+                                > 160.0
+                    });
+                if !runs && h.class.as_deref() != Some("leg") {
+                    onto_ending.push(format!("{} onto {} at {}", e.member, h.member, o.joint));
+                }
+            }
+        }
+        if !onto_ending.is_empty() {
+            notes.push(format!(
+                "{} end(s) laid out onto a member that ends at the joint ({}{}): that member's own \
+                 end bolts carry their force too but are checked for its own force only — NOT ON \
+                 THE SAFE SIDE there (check those bolts by hand)",
+                onto_ending.len(),
+                onto_ending
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if onto_ending.len() > 5 { ", …" } else { "" }
+            ));
         }
         return Ok(LayoutRun {
             text: result,

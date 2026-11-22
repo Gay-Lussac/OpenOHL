@@ -8,6 +8,76 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint layout: an end's host chosen by the plane its axis lies in, L13)
+
+**An end whose axis lies in no flange's plane of today's choice is named
+onto a member ending at the joint in whose flange's plane it lies** (roadmap
+O44 L13, the owner's answer to L12's question 2; the owner busy; built, in
+active development, not approved yet;
+[theory](../theory/joint-layout.md#an-ends-host-chosen-by-the-plane-its-axis-lies-in-l13)).
+No format change.
+
+- **The rule** (`LayoutSettings::plane_hosts`, on): an end more than 10°
+  out of today's choice's flanges' planes (`PLANE_HOST_OFF`, the program's
+  value, measured), held in no flange's plane of a member running through,
+  is named onto a single angle **ending** at the joint whose flange's plane
+  holds its axis (within the owner's 2°) — of a class at least its own and
+  as wide (the id between equals: never two named onto each other), the one
+  its leg already lies flat on first; no chains of such names; where nothing
+  runs through the joint, only a plan or hip member (the base of such a
+  joint waits for the format decision of L12's question 3).
+- **Weighed**: a name whose turn no one roll of its member gives with its
+  other ends is taken back; every joint with such a name is planned once
+  more without it (its member turned as without it) and written, today's
+  choice kept where that lays out as many ends or more on no more plates
+  (the run's as-drawn pass, L8).
+- **NOT ON THE SAFE SIDE, said**: an end laid onto a member that ends at
+  the joint (this rule's names, and L1 d's before) brings its force into
+  that member's own end bolts, which the joint checks check for that
+  member's force only; the run's notes say how many such ends (the first
+  five) — to be checked by hand.
+- **Measured** on the 78 private towers (after Orient angles, the bundled
+  plugin): joints laid out whole 35 656 → 35 692 (40 newly whole, 4 no
+  longer), member ends laid out 130 097 → 130 444, plates 67 532 → 67 894;
+  joint by joint 390 better and 41 worse; a run again identical 78/78. The
+  gains lie where plan and hip members come in (where nothing runs through
+  161 joints better and 3 worse; a leg running on with plan members whole
+  4 → 12).
+- **Tried and left out** (measured): the end 5° to 10° out of today's
+  choice's flange also renamed (250 joints worse, 137 better); chains of
+  such names (renaming both: 90 joints worse, 16 better where the end was
+  laid out before); the face members where nothing runs through (123 joints worse, 34
+  better).
+- Not built: a level plate across two horizontals (or a bent one where
+  their outstanding legs are not level): each end goes onto its own host's
+  flange or a plate there.
+
+## 2026-11-22 (owner): joint layout L12 — questions 1 to 6 approved
+
+The owner, 2026-11-22, on the questions of the joint layout's
+[L12](#2026-11-21-joint-layout-the-joints-grouped-by-what-comes-in-and-how-it-lies-l12)
+(roadmap O44): "Ok with recommendations go ahead".
+
+1. The grouping (what the ends bolt onto · what comes in · how they lie),
+   shown in Joint details, nothing depending on it: kept.
+2. General rules driven by the incoming ends rather than methods per
+   group: an end's host chosen by the plane its axis lies in (a member
+   ending at the joint too), then a built-up member's seat by that plane
+   and J6's plates (L13's first two steps).
+3. Where nothing runs through a joint: the base member's own end bolts
+   used as the holding bolts of the gusset the others bolt onto, with the
+   format field it needs (a structure file version, the reader keeping
+   older files) — **allowed**; it also answers L10's question 5 (an end's
+   own bolts as a plate's holding bolts, the bolts that join nothing).
+4. The chords turned against their joints stay off in a run; offered with
+   a tick (Lay out joints' preview, Solve the clashes) with their effect;
+   why Orient angles' chord turn and the joints disagree by a few degrees
+   traced.
+5. The leg turns L11 proposes offered with a tick in Lay out joints'
+   preview, as Solve the clashes does per joint.
+6. The owner's 2° rule kept for the ends 2° to 5° out of their host's
+   flange plane.
+
 ## 2026-11-21 (joint layout: the joints grouped by what comes in and how it lies, L12)
 
 **Every joint described and grouped; a chord turned against its joints as

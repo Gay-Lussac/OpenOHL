@@ -96,6 +96,8 @@ mod orient_tests;
 mod other_face;
 #[cfg(test)]
 mod other_face_tests;
+#[cfg(test)]
+mod plane_hosts_tests;
 mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
@@ -128,8 +130,8 @@ pub use joint_layout::{
     BEND_RADIUS_RATIO, BEND_SMALL_MAX, BendPlan, BoltArea, CUT_TRIES, EdgeRule, EndPlan, GAP_START,
     HoldPlan, Join, JoinKind, JointPlan, LayoutSettings, NODE_LIMIT, Onto, OwnPlane,
     PULL_BACK_START, PlatePlan, Reach, SHIFT_LIMIT_START, SPLICE_UNKNOWN, TILT_MAX, bend_radius,
-    flat_turns, hosts_to_name, joins_of, mm_text, plan_joint, plan_joint_except, plan_joint_with,
-    splice_unknown, weld_throat,
+    flat_turns, hosts_to_name, hosts_to_name_by, joins_of, mm_text, plan_joint, plan_joint_except,
+    plan_joint_with, splice_unknown, weld_throat,
 };
 pub use joint_order::{JointOrder, Zone, joint_order};
 pub use joint_sheet::{

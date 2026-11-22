@@ -142,6 +142,9 @@ not bolted and left with "its axis runs out of the face"):
   horizontal running through), chosen in the same order. The end then
   bolts flat onto that member, as built; none: the joint's leg kept (and
   the end is left for a bent plate or a hand detail, said).
+- **Neither** (since 2026-11-22, L13, [below](#an-ends-host-chosen-by-the-plane-its-axis-lies-in-l13)):
+  a member **ending** at the joint in a flange's plane of which the end's
+  axis lies — a plan diagonal onto a face horizontal's level leg.
 
 What an end bolts onto is what its restraint is worked out from (the
 code's stiffness rule, as for any end bolted onto a member): the member
@@ -2645,6 +2648,123 @@ joints whole +54 (58 gained, 4 lost), ends +145, plates −28, 101 joints
 better and 14 worse — the group "leg running on · redundants · some a few
 degrees out" 3 → 60 whole of 70.
 
+## An end's host chosen by the plane its axis lies in (L13)
+
+(The owner, 2026-11-21, on L12's finding: "the goal is to lay the joints so
+that it works most of the time"; L12's recommendation, general rules driven
+by the incoming ends. Built 2026-11-22, in active development, not approved
+yet. The code: `joint_layout::hosts_to_name_by` (`named_hosts`,
+`host_ending_in_plane`), `layout_run` (the turns and the as-drawn pass),
+`LayoutSettings::plane_hosts`, **on by default**. **No format change**.)
+
+### The rule
+
+An end bolts flat onto a flange only where its axis lies in that flange's
+plane (its leg bolted contains its axis). L12 found that an end's axis
+lying out of its host's flanges' planes leaves more ends for a hand detail
+than any other cause (43 %), and that many of them lie in the plane of a
+flange of **another member at the joint** — most often one **ending**
+there: a plan or hip member at a leg, whose face horizontal ends at the leg
+with its outstanding leg level (Orient angles turns a face member's other
+leg out of the tower); two members of one face meeting where nothing runs
+through. Today's choice ([above](#which-member-an-end-bolts-onto)) looks
+only at the members running through the joint, then the joint's leg.
+
+Now, for an end whose today's choice lies **more than 10°** out of its
+flanges' planes (or that has none), and that no member running through
+holds in a flange's plane: a single angle **ending** at the joint in a
+flange's plane of which the end's axis lies (within the owner's 2°) is
+named what it bolts onto, before today's choice, where
+
+- it is not one part with a member there, not running through, not in line
+  with the end, and does not bolt onto the end;
+- it is of a class at least the end's (leg, bracing, redundant) and as wide
+  where of its class, the id deciding between equals — so two ends are never
+  named onto each other, and a horizontal is never named onto the plan
+  diagonal arriving on it;
+- of several, the one the end's leg already lies flat on first (no turn:
+  its member's other end keeps its own), then the class, the wider, the id;
+- the end is not in line with a member at the joint (the plan leaves such
+  an end as it is), and is not itself what another end is named onto by
+  this rule (no chains of such names: measured, renaming both lost more
+  joints than it gained);
+- where nothing runs through the joint (an arm's tip, a K-brace's apex),
+  only a plan or hip member (level within 5°) is so named: the base of
+  such a joint waits for the owner's decision on its own bolts (L12's
+  question 3), and the face members named there made more joints worse
+  than better (measured, below).
+
+The 10° (`PLANE_HOST_OFF`) is the program's value, measured (below): an end
+within 10° of today's choice's flange keeps it — a bent plate by a few
+degrees lays many of those out.
+
+### Weighed, never forced
+
+- **The turn.** The end's member is turned to lie flat on its new host as
+  any member (one roll for the whole member, J3). Where no one roll lays
+  every end of it flat with the new host, the name is taken back (today's
+  choice there): it never costs the member's other ends their turn.
+- **Joint by joint, after writing** (the run's as-drawn pass, L8): every
+  joint with such a name is planned once more without it — the end where
+  the file draws it, its member turned as it would be without the name —
+  and written; the joint keeps today's choice where that lays out as many
+  ends or more on no more plates (a tie goes to today's choice), else the
+  name and its turn are put back.
+- A plate on the new host is laid out as on any member's flange (its
+  `on`); a level plate across two horizontals (or a bent one where their
+  outstanding legs are not level) is **not built**: each end goes onto its
+  own host's flange or a plate there.
+
+What an end bolts onto is what its restraint is worked out from (the
+code's stiffness rule, as before): the analysis takes the new host as it
+takes any member an end is laid out onto.
+
+**NOT ON THE SAFE SIDE**: an end laid out onto a member that **ends** at
+the joint (this rule's names, and L1 d's before them) brings its force into
+that member near its end; that member's own end bolts (a member not a leg) then carry it too,
+but the joint checks check them for that member's own force only (the
+analysis meets every member at the work point; the [bolt groups](joint-groups.md)
+sum the forces of what bolts onto one part, not of what bolts onto a part
+that itself bolts on). Said in the run's notes (how many such ends, the
+first five) — to be checked by hand until the bolt groups follow the
+force through.
+
+### Measured (L13's first step, 2026-11-22)
+
+On the 78 private tower files after Orient angles, with the bundled code
+plugin found, L12's settings (the pieces in line and the leg splice places
+confirmed). "L12" is the main build before:
+
+| | L12 | with the plane's host |
+|---|---|---|
+| joints laid out whole | 35 656 (55.1 %) | 35 692 (55.1 %) |
+| member ends laid out / candidates | 130 097 / 183 476 | 130 444 / 184 468 |
+| plates written | 67 532 | 67 894 |
+| members left after the clash rounds | 9 485 | 10 127 |
+| joints that do not fit, as given / as assumed | 48 / 11 552 | 48 / 11 552 |
+| a run again identical | 78 of 78 | 78 of 78 |
+
+Joint by joint: **390 better** (more ends, or as many on fewer plates, or
+newly whole) and **41 worse** (40 joints newly whole, 4 no longer). 5 830
+ends were named so before the take-backs; of the ends so named, 596 are laid
+out that were left before, 15 left that were laid out. The gains lie where
+plan and hip members come in: "nothing runs through · with plan members"
+(all three planes: 161 joints better, 3 worse, ends 3 962 → 4 138), "chord
+running on · with plan members · all in a flange's plane" (whole 5 864 →
+5 893), "leg running on · with plan members · some out of plane" (whole 4 →
+12), "member running on (body) · with plan members · some out of plane" (37
+better, 7 worse); the worse mostly "chord running on · with plan members ·
+some out of plane" (8 better, 18 worse: a plan member's other end, turned
+for its new host). More ends are candidates (a plan member named onto a
+horizontal is planned, where before it was left as it is): 992 more.
+
+**Tried and left out** (each measured on all 78 towers): the ends 5° to 10°
+out of today's choice's flange named too (250 joints worse, 137 better: a
+bent plate lays many of them out); chains of such names (an end named onto
+one itself renamed: 90 joints worse, 16 better where the end was laid out
+before); the face members where nothing runs through (123 joints worse, 34
+better).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -2709,6 +2829,7 @@ the same towers:
 | How much a plate stopping short must lie on the flange (L2's follow-up a) | half a square of the flange's width | room to bear on it, as step 4's flat plate; not a standard's |
 | How far off its flange an end is put on a plate bent by as much (L3) | 20° | the owner's range of the ends whose member needs rolls 5°–20° apart; beyond, welded (step 4) |
 | How far an end of a face going onto a plate is moved to bolt directly (L5) | the plate's thickness (at most the shift limit) | on the safe side relative to the plate it replaces: no larger an eccentricity than the plate's own offset out of the flange, and in the analysis as a shift; the shift limit measured on six private real towers (about a fifth fewer plates, but moves of 15 mm median): a question to the owner |
+| How far out of today's choice's flange an end must lie to be named onto a member ending at the joint by its plane (L13) | 10° | measured on the 78 private towers: the ends 5° to 10° out made 250 joints worse and 137 better (a bent plate lays many out); those farther out 1 to 4 times more better than worse |
 | Passes planning a joint again with the members named but not laid out where the file draws them (L8) | 2 | a bound on the extra work: on six private real towers the second pass found 3 more joints (of about 1 190 in the first), one plate more |
 
 ## Measured (J1 and J2, 2026-11-19)

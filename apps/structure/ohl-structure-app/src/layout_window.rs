@@ -210,6 +210,12 @@ impl LayoutWindow {
             // where its joints lay out more — off (measured; the owner
             // decides, a chord's roll being Orient angles').
             chord_turns: false,
+            // L13 (2026-11-22): an end whose axis lies in no flange's plane
+            // of today's choice nor of a member running through named onto
+            // a member ending at the joint in whose flange's plane it lies
+            // (a plan diagonal onto a face horizontal), weighed after
+            // writing.
+            plane_hosts: true,
         }
     }
 

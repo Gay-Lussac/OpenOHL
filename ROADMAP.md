@@ -3054,6 +3054,47 @@ only where it helps):
   > next, trace why the bent plate fails from 5° to 20° (its outstanding leg
   > towards the flange, the inner face over the heel, the welded plate's
   > offset limit).
+  > **Answered 2026-11-22: (1)–(6) approved with the recommendations**
+  > (the owner: "Ok with recommendations go ahead"): the grouping kept;
+  > general rules driven by the incoming ends (L13 below); (3) the base
+  > member's own end bolts as the gusset's holding bolts where nothing runs
+  > through, with its format field (a structure file version) — allowed,
+  > also for L10's question 5; (4) the chord turns off in a run, offered
+  > with a tick, the disagreement with Orient angles traced; (5) the leg
+  > turns offered with a tick; (6) the 2° kept.
+- [x] L13. **An end's host chosen by the plane its axis lies in** (L12's
+  recommendation, the owner's answers of 2026-11-22; the owner busy: built
+  on its own, reported). **Built 2026-11-22, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#an-ends-host-chosen-by-the-plane-its-axis-lies-in-l13),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-22-joint-layout-an-ends-host-chosen-by-the-plane-its-axis-lies-in-l13);
+  no format change). **A. The host by the plane** (`plane_hosts`, on): an
+  end more than 10° out of today's choice's flanges' planes, held by no
+  member running through, named onto a single angle **ending** at the joint
+  whose flange's plane holds its axis (a plan diagonal onto a face
+  horizontal's level leg) — of a class at least its own and as wide, the one
+  it already lies flat on first, no chains, where nothing runs through only
+  a plan or hip member; the name taken back where its member's turn would
+  spoil its other ends; every such joint planned once more without it (its
+  member turned as without it) and written, today's kept where not worse.
+  An end laid onto a member that ends at the joint (also L1 d's): that
+  member's own end bolts carry its force too, checked for its own force only
+  — **NOT ON THE SAFE SIDE**, said in the run's notes. On the 78 real towers
+  (kept privately; with the bundled plugin), L12 → A: joints whole 35 656 →
+  35 692, ends 130 097 → 130 444, plates 67 532 → 67 894, 390 joints better
+  and 41 worse, a run again identical 78/78. Not built: a level (or bent)
+  plate across two horizontals.
+  > **Owner:** (1) The host by the plane, an end more than 10° out of
+  > today's choice (the ends 5° to 10° out renamed too: 250 joints worse,
+  > 137 better) → Recommended: keep (10°, measured). (2) Where nothing runs
+  > through, only plan and hip members so named until the base member's
+  > bolts are decided (the face members there: 123 worse, 34 better) →
+  > Recommended: keep; look again with item 5 (the base's bolts). (3) An
+  > end laid onto a member ending at the joint: that member's end bolts
+  > checked for its own force only — NOT ON THE SAFE SIDE, said →
+  > Recommended: next, the joint bolt groups follow the force through (the
+  > host's end bolts with the vector sum of what bolts onto it near its
+  > end).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.
