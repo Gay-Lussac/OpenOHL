@@ -975,9 +975,8 @@ fn weld_sides(
             })
             .collect()
     };
-    let members = |plates: &[String]| -> Vec<SideMember> {
-        on(plates).into_iter().map(side).collect()
-    };
+    let members =
+        |plates: &[String]| -> Vec<SideMember> { on(plates).into_iter().map(side).collect() };
     // L14: the ends laid onto those members near their ends (their forces
     // reach the plate through those members' bolts).
     let riding = |plates: &[String]| -> Vec<SideMember> {
@@ -995,7 +994,11 @@ fn weld_sides(
     if sa.iter().any(|x| x == b) {
         return ([members(&sa), Vec::new()], [riding(&sa), Vec::new()], true);
     }
-    ([members(&sa), members(&sb)], [riding(&sa), riding(&sb)], false)
+    (
+        [members(&sa), members(&sb)],
+        [riding(&sa), riding(&sb)],
+        false,
+    )
 }
 
 /// The plate checks of one case: `axial` each member's axial force (N,
@@ -1365,10 +1368,11 @@ fn not_sent_words(plugin: &str, plan: &Plan) -> String {
     format!("{what} not sent: the plugin {plugin} has no joint-check-moments")
 }
 
-/// The force a weld carries: the larger resultant of the member forces on
-/// its two sides (a ring: the sum of every member's force), N.
 /// `sides` with the ends `riding` on their members added (L14).
-fn with_riding(sides: &[Vec<SideMember>; 2], riding: &[Vec<SideMember>; 2]) -> [Vec<SideMember>; 2] {
+fn with_riding(
+    sides: &[Vec<SideMember>; 2],
+    riding: &[Vec<SideMember>; 2],
+) -> [Vec<SideMember>; 2] {
     let mut out = sides.clone();
     for (o, r) in out.iter_mut().zip(riding) {
         o.extend(r.iter().cloned());
@@ -1405,9 +1409,15 @@ fn weld_loads_riding(
         return own;
     }
     let with = weld_loads(&with_riding(sides, riding), ring, at, axial);
-    [own[0].max(with[0]), own[1].max(with[1]), own[2].max(with[2])]
+    [
+        own[0].max(with[0]),
+        own[1].max(with[1]),
+        own[2].max(with[2]),
+    ]
 }
 
+/// The force a weld carries: the larger resultant of the member forces on
+/// its two sides (a ring: the sum of every member's force), N.
 fn weld_force(sides: &[Vec<SideMember>; 2], ring: bool, axial: &BTreeMap<String, f64>) -> f64 {
     weld_loads_with(sides, ring, None, axial)[0]
 }

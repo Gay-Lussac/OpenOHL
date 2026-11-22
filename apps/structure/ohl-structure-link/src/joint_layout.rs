@@ -336,6 +336,17 @@ pub struct LayoutSettings {
     /// again without these names, today's kept where the new is not
     /// better). On by default; off: as before.
     pub plane_hosts: bool,
+    /// L14 (the owner's answer of 2026-11-22 to L12's question 3, L10's
+    /// question 5): where an end left as it is would have its bolts drawn
+    /// joining nothing ([`LayoutSettings::nothing_joined`]) and a plate of
+    /// the plan lies on that member's flange where its bolts are (nothing
+    /// runs through the joint: an arm tip, a K-brace's apex), its end is
+    /// bolted onto that plate and its own end bolts are the plate's holding
+    /// bolts (the plate's `held_by`, structure file version 24; the plate's
+    /// own provisional bolts onto it, if planned, become its end bolts),
+    /// applied as a plan is written (`joint_layout::hold_by_base`). On by default; off:
+    /// as before (that member by hand).
+    pub base_holds: bool,
 }
 
 impl Default for LayoutSettings {
@@ -376,6 +387,7 @@ impl Default for LayoutSettings {
             both_faces: true,
             chord_turns: false,
             plane_hosts: true,
+            base_holds: true,
         }
     }
 }
@@ -5919,6 +5931,199 @@ fn place(
 /// Said of an end left as it is whose bolts drawn join nothing at the
 /// joint (L10, [`LayoutSettings::nothing_joined`]).
 pub const BOLTS_JOIN_NOTHING: &str = "its bolts join nothing";
+
+/// Said of a base member whose own end bolts hold the plate on its flange
+/// (L14, [`LayoutSettings::base_holds`]).
+pub const BASE_HOLDS: &str = "its end bolts hold the plate";
+
+/// L14 ([`LayoutSettings::base_holds`]): of the members `plan` leaves by
+/// hand because their bolts join nothing ([`BOLTS_JOIN_NOTHING`]), each
+/// with a plate of the plan lying on its own flange ([`base_plate`]) is
+/// laid onto that plate, its own end bolts the plate's holding bolts —
+/// where the plate was given provisional bolts of its own onto it (L5o:
+/// placed clear of what is there) those become its end bolts (one gauge
+/// line, an even pitch, [`hold_as_end`]); else its own bolts as drawn; bolts
+/// of the plate's own that cannot be so written: left as before. Applied to
+/// a plan as it is written (after it has been weighed against others, so
+/// that the end gained never decides between plans); how many so laid.
+pub(crate) fn hold_by_base(plan: &mut JointPlan, j: &JointDetail) -> usize {
+    let mut n = 0;
+    let flagged: Vec<String> = plan
+        .hand
+        .iter()
+        .filter(|h| h.contains(BOLTS_JOIN_NOTHING))
+        .filter_map(|h| h.split(": ").next().map(str::to_owned))
+        .collect();
+    for m in flagged {
+        let Some(a) = j.arrivals.iter().find(|x| x.member == m) else {
+            continue;
+        };
+        if plan.ends.iter().any(|e| e.member == m) {
+            continue;
+        }
+        let Some(k) = base_plate(a, &plan.plates, &plan.ends, j) else {
+            continue;
+        };
+        let cut = a.cut.value.unwrap_or(0.0);
+        let bolts = match &plan.plates[k].hold {
+            Some(h) => match hold_as_end(h, a, cut) {
+                Some(b) => Some(b),
+                None => continue,
+            },
+            None => None,
+        };
+        let count = bolts
+            .as_ref()
+            .map_or(a.bolt_points.len(), |b| b.count as usize);
+        let whose = if bolts.is_some() {
+            "the plate's provisional bolts onto it (L5o) written as its end bolts"
+        } else {
+            "its own bolts as drawn"
+        };
+        plan.plates[k].hold = None;
+        plan.ends.push(EndPlan {
+            member: m.clone(),
+            cut: bolts.as_ref().map(|_| cut),
+            shift: None,
+            off: 0.0,
+            on_gauge: false,
+            onto: Onto::Plate(k),
+            bolts,
+        });
+        let head = format!("{m}: ");
+        plan.hand
+            .retain(|h| !(h.starts_with(&head) && h.contains(BOLTS_JOIN_NOTHING)));
+        if !plan.hand.iter().any(|h| h.starts_with(&head)) {
+            plan.hand_members.retain(|x| x != &m);
+            plan.kept_free.retain(|x| x != &m);
+            plan.off_flange.retain(|x| x.0 != m);
+            plan.hand_hosts.retain(|x| x.0 != m);
+        }
+        plan.notes.push(format!(
+            "{m}: {BASE_HOLDS} — its {count} end bolt(s) onto the plate on its flange ({whose}), \
+             the plate's holding bolts (L14)"
+        ));
+        n += 1;
+    }
+    n
+}
+
+/// The plate's own provisional bolts `h` onto `a` (L5o) as `a`'s end bolts
+/// (L14): on one gauge line at an even pitch (within half a millimetre),
+/// the first at least one and a half diameters from where its steel stops
+/// (`cut`, m); none: not so written.
+fn hold_as_end(h: &HoldPlan, a: &Arrival, cut: f64) -> Option<BoltArea> {
+    if h.member != a.member || h.points.is_empty() {
+        return None;
+    }
+    let mut pts = h.points.clone();
+    pts.sort_by(|x, y| x[0].total_cmp(&y[0]));
+    let g = pts[0][1];
+    if pts.iter().any(|q| (q[1] - g).abs() > 5e-4) {
+        return None;
+    }
+    let pitch = if pts.len() > 1 {
+        let p0 = pts[1][0] - pts[0][0];
+        if pts
+            .windows(2)
+            .any(|w| ((w[1][0] - w[0][0]) - p0).abs() > 5e-4)
+            || p0 <= 0.0
+        {
+            return None;
+        }
+        Some(p0)
+    } else {
+        None
+    };
+    let end = pts[0][0] - cut;
+    if end < 1.5 * h.bolt.diameter - 1e-9 {
+        return None;
+    }
+    Some(BoltArea {
+        from: "the plate's provisional bolts onto it, as its end bolts".into(),
+        preset: None,
+        count: pts.len() as u32,
+        lines: 1,
+        bolt: h.bolt.bolt.clone(),
+        diameter: h.bolt.diameter,
+        flats: h.bolt.flats,
+        gauges: vec![g],
+        pitch,
+        end: Some(end),
+    })
+}
+
+/// The plate of `plates` lying on `a`'s own flange whose end bolts may
+/// hold it (L14): a flat plate on the flange (not one in its members' own
+/// plane, not bent from one, its outline not laid out), with members bolted
+/// onto it; `a` an angle bolted by one leg. Its bolts go onto the flange the
+/// plate lies on (the joint details' leg lying flat against what it bolts
+/// onto) — unless its leg bolted is given as the other one. Not where an
+/// end left as it is bolts onto it directly. None: no such plate.
+fn base_plate(
+    a: &Arrival,
+    plates: &[PlatePlan],
+    ends: &[EndPlan],
+    j: &JointDetail,
+) -> Option<usize> {
+    if !a.other_points.is_empty() || a.bolt_points.is_empty() {
+        return None;
+    }
+    let p = a.profile.as_ref().filter(|p| p.angle.is_some())?;
+    let dot = |x: [f64; 3], y: [f64; 3]| x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+    let near = 10f64.to_radians().cos();
+    plates.iter().position(|q| {
+        if q.on != a.member
+            || q.own.is_some()
+            || q.outline.is_some()
+            || q.members.is_empty()
+            || q.members.contains(&a.member)
+        {
+            return false;
+        }
+        // Which of its flanges the plate lies on (along y or z): by the
+        // flange's heel line it keeps to (across it towards the toe), else
+        // by the bolts' axis of a member on it (the plate's normal).
+        let on_y = if let Some((_, c)) = q.heel {
+            if dot(c, p.axes[1]).abs() >= near {
+                true
+            } else if dot(c, p.axes[2]).abs() >= near {
+                false
+            } else {
+                return false;
+            }
+        } else {
+            let Some(n) = q.members.iter().find_map(|m| {
+                j.arrivals
+                    .iter()
+                    .find(|x| &x.member == m && !x.bolt_points.is_empty())
+                    .map(|x| x.bolt_axis)
+            }) else {
+                return false;
+            };
+            if dot(n, p.axes[2]).abs() >= near {
+                true
+            } else if dot(n, p.axes[1]).abs() >= near {
+                false
+            } else {
+                return false;
+            }
+        };
+        // Its leg bolted turned to the plate's flange only where it is not
+        // given.
+        // (An end left as it is that bolts onto it directly: what the plan
+        // lays out keeps clear of its bolts, as of any.)
+        let direct = j.arrivals.iter().any(|x| {
+            x.member != a.member
+                && !ends.iter().any(|e| e.member == x.member)
+                && x.onto.value.as_deref() == Some(a.member.as_str())
+        });
+        // No end left as it is bolts onto it directly: its own bolts would
+        // share its flange with theirs (measured: holes overlapping, bolts
+        // off its flange as the joint details read it).
+        !direct && (on_y == a.leg_y || a.leg.source != Source::Given)
+    })
+}
 
 /// A plane: its normal and offset (mm, rounded).
 type PlaneKey = (i64, i64, i64, i64);

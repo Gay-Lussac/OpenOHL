@@ -296,6 +296,10 @@ impl LayoutWindow {
             // (a plan diagonal onto a face horizontal), weighed after
             // writing.
             plane_hosts: true,
+            // L14 (2026-11-22): where nothing runs through the joint, the
+            // base member's own end bolts hold the plate on its flange
+            // (the plate's held_by) instead of joining nothing.
+            base_holds: true,
         }
     }
 

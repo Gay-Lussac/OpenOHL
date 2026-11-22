@@ -528,6 +528,12 @@ pub struct PlateDetail {
     /// between them); none: a flat plate, or the flat the other is bent
     /// from.
     pub bend: Option<BendDetail>,
+    /// The member whose own end bolts onto it hold it (`held_by`, 2026-11-22,
+    /// structure file version 24, the joint layout's L14: where nothing
+    /// runs through the joint, the base member's end bolted onto the
+    /// gusset lying on its flange): its bolts on the plate are the plate's
+    /// holding bolts in the joint checks; none: held as before.
+    pub held_by: Option<String>,
 }
 
 /// A bent plate's bend, on the flat naming it (J2b, 2026-11-19).
@@ -1953,6 +1959,12 @@ fn seat(a: &Arrival, all: &[Arrival], seats: &PlateSeats, parts: bool) -> [f64; 
     // unless the member it lies on is given (`on`, the layout's plates):
     // then on the angle of it facing the member (J6, 2026-11-20).
     if let Some(s) = a.onto.value.as_ref().and_then(|o| seats.get(o)) {
+        // (L14) A plate lying on this member's own flange (the base
+        // member's end bolted onto the gusset on it): the member stays
+        // where it is, the plate is seated on it.
+        if s.leg.as_deref() == Some(a.member.as_str()) {
+            return [0.0; 3];
+        }
         let Some(p) = a.profile.as_ref() else {
             return [0.0; 3];
         };
@@ -3103,6 +3115,7 @@ fn plate(
             notes,
             leg_bolts: None,
             bend: None,
+            held_by: held_by_of(p),
         };
     }
     // Nothing bolted onto it and no outline given: nothing to draw it
@@ -3126,6 +3139,7 @@ fn plate(
             notes: vec![format!("{}: {NO_OUTLINE}", p.id)],
             leg_bolts: None,
             bend: None,
+            held_by: held_by_of(p),
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -3261,7 +3275,16 @@ fn plate(
         notes,
         leg_bolts: None,
         bend: None,
+        held_by: held_by_of(p),
     }
+}
+
+/// The member whose own end bolts hold plate `p` (`held_by`, structure
+/// file version 24, L14): named, and its end at the plate's joint bolted
+/// onto it — the joint checks take its bolts on the plate as the plate's
+/// holding bolts.
+fn held_by_of(p: &ohl_structures::connections::TypePlate) -> Option<String> {
+    p.held_by.clone()
 }
 
 /// The leg's member end at a joint as a plate's own bolts onto it

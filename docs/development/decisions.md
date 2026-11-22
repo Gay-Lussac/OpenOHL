@@ -8,6 +8,42 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint layout: the base member's end bolts as the gusset's holding bolts, L14)
+
+**Where nothing runs through a joint, the base member's own end bolts are
+bolted onto the gusset lying on its flange and hold it** (roadmap O44 L14,
+the owner's answer of 2026-11-22 to L12's question 3, also L10's question
+5; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-base-members-end-bolts-as-the-gussets-holding-bolts-l14)).
+**Format: structure file version 24**, a plate's `held_by` (the member whose
+own end bolts onto it hold it); older files read unchanged, written at 24
+only when a plate names one.
+
+- **The rule** (`LayoutSettings::base_holds`, on): a member left by hand only
+  because its bolts join nothing, with a flat plate of the plan on its own
+  flange, bolted by one leg, no end left as it is bolted onto it directly:
+  its end bolted onto the plate (its bolts onto the flange the plate lies
+  on, unless its leg is given as the other), the plate `held_by` it. The
+  plate's own provisional bolts onto it (L5o), where planned, become its
+  end bolts (one gauge line, an even pitch: bolts,
+  gauge, pitch, end distance written, provisional); else its own bolts as
+  drawn; the plate's own that cannot be so written: as before.
+- **Applied as a plan is written**, after the plans are weighed — applied
+  while planning, the end gained chose plans with more plates (16 joints
+  worse on six towers); at writing none worse (an approved order changed,
+  measured).
+- **The joint checks** take that member as the plate's holder (its bolts the
+  holding bolts, its flange's bearing under them); ends laid onto it are not
+  followed through its bolts (it holds a plate). Drawn: the member not moved
+  by the plate on its own flange.
+- **Measured** on the 78 private towers (L13 main → with it): bolts joining
+  nothing 3 303 → 2 833 ends, 121 plates held by their base member, joints
+  whole 35 940 → 35 964, member ends 130 779 → 130 902, plates 67 917 →
+  67 928, joint by joint 108 better and 11 worse, joints that do not fit as
+  given 48 → 50, a run again identical 78 of 78; the
+  members left after the clash rounds 11 875 → 12 260 (such ends whose bolts as
+  drawn run into steel near the work point, put back, by hand as before).
+
 ## 2026-11-22 (joint checks: the force through a member's own end bolts, L14)
 
 **Where an end is bolted onto a member that ends at the joint, that

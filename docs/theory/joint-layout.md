@@ -2193,7 +2193,9 @@ plate's holding bolts: they are the end's own (in the member's design
 data, for a splice's two shear planes, say), checked as such — using them
 as the plate's would change what they are and what is checked (a question
 to the owner). Confirming the pieces one part (J9) or giving the splice
-removes them. On the safe side (a joint said not whole that the drawing
+removes them. Since 2026-11-22 (L14), where a plate of the layout lies on that
+member's own flange, its end is bolted onto the plate and its bolts are the
+plate's holding bolts ([below](#the-base-members-end-bolts-as-the-gussets-holding-bolts-l14)). On the safe side (a joint said not whole that the drawing
 showed whole).
 
 Measured: before, on the 78 private towers 1 289 such ends (3 217 bolts) lay in joints
@@ -2868,6 +2870,69 @@ ending on the chord) changed 2 of the 839 pieces — the faces carry members
 on both sides. The ends of such faces are for the bent plate (a few
 degrees), or the chord's turn weighed per chord (the ticks above, or the
 run's setting).
+
+## The base member's end bolts as the gusset's holding bolts (L14)
+
+(The owner's answer of 2026-11-22 to L12's question 3, which also settles
+L10's question 5; built 2026-11-22, in active development, not approved
+yet. `LayoutSettings::base_holds`, on; the plate's `held_by`, **structure
+file version 24**.)
+
+Where nothing runs through a joint (an arm tip, a K-brace's apex, the
+pieces of a horizontal in line not one part) the layout lays the other
+ends onto a plate on the **base member's** flange, and that member's own
+end bolts (given at the end, or its design data's) were drawn **joining
+nothing** — the joint not whole, the member by hand ([L10](#bolts-drawn-that-join-nothing-the-owners-picture);
+565 joints on the private towers were left for this alone, L12). Now:
+
+- **The rule.** A member left by hand only because its bolts join
+  nothing, with a flat plate of the plan lying on its own flange (not one
+  in its members' own plane, not bent from one, its outline not laid out),
+  bolted by one leg: **its end is bolted onto that plate**, its bolts going
+  onto the flange the plate lies on (the joint details' leg lying flat
+  against what it bolts onto — unless its leg bolted is given as the other
+  one), and the plate is written **held by it** (`held_by`). **Not where an
+  end left as it is bolts onto that member directly**: its bolts would
+  share the flange with that end's (measured on the 78 private towers
+  without this condition: 19 more joints that do not fit as given — holes
+  overlapping, bolts off the flange as the joint details read it — for as
+  many joints whole; with it, 2: one tower's pair of joints). Where the plan
+  gave the plate provisional bolts of its own onto that member (L5o, placed
+  clear of what is there), **those** become the member's end bolts (one
+  gauge line at an even pitch, the first at least one and a half diameters
+  from where its steel stops; written as its bolts, gauge, pitch and end
+  distance, provisional); else its own bolts as drawn. A plate whose own
+  bolts cannot be so written keeps them, the member by hand as before.
+- **Applied as a plan is written** — after it has been weighed against the
+  others (L8's pass, L13's names, the tries), so the end it gains never
+  decides between plans (measured: applied while planning, it chose plans
+  with more plates for that end, 16 joints worse on six towers; applied at
+  writing, none worse) — at every joint whose plan leaves such a member,
+  also one planned again in the clash rounds.
+- **The clash check** after writing tests that end like any other: its bolts'
+  heads and nuts, its steel. Where they run into something it is put back
+  as it was, by hand, said with what it runs into (its bolts as drawn, near
+  the work point, often meet another member's steel there).
+- **The joint checks**: the plate's holding bolts are that member's bolts on
+  it, checked as a leg's ([joint groups](joint-groups.md#a-plates-holding-bolts)):
+  the resultant of the other members' forces on the plate with its moment,
+  each bolt's shear, its bearing on the plate, the member's bearing under
+  them. The forces of ends laid onto that member are not followed through
+  its bolts (it holds a plate; L14's first step leaves such a member out).
+- **Drawn**: the member stays where it is (the plate lies on its flange, so
+  it is not moved by the plate's thickness).
+
+Measured on the 78 private tower files (L13 main → with it; the bundled
+plugin, after Orient angles, L13's settings): bolts joining nothing 3 303 →
+2 833 ends, 121 plates written held by their base member, joints laid out
+whole 35 940 → 35 964 (24 newly whole, none lost), member ends laid out
+130 779 → 130 902, plates 67 917 → 67 928, joint by joint 108 better and 11
+worse, joints that do not fit as given 48 → 50, a run again identical 78 of
+78; the members left after the clash rounds 11 875 → 12 260 (such ends put
+back for a clash — their bolts as drawn, near the work point, run into
+another member's steel — left by hand as before). Most such members lie at
+joints with other ends left by hand, so few joints become whole for this
+alone.
 
 ## The clash check
 

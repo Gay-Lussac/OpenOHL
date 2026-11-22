@@ -3173,6 +3173,34 @@ only where it helps):
   > (said NOT ON THE SAFE SIDE) → Recommended: next, the member check
   > given the force followed through at that end (a core change the code
   > plugins' member check reads: asked first).
+  **2. The base member's end bolts as the gusset's holding bolts**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-base-members-end-bolts-as-the-gussets-holding-bolts-l14),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-22-joint-layout-the-base-members-end-bolts-as-the-gussets-holding-bolts-l14);
+  **structure file version 24**, a plate's `held_by`): where nothing runs
+  through the joint, a member left by hand only because its bolts join
+  nothing, with a flat plate of the plan on its own flange, is bolted onto
+  that plate and holds it (the plate's own provisional bolts onto it, where
+  planned, become its end bolts; else its own as drawn), applied as a plan
+  is written; the joint checks take it as the plate's holder. On the 78
+  real towers (kept privately): bolts joining nothing 3 303 → 2 833 ends,
+  121 plates held so, joints whole 35 940 → 35 964, ends 130 779 → 130 902, plates
+  67 917 → 67 928, 108 joints better and 11 worse, a run again
+  identical 78 of 78; most such joints keep other hand details, and where the member's bolts as drawn run into steel near the
+  work point it is put back (members left after the clash rounds 11 875 →
+  12 260).
+  > **Owner:** (3) The base member's own bolts as drawn used where the plate
+  > has no provisional bolts of its own (they often run into steel near
+  > the work point and are put back) → Recommended: keep; next, lay the
+  > base member's end bolts out as the plate's (placed clear, pulled back
+  > along it) where its own run into something. (4) Applied as a plan is
+  > written, not while planning (measured: while planning 16 joints worse
+  > on six towers, at writing none) → Recommended: keep. (5) Not where an
+  > end left as it is bolts onto the base member directly (without that
+  > condition: the same joints whole, 364 ends more instead of 123, 355
+  > joints better and 11 worse, but 19 more joints that do not fit as given
+  > — the base's bolts against that end's holes) → Recommended: keep (the
+  > layout writes nothing that does not fit); next, the base's bolts placed
+  > clear of such an end's.
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

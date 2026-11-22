@@ -736,8 +736,9 @@ pub(crate) fn group_plans(
 /// **ends** at the joint; its force enters that member near its end and
 /// leaves through that member's own end bolts — with the forces of the
 /// ends laid onto those ends in turn (a chain, each member once). None
-/// for a leg ([`crate::welds::joint_legs`], or a member a plate's own
-/// bolts onto the leg name: its force goes on through its splice) or a
+/// for a leg ([`crate::welds::joint_legs`], a member a plate's own bolts
+/// onto the leg name, or one whose end bolts hold a plate, `held_by`: its
+/// force goes on through its splice or the plate it holds) or a
 /// member running on through the joint as one part (`continuous`). An end
 /// said one part with another, a modelling member, an end not bolted, and
 /// one `host` itself bolts onto (two members lapped onto each other: their
@@ -760,9 +761,10 @@ fn riders_into<'a>(
     };
     if h.modelling
         || crate::welds::joint_legs(j).iter().any(|l| l.member == host)
-        || j.plates
-            .iter()
-            .any(|p| p.leg_bolts.as_deref().is_some_and(|l| l.member == host))
+        || j.plates.iter().any(|p| {
+            p.leg_bolts.as_deref().is_some_and(|l| l.member == host)
+                || p.held_by.as_deref() == Some(host)
+        })
         || run_at(j, host).0.len() > 1
     {
         return;
@@ -894,7 +896,8 @@ fn end_bolt_groups(
             continue;
         }
         let Some((t, fy, fu, redundant)) = member_ply(h, model) else {
-            out.not_checked.push(unchecked("its thickness is not known"));
+            out.not_checked
+                .push(unchecked("its thickness is not known"));
             continue;
         };
         let plate = j.plates.iter().find(|p| p.id == onto);
@@ -1138,7 +1141,6 @@ fn end_bolt_groups(
     }
 }
 
-
 /// The member ends bolted onto plate `q` at joint `j`: those of
 /// [`crate::joints::bolted_onto`], then the plate's own bolts onto the
 /// leg (`[plate.leg_bolts]`, 2026-11-19) as that leg's end bolted onto it.
@@ -1167,12 +1169,22 @@ fn holding_groups(
         .iter()
         .map(|a| a.member.clone())
         .collect();
-    // The members a plate's own bolts onto the leg name hold it too.
+    // The members a plate's own bolts onto the leg name hold it too; and
+    // (L14) the member whose own end bolts onto a plate are said to hold it
+    // (`held_by`: where nothing runs through the joint, the base member).
     for p in &j.plates {
         if let Some(a) = p.leg_bolts.as_deref()
             && !legs.contains(&a.member)
         {
             legs.push(a.member.clone());
+        }
+        if let Some(m) = p.held_by.as_deref()
+            && !legs.iter().any(|l| l == m)
+            && j.arrivals
+                .iter()
+                .any(|a| a.member == m && a.onto.value.as_deref() == Some(p.id.as_str()))
+        {
+            legs.push(m.to_owned());
         }
     }
     let mut done: Vec<Vec<String>> = Vec::new();
@@ -2830,7 +2842,10 @@ mod tests {
         h1.riders = vec![source("P1", [-1.0, 0.0, 0.0], [0.15, 0.0, 0.0], Vec::new())];
         let g = group(
             false,
-            vec![m16([0.05, 0.0, 0.0], &["H1"]), m16([0.10, 0.0, 0.0], &["H1"])],
+            vec![
+                m16([0.05, 0.0, 0.0], &["H1"]),
+                m16([0.10, 0.0, 0.0], &["H1"]),
+            ],
             vec![h1],
             Edges::Flange {
                 dir: [1.0, 0.0, 0.0],
@@ -2866,10 +2881,7 @@ mod tests {
                 m16([0.0, -0.05, 0.0], &["plate G1"]),
                 m16([0.0, 0.05, 0.0], &["plate G1"]),
             ],
-            vec![
-                source("D1", [s, s, 0.0], [0.12, 0.12, 0.0], Vec::new()),
-                d2,
-            ],
+            vec![source("D1", [s, s, 0.0], [0.12, 0.12, 0.0], Vec::new()), d2],
             Edges::Outline(Vec::new()),
         );
         let plans = GroupPlans {

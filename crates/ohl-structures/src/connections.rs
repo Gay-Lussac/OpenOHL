@@ -606,6 +606,11 @@ pub const PLATE_BEND_VERSION: u32 = 22;
 /// only when a plate names one.
 pub const PLATE_ON_VERSION: u32 = 23;
 
+/// The structure file version of the member whose end bolts hold a plate
+/// (a plate's `held_by`, 2026-11-22, the automatic joint layout's L14): a
+/// file is written at 24 only when a plate names one.
+pub const PLATE_HELD_BY_VERSION: u32 = 24;
+
 /// A plate bent from another plate of its joint (`[plate.bend]`,
 /// 2026-11-19, structure file version 22): the two are the two flats of
 /// one bent plate, folded along `line`. Read as one part (its weight from
@@ -674,6 +679,13 @@ pub struct TypePlate {
     /// (`[plate.bend]`, 2026-11-19, version 22; none: a flat plate).
     #[serde(default)]
     pub bend: Option<TypeBend>,
+    /// The member whose own end bolts onto it hold it (2026-11-22, version
+    /// 24, the automatic joint layout's L14: where nothing runs through the
+    /// joint, the base member's end bolted onto the gusset that lies on its
+    /// flange, its bolts the gusset's holding bolts); none: held as before
+    /// (the joint's leg, or `leg_bolts`).
+    #[serde(default)]
+    pub held_by: Option<String>,
 }
 
 impl TypePlate {
@@ -1089,6 +1101,27 @@ impl StructureType {
                     "plate {}: on {m}: it does not meet at joint {} (the joint's leg taken)",
                     p.id, p.joint
                 ));
+            }
+            if let Some(m) = &p.held_by {
+                let meets = self
+                    .members
+                    .iter()
+                    .any(|x| &x.id == m && x.nodes.contains(&p.joint));
+                let onto = self.connections.iter().any(|c| {
+                    &c.member == m && c.joint == p.joint && c.onto.as_deref() == Some(p.id.as_str())
+                });
+                if !meets {
+                    out.push(format!(
+                        "plate {}: held_by {m}: it does not meet at joint {} (kept, not used)",
+                        p.id, p.joint
+                    ));
+                } else if !onto {
+                    out.push(format!(
+                        "plate {}: held_by {m}: its end at joint {} does not bolt onto the plate \
+                         (kept, not used)",
+                        p.id, p.joint
+                    ));
+                }
             }
             if let Some(l) = &p.leg_bolts {
                 if !self

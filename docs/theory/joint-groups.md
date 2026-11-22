@@ -119,8 +119,11 @@ the holding bolts' axis. By the plate's equilibrium the holding bolts carry
 \\( -\mathbf F \\) on the plate, \\( +\mathbf F \\) on the leg.
 
 - **The holding leg** is the joint's leg (the members of class `leg`,
-  else the steep ones, and the member a plate's own bolts onto the leg
-  name) bolted onto the plate, with the members running on in line with
+  else the steep ones, the member a plate's own bolts onto the leg name,
+  and since 2026-11-22 the member the plate is **held by** — `held_by`,
+  structure file version 24: where nothing runs through the joint, the
+  base member whose own end bolts onto the plate hold it, L14) bolted onto
+  the plate, with the members running on in line with
   it through the joint as one part (`continuous`). **Pieces in line not
   said continuous each end at the joint** (owner 2026-11-19; until then
   taken as one angle running on, an assumption): each is a member of its

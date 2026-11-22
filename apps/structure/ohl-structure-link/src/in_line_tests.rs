@@ -168,25 +168,96 @@ fn diagonal() -> String {
 
 /// The layout before and after confirming (a diagonal to the middle of a
 /// horizontal in two pieces): not confirmed, the pieces end at the joint —
-/// the diagonal is laid onto the piece on its side (whose steel lies under
-/// its bolts), the splice whose place is not known said, and (L10) the
-/// joint not whole: the pieces' own bolts (their design data) join
-/// nothing there; confirmed, the horizontal runs on through, nothing said
-/// of a splice, laid out whole; a run again changes nothing either way.
+/// the diagonal is laid onto a plate on the piece on its side (whose steel
+/// lies under its bolts), the splice whose place is not known said; (L14)
+/// that piece's own end bolts (its design data) bolted onto the plate on
+/// its flange, the plate's holding bolts (`held_by`, version 24), checked
+/// as such by the joint checks; (L10) the joint still not whole: the other
+/// piece's own bolts join nothing there; confirmed, the horizontal runs on
+/// through, nothing said of a splice, laid out whole; a run again changes
+/// nothing either way.
 #[test]
 fn the_layout_before_and_after_confirming() {
     let text = diagonal();
     let r = run(&text);
     let m = r.joints.iter().find(|o| o.joint == "M").unwrap();
     assert!(m.written, "{m:?}");
-    for p in ["H1", "H2"] {
-        assert!(
-            m.hand.iter().any(|h| h.starts_with(&format!("{p}: "))
-                && h.contains(crate::joint_layout::BOLTS_JOIN_NOTHING)),
-            "{:?}",
-            m.hand
-        );
-    }
+    assert!(
+        m.hand
+            .iter()
+            .any(|h| h.starts_with("H1: ") && h.contains(crate::joint_layout::BOLTS_JOIN_NOTHING)),
+        "{:?}",
+        m.hand
+    );
+    assert!(
+        !m.hand.iter().any(|h| h.starts_with("H2: ")),
+        "{:?}",
+        m.hand
+    );
+    let h2 = m
+        .plan
+        .ends
+        .iter()
+        .find(|e| e.member == "H2")
+        .expect("H2 laid");
+    let Onto::Plate(k) = h2.onto else {
+        panic!("{h2:?}")
+    };
+    assert_eq!(m.plan.plates[k].on, "H2");
+    assert!(m.plan.plates[k].hold.is_none(), "{:?}", m.plan.plates[k]);
+    assert!(
+        m.plan
+            .notes
+            .iter()
+            .any(|n| n.starts_with("H2: ") && n.contains(crate::joint_layout::BASE_HOLDS)),
+        "{:?}",
+        m.plan.notes
+    );
+    let t = parse(&r.text);
+    let g = t.plates.iter().find(|p| p.joint == "M").expect("a plate");
+    assert_eq!(g.held_by.as_deref(), Some("H2"));
+    assert!(
+        t.connections.iter().any(|c| c.member == "H2"
+            && c.joint == "M"
+            && c.onto.as_deref() == Some(g.id.as_str())),
+        "{}",
+        r.text
+    );
+    // The joint checks: H2's bolts on the plate are its holding bolts.
+    let plans = crate::plate_plans(&r.text, &library(), &Default::default()).unwrap();
+    let rows = crate::plate_usage(&plans, &BTreeMap::new(), 1.0);
+    assert!(
+        rows.iter()
+            .any(|x| x.plate == g.id && x.part == crate::PlatePart::Holding("H2".into())),
+        "{rows:?}"
+    );
+    // Off: as before (H2 by hand too).
+    let off = LayoutSettings {
+        base_holds: false,
+        ..settings()
+    };
+    let lib = library();
+    let bolts = Default::default();
+    let r0 = lay_out(
+        &text,
+        &RunAsk {
+            library: &lib,
+            bolts: &bolts,
+            settings: &off,
+            preset_fields: BTreeMap::new(),
+            joints: None,
+            replace_hand: true,
+        },
+    )
+    .unwrap();
+    let m0 = r0.joints.iter().find(|o| o.joint == "M").unwrap();
+    assert!(
+        m0.hand
+            .iter()
+            .any(|h| h.starts_with("H2: ") && h.contains(crate::joint_layout::BOLTS_JOIN_NOTHING)),
+        "{:?}",
+        m0.hand
+    );
     let host = |p: &crate::JointPlan| match &p.ends[0].onto {
         Onto::Member(h) => h.clone(),
         Onto::Plate(k) => p.plates[*k].on.clone(),

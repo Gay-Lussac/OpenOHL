@@ -2116,6 +2116,7 @@ fn lay_out_once(
                     at: &at,
                     replan: &replan,
                     class_rank: &class_rank,
+                    planned: details,
                 },
                 &mut outcomes,
                 &mut memo,
@@ -3131,6 +3132,8 @@ struct Rounds<'a> {
     replan: &'a Replan<'a>,
     /// A member's class rank (leg, bracing, redundant, other).
     class_rank: &'a dyn Fn(&str) -> u8,
+    /// The joints in detail as they were planned (L14).
+    planned: &'a JointDetails,
 }
 
 /// How many times a joint is planned again without the members whose
@@ -3287,6 +3290,16 @@ fn write_rounds(
         for o in outcomes.iter_mut() {
             o.written = false;
             o.plates.clear();
+            if !take_back.contains(&o.joint)
+                && o.plan.laid_out()
+                && ask.settings.base_holds
+                && let Some(j) = r.planned.joint(&o.joint)
+            {
+                // L14: the base member's end bolts as a plate's holding
+                // bolts, applied to a plan as it is written (the joint in
+                // detail as it was planned).
+                crate::joint_layout::hold_by_base(&mut o.plan, j);
+            }
             if !take_back.contains(&o.joint) {
                 o.hand = o.plan.hand.clone();
             }
@@ -4531,6 +4544,19 @@ fn write_plan(
         if before.and_then(|o| o.thickness).is_none() {
             auto.insert("thickness".into());
         }
+        // L14: held by the base member's own end bolts (its end laid onto
+        // this plate, which lies on its flange).
+        if p.ends
+            .iter()
+            .any(|e| e.member == pl.on && e.onto == Onto::Plate(k))
+        {
+            x.insert("held_by", toml_edit::value(pl.on.as_str()));
+            auto.insert("held_by".into());
+            ohl_structure_edit::edits::raise_version(
+                doc,
+                i64::from(ohl_structures::connections::PLATE_HELD_BY_VERSION),
+            );
+        }
         if ask.settings.welded && !ids.is_empty() {
             let mut a = Array::new();
             for w in &ids {
@@ -4726,6 +4752,21 @@ fn write_plan(
                     set(w, doc, "gauge_lines", FieldValue::Count(b.lines));
                     fields.insert("bolts".into());
                     fields.insert("gauge_lines".into());
+                    // (L14) Where they lie given with them (the base
+                    // member's end bolts in the plate's provisional bolts'
+                    // places).
+                    if !b.gauges.is_empty() {
+                        set(w, doc, "gauges", FieldValue::Lengths(b.gauges.clone()));
+                        fields.insert("gauges".into());
+                    }
+                    if let Some(x) = b.pitch {
+                        set(w, doc, "pitch", FieldValue::Length(x));
+                        fields.insert("pitch".into());
+                    }
+                    if let Some(x) = b.end {
+                        set(w, doc, "end_distance", FieldValue::Length(x));
+                        fields.insert("end_distance".into());
+                    }
                 }
             }
             rec.provisional.insert(key.clone());

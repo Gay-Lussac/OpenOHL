@@ -596,3 +596,45 @@ fn a_bent_plate_is_read_as_two_flats() {
         "{notes:?}"
     );
 }
+
+/// The member whose own end bolts hold a plate (`held_by`, version 24,
+/// 2026-11-22, the joint layout's L14): read; a member not at the joint, or
+/// one whose end there does not bolt onto the plate, said and kept; a
+/// plate without it reads as before; a file of version 24 is read, a newer
+/// one refused.
+#[test]
+fn a_plate_held_by_a_members_end_bolts_is_read() {
+    let text = format!(
+        "format = \"ohl-structure\"\nversion = 24\n{BODY}\
+         [[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\non = \"D1\"\n\
+         held_by = \"D1\"\n\
+         [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G1\"\n"
+    );
+    let t = parse(&text).unwrap();
+    assert_eq!(t.plates[0].held_by.as_deref(), Some("D1"));
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    let not_onto = text.replace("onto = \"G1\"", "onto = \"L1\"");
+    let notes = parse(&not_onto).unwrap().connection_notes();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("held_by D1") && n.contains("does not bolt onto the plate")),
+        "{notes:?}"
+    );
+    let away = text.replace("held_by = \"D1\"", "held_by = \"D9\"");
+    let notes = parse(&away).unwrap().connection_notes();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("held_by D9") && n.contains("does not meet at joint N2")),
+        "{notes:?}"
+    );
+    let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n");
+    assert!(parse(&plain).unwrap().plates[0].held_by.is_none());
+    assert_eq!(crate::connections::PLATE_HELD_BY_VERSION, 24);
+    assert!(parse(&text.replace("version = 24", "version = 25")).is_err());
+}
