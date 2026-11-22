@@ -1455,9 +1455,17 @@ fn lay_out_once(
     // The half turns are checked as before the bent plates (the owner's
     // order: a member flat on the flange or a flat plate before a bent
     // plate); their plans then made again with them.
+    // (L16: the turns — the half turns here, L10's other faces below —
+    // weighed on plans without the plates between a built-up member's
+    // angles, as before L15: the newest step never changes a member's
+    // roll; the plans are made with them afterwards.)
+    let turn_s = LayoutSettings {
+        between_plates: false,
+        ..settings.clone()
+    };
     let flat_only = LayoutSettings {
         bent_plates: false,
-        ..settings.clone()
+        ..turn_s.clone()
     };
     let with_bent = |p: Planned| -> Planned {
         if !settings.bent_plates {
@@ -1467,7 +1475,7 @@ fn lay_out_once(
             &p.0,
             p.1.as_ref(),
             &targets,
-            &settings,
+            &turn_s,
             &joins,
             &order,
             &guard,
@@ -1682,7 +1690,7 @@ fn lay_out_once(
             let turns: BTreeMap<&String, f64> = turned.iter().map(|(m, x)| (m, *x)).collect();
             let base = match first.take() {
                 Some(p) => p,
-                None => planned_with(&turns, &settings)?,
+                None => planned_with(&turns, &turn_s)?,
             };
             let may_turn = |m: &str| -> bool {
                 // (One part with another, given or joined — as planned: its
@@ -1748,7 +1756,7 @@ fn lay_out_once(
                         between_kept: guard.borrow().between_kept.clone(),
                     });
                     let turns: BTreeMap<&String, f64> = t.iter().map(|(m, x)| (m, *x)).collect();
-                    let p = planned_in(&turns, &settings, &scratch)?;
+                    let p = planned_in(&turns, &turn_s, &scratch)?;
                     Ok((p, scratch.into_inner()))
                 })?;
             notes.extend(words);
@@ -1792,6 +1800,11 @@ fn lay_out_once(
     // members it could bolt onto tried too (today's rule's choice first:
     // it stays where the others lay out no more of the joint's ends), at
     // most [`ONTO_TRIES`] passes, each the next member for every such end.
+    // (L16: the plans so far made without the plates between — made again
+    // with them.)
+    if turn_s.between_plates != settings.between_plates {
+        first = None;
+    }
     // (Not for the planner relaxed: without writing, no clash rounds to
     // judge by.)
     if settings.onto_search && !relaxed {
