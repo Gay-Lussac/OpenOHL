@@ -8,6 +8,33 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-22 (joint layout: an end on a built-up member seated by the plane its axis lies in, L13)
+
+**The joint details choose an end's leg bolted on a built-up member by the
+plane its axis lies in, and choose it against the member the layout plans
+it onto where it names nothing** (roadmap O44 L13, the owner's answer to
+L12's question 2; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#an-end-on-a-built-up-member-seated-by-the-plane-its-axis-lies-in)).
+No format change; every file's joint details read it so.
+
+- Onto a built-up member whose angles' flanges' planes hold the end's axis
+  in one of them (within the owner's 2°): the leg lying in that plane.
+- Bolting onto nothing named: its leg chosen against the member running
+  through the joint (what the layout plans it onto) — before, its long leg,
+  so the layout measured such an end against the flange its other leg lay
+  parallel to (L12's "out of the face by 60° to 76°" on built-up members).
+- **Measured** on the 78 private towers (after Orient angles, with L13's
+  first step): joints laid out whole 35 692 → 35 940 (248 newly whole, none
+  lost), member ends 130 444 → 130 779, plates 67 894 → 67 917; joint by
+  joint 601 better and 301 worse (the worse mostly plan members now flat on
+  a built-up member's flange whose plate runs into steel after writing —
+  they reach J6's rest instead of being measured out of the face).
+- **Traced, not built**: a built-up member running on given the redundant
+  arriving on it as what it bolts onto (L12's trace) — none on the 78
+  towers with the pieces in line confirmed one part; a plate between a
+  built-up member's angles (J6's rest) — such ends now lie flat on the
+  right flange, often its inner face running towards the angle's other leg.
+
 ## 2026-11-22 (joint layout: an end's host chosen by the plane its axis lies in, L13)
 
 **An end whose axis lies in no flange's plane of today's choice is named

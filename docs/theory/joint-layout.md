@@ -2765,6 +2765,63 @@ one itself renamed: 90 joints worse, 16 better where the end was laid out
 before); the face members where nothing runs through (123 joints worse, 34
 better).
 
+### An end on a built-up member seated by the plane its axis lies in
+
+(L13's second step, the owner's answer to L12's question 2; built
+2026-11-22, in active development, not approved yet. The code: the joint
+details' leg bolted, `joints::leg_along_y`. **Every file**: the joint
+details read it so; no format change.)
+
+An end's **leg bolted** (where its design data does not say the long or
+short leg of an unequal angle) is the one lying flat on the member it bolts
+onto. Two things are new:
+
+- **Onto a built-up member** whose angles' flanges' planes hold the end's
+  axis in one of them (within the owner's 2°): the leg lying in that plane —
+  the seat chosen by the plane the axis lies in, as the layout's turn
+  already chooses its flange. Before, the leg most nearly parallel to
+  either flange was taken.
+- **Bolting onto nothing named** (no `onto`, none worked out): the member
+  the layout plans it onto (the one running through the joint, as today's
+  rule names it) is what its leg is chosen against. Before, its long leg was
+  taken whatever it lay on, so wherever the run's name for such an end was
+  taken back (the as-drawn pass, L8) the layout measured it against the
+  flange its other leg happened to lie parallel to — L12's 1 547 ends on
+  built-up members "out of the face" by 60° to 76°: their axis lay in the
+  member's other flange's plane all along.
+
+L12 also read the joint details giving a built-up member running on the
+redundant arriving on it as what it bolts onto (worked out: the joint's
+"leg" is its most nearly upright member where no leg meets). **Traced, not
+built**: on the 78 private towers after Orient angles, with the pieces in
+line confirmed one part (as the measurements lay out), no built-up member
+running on has such an `onto` (of 31 109 such ends; on the traced joint its
+two pieces are one part, `onto` its partner). Where the pieces are not yet
+confirmed, the rule stands as before.
+
+What this leaves: such an end now lies flat on the right flange — often
+on the **inner face** of one of the member's back-to-back angles, where it
+runs towards that angle's other leg ("turn it, or lay it out by hand"), or
+in the gap between the two angles where the gusset belongs. **Not built**
+(J6's rest): a plate between a built-up member's angles (in the gap, where
+the packing lies), onto which such ends would bolt.
+
+Measured on the same 78 towers, L13's first step → with this one: joints
+laid out whole 35 692 → 35 940 (248 newly whole, none lost), member ends
+laid out 130 444 → 130 779, plates 67 894 → 67 917; joint by joint **601
+better and 301 worse**. The gains: "built-up member · redundants · all in a
+flange's plane" whole 1 727 → 1 900 (235 better, 114 worse), "built-up
+member · redundants · some a few degrees out" 28 better, none worse. The
+worse: mostly where a plan member now lies flat on a built-up member's
+flange and goes onto a plate there that runs into steel after writing
+("built-up member · with plan members · some out of plane": 68 better, 96
+worse) — the members left after the clash rounds 10 127 → 11 875, those
+left at a built-up member 2 554 → 3 954: such ends now reach the built-up
+member's own limits (J6's rest) instead of being measured out of the face.
+The time per tower (six towers, back to back, twice, nothing else
+running), L12 → L13 (both steps): median 38.4 → 37.8 s, the largest 40.3 →
+40.1 s — the same.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

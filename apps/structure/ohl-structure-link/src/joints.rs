@@ -1491,11 +1491,21 @@ fn leg_along_y(a: &Arrival, all: &[Arrival], seats: &PlateSeats) -> bool {
     if sized {
         return along_y(g, a.leg.value);
     }
+    // (O44 L13) Bolting onto nothing named: the member the layout plans it
+    // onto (the one running through the joint, `through_of`), as for an
+    // end that names it — before, the long leg whatever it lay on, so the
+    // layout measured such an end against the flange its other leg lay
+    // parallel to ("its axis runs 63° out of the face").
     let onto = a
         .onto
         .value
         .as_ref()
         .and_then(|o| all.iter().find(|b| &b.member == o))
+        .or_else(|| {
+            (a.onto.value.is_none() && a.continuous.is_none())
+                .then(|| crate::joint_layout::through_of(all, a))
+                .flatten()
+        })
         .and_then(|b| b.profile.as_ref());
     // Onto a plate: the leg lying in the plate's plane (its normal along
     // the plate's).
@@ -1504,6 +1514,23 @@ fn leg_along_y(a: &Arrival, all: &[Arrival], seats: &PlateSeats) -> bool {
     }
     match onto {
         Some(q) => {
+            // (O44 L13) Onto a built-up member whose angles' flanges' planes
+            // hold its axis in one of them (within the owner's 2°): the leg
+            // lying in that plane — the seat chosen by the plane its axis
+            // lies in, as the layout's turn ([`flat_of`]) is; before, the
+            // leg most nearly parallel to either flange, so an end whose leg
+            // happened to lie parallel to the other flange was seated there,
+            // its axis far out of that flange's face.
+            if q.angle.is_none() && !q.part_angles.is_empty() {
+                let s = crate::FLAT_OFF.to_radians().sin();
+                let planes: Vec<[f64; 3]> = [q.axes[1], q.axes[2]]
+                    .into_iter()
+                    .filter(|n| dot(a.direction, *n).abs() < s)
+                    .collect();
+                if let [n] = planes[..] {
+                    return dot(p.axes[2], n).abs() >= dot(p.axes[1], n).abs();
+                }
+            }
             let flat = |n: [f64; 3]| dot(n, q.axes[1]).abs().max(dot(n, q.axes[2]).abs());
             // Along y: its normal is z; along z: y.
             flat(p.axes[2]) >= flat(p.axes[1])

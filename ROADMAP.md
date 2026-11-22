@@ -3095,6 +3095,23 @@ only where it helps):
   > Recommended: next, the joint bolt groups follow the force through (the
   > host's end bolts with the vector sum of what bolts onto it near its
   > end).
+
+  **B. A built-up member's seat by the plane** (every file's joint
+  details): an end on a built-up member whose angles' flanges' planes hold
+  its axis lies with its leg in that plane; an end naming nothing it bolts
+  onto has its leg chosen against the member the layout plans it onto (before
+  its long leg: L12's ends "out of the face by 60° to 76°"). L13 A → B:
+  joints whole 35 692 → 35 940 (none lost), ends 130 444 → 130 779, plates
+  67 894 → 67 917, 601 joints better and 301 worse (mostly plan members now
+  flat on a built-up member's flange whose plate runs into steel: J6's
+  rest); the time per tower (six towers, back to back, twice) median
+  38.4 → 37.8 s, the largest 40.3 → 40.1 s (L12 → A and B). Traced, not
+  built: a built-up member running on given the
+  redundant as what it bolts onto (none on the 78 towers with the pieces in
+  line confirmed); a plate between a built-up member's angles (J6's rest).
+  > **Owner:** (4) The built-up seat by the plane, on every file (301
+  > joints worse, 601 better, +248 whole) → Recommended: keep; next, J6's
+  > plate between a built-up member's angles (where such ends belong).
 - Not built yet, J6's rest: a plate between a built-up member's angles
   (where the packing lies), built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member.

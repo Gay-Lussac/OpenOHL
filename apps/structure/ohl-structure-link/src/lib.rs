@@ -47,6 +47,8 @@ mod bent_plate_tests;
 mod both_faces;
 #[cfg(test)]
 mod both_faces_tests;
+#[cfg(test)]
+mod built_up_seat_tests;
 mod clash;
 #[cfg(test)]
 mod clash_tests;
