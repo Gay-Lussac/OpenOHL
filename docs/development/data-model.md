@@ -4071,7 +4071,7 @@ as the network's checks build it, `ohl_server::offline_checks::neighbour_wires`:
 the Clearances window's rules to other lines take their wires; Structure
 loads, the fields and plugins name the lines near and say NOT ALL
 CHECKED). OHL-Design keeps the server's answer on the export in the
-application setting `app.offline_export` ([above](#the-applications-settings-settingkey)). The work comes back as a **bundle** (the bundle format,
+application setting `app.offline_export` ([above](#the-applications-settings-setting)). The work comes back as a **bundle** (the bundle format,
 `ohl_session::versions::Bundle`) holding only the main line's revisions
 since the export's and the blobs they need that the export does not hold
 (an object as exported stays behind) — `Session::offline_bundle`;
