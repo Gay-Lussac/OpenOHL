@@ -138,6 +138,81 @@ line --other-line`").
 > 5. The verdict NOT ALL CHECKED whenever a reason holds, also on a
 > network's working set joined? → yes.
 
+## 2026-11-23 (joint layout: turns weighed over every joint they reach, L19)
+
+**The turns Orient angles sets from the joints' planes are weighed by the
+layout run: each kept only where every joint its members reach is laid
+out no worse and one better, else taken back and offered** (roadmap O44
+L19, L18's questions 1 and 2 and the owner's rule of 2026-11-22, "when
+turning a member both sides should be reverified"; the owner busy: built
+on its own, reported; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#turns-weighed-over-every-joint-they-reach-l19)).
+
+- **Listed by Orient angles** (format: the layout record's `plane_turns`
+  [[member, roll before, roll with, kind, run]] — written only when there
+  are rows, no version change; an older OHL-Structure drops them and the
+  turns stay as written, unweighed): each run it turns from the planes.
+  A row counts only while the member's roll is the one written with the
+  turn (changed since: the user's, never taken back); pieces confirmed one
+  part (their rolls averaged) average the rolls before alike, so that
+  taking the turns back leaves them one roll; runs written one part are
+  weighed as one, a run one part with a piece not listed is left as
+  written; Orient angles from the outline alone takes the rows of what it
+  sets.
+- **Weighed by the layout run** (`LayoutSettings::weigh_turns`, on;
+  `ohl_structure_link::weighed_turns`): the base (every turn taken back),
+  then stage by stage — legs and chords, then face members — each turn
+  kept only where every joint its members reach lays out no worse than
+  before the stage (no fewer ends, not as many on more plates, not whole
+  lost) and one better (the run's guard, a joint's wholeness added), and
+  where no joint
+  elsewhere laid out worse meets a member the layout turned otherwise
+  beside it (a bracing's one roll turned for its end at the turned member);
+  laid out again with the turns kept until they all still help (at most
+  four layouts more per stage). A turn only by a run laying out every joint
+  it reaches. The rows go with the run (a run again lays out the same).
+  Lay out joints weighs once per preview on the whole tower (the proposals'
+  effects laid out from the file so settled, every joint a turn kept
+  reaches laid out with it); the turns taken back are said in the notes
+  and offered by the window beside the other proposals.
+- **Measured** (the 78 private towers; L17 main and L18 main reproduced):
+  L17 → L18 unweighed → weighed: joints whole 37 315 → 38 042 → 37 796,
+  member ends 133 265 → 135 259 → 135 194, plates 69 295 → 69 840 →
+  69 763, members left after the clash rounds 11 179 → 11 670 → 11 179,
+  joints better / worse than L17 3 461 / 2 400 → 1 679 / 122 (44 of them
+  worse than the weighing's base, where no turn reaches and no member
+  turned otherwise meets; the rest the base's own: pieces confirmed one
+  part after the turns). Both weighed (the leg-rotation check's turns too,
+  every third tower, 26): whole 12 161 → 12 382 → 12 342 (weighed 12 304),
+  ends 42 967 → 43 587 → 43 797, plates 22 232 → 22 409 → 22 314, 828 / 90
+  (L18 1 083 / 768). A run again identical on 8 of 8 towers. The time per
+  tower (six towers, twice, load 2.6–7.6): the layout after Orient angles
+  median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s weighed (about five and
+  a half layouts), 426.7 / 433.9 s both weighed — once per imported tower.
+  Owner questions in the roadmap.
+- **The owner, 2026-11-23**: asked about plates with several bends and
+  welded assemblies of several plates — "go ahead to improve" (roadmap O44
+  L19, item 3). Measured first (an upper bound from the reasons the layout
+  gives for the ends it leaves, the weighed column, 78 private towers):
+  6 780 ends whose own-plane welded plate would have their outstanding leg
+  stand on the flat plate (not freed by a flap in their plane), 5 674 whose
+  axis that plate would put more than a plate's thickness out (a joggle:
+  two bends), 7 266 on an inner face towards the other leg (a plate
+  wrapping the leg) — up to 5 130 joints whole if all were laid out. The
+  format carries a chain of bends (tested: read as one part, drawn,
+  weighed and checked bend by bend) and welded assemblies of any number of
+  plates. Nothing built: a flap in the member's plane does not free an
+  outstanding leg pointing into the flange, and a joggle does not take out
+  a tilt (most of the second kind are more than 15° off); the axis offset
+  taken into the analysis recommended first (owner question in the
+  roadmap).
+- **Not built**: a level or bent plate across two horizontals (L17's
+  question 5, the roadmap's item 2) — counted only: 6 793 plan and hip
+  ends lie off their host's flange with no roll laying them flat, 5 092 of
+  them at a joint where two other horizontal members (or one and a leg)
+  meet (an upper bound of what it could take); 3 282 have their axis out
+  of the host's face.
+
 ## 2026-11-23 (joint layout: lay out by planes first, rolls from the joints' planes, L18)
 
 **The owner's decisions of 2026-11-22** (roadmap O44 L18; the owner: "the

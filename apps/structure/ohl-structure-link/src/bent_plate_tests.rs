@@ -444,3 +444,86 @@ fn the_bent_plates_own_bolts_lie_on_the_steel_of_a_member_ending_at_the_joint() 
     }
     assert_eq!(flat.leg.as_deref(), Some("H1"));
 }
+
+/// (O44 L19, item 3) A plate with two bends reads, draws, weighs and is
+/// checked bend by bend: a third flat bent from the bent flat of the
+/// invented joint (a chain flat ← bent ← bent again, as a joggle or a
+/// corner gusset bending twice would be written) — one part of three
+/// flats, each bend on the flat naming it, both bends weighed from the
+/// developed area and checked (without a design code's check: said not
+/// checked, NOT ON THE SAFE SIDE).
+#[test]
+fn a_plate_bent_twice_reads_draws_weighs_and_is_checked_bend_by_bend() {
+    let laid = run(OVER, &settings()).text;
+    let t0 = parse(&laid);
+    let bent = t0
+        .plates
+        .iter()
+        .find(|p| p.bend.is_some())
+        .expect("the bent flat");
+    let first = bent.id.clone();
+    // A third flat bent from it: its outline the bent flat's, moved 30 mm
+    // down (the geometry is not what is checked here: the chain is).
+    let corners: Vec<String> = bent
+        .outline
+        .iter()
+        .map(|q| {
+            let v = q.map(|x| x.si());
+            format!("[\"{} m\", \"{} m\", \"{} m\"]", v[0], v[1], v[2] - 0.03)
+        })
+        .collect();
+    let text = format!(
+        "{laid}\n[[plate]]\nid = \"G9\"\njoint = \"N2\"\nthickness = \"{} mm\"\n\
+         outline = [{}]\n\n[plate.bend]\nto = \"{first}\"\nangle = \"30 deg\"\n\
+         inner_radius = \"14 mm\"\n",
+        bent.thickness.si() * 1000.0,
+        corners.join(", ")
+    );
+    let t = parse(&text);
+    assert_eq!(t.bent_pairs("N2").len(), 2, "{:?}", t.bent_pairs("N2"));
+    // Read: one part of three flats, each bend on the flat naming it.
+    let d = joint_details(&text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N2").unwrap();
+    let g9 = j.plates.iter().find(|p| p.id == "G9").unwrap();
+    assert_eq!(
+        g9.bend.as_ref().map(|b| b.to.as_str()),
+        Some(first.as_str())
+    );
+    assert!((g9.bend.as_ref().unwrap().angle - 30.0).abs() < 1e-9);
+    let mid = j.plates.iter().find(|p| p.id == first).unwrap();
+    assert!(mid.bend.is_some());
+    for p in &j.plates {
+        assert_eq!(p.assembly.len(), 3, "{}: {:?}", p.id, p.assembly);
+    }
+    // Drawn: each flat a solid.
+    let solids = crate::plate_solids(&d);
+    assert_eq!(solids.iter().filter(|s| s.joint == "N2").count(), 3);
+    // Weighed: both bent flats from their developed area.
+    let bom =
+        crate::quantities::structure_quantities(&text, &library(), &Default::default()).unwrap();
+    assert_eq!(
+        bom.parts
+            .iter()
+            .filter(|p| p.item.contains("bent from"))
+            .count(),
+        2,
+        "{:?}",
+        bom.parts
+    );
+    // Checked bend by bend (the simple check: said, no usage).
+    let text = format!("{text}\n[analysis]\ncapacity = \"simple\"\n");
+    let plans = crate::plate_plans(&text, &library(), &Default::default()).unwrap();
+    let none = BTreeMap::new();
+    let rows = crate::plate_usage_cases(&plans, &[("one", 1.0, &none)]);
+    let bends: Vec<_> = rows[0]
+        .iter()
+        .filter(|x| x.part == crate::PlatePart::Bend)
+        .collect();
+    assert_eq!(bends.len(), 2, "{:?}", rows[0]);
+    assert!(
+        bends
+            .iter()
+            .all(|b| b.usage.is_none() && b.governs.contains("NOT ON THE SAFE SIDE")),
+        "{bends:?}"
+    );
+}

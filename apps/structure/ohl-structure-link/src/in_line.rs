@@ -340,9 +340,41 @@ pub fn confirm(
                 })
                 .sum::<f64>()
                 / pieces.len() as f64;
+        // O44 L19: the turns from the joints' planes not weighed yet of a
+        // chain all listed: the roll before them half-way between theirs too
+        // (taking them back leaves the pieces one roll, as confirming them
+        // without the turns would); else each moved as the roll with it.
+        let befores: Option<Vec<f64>> = c
+            .iter()
+            .map(|m| {
+                record
+                    .plane_turns
+                    .get(m)
+                    .map(|r| crate::weighed_turns::roll_radians(&r.before))
+            })
+            .collect();
+        let mean_before = befores.filter(|b| !b.is_empty()).map(|b| {
+            let b0 = b[0];
+            b0 + b
+                .iter()
+                .map(|x| {
+                    (x - b0 + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+                        - std::f64::consts::PI
+                })
+                .sum::<f64>()
+                / b.len() as f64
+        });
         for m in c {
             ohl_structure_edit::edits::set_member_roll(doc, m, mean);
             touched |= record.rolled.remove(m).is_some();
+            if let (Some(row), Some(x)) = (record.plane_turns.get_mut(m), member(m)) {
+                let before = mean_before.unwrap_or_else(|| {
+                    crate::weighed_turns::roll_radians(&row.before) + mean - roll_of(x)
+                });
+                row.before = crate::weighed_turns::roll_written(before);
+                row.with = crate::weighed_turns::roll_written(mean);
+                touched = true;
+            }
         }
     }
     for x in &yes {

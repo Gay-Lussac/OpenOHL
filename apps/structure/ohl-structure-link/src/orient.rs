@@ -292,10 +292,36 @@ pub fn orient_angles(
     let start = std::time::Instant::now();
     let run = orient_outline(text, library, ask)?;
     let mut run = match ask.method {
-        OrientMethod::Outline => run,
+        OrientMethod::Outline => without_rows(run)?,
         OrientMethod::Planes => by_planes(text, library, ask, run)?,
     };
     run.seconds = start.elapsed().as_secs_f64();
+    Ok(run)
+}
+
+/// O44 L19: `run` (from the outline alone) with the layout record's turns
+/// from the joints' planes not weighed yet ([`LayoutRecord::plane_turns`])
+/// of the members it set taken out (their roll is the outline's now).
+fn without_rows(mut run: OrientRun) -> Result<OrientRun, String> {
+    if !run.text.contains("plane_turns") {
+        return Ok(run);
+    }
+    let t = StructureType::parse(std::path::Path::new("structure.ohls"), &run.text)
+        .map_err(|e| e.message)?;
+    let mut rec = LayoutRecord::of(&t);
+    let set: BTreeSet<&str> = run
+        .turned
+        .iter()
+        .chain(&run.same)
+        .map(|o| o.member.as_str())
+        .collect();
+    let n = rec.plane_turns.len();
+    rec.plane_turns.retain(|m, _| !set.contains(m.as_str()));
+    if rec.plane_turns.len() != n {
+        let mut doc: DocumentMut = run.text.parse().map_err(|e| format!("not TOML: {e}"))?;
+        rec.write(&mut doc);
+        run.text = doc.to_string();
+    }
     Ok(run)
 }
 
@@ -357,12 +383,57 @@ fn by_planes(
     )?;
     run.planes = rolls;
     if after == run.text {
-        return Ok(run);
+        return without_rows(run);
     }
+    let t0 = StructureType::parse(std::path::Path::new("structure.ohls"), &run.text)
+        .map_err(|e| e.message)?;
     let t1 = StructureType::parse(std::path::Path::new("structure.ohls"), &after)
         .map_err(|e| e.message)?;
     let mut doc: DocumentMut = after.parse().map_err(|e| format!("not TOML: {e}"))?;
     let mut rec = LayoutRecord::of(&t1);
+    // O44 L19: each run turned listed as not weighed yet (the roll before
+    // its turn — the outline's — and with it); the next layout run keeps
+    // it only where every joint it reaches is laid out better
+    // ([`crate::weighed_turns`]). The rows of the members set here and not
+    // turned now go.
+    {
+        let set: BTreeSet<&str> = run
+            .turned
+            .iter()
+            .chain(&run.same)
+            .map(|o| o.member.as_str())
+            .chain(
+                run.planes
+                    .iter()
+                    .flat_map(|r| r.members.iter().map(String::as_str)),
+            )
+            .collect();
+        rec.plane_turns.retain(|m, _| !set.contains(m.as_str()));
+        let text_of = |tt: &StructureType, m: &str| {
+            crate::weighed_turns::roll_text(
+                tt.members
+                    .iter()
+                    .find(|x| x.id == m)
+                    .and_then(|x| x.roll.as_ref()),
+            )
+        };
+        for r in run.planes.iter().filter(|r| r.turns()) {
+            for m in &r.members {
+                let (before, with) = (text_of(&t0, m), text_of(&t1, m));
+                if before != with {
+                    rec.plane_turns.insert(
+                        m.clone(),
+                        crate::layout_run::PlaneTurnRow {
+                            before,
+                            with,
+                            kind: r.kind.as_str().to_owned(),
+                            run: r.members[0].clone(),
+                        },
+                    );
+                }
+            }
+        }
+    }
     let order: BTreeMap<&str, usize> = t
         .members
         .iter()

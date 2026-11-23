@@ -265,7 +265,9 @@ impl StructureApp {
                              and chord's run in line turned so that the most member ends bolting \
                              onto it lie within 2° of its flanges' planes at all its joints (a \
                              member's own ends first), centred in the turns that keep them so, \
-                             at most 22.5° — the residual at each joint listed below.",
+                             at most 22.5° — the residual at each joint listed below. The next \
+                             Lay out joints run weighs each turn over every joint its members \
+                             reach and keeps it only where that lays out better.",
                         );
                     ui.radio_value(&mut w.method, OrientMethod::Outline, "from the tower's outline")
                         .on_hover_text(
@@ -379,7 +381,10 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
         ui.label(
             egui::RichText::new(format!(
                 "From their joints' planes: {turned} of {} run(s) turned beyond the outline's; \
-                 member ends within {:.0}° of their flange's plane {b} to {a} of {n}",
+                 member ends within {:.0}° of their flange's plane {b} to {a} of {n}. Each \
+                 turn is weighed by the next Lay out joints run over every joint its members \
+                 reach: kept only where none is laid out worse and one better, else taken back \
+                 and offered.",
                 r.planes.len(),
                 ohl_structure_link::FLAT_OFF
             ))

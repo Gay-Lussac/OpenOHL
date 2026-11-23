@@ -383,6 +383,15 @@ pub struct LayoutSettings {
     /// whole and more plates than the planes in the members' order (−4
     /// whole after the outline's rolls, −15 after the joints' planes').
     pub planes_high_to_low: bool,
+    /// O44 L19 (the owner, 2026-11-22: "when turning a member both sides
+    /// should be reverified"): the turns Orient angles set from the joints'
+    /// planes and the layout record lists as not weighed yet
+    /// ([`crate::layout_run::LayoutRecord::plane_turns`]) weighed by the
+    /// run: each run's turn kept only where every joint its members reach
+    /// is laid out no worse and one better, else its roll taken back and
+    /// the turn offered ([`crate::weighed_turns`]). On by default; off: the
+    /// rolls as written (L18).
+    pub weigh_turns: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -435,6 +444,7 @@ impl Default for LayoutSettings {
             between_plates: true,
             seat_as_drawn: true,
             planes_high_to_low: false,
+            weigh_turns: true,
         }
     }
 }
