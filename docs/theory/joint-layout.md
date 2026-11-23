@@ -3161,6 +3161,172 @@ towers, two at a time, back to back, twice) unchanged within the scatter:
 median 90.7 and 78.7 s → 77.9 and 83.2 s, the largest 104.2 and 84.8 s →
 84.3 and 86.4 s (the computer busier than for L16's measurement).
 
+## Lay out by planes first: rolls from the joints' planes (L18)
+
+(The owner, 2026-11-22: "the axes of the incoming members into a joint
+define planes together and we should have the parts rotated accordingly
+and then shifted and either bolted to each other when possible and if not
+with a new plate, and if there are multiple planes … then we should go
+from high to low"; approved the same day with the decisions in the
+[decision log](../development/decisions.md#2026-11-23-joint-layout-lay-out-by-planes-first-rolls-from-the-joints-planes-l18).
+Built 2026-11-23, in active development, not approved yet. No format
+change.)
+
+**Why.** An imported tower carries no member orientation. Orient angles
+turned each leg and chord from the tower's outline alone: its heel out,
+the middle of its legs on the middle of the two faces meeting at it — so
+where the faces meet off square each flange lay off its face by half the
+difference, and no flange in the plane of what bolts onto it. The layout
+then lays the bracing flat on those flanges (one roll per member, J3) but
+never turns a leg or chord. Measured on the private towers (L12): the
+joints whose incoming ends all lie within 2° of the host's flange plane
+are laid out whole four times as often as those with ends a few degrees
+out.
+
+**The planes of a joint** (`ohl_structure_link::joint_planes`). The
+joint's host is what the other ends bolt onto (the joint groups' choice:
+legs first, then the largest steel area, with its piece in line). Each
+other end's axis and the host's axis span a plane through the host's axis;
+seen along the host it is a line at an angle ψ from the host's y axis
+towards its z axis (0° to 180°). The ends whose ψ lie within 2° of each
+other are one plane (the tool's value — the owner's flatness — not a
+standard's). For each plane: the host's flange nearer to it (an angle's
+flange along y lies in ψ = 0°, along z in ψ = 90°), the turn of the host
+about its own axis laying that flange in it, and for each end the angle
+its axis runs out of that flange's plane, asin(sin α · |sin(ψ − flange)|)
+with α its angle to the host — what the owner's 2° measures. The planes
+are listed **high to low**: the biggest member's first (its steel area),
+then the larger force where sizes tie and forces are known (the structure
+file stores no analysis forces, so the layout orders by size alone —
+said), then more ends. An end within 10° of the host's axis (in line)
+spans no plane.
+
+**Rolls from the planes** (`ohl_structure_link::plane_rolls`, Orient
+angles' default since L18; the outline alone stays selectable for
+comparison). An angle has **one roll along its whole length**, so a turn
+laying a flange in one joint's plane must suit every joint the member
+reaches; the pieces of a leg or chord in line through its joints (within
+10°, turned alike within 2°) are **one run** turned alike. The turn δ of a
+run, added to every piece's roll, is solved over every end at every joint
+of the run:
+
+- where a piece of the run is the host, each other end against the host's
+  piece its axis lies nearer to (the host and its piece in line may belong
+  to two runs: at a taper change past the in-line tolerance, the ends of
+  the panel above belong to the piece above); another leg's piece
+  arriving (a taper change, an extension) is spliced, not bolted flat by a
+  flange, and gives no plane;
+- where a piece bolts onto another member (an arm's chord onto a leg), its
+  own leg against that flange (the joint details' flat turn, and how far it
+  stays off however turned).
+
+The δ chosen lays **the most ends within 2°** of their flange's plane;
+**centred** in the turns that keep those ends within (the middle of the
+overlap of their 2° bands: each as far inside as the others allow — a
+later small change of the roll, such as pieces confirmed one part with
+their rolls averaged, keeps them in); of several such, the widest overlap,
+then the least sum of squares of all the ends' angles (each counted at most
+16°: a few degrees' turn does not bring a member lying far out in), then the
+smallest δ. δ stays within 22.5° of the outline's turn (each flange then at
+most 22.5° from its face, as Orient angles' corner: the heel stays out of
+the tower); a δ below 0.05° is none, so a run again changes nothing. The
+runs are solved in the owner's order — legs, then chords, then the face
+members (bracing lying in a steep face) — each set on the joints as the
+sets before left them. A leg the outline leaves (no faces found, a leg
+extension) is turned from the roll it has, unless that was given by hand
+and is not replaced. Orient angles lists each run's turn, its ends within
+2° before and after and every end's angle before and after at each joint.
+
+**Tried and not kept** (six private towers, every thirteenth, measured
+against the outline's turn): the δ at the edge of the band rather than
+centred — the ends at 2.0° fell out again when the one-part confirmation
+averaged a chain's rolls (joints whole +24, plates +154, 306 joints worse
+against 139 better); a member's own ends weighing a thousand hosted ends
+(joints whole +42 instead of +60); each end weighed by its steel area
+(+39 instead of +60); legs and chords alone, without the face members (+31
+instead of +60).
+
+**Automatic or proposed.** The owner's decision: on an imported tower the
+rolls from the planes may be set automatically, on a tower designed in
+OpenOHL they stay proposals. What the file records decides: a roll set by
+Orient angles (the layout record's `oriented`) or by the layout (`rolled`),
+or no roll at all, is the program's; a roll, reference or orientation
+without such a mark is the designer's. Orient angles is run on an import
+(it carries no orientation) and keeps rolls given by hand unless asked to
+replace them; what it sets is marked automatic and undone like any edit.
+
+**Offered side by side** (Lay out joints, Solve the clashes). The leg's
+and chord's runs at the joints asked that their joints' planes would turn
+(from the file as it is, on the whole tower: a run reaches past the joints
+asked) are listed beside the leg-rotation check's proposals (L11, the
+piece and the pieces in line with it), each with its own tick: ticked by
+default where the run's roll is the program's, not where given by hand;
+one turn per member. A plane turn of a run whose roll is the program's is
+ticked by default only where every joint it reaches is laid out better
+with it (the run's guard, joint by joint: at none fewer ends nor as many on
+more plates; in all more ends, or as many on fewer plates — the measured
+column *weighed* below). **A turn is never judged on one joint** (the owner:
+"when turning a member both sides should be reverified"): every joint the
+turned members reach (both ends of each piece; every joint of the run) is
+laid out with the turn and its effect counted there — in Lay out joints the
+whole, ends and plates at those joints without and with all the proposals
+of its kind applied together; in Solve the clashes the joint's solution
+worked out with every joint reached laid out, refused where those joints
+are left with more clashes and problems.
+
+**Plane by plane, high to low (step 3).** The plan already lays a joint
+out plane by plane — the ends on one flange's face one plane, bolted
+directly where every bolt lands on the flange, else onto one plate on that
+flange shared by the plane's ends, moved sideways within the shift limit
+only where the pull-back does not suffice (J1, L1) — with the planes taken
+by the rank of what they bolt onto, then its id. Taking a rank's planes
+from the biggest member down (class, then the wider leg) measured worse on
+the six towers (joints whole −4 after the outline's rolls, −15 after the
+planes', more plates): a setting (`planes_high_to_low`), off. Not built:
+the special passes rewritten as one general procedure, and the forces in
+the order or in the choice between bolting directly and a plate (the
+structure file stores no analysis forces).
+
+**Measured** on the 78 private tower files (the bundled plugin, L14's
+settings, the layout without the bends' checks; each column after its
+Orient angles): *L17* the outline's turn (reproduces L17 main exactly);
+*planes* Orient angles v2 automatic; *L11* the outline's turn and every leg
+and chord turn the leg-rotation check flags applied (its proposals); *both*
+v2, then L11's proposals on the result; *weighed* v2 with each run's turn
+kept only where every joint its members reach is laid out better (the
+run's guard; 2 844 of 20 836 runs turned kept):
+
+| | L17 | planes | L11 | both | weighed |
+|---|---|---|---|---|---|
+| member ends within 2° of their host's flange plane (before the layout) | 79.2 % | 81.0 % | 80.8 % | 81.5 % | 80.0 % |
+| joints laid out whole | 37 315 | 38 042 | 38 046 | 38 317 | 37 882 |
+| member ends laid out | 133 265 | 135 259 | 134 466 | 135 912 | 135 444 |
+| plates written | 69 295 | 69 840 | 68 392 | 69 172 | 69 927 |
+| members left after the clash rounds | 11 179 | 11 670 | 11 268 | 11 919 | 11 273 |
+| not fitting as given | 48 | 46 | 48 | 46 | 48 |
+| joints better / worse than L17 | — | 3 461 / 2 400 | 2 776 / 1 414 | 4 450 / 2 593 | 1 935 / 293 |
+| whole gained / lost | — | 1 128 / 401 | 948 / 217 | 1 434 / 432 | 613 / 46 |
+
+Of the planes' 2 400 worse joints 2 365 have a member turned otherwise
+(the turn helps one joint of a run and costs another — what the weighed
+column takes back). The gains are where the ends lie a few degrees out of
+the host's flanges: a body's member running on with plan members, some a
+few degrees out, whole 255 → 692 (planes), 713 (L11), 739 (both), 400
+(weighed) of 1 281; an arm's chord with bracing a few degrees out 107 →
+300, 245, 385, 234 of 747. Found: a built-up leg with bracing, all in a
+flange's plane, loses whole joints with every unweighed turn (413 → 338,
+333, 334 of 560; weighed 411) — the bracing's one roll turned for its other
+end. The per-joint bound: turning each joint's host on its own as far as
+22.5°, the ends within 2° at angle hosts of one tower rise from 82.5 % to
+87 % only — most ends out of plane are so by the geometry (plan and hip
+members between the flanges, members of another face), not by a roll.
+The time per tower (six towers, two at a time, back to back, twice;
+other work on the computer, load 4 to 10): Orient angles median 0.25 and
+0.31 s → 2.0 and 2.0 s (the largest 0.37 and 0.40 → 2.3 and 2.4 s: the
+joints in detail once per set of runs); the layout after it median 71.3
+and 80.0 s → 79.2 and 81.8 s, the largest 80.2 and 81.8 → 84.8 and 88.5 s
+(more ends laid out). A run again identical: 16 of 16 towers run again (every sixth and the first four; not all 78, for the time).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

@@ -3376,6 +3376,86 @@ only where it helps):
   > L16's question 4 first. (5) A level plate across two horizontals for
   > the plan and hip members → Recommended: next, as its own step (a plate
   > on two members, a format field).
+- [x] L18. **Lay out by planes first: rolls from the joints' planes**
+  (the owner, 2026-11-22: "the axes of the incoming members into a joint
+  define planes together and we should have the parts rotated accordingly
+  and then shifted and either bolted to each other when possible and if not
+  with a new plate, and if there are multiple planes … then we should go
+  from high to low"; approved the same day with four decisions — automatic
+  on imported towers, proposals on designed ones; side by side with L11's
+  turns; every joint a turn reaches checked). **Built 2026-11-23, in active
+  development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#lay-out-by-planes-first-rolls-from-the-joints-planes-l18),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#leg-or-chord-turned-against-its-joints),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-joint-layout-lay-out-by-planes-first-rolls-from-the-joints-planes-l18);
+  no format change). **1. The planes of a joint** (`joint_planes`): each
+  other end's axis and the host's span a plane through the host's axis;
+  within 2° one plane; high to low (the biggest member, then force where
+  given — none in the structure file —, then the number of ends); per plane
+  the host's nearer flange, the turn laying it there, each end's angle out
+  of it. **2. Orient angles v2** (`plane_rolls`, the default; the outline
+  alone kept selectable): each leg's, then chord's, then face member's run
+  in line turned as one (one roll per member) so that the most ends at all
+  its joints lie within 2° of its flanges' planes, centred in the turns
+  keeping them so, at most 22.5° from the outline's turn; residuals per end
+  and joint reported. On the 78 real towers (kept privately; with the
+  bundled plugin; L17 main reproduced exactly) the columns the owner asked
+  for, and v2 weighed (each run's turn kept only where every joint it
+  reaches is laid out better):
+
+  | | L17 main | v2 automatic | L11 proposals applied | both | v2 weighed |
+  |---|---|---|---|---|---|
+  | ends within 2° of the host's flange plane | 79.2 % | 81.0 % | 80.8 % | 81.5 % | 80.0 % |
+  | joints whole | 37 315 | 38 042 | 38 046 | 38 317 | 37 882 |
+  | member ends laid out | 133 265 | 135 259 | 134 466 | 135 912 | 135 444 |
+  | plates | 69 295 | 69 840 | 68 392 | 69 172 | 69 927 |
+  | members left after the clash rounds | 11 179 | 11 670 | 11 268 | 11 919 | 11 273 |
+  | not fitting as given | 48 | 46 | 48 | 46 | 48 |
+  | joints better / worse than L17 | — | 3 461 / 2 400 | 2 776 / 1 414 | 4 450 / 2 593 | 1 935 / 293 |
+
+  Of v2's 2 400 worse joints 2 365 have a member turned otherwise (a turn
+  helping one joint of a run, costing another). Gains where ends lie a few
+  degrees out (a body's member running on with plan members: whole 255 →
+  692 of 1 281; an arm's chord with bracing: 107 → 300 of 747); found: a
+  built-up leg with bracing in plane loses whole joints with every unweighed
+  turn (413 → 338 of 560; weighed 411). The bound: each joint's host turned
+  on its own lays 82.5 → 87 % of one tower's ends within 2° — most ends out
+  of plane are so by the geometry, not by a roll. The time per tower (six towers, back to back, twice):
+  Orient angles 0.3 → 2.0 s, the layout after it median 71.3 / 80.0 → 79.2 /
+  81.8 s; a run again identical on 16 of 16 towers run again (every sixth and the first four).
+  **3. Plane by plane, high to low**: the plan already works plane by plane
+  (directly where every bolt lands, else one plate shared by the plane);
+  a rank's planes from the biggest member down measured worse on six
+  towers (whole −4 / −15, more plates): `planes_high_to_low`, off. Not
+  built: the special passes as one general procedure, forces (none in the
+  file). **4. Side by side**: Lay out joints lists the plane turns of the
+  leg's and chord's runs beside L11's, each its own tick (ticked by default
+  where the roll is the program's), each with its effect at every joint its
+  members reach; Solve the clashes offers both, each solution laid out at
+  every joint the turned members reach and refused where those are left
+  worse; Lay out joints ticks a plane turn of a program roll by default only
+  where every joint it reaches is laid out better.
+  > **Owner:** (1) Orient angles from the joints' planes as the default on
+  > imports (unweighed: +727 whole, +1 994 ends, but 2 400 joints worse)
+  > → Recommended: next, weigh it in the run — each automatic run's turn
+  > kept only where every joint it reaches is laid out better (measured
+  > +567 whole, +2 179 ends, 1 935 better and 293 worse; a layout run more);
+  > until then keep v2 as built. (2) L11's proposals applied lay out as many
+  > joints whole with 903 fewer plates; both together the most (+1 002
+  > whole) → Recommended: keep both offered side by side; next, measure
+  > both weighed (v2, then L11's, each kept where it helps). (3) Step 3: a
+  > joint's planes high to low by size measured worse (−4 / −15 whole on six
+  > towers) → Recommended: keep off; the plan already works plane by plane,
+  > and what is left out of plane is mostly plan and hip members between a
+  > host's flanges — next, L17's question 5 (a level plate across two
+  > horizontals). (4) Forces: the structure file stores no analysis forces,
+  > so planes are ordered by size → Recommended: no change until analysis
+  > results are kept with a structure (a format decision). (5) "Imported"
+  > read from the file's record (a roll set by Orient angles or the layout,
+  > or none, is the program's; else the designer's) — no new flag →
+  > Recommended: keep (no format change). (6) Face members turned from their
+  > planes too, after legs and chords (+60 against +31 whole on six towers)
+  > → Recommended: keep, with (1)'s weighing.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

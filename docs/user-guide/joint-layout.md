@@ -264,28 +264,50 @@ turned alike are named with it (one leg or chord). For a leg, the tower's
 faces through the neighbouring legs (what Orient angles turns a leg to)
 are said beside it as a hint only — never flagged on their own.
 
+**Beside it, from the joints' planes** (2026-11-23, O44 L18; built, in
+active development): the whole leg or chord in line (its pieces in line,
+turned alike — one roll along its length) turned so that the most member
+ends bolting onto it lie within 2° of its flanges' planes **at all its
+joints**, centred in the turns that keep them so, at most 22.5°
+([Orient angles](#orient-angles) does the same, automatically, on a tower
+it orients). The two proposals are offered **side by side**, each with its
+own tick; one turn per member (ticking one clears the other kind's tick of
+the same pieces). **A turn is never judged on one joint**: every joint the
+turned members reach (both ends of each piece, every joint along the run)
+is laid out with it and its effect counted there.
+
 **Where it shows:**
 
-- **Lay out joints**: under the numbers, "*n* leg or chord piece(s) turned
-  against their joints — proposed, applied only when ticked", then one
-  line per piece ("Leg: …" or "Chord: …", the turn and the ends that say
-  it) with a **tick, off by default**. Tick one or more: the preview is
-  worked out again with those pieces turned (each with the pieces in line
-  with it, alike), and says the run **with and without** the turns ticked
-  (joints laid out whole, member ends, plates — measured, the layout run
-  both ways). **Apply** then writes the turns with the layout, one undo
-  step.
+- **Lay out joints**: under the numbers, "Legs and chords turned against
+  their joints, two ways side by side", then one line per proposal: "Leg
+  (from the ends at its joints): …" or "Chord …" with a **tick, off by
+  default**; "Leg (from its joints' planes; …): leg run … turned by …"
+  with a tick **on by default where its roll is the program's** (set by
+  Orient angles or the layout — an import's: automatic, untick to keep it)
+  **and every joint it reaches is laid out better with it** (at none fewer
+  ends nor as many on more plates; in all more ends, or as many on fewer
+  plates), **off where its roll was given by hand** (a designed tower: a
+  proposal) or where its joints are not laid out better (said). Each line ends with its effect **at the joints it reaches**
+  (whole, member ends, plates without and with it — all the proposals of
+  its kind applied together, measured by the layout run both ways). With
+  turns ticked the preview lays out every joint they reach with them and
+  says the run **with and without** them. **Apply** then writes the turns
+  with the layout, one undo step.
 
   ![Lay out joints on an invented K-brace whose chord is turned 5° against its joint: the chord's turn proposed with its tick, ticked, and the run with and without it](../images/structure-tools/tool-lay-out-joints-turns.png)
 - **Solve the clashes**: under *Proposed, not applied*, "Turn L2, L1 by
-  −5.0°: with it clashes … → …, other problems … → …" — the joint's
-  solution worked out again with the whole leg or chord turned (the piece
-  and the pieces in line with it, alike). **Tick it** to apply that
-  solution instead (one undo step); unticked, nothing of it changes.
+  −5.00° (from the ends at its joints (L11)): here clashes … to …, other
+  problems … to …; at the *n* joint(s) the turned members reach: clashes
+  and problems … to …, … laid out whole, … member end(s)" and the same
+  "(from its joints' planes (L18))" — each the joint's solution worked
+  out again with every joint the turned members reach laid out with the
+  turn; a turn leaving those joints with more clashes and problems is
+  refused. **Tick one** to apply that solution instead (one undo step);
+  unticked, nothing of it changes.
 
 **Good to know:** a leg's or chord's turn is never changed silently, by
 the layout or by Solve the clashes (the run's own chord turns, a setting,
-stay off). Where Orient angles has not been run on an imported tower,
+stay off); a roll given by hand is only ever proposed. Where Orient angles has not been run on an imported tower,
 most legs show as turned (an import carries no member orientation): run
 Orient angles first ([below](#orient-angles)); the check then shows the
 pieces Orient angles cannot place (where no faces are found) or the joints
@@ -387,8 +409,10 @@ joints**.
    and the members their angle sections.
 2. Open **Design › Orient angles…** (the members picked, else the whole
    tower).
-3. Choose **which members** and whether **rolls given by hand** are
-   replaced (an import's rolls: replace them).
+3. Choose **which members**, how the legs and chords are turned (**from
+   their joints' planes**, the default, or from the tower's outline, as
+   before) and whether **rolls given by hand** are replaced (an import's
+   rolls: replace them).
 4. Read the **preview**: what turns, the rolls kept, the legs left and why.
 5. **Apply**: one undo step. Then **Lay out joints**.
 
@@ -397,6 +421,7 @@ joints**.
 | Members | How |
 |---|---|
 | **Legs and chords**: the members of class `leg`, and the angles running on in line (within 10°) through a joint | heel out of the tower, each flange in one of the two faces meeting at it. The faces are those of its neighbouring legs' lines: the tower's section through the member's middle (a leg's from the other legs, a chord's from the other chords: those within 70° of it whose lines a member joins to its line, lying in one plane with both — a face's bracing, a plan member; not a portal's other column, not an arm joined to a leg) is a polygon, the member one of its corners, the corners next to it its neighbours. An angle's legs are at 90°, the faces seldom exactly: the middle of the angle's legs is put on the middle of the faces, each flange off its face by half the difference (said; more than 2° and the bracing there cannot lie flat on it: a bent plate or a hand detail); faces meeting at less than 45° or more than 135° are no corner for an angle (left, said). Two angles in a star or four in a cross are turned the same way; two back to back are left |
+| **From the joints' planes** (the default since 2026-11-23, O44 L18) | after the outline's turn, each leg's run in line (pieces in line within 10°, turned alike within 2°: one roll), then each chord's, then each face member's is turned about its axis so that **the most member ends at all its joints lie within 2° of its flanges' planes** — where a piece is what others bolt onto, the angle each end's axis runs out of its nearer flange's plane; where it bolts onto another member, its own leg against that flange —, centred in the turns that keep them so (a later small change, pieces confirmed one part with one roll, keeps them in), then the least left over, at most 22.5° from the outline's turn (the heel stays out). The legs the outline leaves (no faces found) are turned from the roll they have, unless it was given by hand and not replaced. Each run is listed with the ends within 2° before and after and, on hover, every end's angle before and after at each joint |
 | **Plan and hip members**: horizontal angles (within 5°) lying in no steep face | one leg flat, the other pointing down (**assumed**: no water lying in it — a choice of this tool, not a standard's), the flat leg towards the tower's middle |
 | **Face members**: the other single angles lying in a steep face (within 20 mm and 5 mm per metre of their length of its plane, between its legs or chords) — its diagonals (also those running on through their crossing), horizontals and redundants | one leg in the face, the other pointing out of the tower (on the outer face of the legs' flanges, usual practice); the leg in the face down from the heel where it can (**assumed**: no water lying in it); an unequal angle's leg bolted in the face. **Lay out joints** may turn it half a turn where an end of it does not fit on an inner face |
 | **The rest** (members in no face: a sloping crossarm's bottom bracing, diaphragms) | left: **Lay out joints** lays it flat on what it bolts onto, where that helps |
@@ -412,8 +437,9 @@ through a redundant's joint) is a face member, not a chord.
 | Field | What it does |
 |---|---|
 | Members | the members picked · a member group's · the whole tower (the faces are always found from all the tower's legs and chords) |
+| Legs and chords turned | **from their joints' planes** (default) · from the tower's outline (as before, for comparison) |
 | Replace rolls given by hand | off: a member's `roll`, `reference` or `orientation` given by hand is kept (listed with the turn it would get); on: replaced — for an import whose rolls are not as built |
-| Preview | how many members turn (legs and chords, plan members), those already so, the rolls kept, the legs left with why, the time it took (measured); **What turns**: each member's turn and its roll before and after |
+| Preview | how many members turn (legs and chords, plan members), those already so, the rolls kept, the legs left with why, the time it took (measured); from the joints' planes: the runs turned and the member ends within 2° before and after; **What turns**: each member's turn and its roll before and after |
 | **Apply (n members)** | one undo step; laid-out joints at the members turned are laid out again in the same step |
 | Cancel, Escape | nothing changes |
 

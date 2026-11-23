@@ -8,6 +8,67 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-23 (joint layout: lay out by planes first, rolls from the joints' planes, L18)
+
+**The owner's decisions of 2026-11-22** (roadmap O44 L18; the owner: "the
+axes of the incoming members into a joint define planes together and we
+should have the parts rotated accordingly and then shifted and either
+bolted to each other when possible and if not with a new plate, and if
+there are multiple planes … then we should go from high to low"):
+
+- **Lay out by planes first**: approved.
+- **On imported towers** (no orientation data) the rolls from the joints'
+  planes may be set **automatically**; on towers designed in OpenOHL (rolls
+  given by the designer) they stay **proposals**, never applied silently.
+  What the file records decides: a roll set by the program — Orient angles
+  (the layout record's `oriented`) or the layout (`rolled`), or no roll at
+  all — is automatic; a roll, reference or orientation in the file without
+  such a mark is the designer's. Nothing new is recorded (no format change):
+  an import carries no member orientation and is oriented by Orient angles
+  first, which marks what it sets.
+- **Side by side**: the turn from the joints' planes is offered beside the
+  leg-rotation check's (L11) in Lay out joints' preview and in Solve the
+  clashes, each with its own tick and its measured effect; on the 78
+  private towers both measured.
+- **"When turning a member both sides should be reverified"**: any turn,
+  automatic or proposed, lays out and checks every joint the member reaches
+  (both ends of each piece; every joint along a leg's or chord's run), and
+  its effect counts them all — a turn is never judged on one joint.
+
+**Built** (2026-11-23, in active development, not approved yet;
+[theory](../theory/joint-layout.md#lay-out-by-planes-first-rolls-from-the-joints-planes-l18);
+no format change):
+
+- **The planes of a joint** (`joint_planes`): each other end's axis and the
+  host's span a plane through the host's axis; ends within 2° (the tool's
+  value, the owner's flatness) one plane; listed high to low (the biggest
+  member, then the force where given — the structure file stores none —,
+  then the number of ends).
+- **Orient angles v2** (`plane_rolls`, the default; the outline alone kept
+  selectable): each leg's, then chord's, then face member's run in line
+  turned as one (an angle has one roll along its length) so that the most
+  ends at all its joints lie within 2° of its flanges' planes, centred in the
+  turns that keep them so, at most 22.5° from the outline's (heel out); the
+  residual of every end at every joint reported. Measured on the 78
+  private towers (L17 main → v2 automatic): ends within 2° of their host's
+  flange plane 79.2 → 81.0 %, joints whole 37 315 → 38 042, ends 133 265
+  → 135 259, plates 69 295 → 69 840, 3 461 joints better and 2 400 worse;
+  L11's proposals applied 38 046 whole (plates 68 392, 2 776 / 1 414);
+  both 38 317 (4 450 / 2 593); v2 with each run's turn kept only where every
+  joint it reaches is laid out better 37 882 (ends 135 444, 1 935 / 293) —
+  owner questions in the roadmap.
+- **Lay out joints' default tick** for a plane turn of a run whose roll is
+  the program's: on only where every joint it reaches is laid out better
+  with it (the run's guard), else proposed — the owner's "both sides
+  reverified" for the automatic case.
+- **Plane by plane, high to low** (step 3): the plan already lays a joint
+  out plane by plane (directly where every bolt lands, else one plate per
+  plane); a rank's planes taken from the biggest member down measured worse
+  (fewer joints whole, more plates) — a setting, off. Not built: the special
+  passes rewritten as one general procedure; forces in the order (no
+  analysis forces in the structure file).
+- **Offered side by side** (step 4) as decided above.
+
 ## 2026-11-23 (joint layout: one plate in one gap; a turn tried as before the plates between, L17)
 
 **The ends across one gap between a built-up member's angles share one
