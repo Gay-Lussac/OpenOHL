@@ -3327,6 +3327,140 @@ joints in detail once per set of runs); the layout after it median 71.3
 and 80.0 s → 79.2 and 81.8 s, the largest 80.2 and 81.8 → 84.8 and 88.5 s
 (more ends laid out). A run again identical: 16 of 16 towers run again (every sixth and the first four; not all 78, for the time).
 
+## Turns weighed over every joint they reach (L19)
+
+(The owner, 2026-11-22: "when turning a member both sides should be
+reverified"; roadmap O44 L19, the owner busy: built on its own, reported.
+Built 2026-11-23, in active development, not approved yet. The layout
+record gains a list, `plane_turns`; no version change.)
+
+**Why.** Orient angles v2 (L18) turns each leg's, chord's and face
+member's run from its joints' planes without laying anything out: the
+turn lays the most ends within 2° of a flange's plane over all the run's
+joints — but an end within 2° is not yet an end laid out, and an angle has
+one roll along its whole length. On the private towers the turns applied
+unweighed left 2 400 joints worse than the outline's turn, 2 365 of them
+with a member turned otherwise: the turn helped one joint of its run and
+cost another.
+
+**Listed, not weighed yet.** Orient angles lists each run it turns from
+the planes in the layout record (`plane_turns`: each member, its roll
+before the turn and with it as written, the run's kind and its first
+member). A row counts only while the member's roll is still the one
+written with the turn: a roll changed since is the user's and never taken
+back. Pieces confirmed one part (J9) get one roll, half-way between
+theirs; where every piece of the chain is listed, the rolls before are
+averaged alike, so that taking the turns back leaves them one roll (as
+confirming them without the turns would); runs whose pieces are written
+one part are weighed as one, and a run one part with a piece not listed
+is left as written (taking it back would part what is one part). Orient
+angles from the outline alone takes the rows of what it sets.
+
+**Weighed by the layout run** (`ohl_structure_link::weighed_turns`,
+`LayoutSettings::weigh_turns`, on by default) — a turn only by a run
+that lays out every joint it reaches (a run on a few joints leaves the
+others listed for a whole run):
+
+1. every turn taken back (each member at its roll before) and the tower
+   laid out: the base;
+2. stage by stage in the owner's order — the legs' and chords' runs, then
+   the face members' — the stage's turns applied on top of those kept so
+   far and the tower laid out again. A turn is kept only where **every
+   joint its members reach** (both ends of every piece; every joint of its
+   run) is laid out **no worse** than before the stage — no fewer member
+   ends laid out, nor as many on more plates, nor no longer whole — **and
+   one better** (more ends, as many on fewer plates, or whole where it was
+   not): the run's guard with a joint's wholeness added, the owner's rule;
+3. **past the turned members**: a joint anywhere in the tower laid out
+   worse than before the stage, where a member meets whose roll the layout
+   wrote otherwise (a bracing member's one roll, chosen by the layout for
+   all its ends — J3 —, turned for its end at the turned member), refuses
+   the turns reaching that member's joints (and a turn whose own member it
+   is) — the owner's "both sides" one member further;
+4. the turns kept laid out again without those refused and weighed again
+   there (a turn may have helped only beside one refused), until every turn
+   kept still helps — at most four layouts more per stage; none of the
+   stage kept where they do not agree by then;
+5. a turn refused: its members back to the roll before, said in the run's
+   notes ("… taken back (joint(s) … laid out worse with it …); offered in
+   Lay out joints"), and offered by Lay out joints beside the leg-rotation
+   check's proposals (unticked: it lays no joint out better).
+
+Since every stage keeps no joint worse than before it, the result keeps
+no joint worse than the base — except where a joint changes with neither
+a turn reaching it nor a member turned otherwise meeting it (the layout's
+order: joints planned in turn see what is laid out before them); those
+are counted in the run's notes and below. The rows go with the run: the
+file written lists none of the turns weighed, so a run again lays out the
+same. Lay out joints weighs them once, on the whole tower, when its
+preview is first worked out, and lays the rest (the proposals' effects)
+out from the file so settled.
+
+**Not on the safe side?** The weighing chooses between two rolls of the
+same members; neither changes a member's size, work point or what is
+checked: nothing here is less safe than the layout without it.
+
+**Measured** on the private tower files (the bundled plugin, L14's
+settings, the layout without the bends' checks; each column after its
+Orient angles). *L17* (the outline's turn) and *L18* (the planes' turns
+unweighed) on all 78 towers reproduce L17 main and L18 main exactly
+(37 315 and 38 042 joints whole; 3 461 better, 2 400 worse). The weighing
+lays a tower out several times, so it was measured on samples: *weighed*
+on every second tower (39), with *base* (the weighing's base laid out:
+every turn taken back) on the same towers; *both weighed* — the
+leg-rotation check's turns (L11) applied on top and weighed as a stage
+between the legs' and chords' and the face members' — on every third
+tower (26):
+
+| every second tower (39) | L17 | L18 | base | weighed |
+|---|---|---|---|---|
+| joints laid out whole | 18 301 | 18 679 | 18 353 | 18 531 |
+| member ends laid out | 66 074 | 67 128 | 66 218 | 67 065 |
+| plates written | 34 447 | 34 673 | 34 414 | 34 704 |
+| members left after the clash rounds | 5 910 | 6 202 | 5 912 | 5 934 |
+| not fitting as given | 37 | 37 | 37 | 37 |
+| joints better / worse than L17 | — | 1 789 / 1 187 | 100 / 35 | 879 / 59 |
+| … than the base | | | — | 779 / 24 |
+| … than L18 | | | | 1 183 / 997 |
+
+| every third tower (26) | L17 | L18 | both weighed |
+|---|---|---|---|
+| joints laid out whole | 12 161 | 12 382 | 12 342 |
+| member ends laid out | 42 967 | 43 587 | 43 797 |
+| plates written | 22 232 | 22 409 | 22 314 |
+| members left after the clash rounds | 3 223 | 3 423 | 3 262 |
+| joints better / worse than L17 | — | 1 083 / 768 | 828 / 90 |
+| … than L18 | | | 929 / 503 |
+
+Weighed keeps 61 % of the unweighed turns' joints whole (+230 of +378)
+and 94 % of their member ends (+991 of +1 054), with 59 joints worse than
+L17 instead of 1 187: 24 of them worse than the base (the joints no turn
+reaches and no member turned otherwise meets — the layout's order), the
+other 35 the base's own (it differs from L17 where pieces in line were
+confirmed one part after the turns, their rolls averaged then, and where
+a run one part with a piece not listed is left as written). Kept: 12 of
+81 legs' runs turned, 278 of 997 chords', 349 of 9 013 face members' —
+most turns lay no joint out better. Both weighed lays out the most member
+ends (+830 against L18's +620 on its sample) on fewer plates (+82 against
++177), 82 % of L18's joints whole (+181 of +221), 90 joints worse than
+L17 (L18: 768). A run again on the weighed result: identical on 8 of 8
+towers (every sixth; the rows go with the first run, so a run again
+weighs nothing). By group (every second tower): a body's member running
+on with plan members, a few degrees out, whole 110 → 366 (L18) → 185
+(weighed) of 715; an arm's chord with bracing a few degrees out 49 → 142
+→ 95 of 383; and the losses of the unweighed turns gone — a built-up leg
+with bracing all in a flange's plane 225 → 183 → 226 of 314, an arm's
+chord with plan members all in plane 2 832 → 2 815 → 2 831 of 3 992.
+
+The time per tower (six towers, every thirteenth, two at a time, back to
+back, twice; other work on the computer, load 2.6 to 7.6): the layout run
+after Orient angles with the turns unweighed (L18) median 45.0 and 70.9 s
+(the largest 53.8 and 77.5 s); weighed 265.7 and 335.3 s (320.7 and
+379.0 s) — about five and a half layouts (the base, each stage's turns,
+the stages' turns kept laid out again; 2 on the smallest tower, where no
+turn helped); both weighed 426.7 and 433.9 s (599.9 and 605.2 s). Paid
+once per imported tower: the file written lists nothing more to weigh.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

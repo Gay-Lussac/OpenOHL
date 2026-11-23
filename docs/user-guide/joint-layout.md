@@ -274,7 +274,23 @@ it orients). The two proposals are offered **side by side**, each with its
 own tick; one turn per member (ticking one clears the other kind's tick of
 the same pieces). **A turn is never judged on one joint**: every joint the
 turned members reach (both ends of each piece, every joint along the run)
-is laid out with it and its effect counted there.
+is laid out with it and its effect counted there. **The turns Orient
+angles set from the planes are weighed by the layout run** (2026-11-23,
+O44 L19; built, in active development): the run lays the tower out with
+every such turn taken back, then with the legs' and chords' turns, then
+the face members', keeps each only where every joint it reaches is laid
+out no worse and one better, and puts the others' rolls back — said in
+the preview's notes ("leg run … turned by …: kept — its *n* joint(s) lay
+out … (before …), none worse" or "… taken back (joint(s) … laid out worse
+with it …); offered in Lay out joints"), and offered here beside the
+other proposals (its tick as for any plane turn). A turn is weighed only
+by a run that lays out every joint it reaches (the whole tower: Lay out
+joints weighs once when it works out its preview, and lays out every joint
+a turn kept reaches); a run on a few joints leaves it as written for
+later. **Time:** the weighing lays the tower out about five and a half
+times (measured on six real towers: median 45 and 71 s unweighed, 266 and
+335 s weighed) — once after Orient angles: the file written lists nothing
+more to weigh.
 
 **Where it shows:**
 
@@ -421,7 +437,7 @@ joints**.
 | Members | How |
 |---|---|
 | **Legs and chords**: the members of class `leg`, and the angles running on in line (within 10°) through a joint | heel out of the tower, each flange in one of the two faces meeting at it. The faces are those of its neighbouring legs' lines: the tower's section through the member's middle (a leg's from the other legs, a chord's from the other chords: those within 70° of it whose lines a member joins to its line, lying in one plane with both — a face's bracing, a plan member; not a portal's other column, not an arm joined to a leg) is a polygon, the member one of its corners, the corners next to it its neighbours. An angle's legs are at 90°, the faces seldom exactly: the middle of the angle's legs is put on the middle of the faces, each flange off its face by half the difference (said; more than 2° and the bracing there cannot lie flat on it: a bent plate or a hand detail); faces meeting at less than 45° or more than 135° are no corner for an angle (left, said). Two angles in a star or four in a cross are turned the same way; two back to back are left |
-| **From the joints' planes** (the default since 2026-11-23, O44 L18) | after the outline's turn, each leg's run in line (pieces in line within 10°, turned alike within 2°: one roll), then each chord's, then each face member's is turned about its axis so that **the most member ends at all its joints lie within 2° of its flanges' planes** — where a piece is what others bolt onto, the angle each end's axis runs out of its nearer flange's plane; where it bolts onto another member, its own leg against that flange —, centred in the turns that keep them so (a later small change, pieces confirmed one part with one roll, keeps them in), then the least left over, at most 22.5° from the outline's turn (the heel stays out). The legs the outline leaves (no faces found) are turned from the roll they have, unless it was given by hand and not replaced. Each run is listed with the ends within 2° before and after and, on hover, every end's angle before and after at each joint |
+| **From the joints' planes** (the default since 2026-11-23, O44 L18) | after the outline's turn, each leg's run in line (pieces in line within 10°, turned alike within 2°: one roll), then each chord's, then each face member's is turned about its axis so that **the most member ends at all its joints lie within 2° of its flanges' planes** — where a piece is what others bolt onto, the angle each end's axis runs out of its nearer flange's plane; where it bolts onto another member, its own leg against that flange —, centred in the turns that keep them so (a later small change, pieces confirmed one part with one roll, keeps them in), then the least left over, at most 22.5° from the outline's turn (the heel stays out). The legs the outline leaves (no faces found) are turned from the roll they have, unless it was given by hand and not replaced. Each run is listed with the ends within 2° before and after and, on hover, every end's angle before and after at each joint. **Weighed by the next Lay out joints run** (2026-11-23, O44 L19): each run's turn is recorded as not weighed yet; the run keeps it only where **every joint its members reach** is laid out no worse and one better (and no joint elsewhere is laid out worse where a member the layout turned otherwise beside it meets — a bracing's one roll turned for its end at the turned member), else puts the roll before back and offers the turn ([below](#leg-or-chord-turned-against-its-joints)) |
 | **Plan and hip members**: horizontal angles (within 5°) lying in no steep face | one leg flat, the other pointing down (**assumed**: no water lying in it — a choice of this tool, not a standard's), the flat leg towards the tower's middle |
 | **Face members**: the other single angles lying in a steep face (within 20 mm and 5 mm per metre of their length of its plane, between its legs or chords) — its diagonals (also those running on through their crossing), horizontals and redundants | one leg in the face, the other pointing out of the tower (on the outer face of the legs' flanges, usual practice); the leg in the face down from the heel where it can (**assumed**: no water lying in it); an unequal angle's leg bolted in the face. **Lay out joints** may turn it half a turn where an end of it does not fit on an inner face |
 | **The rest** (members in no face: a sloping crossarm's bottom bracing, diaphragms) | left: **Lay out joints** lays it flat on what it bolts onto, where that helps |
