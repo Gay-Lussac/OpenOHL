@@ -5096,13 +5096,15 @@ fn strip_of(
         across: f.across,
         member: a.member.clone(),
         // (L15) A plane of its own across a gap (never shared with ends
-        // lying on that back otherwise).
-        plane: (
-            mm(n[0] * 1.0),
-            mm(n[1] * 1.0),
-            mm(n[2] * 1.0),
-            mm(off) + if between.is_some() { BETWEEN_PLANE } else { 0 },
-        ),
+        // lying on that back otherwise). (L17) One plate in one gap: the
+        // key the gap's own — its normal turned one way, its first back
+        // along it — so that the ends across it from either side (and those on a
+        // member one part with it through the joint) share the plate, each
+        // on its own face, rather than two plates in the gap.
+        plane: match &between {
+            Some((_, gap, _)) => between_key(n, off, *gap),
+            None => (mm(n[0] * 1.0), mm(n[1] * 1.0), mm(n[2] * 1.0), mm(off)),
+        },
         host: host.member.clone(),
         w,
         u,
@@ -5141,6 +5143,23 @@ fn strip_of(
 /// built-up member's angles (mm): their plane apart from that back's other
 /// ends.
 const BETWEEN_PLANE: i64 = 1_000_000_000;
+
+/// (L17) The plane key of a gap between a built-up member's angles, the
+/// gap from the back an end lies on (normal `n` out of it across the gap,
+/// `off` from the origin along it, m) `gap` wide: the normal with its first
+/// component that is not nought made positive and the gap's back first
+/// along it — so that an end across the gap from the other side keys it
+/// alike —, apart from every other plane ([`BETWEEN_PLANE`]).
+fn between_key(n: [f64; 3], off: f64, gap: f64) -> PlaneKey {
+    let mm = |x: f64| (x * 1000.0).round() as i64;
+    let first = n.iter().copied().find(|c| c.abs() > 1e-3).unwrap_or(1.0);
+    let (n, from) = if first < 0.0 {
+        (scale(n, -1.0), -off - gap)
+    } else {
+        (n, off)
+    };
+    (mm(n[0]), mm(n[1]), mm(n[2]), mm(from) + BETWEEN_PLANE)
+}
 
 /// (L15) The words of a plan's note naming an end planned across a gap
 /// between a built-up member's angles.

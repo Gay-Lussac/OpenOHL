@@ -240,3 +240,92 @@ fn a_gap_too_thin_for_a_plate_between_is_not_laid_out() {
     let r = lay_out(&text, &ask).unwrap();
     assert!(!r.text.contains("between = true"));
 }
+
+/// The joint with two redundants across B's gap from either side (O44
+/// L17): `R` leaving towards the backs' toes, its outstanding leg along
+/// the section's +y, `S` leaving past the heels, its outstanding leg along
+/// −y — the rolls found that lay each one's leg bolted flat on a back.
+fn across_from_both_sides() -> String {
+    let probe = diagonal([2.0, 0.0, 0.0], 0.0);
+    let d = joint_details(&probe, &library(), &Default::default()).unwrap();
+    let b1 = d
+        .joint("N")
+        .unwrap()
+        .arrivals
+        .iter()
+        .find(|a| a.member == "B1")
+        .unwrap();
+    let q = b1.profile.as_ref().unwrap().clone();
+    let at = |along: f64, up: f64| {
+        [0, 1, 2].map(|k| {
+            let n = [2.0, 0.0, 2.0][k];
+            ((n + up * q.axes[2][k] + along * q.axes[0][k]) * 1e4).round() / 1e4
+        })
+    };
+    // The roll (degrees) laying the leg bolted of `R` arriving from `far`
+    // flat on a back, its outstanding leg along `sign` · y.
+    let roll_for = |far: [f64; 3], sign: f64| -> f64 {
+        (0..720)
+            .map(|k| f64::from(k) * 0.5)
+            .find(|roll| {
+                let text = diagonal(far, *roll);
+                let d = joint_details(&text, &library(), &Default::default()).unwrap();
+                let r = d
+                    .joint("N")
+                    .unwrap()
+                    .arrivals
+                    .iter()
+                    .find(|a| a.member == "R")
+                    .unwrap();
+                let p = r.profile.as_ref().unwrap();
+                let nb = if r.leg_y { p.axes[2] } else { p.axes[1] };
+                sign * dot(nb, q.axes[1]) > 0.9999
+            })
+            .expect("a roll")
+    };
+    let (fr, fs) = (at(0.6, 1.5), at(0.6, -1.5));
+    let (rr, rs) = (roll_for(fr, 1.0), roll_for(fs, -1.0));
+    format!(
+        "{}\n[[node]]\nid = \"G\"\npoint = [\"{} m\", \"{} m\", \"{} m\"]\nsupport = \"fixed\"\n\n\
+         [[member]]\nid = \"S\"\nnodes = [\"N\", \"G\"]\nsection = \"EA-61x7\"\nroll = \"{rs} deg\"\n\
+         design = {{ class = \"redundant\" }}\n",
+        diagonal(fr, rr),
+        fs[0],
+        fs[1],
+        fs[2]
+    )
+}
+
+/// Two ends across one gap from either side share one plate between the
+/// angles, each on its own face (before: a plate each, the two in the one
+/// gap running into each other).
+#[test]
+fn ends_across_one_gap_from_either_side_share_its_plate() {
+    let text = across_from_both_sides();
+    let r = run(&text, &settings());
+    let o = r.joints.iter().find(|o| o.joint == "N").unwrap();
+    let between: Vec<_> = o.plan.plates.iter().filter(|p| p.between).collect();
+    assert_eq!(between.len(), 1, "{:?} {:?}", o.plan.plates, o.hand);
+    let mut on = between[0].members.clone();
+    on.sort();
+    assert_eq!(on, ["R", "S"], "{:?} {:?}", o.plan, o.hand);
+    assert!(o.written && o.hand.is_empty(), "{:?}", o.hand);
+    // Drawn: one plate in the gap, R and S on its two faces, nothing runs
+    // into anything; a run again the same file.
+    let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
+    let j = d.joint("N").unwrap();
+    assert!(j.clashes.is_empty(), "{:?}", j.clashes);
+    assert_eq!(j.plates.iter().filter(|p| p.between).count(), 1);
+    let pd = j.plates.iter().find(|p| p.between).unwrap();
+    let n = pd.through.unwrap();
+    let side = |m: &str| {
+        let a = j.arrivals.iter().find(|a| a.member == m).unwrap();
+        assert!(!a.misfit, "{m}: {:?}", a.notes);
+        let p = a.profile.as_ref().unwrap();
+        let nb = if a.leg_y { p.axes[2] } else { p.axes[1] };
+        dot(nb, n).signum()
+    };
+    assert!(side("R") * side("S") < 0.0);
+    let again = run(&r.text, &settings());
+    assert_eq!(again.text, r.text);
+}

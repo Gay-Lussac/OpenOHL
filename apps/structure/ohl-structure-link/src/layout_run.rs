@@ -2103,6 +2103,9 @@ fn lay_out_once(
     let mut as_drawn_done: BTreeSet<String> = BTreeSet::new();
     let mut as_drawn_passes = 0;
     let mut as_drawn_plan: Option<Planned> = None;
+    // L17: the members whose turn, refused after writing, was tried with
+    // their joints planned without the plates between (once each).
+    let mut turn_nb_tried: BTreeSet<String> = BTreeSet::new();
     loop {
         for (m, x) in pending_turns.drain(..) {
             match x {
@@ -2248,7 +2251,9 @@ fn lay_out_once(
             });
         }
         let mut done = None;
+        let mut wrote = false;
         if useless.is_empty() {
+            wrote = true;
             let written = write_rounds(
                 &Rounds {
                     doc0: &doc0,
@@ -2608,6 +2613,85 @@ fn lay_out_once(
             done = Some(written);
         }
         if !useless.is_empty() {
+            // L17 (L16's question 2): a turn that helps no joint after
+            // writing, where a joint of its member was planned onto a plate
+            // between a built-up member's angles (L15) — the turns are
+            // weighed without them (L16) — is tried first with those joints
+            // planned without them (the run's guard, as for a joint laid out
+            // worse with them; planned with them again where that lays out
+            // less there), each member once; refused only if it still helps
+            // none.
+            if wrote && settings.between_plates {
+                let mut g = guard.borrow_mut();
+                let mut retry: BTreeSet<String> = BTreeSet::new();
+                for m in &useless {
+                    if turn_nb_tried.contains(m) {
+                        continue;
+                    }
+                    let js: Vec<&String> = members_here[m.as_str()]
+                        .iter()
+                        .filter(|j| {
+                            targets.contains(*j)
+                                && !g.no_between.contains(*j)
+                                && !g.plain.contains(*j)
+                                && !g.between_kept.contains(*j)
+                                && outcomes.iter().any(|o| {
+                                    &o.joint == *j
+                                        && o.plan
+                                            .notes
+                                            .iter()
+                                            .any(|n| n.contains(crate::joint_layout::BETWEEN_NOTE))
+                                })
+                        })
+                        .collect();
+                    if js.is_empty() {
+                        continue;
+                    }
+                    turn_nb_tried.insert(m.clone());
+                    retry.extend(js.into_iter().cloned());
+                }
+                if !retry.is_empty() {
+                    for j in &retry {
+                        let now = outcomes.iter().find(|o| &o.joint == j).map_or((0, 0), |o| {
+                            if o.written {
+                                (o.plan.ends.len(), o.plan.plates.len())
+                            } else {
+                                (0, 0)
+                            }
+                        });
+                        g.no_between.insert(j.clone());
+                        g.between_tried.insert(j.clone(), now);
+                        touched.insert(j.clone());
+                        if let Some(list) = nb_names.get(j) {
+                            let mut doc = planning.borrow_mut();
+                            let mut c = connection_edits::Connections::of(&doc);
+                            for (m, h) in list {
+                                run_named
+                                    .entry((m.clone(), j.clone()))
+                                    .or_insert_with(|| onto_in(&doc, m, j));
+                                let _ = c.set(
+                                    &mut doc,
+                                    m,
+                                    j,
+                                    "onto",
+                                    Some(&FieldValue::Word(h.clone())),
+                                );
+                            }
+                        }
+                    }
+                    drop(g);
+                    if settings.onto_search {
+                        (around_details, around_model) = crate::joints::joint_details_and_model(
+                            &text_of(&planning.borrow(), &keep_around),
+                            ask.library,
+                            ask.bolts,
+                            Some(&around),
+                        )?;
+                    }
+                    first = None;
+                    continue;
+                }
+            }
             for m in useless {
                 let at_joints: Vec<&str> = members_here[m.as_str()]
                     .iter()
