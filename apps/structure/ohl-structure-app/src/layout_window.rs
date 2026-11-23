@@ -608,6 +608,15 @@ impl StructureApp {
                     let settled = ohl_structure_link::weighed_turns::settle_turns(&text, &ask)?;
                     let weighed = settled.as_ref().map(|(_, r)| r.weighed.clone());
                     let text = settled.map_or(text, |(s, _)| s);
+                    // Every joint a turn kept reaches laid out with it.
+                    let mut joints = joints.clone();
+                    for w in weighed.iter().flatten().filter(|w| w.kept) {
+                        joints.extend(w.joints.iter().cloned());
+                    }
+                    let ask = RunAsk {
+                        joints: Some(joints.clone()),
+                        ..ask.clone()
+                    };
                     let before = ohl_structure_link::joint_details_at(
                         &text,
                         &lib,
