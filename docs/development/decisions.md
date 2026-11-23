@@ -30,10 +30,13 @@ yet; [theory](../theory/joint-layout.md#a-level-plate-across-two-horizontals-l20
   with the end nor with each other, neither bolting onto it, each with a
   flange in whose plane the end's axis lies (2°), their outer faces in one
   plane (normals within 2°, faces within the clash check's 1 mm). Named
-  onto the first (class, the wider, the id) in the run's planning copy:
-  where the end already lies flat on that plane, before a member running
-  through in whose flange's plane its axis lies; else after it, before
-  L13's name — both weighed as L13's names.
+  onto the first (class, the wider, the id) in the run's planning copy
+  only where nothing else is named for it (after a member running through
+  and L13's name; not within 10° of today's choice's flange), weighed as
+  L13's names. Measured, not kept: named before a member running through
+  wherever it already lay flat on that plane — 12 joints worse on four
+  private towers (a bracing member's name costing the plan member bolted
+  onto it).
 - **The plate** (`joint_layout::level_holds`): the flat plate on the first
   holder's level leg (L5o's own bolts onto it, grown along it as L15's
   plate between) gets bolts onto the second where both holders' level legs

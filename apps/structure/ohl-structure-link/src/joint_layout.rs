@@ -4458,21 +4458,6 @@ fn named_hosts_except(
                     .is_none()
                     .then(|| (a.member.clone(), h.member.clone(), false));
             }
-            // (L20) A level end lying flat already on two level legs in one
-            // plane (no turn needed, as it lies): its level plate before a
-            // member running through in whose flange's plane its axis lies
-            // (that would need it turned) — weighed as L13's names.
-            if level_plates
-                && !keep.contains(&a.member)
-                && let Some((h, _)) = level_pair(&j.arrivals, a)
-                && lies_flat_on(a, h)
-                && !j
-                    .arrivals
-                    .iter()
-                    .any(|c| c.member != a.member && angle_deg(a.direction, c.direction) > 160.0)
-            {
-                return Some((a.member.clone(), h.member.clone(), true));
-            }
             match host_in_plane(&j.arrivals, a) {
                 Some(h) if h0.is_none_or(|x| x.member != h.member) => {
                     Some((a.member.clone(), h.member.clone(), false))
@@ -4499,25 +4484,29 @@ fn named_hosts_except(
                                 c.member != b.member && angle_deg(b.direction, c.direction) > 160.0
                             })
                     });
-                    // (L20) A level end lying on no flange of today's
-                    // choice, two level angles ending here with their level
-                    // legs in its plane: onto the first, a level plate held
-                    // by both (the plan gives the second its bolts).
-                    if level_plates
-                        && level
-                        && !in_line
-                        && !near
-                        && !keep.contains(&a.member)
-                        && let Some((h, _)) = level_pair(&j.arrivals, a)
-                    {
-                        return Some((a.member.clone(), h.member.clone(), true));
-                    }
                     if plane_hosts
                         && !in_line
                         && !near
                         && (through_here || level)
                         && !keep.contains(&a.member)
                         && let Some(h) = host_ending_in_plane(&j.arrivals, a)
+                    {
+                        return Some((a.member.clone(), h.member.clone(), true));
+                    }
+                    // (L20) A level end lying on no flange of today's
+                    // choice nor of a member running through, none ending
+                    // here named for it by L13, two level angles ending
+                    // here with their level legs in its plane: onto the
+                    // first, a level plate held by both (the plan gives the
+                    // second its bolts). Only here: measured on the private
+                    // real towers, named before a member running through it
+                    // took ends from joints laid out whole.
+                    if level_plates
+                        && level
+                        && !in_line
+                        && !near
+                        && !keep.contains(&a.member)
+                        && let Some((h, _)) = level_pair(&j.arrivals, a)
                     {
                         return Some((a.member.clone(), h.member.clone(), true));
                     }
@@ -4608,32 +4597,6 @@ pub(crate) fn level_partner<'a>(
             })
         })
         .min_by(|x, y| (rank(x), width(x), &x.member).cmp(&(rank(y), width(y), &y.member)))
-}
-
-/// L20: a leg of end `a` lies flat (within [`FLAT_OFF`]) on the flange of
-/// `h` in whose plane its axis lies, as it is turned now — its leg bolted,
-/// or either leg of an equal angle whose leg bolted is not given.
-fn lies_flat_on(a: &Arrival, h: &Arrival) -> bool {
-    let (Some(pa), Some(f)) = (
-        a.profile.as_ref(),
-        crate::joints::host_flange_along(a, h, false),
-    ) else {
-        return false;
-    };
-    let Some(g) = pa.angle else {
-        return false;
-    };
-    let either = (g.b - g.h).abs() < 1e-9
-        && !matches!(a.leg.value, Some(ohl_structures::connections::BoltedLeg::Long | ohl_structures::connections::BoltedLeg::Short) if a.leg.known());
-    let legs: Vec<[f64; 3]> = if either {
-        vec![pa.axes[1], pa.axes[2]]
-    } else if a.leg_y {
-        vec![pa.axes[2]]
-    } else {
-        vec![pa.axes[1]]
-    };
-    let c = FLAT_OFF.to_radians().cos();
-    legs.iter().any(|l| dot(*l, f.out).abs() > c)
 }
 
 /// L20: the two holders of a **level plate** for end `a` — `a` level

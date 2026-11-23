@@ -3514,20 +3514,17 @@ normals within 2°, their faces within the clash check's tolerance (1 mm)
 of each other at the joint. Of such pairs the first by class, then the
 wider, then the id; the plate lies on the first, its own bolts onto both.
 The run names the first for the end (in its planning copy, as L13 names a
-member):
-
-1. an end whose leg already lies flat on that plane (no turn needed; an
-   equal angle whose leg bolted is not given: either leg) — before a
-   member running through the joint in whose flange's plane its axis lies
-   (that one would need the end turned, and its other ends refuse most
-   such turns);
-2. any other such end — after a member running through, before L13's
-   name.
-
-Both kinds are weighed as L13's names (the run's as-drawn pass plans the
-joint again without them and keeps the plan without where it is not
-better; a name whose turn no one roll gives with the member's other ends
-is taken back).
+member) only where nothing else is named for it: its axis in no flange's
+plane of today's choice nor of a member running through the joint, not
+within 10° of today's choice's flange (a bent plate lays most of those
+out), and no member ending there named by L13. Weighed as L13's names (the
+run's as-drawn pass plans the joint again without them and keeps the plan
+without where it is not better; a name whose turn no one roll gives with
+the member's other ends is taken back). *Measured, not kept*: naming it
+before a member running through wherever it already lay flat on the
+level legs took an end from joints laid out whole (12 joints worse on four
+private towers, a bracing member's name costing the plan member bolted
+onto it).
 
 **The plate** (`joint_layout::level_holds`). The plan lays the end onto
 the first holder's level leg as any end onto a member: directly where its

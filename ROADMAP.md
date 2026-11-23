@@ -3591,9 +3591,8 @@ only where it helps):
   end lying on no flange of what it bolts onto, where two other level
   single angles ending at the joint (not in line) have their level legs'
   outer faces in one plane with its axis (normals within 2°, faces within
-  1 mm), is named onto the first (before a member running through where it
-  already lies flat on that plane, else after it; weighed joint by joint as
-  L13's names); the flat plate the plan lays there (held by its own
+  1 mm), is named onto the first where nothing else is named for it
+  (weighed joint by joint as L13's names); the flat plate the plan lays there (held by its own
   provisional bolts onto the first, grown along it) gets its own
   provisional bolts onto the second where both holders' level legs are
   still in one plane as drawn (each moved as the plan moves it), placed as
