@@ -148,11 +148,34 @@ pub struct LayoutRecord {
     /// roll each had before (as written) and as what (a leg or chord, a
     /// plan member).
     pub oriented: BTreeMap<String, (String, crate::OrientKind)>,
+    /// O44 L19: the turns Orient angles set from the joints' planes
+    /// ([`crate::plane_rolls`]) and not weighed yet: member → the roll it
+    /// had before the turn and the roll written with it (both as written),
+    /// its run's kind (`leg`, `chord`, `bracing`) and its run (the run's
+    /// first member). The next layout run weighs each run's turn over every
+    /// joint its members reach and keeps it only where that lays out better
+    /// ([`crate::weighed_turns`]); the rows go with that run.
+    pub plane_turns: BTreeMap<String, PlaneTurnRow>,
     /// The option **estimated eccentricities** (O45, owner 2026-11-19;
     /// `estimated_eccentricities = true`, written only when on): at level
     /// 3 the analysis takes the member ends' eccentricities the layout's
     /// planner estimates ([`crate::eccentricities`]); off by default.
     pub estimated: bool,
+}
+
+/// A turn from the joints' planes not weighed yet (O44 L19, the layout
+/// record's `plane_turns`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaneTurnRow {
+    /// The roll before the turn, as written (empty: none).
+    pub before: String,
+    /// The roll written with the turn, as written (the row counts only
+    /// while the member's roll is still exactly this).
+    pub with: String,
+    /// Its run's kind (`leg`, `chord`, `bracing`).
+    pub kind: String,
+    /// Its run (the run's first member).
+    pub run: String,
 }
 
 /// The settings a run is made with, as the record keeps them.
@@ -378,6 +401,19 @@ impl LayoutRecord {
                 r.hand.insert(row[0].clone(), row[1].clone());
             }
         }
+        for row in rows("plane_turns") {
+            if row.len() == 5 {
+                r.plane_turns.insert(
+                    row[0].clone(),
+                    PlaneTurnRow {
+                        before: row[1].clone(),
+                        with: row[2].clone(),
+                        kind: row[3].clone(),
+                        run: row[4].clone(),
+                    },
+                );
+            }
+        }
         for row in rows("oriented") {
             if row.len() == 3
                 && let Some(k) = crate::OrientKind::parse(&row[2])
@@ -396,6 +432,7 @@ impl LayoutRecord {
             && self.rolled.is_empty()
             && self.hand.is_empty()
             && self.oriented.is_empty()
+            && self.plane_turns.is_empty()
             && self.provisional.is_empty()
     }
 
@@ -550,6 +587,25 @@ impl LayoutRecord {
                     ),
                 );
             }
+            if !self.plane_turns.is_empty() {
+                t.insert(
+                    "plane_turns",
+                    list(
+                        self.plane_turns
+                            .iter()
+                            .map(|(m, r)| {
+                                vec![
+                                    m.clone(),
+                                    r.before.clone(),
+                                    r.with.clone(),
+                                    r.kind.clone(),
+                                    r.run.clone(),
+                                ]
+                            })
+                            .collect(),
+                    ),
+                );
+            }
             a.push(t);
         }
         if !a.is_empty() {
@@ -617,6 +673,11 @@ pub struct LayoutRun {
     /// applied by the run (Joint details' Solve the clashes offers the turn
     /// with its effect).
     pub leg_rolls: Vec<crate::LegRoll>,
+    /// O44 L19: the turns weighed by this run (from the joints' planes set
+    /// by Orient angles, [`LayoutRecord::plane_turns`]): each kept only
+    /// where every joint its members reach is laid out better, else taken
+    /// back and offered ([`crate::weighed_turns`]); empty: none weighed.
+    pub weighed: Vec<crate::weighed_turns::WeighedTurn>,
 }
 
 impl LayoutRun {
@@ -649,8 +710,26 @@ pub struct RunAsk<'a> {
     pub replace_hand: bool,
 }
 
-/// The layout run on `text` (a structure file) as `ask` says.
+/// The layout run on `text` (a structure file) as `ask` says. O44 L19: the
+/// turns from the joints' planes Orient angles set and the record lists
+/// ([`LayoutRecord::plane_turns`]) weighed first, each kept only where
+/// every joint it reaches is laid out better
+/// ([`crate::weighed_turns::weigh_turns`], [`LayoutSettings::weigh_turns`]).
 pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
+    if ask.settings.weigh_turns && text.contains("plane_turns") {
+        let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+            .map_err(|e| e.message)?;
+        let cands = crate::weighed_turns::candidates_for(&t, ask.joints.as_ref());
+        if !cands.is_empty() {
+            return crate::weighed_turns::weigh_turns(text, &cands, ask);
+        }
+    }
+    lay_out_plain(text, ask)
+}
+
+/// [`lay_out`] without weighing the turns the record lists: the file's
+/// rolls as they are.
+pub(crate) fn lay_out_plain(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     if ask.settings.chord_turns {
         return chord_turned(text, ask);
     }
@@ -2248,6 +2327,7 @@ fn lay_out_once(
                 in_line: in_line.clone(),
                 splices: splices.clone(),
                 leg_rolls: leg_rolls.clone(),
+                weighed: Vec::new(),
             });
         }
         let mut done = None;
@@ -2789,6 +2869,7 @@ fn lay_out_once(
             in_line: in_line.clone(),
             splices: splices.clone(),
             leg_rolls: leg_rolls.clone(),
+            weighed: Vec::new(),
         });
     }
 }
@@ -4544,7 +4625,7 @@ struct Checked {
 }
 
 /// Member `m`'s roll written as `text` (empty: none), exactly.
-fn put_roll(doc: &mut DocumentMut, m: &str, text: &str) {
+pub(crate) fn put_roll(doc: &mut DocumentMut, m: &str, text: &str) {
     if let Some(e) = doc
         .get_mut("member")
         .and_then(Item::as_array_of_tables_mut)

@@ -3518,6 +3518,129 @@ only where it helps):
   > Recommended: keep (no format change). (6) Face members turned from their
   > planes too, after legs and chords (+60 against +31 whole on six towers)
   > → Recommended: keep, with (1)'s weighing.
+- [x] L19. **Turns weighed over every joint they reach** (L18's questions
+  1 and 2; the owner's rule of 2026-11-22, "when turning a member both
+  sides should be reverified"; the owner busy: built on its own,
+  reported). **Built 2026-11-23, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#turns-weighed-over-every-joint-they-reach-l19),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#orient-angles),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-joint-layout-turns-weighed-over-every-joint-they-reach-l19);
+  the layout record's `plane_turns`, no version change). **1. Weighed
+  automatic turns**: Orient angles lists each run it turns from the
+  joints' planes (roll before and with); the next layout run weighs them —
+  every turn taken back (the base), then the legs' and chords' runs, then
+  the face members', each kept only where every joint its members reach is
+  laid out no worse and one better, and where no joint elsewhere laid out
+  worse meets a member the layout turned otherwise beside it (a bracing's
+  one roll turned for its end at the turned member); laid out again with
+  only the turns kept until they all still help. A turn refused: its roll
+  back, said, offered in Lay out joints; a turn weighed only by a run
+  laying out every joint it reaches; Lay out joints weighs once per
+  preview on the whole tower. On the 78 private towers (the bundled
+  plugin; L17 main and L18 main reproduced exactly):
+
+  | | L17 main | L18 main (unweighed) | weighed | its base |
+  |---|---|---|---|---|
+  | joints whole | 37 315 | 38 042 | 37 796 | 37 434 |
+  | member ends laid out | 133 265 | 135 259 | 135 194 | 133 610 |
+  | plates | 69 295 | 69 840 | 69 763 | 69 211 |
+  | members left after the clash rounds | 11 179 | 11 670 | 11 179 | 11 177 |
+  | not fitting as given | 48 | 46 | 46 | 48 |
+  | joints better / worse than L17 | — | 3 461 / 2 400 | 1 679 / 122 | 225 / 80 |
+  | joints better / worse than L18 | | — | 2 391 / 1 946 | |
+
+  | every third tower (26) | L17 main | L18 main | weighed | both weighed (L11's turns too) |
+  |---|---|---|---|---|
+  | joints whole | 12 161 | 12 382 | 12 304 | 12 342 |
+  | member ends laid out | 42 967 | 43 587 | 43 572 | 43 797 |
+  | plates | 22 232 | 22 409 | 22 368 | 22 314 |
+  | joints better / worse than L17 | — | 1 083 / 768 | 539 / 43 | 828 / 90 |
+
+  Weighed keeps 66 % of the joints whole the turns gained and 97 % of the
+  ends; of its 122 joints worse than L17, 44 are worse than its base (no
+  turn reaches them, no member turned otherwise meets them), the rest where
+  the base differs from L17 (pieces confirmed one part after the turns;
+  runs one part with a piece not listed, left as written). Kept: 18 of 156
+  legs' runs, 462 of 1 938 chords', 684 of 18 519 face members'. Groups: a
+  body's member running on with plan members a few degrees out whole 255
+  → 692 (L18) → 406 of 1 281; the unweighed turns' losses gone (a built-up
+  leg with bracing in plane 413 → 338 → 411 of 560). A run again identical
+  8 of 8. The time per tower (six towers, twice, load 2.6–7.6): the layout
+  after Orient angles median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s
+  weighed (about five and a half layouts), 426.7 / 433.9 s both weighed —
+  once per imported tower. **2. Not built** (time): a level or bent plate
+  across two horizontals (L17's question 5) — counted: 6 793 plan and hip
+  ends off their host's flange with no roll laying them flat, 5 092 of them
+  where two other horizontals (or one and a leg) meet; 3 282 with their
+  axis out of the host's face.
+  **3. Plates with several bends and welded assemblies of several plates**
+  (the owner, 2026-11-23, asked about them: "go ahead to improve").
+  **3a. Measured** (the weighed column, all 78 private towers; the reason
+  the layout gives for each member end it leaves — an upper bound: every
+  such end taken as laid out, nothing checked yet): 6 780 ends refused
+  because a plate welded in their own plane would have their outstanding
+  leg stand on the flat plate (it points into the flange: a flap in their
+  plane does not free it — the member would need half a turn, which its
+  other end refuses, or a stand-off holding the flap clear; up to 1 062
+  joints whole); 5 674 because that plate would put their axis farther out
+  of the flange than one plate's thickness (the rule keeping the line of
+  action within what the analysis takes; 5 065 of them within 40 mm, 1 806
+  with their leg at most 15° off the flange, where a joggle — two bends —
+  could bring the axis back; up to 656 joints whole); 7 266 on
+  a flange's inner face running towards the other leg (a plate wrapping
+  the leg; up to 1 525 joints whole); 9 961 whose axis runs out of the
+  host's face (up to 2 305 joints whole); the first three kinds together:
+  up to 5 130 joints whole. Plan and hip ends among them: 2 889, 2 270,
+  1 490 and 2 656. The format: a chain of bends (a flat bent from a bent
+  flat) reads as one part of its flats, each bend on the flat naming it,
+  drawn flat by flat, weighed from the developed area and checked bend by
+  bend (tested on an invented joint); a welded assembly is every plate
+  joined by `welded_to`, any number. **3b. Not built**: what was measured
+  does not support the two forms as asked — a flap in the member's plane
+  does not free an outstanding leg pointing into the flange, and a joggle
+  does not take out a tilt (most of the second kind are more than 15° off)
+  — so nothing was built on a guess (the owner's question below).
+  > **Owner:** (1) The automatic turns weighed in the run (the owner's
+  > rule): 66 % of the joints whole and 97 % of the ends the unweighed
+  > turns gained, 122 joints worse than L17 instead of 2 400 — at the cost of
+  > the layout run laid out about five and a half times (once, after
+  > Orient angles) → Recommended: keep as the default; the time is paid
+  > once per imported tower. (2) Both weighed (L11's turns as a stage
+  > between legs and chords and face members): the most member ends on
+  > fewer plates, 90 worse than L17 → Recommended: keep L11's turns
+  > proposals (never automatic, as decided); next, offer "weigh the
+  > leg-rotation check's turns too" as a tick in Lay out joints with this
+  > measured effect. (3) The guard past the turned members (a joint
+  > elsewhere worse where a member the layout turned otherwise beside it
+  > meets) and a joint's wholeness in the guard → Recommended: keep (44
+  > joints worse than the base remain, where nothing turned meets them).
+  > (4) The base differs from L17 (80 worse, 225 better): pieces in line
+  > confirmed one part after Orient angles average their rolls with the
+  > turns in → Recommended: next, Orient angles' runs joined as one-part
+  > proposals join pieces (in line within 1°, rolls within 2°), so that a
+  > chain and its run share one turn. (5) The time (a layout run about
+  > five and a half times) → Recommended: accept (quality before speed);
+  > next, if it matters, weigh a stage's turns on the joints they reach and
+  > one ring around (measured equal to the whole first). (6) A level plate
+  > across two horizontals (L17's question 5) not built: up to 5 092 plan
+  > and hip ends where two horizontals or one and a leg meet → Recommended:
+  > next as its own step: a plate held by two members (a format field,
+  > `[plate.also_bolts]`, version 26), drawn, clash-checked, its holding
+  > bolts on both members checked as holding bolts (L14's force path),
+  > weighed per joint. (7) Plates with several bends and welded assemblies
+  > (item 3): the format already carries them (a chain of bends tested);
+  > the ends they could take are many (up to 5 130 joints whole) but the
+  > largest kind, an outstanding leg pointing into the flange (6 780 ends),
+  > is not freed by a flap in the member's plane, and a joggle helps only
+  > the ends at most 15° off (1 806) → Recommended: next, (a) the axis
+  > offset of a plate in the member's own plane taken into the analysis
+  > (the estimated eccentricities, O45) instead of refusing it beyond a
+  > plate's thickness — most of the 5 674, the plate already drawn and
+  > checked; (b) the joggle for the ends at most 15° off; (c) the
+  > outstanding leg into the flange: a stand-off (a welded assembly of
+  > three parts) or a half turn — the owner to choose; each weighed per
+  > joint with the fabrication order direct → one plate → one bend →
+  > several bends → welded (fewer parts, no weld to inspect, first).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
@@ -4287,9 +4410,10 @@ or three, L four or more. The phases, in order:
   country: a whole route exported in 0.25 s (7.7 MB, 15 other lines near), bundles of 20 / 500 changes brought back in 0.29 / 0.66 s, the country as one model opened with its branches 20.8 → 4.7 s; moves, replicas, joining again and the start as with main's code.
   Left: ~~OHL-Design's Offline copy menu for a network~~ (built
   2026-11-21, phase 16); the export on a thread of its own (built with
-  phase 14); OHL-Design's
-  check windows using a file's neighbours; a revision of main's changes
-  made by the server so any designer can export.
+  phase 14); ~~OHL-Design's
+  check windows using a file's neighbours~~ (built 2026-11-23, below);
+  ~~a revision of main's changes made by the server so any designer can
+  export~~ (built 2026-11-23, below).
   > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
   > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); question 6, the export on a thread of
   > its own, still to build: see phase 13; the recommendation after the
@@ -4499,10 +4623,9 @@ or three, L four or more. The phases, in order:
   the window stays usable).
   Left: the web viewer's glue driven in a real browser against a real
   provider (its script tested in Node.js; the page checked to parse);
-  OHL-Design's check windows using an offline file's neighbours (the
-  window runs the network's checks; the check windows still run on the
-  file alone); a server setting naming a token endpoint on another
-  origin, if a real provider needs it.
+  ~~OHL-Design's check windows using an offline file's neighbours~~
+  (built 2026-11-23, below); a server setting naming a token endpoint on
+  another origin, if a real provider needs it.
   > **Owner:** (to answer, 2026-11-21; the recommendation after the arrow)
   > 1. The web viewer's tokens in the page's memory only, a reload signing
   > in again? → yes, as built (a session storage of tokens only if users
@@ -4556,6 +4679,80 @@ or three, L four or more. The phases, in order:
   upgrades are marked done once every line is (tested on an invented
   project of the same shape: refused before, open after). The real line
   refused in phase 14 now imports (measured locally only).
+- [x] Follow-up of 2026-11-23 (S): phase 16's and phase 12's "left" —
+  **OHL-Design's check windows with an offline file's neighbours**
+  (owner, 2026-11-23: "go ahead with the server too"). **Built
+  2026-11-23, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-country-server-the-check-windows-with-an-offline-files-neighbours),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/offline-working-set.md#checks-with-the-exports-neighbours)):
+  on an offline working set's file, **the Clearances window's rules to
+  other lines take the export's other lines** — those within the rules'
+  reach solved in every position checked with their own lines' settings
+  and wire libraries (the library built by the network's code) — and
+  find the same pairs at the same distances as the network's own check
+  on the file (tested against a local network's server, a synthetic
+  country of 150 pylons with a tower shared by two lines); **never
+  silently**: a block before Run and the report's lines say the export's
+  date (and number), the lines read, those within reach, and that they
+  **may be stale** — with what changed while the file was written when
+  OHL-Design wrote it (the server's answer kept in the file as the
+  application setting `app.offline_export`; the format unchanged);
+  **NOT ALL CHECKED** in red for what the file cannot give (neighbours
+  left out, a reach beyond the export, a neighbour not solved, case pairs
+  to other lines), and **the verdict never *Every rule met* then** (also
+  fixed for a joined working set's replica, where it was a note under a
+  ✔). **Structure loads, the fields and plugins name the export's
+  neighbours** (the shared towers, the lines within 500 m, those within a
+  plugin's reach), NOT ALL CHECKED, pointing to the Offline working set
+  window's checks; **found**: the field windows on a joined replica said
+  nothing of the neighbours not pulled in — they now do. Measured on the
+  synthetic country of 300 pylons (two runs, a shared machine): a
+  route's clearances (one weather case, its rules to other lines and
+  between its wires) 3.5–3.9 s on the file alone → 5.8–7.3 s with its 2
+  neighbour lines (OHL-Design's window); the network's own check on the
+  same file 5.2–5.6 s.
+  Left: the loads on shared towers and the magnetic field computed with
+  the export's neighbours in the windows themselves (now in the Offline
+  working set window only); rules to other lines across weather cases.
+  > **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+  > 1. Structure loads, the fields and plugins name the export's
+  > neighbours (NOT ALL CHECKED) instead of adding them; the Offline
+  > working set window adds them for the loads on shared towers and the
+  > magnetic field? → yes for now; next, those two computed with them in
+  > the windows themselves by the network's code.
+  > 2. The server's answer on the export kept in the exported file as an
+  > application setting (not in the line, its revisions or a bundle)? →
+  > yes.
+  > 3. The neighbours solved in the weather case and wind position of this
+  > line's check, each with its own settings and wires? → yes, as the
+  > network's checks.
+  > 4. Rules to other lines across weather cases still not in the window,
+  > NOT ALL CHECKED when the export's neighbours are there? → yes, until
+  > the network's checks take case pairs.
+  > 5. The verdict NOT ALL CHECKED whenever a reason holds, also on a
+  > network's working set joined? → yes.
+- [x] Follow-up of 2026-11-23, second (S): phase 12's last "left" — **a
+  revision of main's changes made by the server so any designer can
+  export** (phase 12's question 2, approved 2026-11-20: "a revision of
+  main made by the server itself (audited) when someone exports, next").
+  **Built 2026-11-23, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-country-server-a-revision-of-main-made-by-the-server-so-any-designer-can-export)):
+  main's unrecorded changes are recorded before an export as a revision
+  by the network's server (`network:server`, a name no user can have),
+  after the export's own rights checks, audited under the exporter's
+  name (*server revision*), broadcast as any commit, on a protected main
+  too (it moves nothing); before, the exporter recorded them and a
+  route's designer was refused while others' changes were unrecorded.
+  Tested on PostgreSQL: such a designer's export, refused before, goes
+  out on the server's revision.
+  > **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+  > 1. The server's revision also on a protected main (it records what
+  > main holds; no review)? → yes: it changes nothing a review would
+  > look at.
+  > 2. Always the server's revision, even when the exporter could record
+  > every change themselves? → yes: one author for main's bookkeeping,
+  > the exporter named in the message and the audit.
+  > 3. Its author `network:server` (not a user)? → yes.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

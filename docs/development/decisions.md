@@ -74,6 +74,211 @@ no file format change):
   1.55), most bracing relieved, the solve 16 times slower (33 passes). The
   tower program's results match the model without the options (0.1 %).
 
+## 2026-11-23 (country server: a revision of main made by the server so any designer can export)
+
+**Main's unrecorded changes recorded by the network's server itself
+before an offline export** (ROADMAP O17: phase 12's "left"; the owner's
+question 2 of phase 12, answered 2026-11-20 "go ahead with
+recommendations": "yes for now; a revision of main made by the server
+itself (audited) when someone exports, next — so any designer can
+export"; built, in active development, not approved yet;
+[the user guide](../user-guide/server.md#offline-working-sets-phase-12-in-active-development)).
+
+- **Before**: an export's base must be a revision, so main's changes not
+  yet recorded were recorded first **by the exporter** — by phase 11's
+  rule for a commit (it records only what its user may edit): a
+  designer of one route could not export while anyone had left an
+  unrecorded change elsewhere on main ("ask whoever may edit them all to
+  commit the main line").
+- **Now** the network's server records them itself: a revision of main
+  whose **author is `network:server`** (a name no user can have: users'
+  names hold no ':'), message "Recorded by the network's server for an
+  offline working set of USER", in its own unit of work, broadcast as
+  any commit; **audited under the exporter's name** (*server revision*),
+  after the export's own checks of rights (the working set seen whole,
+  export on each of its objects, something editable on each route) —
+  nothing is recorded for a user the export refuses. It records only
+  what main holds already (each edit allowed by the rules when it was
+  made); it moves nothing, gives the exporter nothing more (the file
+  holds only what they may see), and is made **on a protected main too**
+  (decided as recorded: the session's rule for a protected branch is for
+  changes; this revision changes nothing — the owner's question 1
+  below). The session sees the server's author as an admin of every
+  model (`ModelRoles`), for this one act.
+- **Tested** on PostgreSQL (`offline_working_sets_go_out_and_come_back`):
+  the designer of one route exports while main has never been recorded
+  (refused before): the export goes out, its base is main's new head, a
+  revision by `network:server` naming her, in the audit under her name;
+  her next export records nothing first.
+
+> **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+> 1. The server's revision also on a protected main (it records what main
+> holds; no review)? → yes: it changes nothing a review would look at.
+> 2. Always the server's revision, even when the exporter could record
+> every change themselves? → yes: one author for main's bookkeeping,
+> the exporter named in the message and the audit.
+> 3. Its author `network:server` (not a user)? → yes.
+
+## 2026-11-23 (country server: the check windows with an offline file's neighbours)
+
+**OHL-Design's check windows read an offline working set's neighbours**
+(ROADMAP O17: phase 16's and phase 12's "left"; the owner, 2026-11-23:
+"go ahead with the server too"; built, in active development, not
+approved yet; [the user guide](../user-guide/offline-working-set.md#checks-with-the-exports-neighbours)).
+Before, the Offline working set window ran the network's checks with
+the neighbours an offline file holds, but the ordinary check windows ran
+on the file alone (the rules to other lines skipped, "checked by `ohl
+line --other-line`").
+
+- **The Clearances window's rules to other lines** take the export's
+  other lines: those whose sections' structures come within the rules'
+  reach of the checked wires (the reach as the network's checks work it
+  out — every voltage the neighbours have, at the highest point — plus
+  30 m for the arms and the network's largest span margin: more
+  candidates, never fewer), each solved in **every position checked**
+  (each weather case and wind position, by the rules' calculation) with
+  **its own line's settings and wire library** — the library built by
+  the network's own code (`ohl_server::offline_checks::neighbour_wires`,
+  as `check_offline` builds it: its wire files, else the shipped
+  library). Their wires are named `LINE:SECTION`. **Tested**: on the same
+  offline file (a synthetic country of 150 pylons with a tower shared by
+  two lines, exported through OHL-Design's window from a local network's
+  server), the rule to other lines finds **the same pairs at the same
+  distances** (within 1e-6 m) as the network's own check on it.
+- **Never silently**: the window's block *Offline working set:
+  neighbours from its export* before Run (its (?) and User guide ↗), and
+  the report's lines after it: the export's date (and its number when
+  OHL-Design wrote the file), the lines read (their sections), those
+  within the rules' reach, and **that they may be stale** (in the warning
+  colour). **The stale export's logic re-used**: the Offline working set
+  window keeps the server's answer (`stale`, `changed_meanwhile`) in the
+  file it writes, as the application setting `app.offline_export` — not
+  part of the line, not in its revisions, not in a bundle — and the
+  check windows say *STALE already when exported: N object(s) …* or that
+  nothing changed while it was written; a file written by `ohl network
+  export-working-set` does not know (said).
+- **NOT ALL CHECKED**, in red, for: neighbours left out of the export
+  (the user may not see them), a rule reaching farther than the export's
+  reach or outside its area, a neighbour line not solved, a neighbour's
+  wire file not read, a rule to other lines across weather cases (case
+  pairs: not in this window). **The verdict** then says *NOT ALL
+  CHECKED — no violation among what was checked* instead of *Every rule
+  met* — also for a network's working set joined (its "neighbours not
+  pulled in" was a note under a ✔ before: found and fixed).
+- **Decided as conservative** (the owner's questions below): **Structure
+  loads, the fields and plugins name the neighbours instead of adding
+  them** — the towers shared with another line of the export (the same
+  type within 0.5 m, as the network finds twins), the lines within 500 m
+  (the network's field distance), the lines within a plugin's declared
+  reach — NOT ALL CHECKED for them, with where they are computed (the
+  Offline working set window's *Loads on shared towers* and *Magnetic
+  field*; for the electric field nothing yet: NOT ON THE SAFE SIDE where
+  they come near). Nothing near: said, complete for neighbours. **Found**:
+  the field windows on a network's working set joined said nothing of
+  the neighbours not pulled in; they now say it (phase 10's note).
+- **Measured** on the synthetic country of 300 pylons (two runs, a
+  shared machine): a route's clearances (one weather case, its rules to
+  other lines and between its wires) 3.5–3.9 s on the file alone,
+  5.8–7.3 s with its 2 neighbour lines (in OHL-Design's window); the
+  network's own check on the same file 5.2–5.6 s. The neighbours' wires
+  taken as targets are those within the rules' reach of a checked wire
+  in plan (as the network's checks take them).
+- **The desktop format unchanged**: one application setting key added
+  (the settings are free keys, documented in the data model).
+
+> **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+> 1. Structure loads, the fields and plugins name the export's
+> neighbours (NOT ALL CHECKED) instead of adding them; the Offline
+> working set window adds them for the loads on shared towers and the
+> magnetic field? → yes for now; next, those two computed with them in
+> the windows themselves by the network's code.
+> 2. The server's answer on the export kept in the exported file as an
+> application setting (not in the line, its revisions or a bundle)? →
+> yes.
+> 3. The neighbours solved in the weather case and wind position of this
+> line's check (the same weather at the same place), each with its own
+> settings and wires? → yes, as the network's checks.
+> 4. Rules to other lines across weather cases still not in the window,
+> NOT ALL CHECKED when the export's neighbours are there? → yes, until
+> the network's checks take case pairs.
+> 5. The verdict NOT ALL CHECKED whenever a reason holds, also on a
+> network's working set joined? → yes.
+
+## 2026-11-23 (joint layout: turns weighed over every joint they reach, L19)
+
+**The turns Orient angles sets from the joints' planes are weighed by the
+layout run: each kept only where every joint its members reach is laid
+out no worse and one better, else taken back and offered** (roadmap O44
+L19, L18's questions 1 and 2 and the owner's rule of 2026-11-22, "when
+turning a member both sides should be reverified"; the owner busy: built
+on its own, reported; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#turns-weighed-over-every-joint-they-reach-l19)).
+
+- **Listed by Orient angles** (format: the layout record's `plane_turns`
+  [[member, roll before, roll with, kind, run]] — written only when there
+  are rows, no version change; an older OHL-Structure drops them and the
+  turns stay as written, unweighed): each run it turns from the planes.
+  A row counts only while the member's roll is the one written with the
+  turn (changed since: the user's, never taken back); pieces confirmed one
+  part (their rolls averaged) average the rolls before alike, so that
+  taking the turns back leaves them one roll; runs written one part are
+  weighed as one, a run one part with a piece not listed is left as
+  written; Orient angles from the outline alone takes the rows of what it
+  sets.
+- **Weighed by the layout run** (`LayoutSettings::weigh_turns`, on;
+  `ohl_structure_link::weighed_turns`): the base (every turn taken back),
+  then stage by stage — legs and chords, then face members — each turn
+  kept only where every joint its members reach lays out no worse than
+  before the stage (no fewer ends, not as many on more plates, not whole
+  lost) and one better (the run's guard, a joint's wholeness added), and
+  where no joint
+  elsewhere laid out worse meets a member the layout turned otherwise
+  beside it (a bracing's one roll turned for its end at the turned member);
+  laid out again with the turns kept until they all still help (at most
+  four layouts more per stage). A turn only by a run laying out every joint
+  it reaches. The rows go with the run (a run again lays out the same).
+  Lay out joints weighs once per preview on the whole tower (the proposals'
+  effects laid out from the file so settled, every joint a turn kept
+  reaches laid out with it); the turns taken back are said in the notes
+  and offered by the window beside the other proposals.
+- **Measured** (the 78 private towers; L17 main and L18 main reproduced):
+  L17 → L18 unweighed → weighed: joints whole 37 315 → 38 042 → 37 796,
+  member ends 133 265 → 135 259 → 135 194, plates 69 295 → 69 840 →
+  69 763, members left after the clash rounds 11 179 → 11 670 → 11 179,
+  joints better / worse than L17 3 461 / 2 400 → 1 679 / 122 (44 of them
+  worse than the weighing's base, where no turn reaches and no member
+  turned otherwise meets; the rest the base's own: pieces confirmed one
+  part after the turns). Both weighed (the leg-rotation check's turns too,
+  every third tower, 26): whole 12 161 → 12 382 → 12 342 (weighed 12 304),
+  ends 42 967 → 43 587 → 43 797, plates 22 232 → 22 409 → 22 314, 828 / 90
+  (L18 1 083 / 768). A run again identical on 8 of 8 towers. The time per
+  tower (six towers, twice, load 2.6–7.6): the layout after Orient angles
+  median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s weighed (about five and
+  a half layouts), 426.7 / 433.9 s both weighed — once per imported tower.
+  Owner questions in the roadmap.
+- **The owner, 2026-11-23**: asked about plates with several bends and
+  welded assemblies of several plates — "go ahead to improve" (roadmap O44
+  L19, item 3). Measured first (an upper bound from the reasons the layout
+  gives for the ends it leaves, the weighed column, 78 private towers):
+  6 780 ends whose own-plane welded plate would have their outstanding leg
+  stand on the flat plate (not freed by a flap in their plane), 5 674 whose
+  axis that plate would put more than a plate's thickness out (a joggle:
+  two bends), 7 266 on an inner face towards the other leg (a plate
+  wrapping the leg) — up to 5 130 joints whole if all were laid out. The
+  format carries a chain of bends (tested: read as one part, drawn,
+  weighed and checked bend by bend) and welded assemblies of any number of
+  plates. Nothing built: a flap in the member's plane does not free an
+  outstanding leg pointing into the flange, and a joggle does not take out
+  a tilt (most of the second kind are more than 15° off); the axis offset
+  taken into the analysis recommended first (owner question in the
+  roadmap).
+- **Not built**: a level or bent plate across two horizontals (L17's
+  question 5, the roadmap's item 2) — counted only: 6 793 plan and hip
+  ends lie off their host's flange with no roll laying them flat, 5 092 of
+  them at a joint where two other horizontal members (or one and a leg)
+  meet (an upper bound of what it could take); 3 282 have their axis out
+  of the host's face.
+
 ## 2026-11-23 (joint layout: lay out by planes first, rolls from the joints' planes, L18)
 
 **The owner's decisions of 2026-11-22** (roadmap O44 L18; the owner: "the

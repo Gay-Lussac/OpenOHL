@@ -122,6 +122,9 @@ pub mod solve;
 #[cfg(test)]
 mod solve_tests;
 mod volumes;
+pub mod weighed_turns;
+#[cfg(test)]
+mod weighed_turns_tests;
 mod welds;
 pub mod whole_roll;
 #[cfg(test)]
@@ -154,9 +157,9 @@ pub use joints::{
     joint_details, joint_details_at, part_chains, similar_joints,
 };
 pub use layout_run::{
-    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, ONTO_HAND, RECORD_ID, RECORD_KIND,
-    RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out, lay_out_whole,
-    plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
+    END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, ONTO_HAND, PlaneTurnRow,
+    RECORD_ID, RECORD_KIND, RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out,
+    lay_out_whole, plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
 };
 pub use leg_roll::{LegRoll, RollEstimate, leg_rolls, piece_rolls};
 pub use leg_splices::{LegSplice, leg_splices};

@@ -94,6 +94,7 @@ mod next_steps;
 mod notices;
 mod octree;
 mod offline_copy;
+mod offline_neighbours;
 mod perf;
 mod phase_distance;
 mod placed_editor;

@@ -26,7 +26,10 @@ the window checks them too, at the wind positions it solves (the vertical
 and radial windows check those on the swing arc as well). Rules to the
 wires of **other lines** are not run here: the results list them as
 skipped, and `ohl line --other-line` checks them
-([Without the window](#without-the-window)).
+([Without the window](#without-the-window)) — except on an **offline
+working set's file**, whose export holds the other lines near: there
+they take those lines' wires, said in the window
+([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
 
 ![Wire-to-wire clearance: two wires, their closest approach surface to surface, the exclusion near the ends, the pair's voltage and a weather case pair](../images/check-windows/3-wire-to-wire-clearance.svg)
 
@@ -265,7 +268,7 @@ a `[[rule]]` table. A rule needs a `name`, a `target` and at least one of
 | In the window | In the rule file | Unit | Default | Meaning |
 |---|---|---|---|---|
 | Name | `name` | — | "Rule n" | the rule's name in the results |
-| Add rule… (its kind) | `target` | `"same_line"`, `"other_lines"`, `"ground"`, `"points"` | — | between the wires of this line; to other lines' wires (`ohl line --other-line` only); to the ground; to LiDAR points |
+| Add rule… (its kind) | `target` | `"same_line"`, `"other_lines"`, `"ground"`, `"points"` | — | between the wires of this line; to other lines' wires (`ohl line --other-line`, or here on an offline working set's file with its export's neighbours); to the ground; to LiDAR points |
 | Vertical | `vertical` | m | none | the separation where two wires cross in plan (to the ground or points: straight below or above); a distance `"4 m"`, `{ by_voltage = [[110, "3 m"], …] }` or `{ base = …, per_kv = …, above_kv = … }` |
 | Radial | `radial` | m | none | the shortest 3D distance; the same three forms |
 | Voltages | `voltages` | kV | every voltage | only the wires of these nominal voltages (0: earthed wires); for a pair, its first wire |

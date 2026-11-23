@@ -292,6 +292,9 @@ and [what is left out](../theory/magnetic-field.md#what-is-left-out):
   the field; each run says by how much.
 - Left out: the earth's currents, the steel's permeability, harmonics,
   other lines (said), DC systems (said) — small or said in the result.
+  On an offline working set's file the lines of its export within 500 m
+  are named, NOT ALL CHECKED
+  ([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
 
 ## Without the window
 

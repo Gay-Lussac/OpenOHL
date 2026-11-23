@@ -185,8 +185,14 @@ fn visible_to(
 /// roles): filled by the authority before it runs a user's command.
 pub(crate) type Compiled = Arc<RwLock<HashMap<String, Arc<UserRights>>>>;
 
+/// The author of the revisions the network's server makes itself (its
+/// main line's changes recorded before an offline export, 2026-11-23):
+/// a name no user can have (users' names hold no ':'), an admin of every
+/// model for the session's own rules.
+pub(crate) const SERVER_AUTHOR: &str = "network:server";
+
 /// A model's users' roles on a network: from their rights
-/// ([`UserRights::model_role`]).
+/// ([`UserRights::model_role`]); the server's own author an admin.
 pub(crate) struct ModelRoles {
     pub(crate) line: String,
     pub(crate) rights: Compiled,
@@ -194,6 +200,9 @@ pub(crate) struct ModelRoles {
 
 impl RoleSource for ModelRoles {
     fn role(&self, user: &str) -> Option<Role> {
+        if user == SERVER_AUTHOR {
+            return Some(Role::Admin);
+        }
         self.rights
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)

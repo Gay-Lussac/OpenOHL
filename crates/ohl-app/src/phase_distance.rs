@@ -1250,16 +1250,25 @@ impl PhaseDistanceWindow {
         // On a network's working set (phase 10): the plugin's reach (its
         // manifest's `[reach]`; none: the most conservative default) not
         // pulled in here — said, never passing on that account.
-        let replica_note = if model.network_replica() {
+        let replica_note: Vec<String> = if model.network_replica() {
             let declared = ohl_plugins::Manifest::load(&check.dir)
                 .ok()
                 .and_then(|m| m.check_reach(kind.check_id()));
-            ohl_scope::reach::replica_note(
-                &format!("the plugin's check {}", kind.check_id()),
-                &ohl_scope::reach_of(&ohl_scope::CheckKind::Plugin { declared }),
+            let reach = ohl_scope::reach_of(&ohl_scope::CheckKind::Plugin { declared });
+            // An offline working set's file (2026-11-23): its export's
+            // neighbours named, not handed to the plugin.
+            crate::offline_neighbours::plugin_notes(model, kind.check_id(), &reach).unwrap_or_else(
+                || {
+                    ohl_scope::reach::replica_note(
+                        &format!("the plugin's check {}", kind.check_id()),
+                        &reach,
+                    )
+                    .into_iter()
+                    .collect()
+                },
             )
         } else {
-            None
+            Vec::new()
         };
         self.job.start_at(ctx, model.revision(), move || {
             let started = std::time::Instant::now();

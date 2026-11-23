@@ -337,6 +337,64 @@ impl Viewer for FileViewer<'_> {
     }
 }
 
+/// Another line's neighbours of an offline working set with the wire
+/// library its checks read — the same library the network's checks take
+/// for it ([`check_offline`]: its own wire files as the export wrote them,
+/// else the shipped library), for OHL-Design's check windows.
+#[derive(Debug, Clone)]
+pub struct NeighbourWires {
+    /// The model (line).
+    pub model: String,
+    /// Its part, as the export wrote it (structure types resolved).
+    pub line: Line,
+    /// Its wire library.
+    pub library: Arc<ohl_cables::Library>,
+    /// What could not be read of its library, in words.
+    pub notes: Vec<String>,
+}
+
+/// The other lines' neighbours offline working set `session` holds, each
+/// with its wire library (none: not an offline working set, or no other
+/// line near).
+pub fn neighbour_wires(session: &Session) -> Result<Vec<NeighbourWires>, String> {
+    let neighbours = session.offline_neighbours().map_err(|e| e.to_string())?;
+    let caches = Caches::new(64, 16);
+    // Wire libraries only (no structure types): nothing is written there.
+    let work = std::env::temp_dir().join(format!(
+        "ohl-offline-wires-{}-{}",
+        std::process::id(),
+        crate::random_code(8)
+    ));
+    let out = neighbours
+        .into_iter()
+        .map(|n| {
+            let files: Vec<(String, String)> = n
+                .libraries
+                .get("cables")
+                .map(|m| m.iter().map(|(a, b)| (a.clone(), b.clone())).collect())
+                .unwrap_or_default();
+            let mut kinds = BTreeMap::new();
+            kinds.insert("cables".to_owned(), files);
+            let libs = crate::packager::model_libs(
+                &n.model,
+                false,
+                0,
+                Arc::new(LibFiles { files: kinds }),
+                &caches,
+                &work,
+            );
+            NeighbourWires {
+                model: n.model,
+                line: n.line,
+                library: Arc::new(libs.cables.clone()),
+                notes: libs.notes.clone(),
+            }
+        })
+        .collect();
+    let _ = std::fs::remove_dir_all(&work);
+    Ok(out)
+}
+
 /// Runs scoped check `check` on the offline working set in project file
 /// `path` with the neighbours its export holds: the report as the
 /// network's server gives it to a user who sees everything the file holds,

@@ -976,6 +976,9 @@ impl ElectricFieldWindow {
         // A new run's outputs all drawn.
         self.common.hidden.clear();
         self.common.saving.stale = None;
+        // An offline working set's neighbours, a network's working set
+        // (2026-11-23): said first with the results.
+        let neighbour_notes = crate::offline_neighbours::field_notes(model, false);
         self.common.job.start_at(ctx, model.revision(), move || {
             progress.plan_steps(field_common::steps_planned(
                 &steps
@@ -1077,6 +1080,9 @@ impl ElectricFieldWindow {
                 ground_note,
                 g.is_some(),
             );
+            for n in neighbour_notes.into_iter().rev() {
+                field.notes.insert(0, n);
+            }
             let meshes = crate::magnetic_field::views::take_meshes(&mut field.volumes);
             Ok(Answer {
                 field,

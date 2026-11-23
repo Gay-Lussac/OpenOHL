@@ -392,6 +392,9 @@ impl LayoutWindow {
             // L18 (2026-11-22): a joint's planes of one rank high to low
             // (the program's default).
             planes_high_to_low: ohl_structure_link::LayoutSettings::default().planes_high_to_low,
+            // L19 (2026-11-23): the turns Orient angles set from the
+            // joints' planes weighed over every joint they reach.
+            weigh_turns: true,
         }
     }
 
@@ -598,6 +601,22 @@ impl StructureApp {
                     replace_hand: replace,
                 };
                 let r = (|| {
+                    // (O44 L19) The turns Orient angles set from the joints'
+                    // planes weighed once, on the whole tower (each kept only
+                    // where every joint it reaches is laid out better); the
+                    // rest laid out from the file so settled.
+                    let settled = ohl_structure_link::weighed_turns::settle_turns(&text, &ask)?;
+                    let weighed = settled.as_ref().map(|(_, r)| r.weighed.clone());
+                    let text = settled.map_or(text, |(s, _)| s);
+                    // Every joint a turn kept reaches laid out with it.
+                    let mut joints = joints.clone();
+                    for w in weighed.iter().flatten().filter(|w| w.kept) {
+                        joints.extend(w.joints.iter().cloned());
+                    }
+                    let ask = RunAsk {
+                        joints: Some(joints.clone()),
+                        ..ask.clone()
+                    };
                     let before = ohl_structure_link::joint_details_at(
                         &text,
                         &lib,
@@ -745,6 +764,13 @@ impl StructureApp {
                             )
                         }
                     };
+                    let mut run = run;
+                    if let Some(w) = weighed {
+                        let mut notes = ohl_structure_link::weighed_turns::notes_of(&w);
+                        notes.append(&mut run.notes);
+                        run.notes = notes;
+                        run.weighed = w;
+                    }
                     let after = ohl_structure_link::joint_details_at(
                         &run.text,
                         &lib,
