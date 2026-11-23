@@ -4226,9 +4226,9 @@ or three, L four or more. The phases, in order:
   Left: ~~OHL-Design's Offline copy menu for a network~~ (built
   2026-11-21, phase 16); the export on a thread of its own (built with
   phase 14); ~~OHL-Design's
-  check windows using a file's neighbours~~ (built 2026-11-23, below); a
-  revision of main's changes made by the server so any designer can
-  export.
+  check windows using a file's neighbours~~ (built 2026-11-23, below);
+  ~~a revision of main's changes made by the server so any designer can
+  export~~ (built 2026-11-23, below).
   > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
   > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); question 6, the export on a thread of
   > its own, still to build: see phase 13; the recommendation after the
@@ -4546,6 +4546,28 @@ or three, L four or more. The phases, in order:
   > the network's checks take case pairs.
   > 5. The verdict NOT ALL CHECKED whenever a reason holds, also on a
   > network's working set joined? → yes.
+- [x] Follow-up of 2026-11-23, second (S): phase 12's last "left" — **a
+  revision of main's changes made by the server so any designer can
+  export** (phase 12's question 2, approved 2026-11-20: "a revision of
+  main made by the server itself (audited) when someone exports, next").
+  **Built 2026-11-23, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-country-server-a-revision-of-main-made-by-the-server-so-any-designer-can-export)):
+  main's unrecorded changes are recorded before an export as a revision
+  by the network's server (`network:server`, a name no user can have),
+  after the export's own rights checks, audited under the exporter's
+  name (*server revision*), broadcast as any commit, on a protected main
+  too (it moves nothing); before, the exporter recorded them and a
+  route's designer was refused while others' changes were unrecorded.
+  Tested on PostgreSQL: such a designer's export, refused before, goes
+  out on the server's revision.
+  > **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+  > 1. The server's revision also on a protected main (it records what
+  > main holds; no review)? → yes: it changes nothing a review would
+  > look at.
+  > 2. Always the server's revision, even when the exporter could record
+  > every change themselves? → yes: one author for main's bookkeeping,
+  > the exporter named in the message and the audit.
+  > 3. Its author `network:server` (not a user)? → yes.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

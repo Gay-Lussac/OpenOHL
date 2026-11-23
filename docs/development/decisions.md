@@ -8,6 +8,51 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-23 (country server: a revision of main made by the server so any designer can export)
+
+**Main's unrecorded changes recorded by the network's server itself
+before an offline export** (ROADMAP O17: phase 12's "left"; the owner's
+question 2 of phase 12, answered 2026-11-20 "go ahead with
+recommendations": "yes for now; a revision of main made by the server
+itself (audited) when someone exports, next — so any designer can
+export"; built, in active development, not approved yet;
+[the user guide](../user-guide/server.md#offline-working-sets-phase-12-in-active-development)).
+
+- **Before**: an export's base must be a revision, so main's changes not
+  yet recorded were recorded first **by the exporter** — by phase 11's
+  rule for a commit (it records only what its user may edit): a
+  designer of one route could not export while anyone had left an
+  unrecorded change elsewhere on main ("ask whoever may edit them all to
+  commit the main line").
+- **Now** the network's server records them itself: a revision of main
+  whose **author is `network:server`** (a name no user can have: users'
+  names hold no ':'), message "Recorded by the network's server for an
+  offline working set of USER", in its own unit of work, broadcast as
+  any commit; **audited under the exporter's name** (*server revision*),
+  after the export's own checks of rights (the working set seen whole,
+  export on each of its objects, something editable on each route) —
+  nothing is recorded for a user the export refuses. It records only
+  what main holds already (each edit allowed by the rules when it was
+  made); it moves nothing, gives the exporter nothing more (the file
+  holds only what they may see), and is made **on a protected main too**
+  (decided as recorded: the session's rule for a protected branch is for
+  changes; this revision changes nothing — the owner's question 1
+  below). The session sees the server's author as an admin of every
+  model (`ModelRoles`), for this one act.
+- **Tested** on PostgreSQL (`offline_working_sets_go_out_and_come_back`):
+  the designer of one route exports while main has never been recorded
+  (refused before): the export goes out, its base is main's new head, a
+  revision by `network:server` naming her, in the audit under her name;
+  her next export records nothing first.
+
+> **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+> 1. The server's revision also on a protected main (it records what main
+> holds; no review)? → yes: it changes nothing a review would look at.
+> 2. Always the server's revision, even when the exporter could record
+> every change themselves? → yes: one author for main's bookkeeping,
+> the exporter named in the message and the audit.
+> 3. Its author `network:server` (not a user)? → yes.
+
 ## 2026-11-23 (country server: the check windows with an offline file's neighbours)
 
 **OHL-Design's check windows read an offline working set's neighbours**

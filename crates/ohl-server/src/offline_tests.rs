@@ -272,26 +272,35 @@ fn offline_working_sets_go_out_and_come_back() {
     let path = dir.join("dora.ohl");
     // Main has no revision yet: recording it would record every object —
     // not hers to record (phase 11's rule for a branch over a working
-    // set); Bob, who may edit it all, commits it.
-    let e = export_via(&dora, &mut log, 1, &spec, &path).unwrap_err();
-    assert!(e.contains("may not commit") && !path.exists(), "{e}");
-    request(
-        &bob,
-        &mut log,
-        2,
-        &code,
-        Op::Commit {
-            message: "first".into(),
-        },
-    )
-    .unwrap();
+    // set): the network's server records it itself (2026-11-23), audited
+    // under her name, and her export goes out.
+    let first = export_via(&dora, &mut log, 1, &spec, &dir.join("dora-first.ohl")).unwrap();
+    assert!(first.recorded_first, "{first:?}");
+    {
+        let net = Network::connect(&t.url).unwrap();
+        let s = Session::open_on(Box::new(net.store(&code).unwrap()), &code).unwrap();
+        let head = s
+            .branch_revision(ohl_session::versions::MAIN)
+            .unwrap()
+            .unwrap();
+        assert_eq!(head, first.base);
+        let rev = s.revision(&head).unwrap();
+        assert_eq!(rev.author, crate::network_rights::SERVER_AUTHOR, "{rev:?}");
+        assert!(
+            rev.message.contains("offline working set of dora"),
+            "{rev:?}"
+        );
+    }
+    assert!(audit_has(&t.url, "server revision", "dora"));
+    // Main recorded: the next export records nothing first.
     let out = export_via(&dora, &mut log, 3, &spec, &path).unwrap();
     assert!(out.wanted > 0 && out.context > 0, "{out:?}");
     assert!(
         out.neighbour_lines >= 1 && out.left_out.is_empty(),
         "{out:?}"
     );
-    assert!(!out.recorded_first, "main was committed");
+    assert!(!out.recorded_first, "main was recorded");
+    assert_eq!(out.base, first.base);
     let net = Network::connect(&t.url).unwrap();
     let record = net.offline_export(&out.export).unwrap().unwrap();
     assert_eq!(

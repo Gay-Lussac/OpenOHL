@@ -121,6 +121,11 @@ press the button.
   export the network does not know, or brought back already.
 - **Nothing is reserved** for you while you work offline: others may
   change your working set on the network; bringing back lists it.
+- **Main's unrecorded changes** (edits on the network not yet in a
+  revision, anyone's) are recorded first by the network's server itself —
+  a revision by `network:server`, in the audit under your name — so you
+  can export whoever made them (since 2026-11-23; before, only someone
+  who could record them all could export then).
 - The export and the bundle go through your connection to the network
   (one per user); the check and the bundle work on the open file alone,
   without the network.

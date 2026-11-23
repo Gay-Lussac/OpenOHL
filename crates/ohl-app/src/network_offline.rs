@@ -321,7 +321,10 @@ pub fn export_text(e: &Exported) -> String {
         r.seconds
     );
     if r.recorded_first {
-        out.push_str(" The main line's unrecorded changes were recorded first (a revision).");
+        out.push_str(
+            " The main line's unrecorded changes were recorded first, by the network's server (a \
+             revision).",
+        );
     }
     if !r.left_out.is_empty() {
         out.push_str(&format!(

@@ -400,8 +400,10 @@ the work back:
    each object of your working set, and to be able to edit something of
    each of its routes. Anything you may not see is **left out and only
    counted**. If the main line has changes not recorded in a revision,
-   they are recorded first — only by someone who may edit them all (as
-   for a branch over a working set): otherwise ask for a commit of main.
+   they are recorded first, as a revision **by the network's server**
+   (author `network:server`, audited under your name as *server
+   revision*; since 2026-11-23): any designer who may export can, not
+   only someone who may edit every change.
    The export is recorded on the server and in the audit; nothing is
    reserved for you. *Since phase 14* the server writes the file on a
    thread of its own, so other users keep editing meanwhile: the file is

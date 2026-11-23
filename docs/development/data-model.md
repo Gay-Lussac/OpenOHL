@@ -4058,7 +4058,12 @@ what solving each reads; `part_users` as a replica's (filtered by the
 rights). Its first revision is the **export's revision** (`network.offline`
 `export`, by its exporter, message "Offline working set N of USER: … (from
 revision R, TIME)"), the exported state; the server keeps its tree's text
-(`offline_export.tree`). Other lines' neighbours are not objects of the
+(`offline_export.tree`). R, its base, is the model's main revision; when
+main holds changes not yet recorded, the server records them first as a
+revision of main by **`network:server`** (since 2026-11-23; a name no
+user can have — users' names hold no `:` —; message "Recorded by the
+network's server for an offline working set of USER"; audited as
+*server revision* under the exporter's name). Other lines' neighbours are not objects of the
 file: they are in `network.neighbours` (read by `ohl network
 check-offline` and, since 2026-11-23, by OHL-Design's check windows on
 the file — `ohl_app::offline_neighbours`, each line's wire library built
