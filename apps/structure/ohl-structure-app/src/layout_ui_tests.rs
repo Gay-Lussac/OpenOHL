@@ -1433,10 +1433,10 @@ fn a_chord_turn_is_offered_with_a_tick_and_applied_with_the_run() {
         // (O44 L18) Beside it the chord's run from its joints' planes: its
         // roll given by hand, so proposed (not ticked), with its effect at
         // every joint it reaches.
-        let (r, auto) = p
+        let (r, auto, _) = p
             .plane_turns
             .iter()
-            .find(|(r, _)| r.members.iter().any(|m| m == "L1" || m == "L2"))
+            .find(|(r, _, _)| r.members.iter().any(|m| m == "L1" || m == "L2"))
             .unwrap_or_else(|| panic!("{:?}", p.plane_turns));
         assert!(!auto, "{r:?}");
         assert!((r.turn + 5.0).abs() < 0.1, "{r:?}");
