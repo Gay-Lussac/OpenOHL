@@ -39,6 +39,7 @@ pub mod design;
 pub mod drawn;
 mod element;
 pub mod feet;
+pub mod joint_stiffness;
 pub mod links;
 pub mod member_ends;
 pub mod model;
@@ -262,7 +263,15 @@ pub fn convergence_note(solution: &Solution) -> Option<String> {
                 .to_owned(),
         );
     }
+    // The end releases and bolt slip of the solve (options, stage 4.4).
+    parts.extend(joint_stiffness::case_note(solution));
     (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// The end releases and bolt slip of a model in words (none: both options
+/// off; [`joint_stiffness::note`]).
+pub fn joint_stiffness_note(model: &Model) -> Option<String> {
+    joint_stiffness::note(model)
 }
 
 /// The tension-only members of a solution in words (none: the model has
@@ -521,6 +530,8 @@ mod condense_tests;
 mod guard_tests;
 #[cfg(test)]
 mod held_limit_tests;
+#[cfg(test)]
+mod joint_stiffness_tests;
 #[cfg(test)]
 mod member_tests;
 #[cfg(test)]

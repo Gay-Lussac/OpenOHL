@@ -56,7 +56,7 @@ use std::hash::{DefaultHasher, Hasher};
 use nalgebra::{DMatrix, Matrix3};
 use ohl_core::budget::Budget;
 
-use crate::element::{Mat12, axes, axes_between, frame_elastic, transformation};
+use crate::element::{axes, axes_between, transformation};
 use crate::links::PointLoad;
 use crate::model::{Model, cross};
 use crate::pole::{Pole, PoleLoad};
@@ -1166,6 +1166,7 @@ fn prepare(
             let mut eqs = [None; 12];
             eqs[..6].copy_from_slice(&eq[m.i]);
             eqs[6..].copy_from_slice(&eq[m.j]);
+            let (ke, ea_l, released) = crate::joint_stiffness::member_elastic(m, l, s, bends);
             Prepared {
                 l,
                 r,
@@ -1173,15 +1174,12 @@ fn prepare(
                     Some(d) => transformation(&r) * d,
                     None => transformation(&r),
                 },
-                ke: if bends {
-                    frame_elastic(l, s)
-                } else {
-                    Mat12::zeros()
-                },
-                ea_l: s.e * s.area / l,
+                ke,
+                ea_l,
                 weight_local: [0.0; 12],
                 eq: eqs,
                 rigid,
+                released,
             }
         })
         .collect()

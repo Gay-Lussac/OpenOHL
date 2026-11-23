@@ -187,8 +187,9 @@ pub use quantities::{
     SelfWeight, apply_counted, counted_self_weight, structure_quantities, undefined_joints,
 };
 pub use run::{
-    CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
-    analyse_structure, cases_to_run, has_model,
+    CheckSummary, JointOptions, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase,
+    StructureRun, analyse_structure, analyse_structure_with, cases_to_run, has_model,
+    joint_option_effect,
 };
 pub use solve::{
     Candidate, Counts, Effect, EffectKind, LegTurn, Solution, SolveAsk, TurnReach, TurnSource,

@@ -583,6 +583,23 @@ pub struct Member {
     /// bars meet a joint, at frame joints too
     /// ([`crate::offsets::uncarried_moments`]). Empty: none (the default).
     pub free_offsets: [Vec<[f64; 3]>; 2],
+    /// End releases (stage 4.4 of the joint details, an option of the
+    /// analysis, 2026-11-23): per end, the local bending rotations the
+    /// end's bolt group cannot hold, released in the solve (frames only).
+    /// Set by [`crate::joint_stiffness::apply`] when
+    /// [`Analysis::end_releases`] is on; none (the default): every frame
+    /// end rigid, as before.
+    pub releases: [crate::joint_stiffness::EndRelease; 2],
+    /// Bolt slip (stage 4.4, an option of the analysis, 2026-11-23): the
+    /// hole clearances of its two ends together, m — how far it can
+    /// lengthen or shorten without force before its bolts bear. Set by
+    /// [`crate::joint_stiffness::apply`] when [`Analysis::bolt_slip`] is
+    /// on; 0 (the default): no slip.
+    pub slip: f64,
+    /// The share of its axial stiffness EA/L taken in a solve: 1 (the
+    /// default), or the secant share of a slipping member in the bolt-slip
+    /// passes ([`crate::joint_stiffness::solve_slipping`]).
+    pub(crate) axial_share: f64,
 }
 
 impl Member {
@@ -608,13 +625,24 @@ impl Member {
             design: crate::design::MemberDesign::default(),
             offsets: [[0.0; 3]; 2],
             free_offsets: Default::default(),
+            releases: Default::default(),
+            slip: 0.0,
+            axial_share: 1.0,
         }
     }
 
     /// Whether it has a frame's stiffness (bending, torsion, rotations at
     /// its joints) while it is in the model: a frame, or a tension-only
-    /// member with [`Self::bending`].
+    /// member with [`Self::bending`] — unless the end-release option pinned
+    /// both its ends both ways ([`Self::releases`], one bolt at each end):
+    /// then it is a bar (its torsion left out with its bending).
     pub fn is_frame(&self) -> bool {
+        self.bends_by_kind() && !self.releases.iter().all(|r| r.both())
+    }
+
+    /// Whether its kind bends: a frame, or a tension-only member with
+    /// [`Self::bending`] (whatever its end releases).
+    pub fn bends_by_kind(&self) -> bool {
         self.kind == MemberKind::Frame || (self.kind == MemberKind::Tension && self.bending)
     }
 }
@@ -766,6 +794,17 @@ pub struct Analysis {
     /// ([`crate::check::climbing_check`]); none (the default): not
     /// checked. Model file version 7, structure file version 16.
     pub climbing_load: Option<f64>,
+    /// End releases from the joints' bolts (stage 4.4 of the joint
+    /// details, 2026-11-23): an option of the analysis, off by default, not
+    /// stored in any file — a run turns it on and
+    /// [`crate::joint_stiffness::apply`] sets each member's
+    /// [`Member::releases`].
+    pub end_releases: bool,
+    /// Bolt slip at the joints (stage 4.4, 2026-11-23): an option of the
+    /// analysis, off by default, not stored in any file —
+    /// [`crate::joint_stiffness::apply`] sets each member's
+    /// [`Member::slip`].
+    pub bolt_slip: bool,
 }
 
 /// What a tension-only member ([`MemberKind::Tension`]) carries in
@@ -881,6 +920,8 @@ impl Default for Analysis {
             tension_compression: TensionCompression::Buckling,
             redundant_force: None,
             climbing_load: None,
+            end_releases: false,
+            bolt_slip: false,
         }
     }
 }
@@ -939,6 +980,9 @@ pub struct Model {
     /// many members' bolts take it: lines for the results ("bolt grade 8.8
     /// set by command: …").
     pub bolt_grade_notes: Vec<String>,
+    /// What the end-release and bolt-slip options did (stage 4.4,
+    /// 2026-11-23; [`crate::joint_stiffness::apply`]); none: both off.
+    pub joint_stiffness: Option<crate::joint_stiffness::Summary>,
 }
 
 /// A member-check method of a plugin, as a file names it.
@@ -1283,6 +1327,9 @@ impl Model {
                 check: m.check,
                 offsets: [[0.0; 3]; 2],
                 free_offsets: Default::default(),
+                releases: Default::default(),
+                slip: 0.0,
+                axial_share: 1.0,
             });
         }
         for (k, partner) in partners {
@@ -1334,6 +1381,8 @@ impl Model {
                 },
                 redundant_force: file.analysis.redundant_force.map(|p| p / 100.0),
                 climbing_load: file.analysis.climbing_load.map(|f| f.si()),
+                end_releases: false,
+                bolt_slip: false,
             },
             nodes,
             sections,
@@ -1346,6 +1395,7 @@ impl Model {
             method_compression: Vec::new(),
             bolt_defaults: Default::default(),
             bolt_grade_notes: Vec::new(),
+            joint_stiffness: None,
         };
         model.check()?;
         Ok(model)

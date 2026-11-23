@@ -15,8 +15,7 @@ use nalgebra::{Matrix3, SMatrix, Vector3};
 use ohl_core::budget::{Budget, Stop};
 
 use crate::element::{
-    Mat12, axes, axes_between, axial_block, frame_elastic, frame_geometric, frame_uniform_load,
-    transformation,
+    Mat12, axes, axes_between, axial_block, frame_geometric, frame_uniform_load, transformation,
 };
 use crate::model::{MemberKind, Model, NodalLoad};
 use crate::skyline::{Pivot, Skyline, reverse_cuthill_mckee};
@@ -443,6 +442,15 @@ pub struct Solution {
     /// moved them implausibly far ([`FeError::Implausible`]); said in the
     /// notes ([`crate::convergence_note`]).
     pub rounded_stabilisation: bool,
+    /// The solves of the bolt-slip passes (stage 4.4, 2026-11-23;
+    /// the slip passes of [`crate::joint_stiffness`]): 0 without slip.
+    pub slip_passes: u32,
+    /// The bolt-slip passes settled (true without slip).
+    pub slip_settled: bool,
+    /// The joints where the end releases and the bolt slip were taken back
+    /// because the solve with them found a mechanism or an instability
+    /// there ([`crate::joint_stiffness`]); empty: none.
+    pub taken_back: Vec<String>,
 }
 
 /// Per member: what does not change between iterations (also built by
@@ -465,6 +473,24 @@ pub(crate) struct Prepared {
     /// its joints); `t` includes it, `l` and `r` are between its offset
     /// ends.
     pub(crate) rigid: Option<Mat12>,
+    /// The local degrees of freedom its end releases free (none: none;
+    /// [`crate::joint_stiffness`]): condensed out of its tangent.
+    pub(crate) released: Option<[bool; 12]>,
+}
+
+impl Prepared {
+    /// Its frame tangent in local axes at axial force `axial` (P-Delta's
+    /// geometric stiffness with `nonlinear`), its releases condensed out.
+    pub(crate) fn frame_local(&self, axial: f64, nonlinear: bool) -> Mat12 {
+        let mut kl = self.ke;
+        if nonlinear {
+            kl += frame_geometric(self.l, axial);
+        }
+        match &self.released {
+            Some(r) => crate::joint_stiffness::condense(&kl, r),
+            None => kl,
+        }
+    }
 }
 
 /// Solves `model` under `loads`.
@@ -549,6 +575,35 @@ pub fn solve_from(
 /// and used with no other (its owner keeps the two together and the
 /// model unchanged, as [`crate::tangent::FullModel`] does).
 pub(crate) fn solve_from_memo(
+    model: &Model,
+    loads: &Loads,
+    options: &Options,
+    budget: &Budget,
+    start: Option<&[bool]>,
+    memo: Option<&Memo>,
+) -> Result<Solution, FeError> {
+    if crate::joint_stiffness::any(model) {
+        // End releases or bolt slip (options, stage 4.4): the slip's secant
+        // passes, each a solve; releases or slip taken back where the solve
+        // finds a mechanism or an instability.
+        return crate::joint_stiffness::solve_with_options(
+            model,
+            start,
+            options.nonlinear,
+            &|m, start, first_order| {
+                let o = Options {
+                    nonlinear: options.nonlinear && !first_order,
+                    ..*options
+                };
+                solve_from_memo_plain(m, loads, &o, budget, start, memo)
+            },
+        );
+    }
+    solve_from_memo_plain(model, loads, options, budget, start, memo)
+}
+
+/// [`solve_from_memo`] without the bolt-slip passes.
+fn solve_from_memo_plain(
     model: &Model,
     loads: &Loads,
     options: &Options,
@@ -1558,8 +1613,13 @@ fn solve_with(
             eqs[..6].copy_from_slice(&eq[m.i]);
             eqs[6..].copy_from_slice(&eq[m.j]);
             let w = s.weight() * model.dead_load_factor(m) * loads.self_weight;
+            let (ke, ea_l, released) = crate::joint_stiffness::member_elastic(m, l, s, bends);
             let weight_local = if bends {
-                frame_uniform_load(l, r * Vector3::new(0.0, 0.0, -w))
+                let f = frame_uniform_load(l, r * Vector3::new(0.0, 0.0, -w));
+                match &released {
+                    Some(rel) => crate::joint_stiffness::condense_load(&ke, &f, rel),
+                    None => f,
+                }
             } else {
                 [0.0; 12]
             };
@@ -1570,15 +1630,12 @@ fn solve_with(
                     Some(d) => transformation(&r) * d,
                     None => transformation(&r),
                 },
-                ke: if bends {
-                    frame_elastic(l, s)
-                } else {
-                    Mat12::zeros()
-                },
-                ea_l: s.e * s.area / l,
+                ke,
+                ea_l,
                 weight_local,
                 eq: eqs,
                 rigid,
+                released,
             }
         })
         .collect();
@@ -1898,11 +1955,7 @@ fn solve_with(
             let n = axial[idx];
             let mut end = [0.0; 12];
             if bends[idx] {
-                let mut kt = p.ke;
-                if options.nonlinear {
-                    kt += frame_geometric(p.l, n);
-                }
-                let fl = kt * d;
+                let fl = p.frame_local(n, options.nonlinear) * d;
                 for c in 0..12 {
                     end[c] = fl[c] - p.weight_local[c];
                 }
@@ -2070,6 +2123,9 @@ fn solve_with(
         relative_over,
         stalled,
         rounded_stabilisation: false,
+        slip_passes: 0,
+        slip_settled: true,
+        taken_back: Vec::new(),
     })
 }
 
@@ -2450,11 +2506,7 @@ fn member_tangent(
     nonlinear: bool,
 ) -> Mat12 {
     if m.is_frame() && !slack {
-        let mut kl = p.ke;
-        if nonlinear {
-            kl += frame_geometric(p.l, axial);
-        }
-        return p.t.transpose() * kl * p.t;
+        return p.t.transpose() * p.frame_local(axial, nonlinear) * p.t;
     }
     let n_l = if nonlinear { axial / p.l } else { 0.0 };
     let ea_l = if slack { 0.0 } else { p.ea_l };
@@ -2545,11 +2597,7 @@ pub(crate) fn assemble(
         // A member that bends in this solve (a frame, or a tension-only
         // member that bends and is in the model): its frame stiffness.
         if m.is_frame() && !slack[idx] {
-            let mut kl = p.ke;
-            if nonlinear {
-                kl += frame_geometric(p.l, axial[idx]);
-            }
-            let kg = p.t.transpose() * kl * p.t;
+            let kg = p.t.transpose() * p.frame_local(axial[idx], nonlinear) * p.t;
             for a in 0..12 {
                 let Some(qa) = p.eq[a] else { continue };
                 for b in a..12 {

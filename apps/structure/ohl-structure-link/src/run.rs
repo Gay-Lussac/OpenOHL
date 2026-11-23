@@ -850,6 +850,62 @@ fn pole_case(
 /// element frame, P-Delta: well under a millisecond); `budget` bounds
 /// each case.
 pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureRun, String> {
+    analyse_structure_with(input, budget, JointOptions::default())
+}
+
+/// The end releases and the bolt slip of a run (stage 4.4 of the joint
+/// details, 2026-11-23): options of the analysis, off by default, stored
+/// in no file ([`ohl_structures_fe::joint_stiffness`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct JointOptions {
+    /// End releases from the joints' bolts.
+    pub end_releases: bool,
+    /// Bolt slip at the joints.
+    pub bolt_slip: bool,
+}
+
+impl JointOptions {
+    /// Either option on.
+    pub fn any(self) -> bool {
+        self.end_releases || self.bolt_slip
+    }
+}
+
+/// The effect of the joint options on one case: its results with them
+/// against without them ([`ohl_structures_fe::joint_stiffness::Effect`]).
+pub fn joint_option_effect(with: &CaseResult, without: &CaseResult) -> String {
+    let largest = |r: &CaseResult| {
+        r.joints
+            .iter()
+            .map(|j| {
+                let d = j.displacement;
+                (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+            })
+            .fold(0.0, f64::max)
+    };
+    let members = |r: &CaseResult| -> Vec<ohl_structures_fe::joint_stiffness::EffectMember> {
+        r.members
+            .iter()
+            .map(|m| (m.id.clone(), m.axial, m.usage))
+            .collect()
+    };
+    ohl_structures_fe::joint_stiffness::Effect::of(
+        &members(with),
+        &members(without),
+        [largest(with), largest(without)],
+        [with.took.as_secs_f64(), without.took.as_secs_f64()],
+    )
+    .words()
+}
+
+/// [`analyse_structure`] with the joint options `options`: the model with
+/// them, and — the "settings explain their effect" rule — the cases solved
+/// without them too, each case's effect in its notes.
+pub fn analyse_structure_with(
+    input: &RunInput,
+    budget: &Budget,
+    options: JointOptions,
+) -> Result<StructureRun, String> {
     // Joint details asked for on a tower whose joint layout left
     // provisional bolts (owner 2026-11-18): the core gives such a tower
     // level 3 (`StructureType::detail`, third round), so the model leaves
@@ -871,6 +927,8 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
     let dir = input.dir.unwrap_or(Path::new("."));
     let pole = ohl_structures_fe::pole::structure_pole(t, dir, input.sections);
     let mut light_ratio = 1.0;
+    // The model without the joint options, for their effect.
+    let mut plain: Option<Model> = None;
     let model = if has_model(t) {
         let (m, notes) = model_on(input);
         run.notes.extend(notes);
@@ -901,6 +959,14 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
                     run.counted_self_weight = sw.counted;
                     run.notes.extend(sw.note);
                     run.quantities = sw.quantities;
+                }
+                if options.any() {
+                    plain = Some(m.clone());
+                    m.analysis.end_releases = options.end_releases;
+                    m.analysis.bolt_slip = options.bolt_slip;
+                    ohl_structures_fe::joint_stiffness::apply(&mut m);
+                    run.notes
+                        .extend(ohl_structures_fe::joint_stiffness_note(&m));
                 }
                 Some(m)
             }
@@ -1054,6 +1120,29 @@ pub fn analyse_structure(input: &RunInput, budget: &Budget) -> Result<StructureR
             }
         }
         None => names.iter().map(|_| None).collect(),
+    };
+    // The joint options' effect: every case solved without them too.
+    let fes = match &plain {
+        Some(p) => {
+            let without = fe_results(&fe_in, p, &mut Vec::new());
+            fes.into_iter()
+                .zip(without)
+                .map(|(with, without)| match (with, without) {
+                    (Some(Ok(mut w)), Ok(o)) => {
+                        let e = joint_option_effect(&w, &o);
+                        w.notes.push(e);
+                        Some(Ok(w))
+                    }
+                    (Some(Ok(mut w)), Err(e)) => {
+                        w.notes
+                            .push(format!("effect of the joint options: without them: {e}"));
+                        Some(Ok(w))
+                    }
+                    (other, _) => other,
+                })
+                .collect()
+        }
+        None => fes,
     };
     run.cases.extend(
         names
