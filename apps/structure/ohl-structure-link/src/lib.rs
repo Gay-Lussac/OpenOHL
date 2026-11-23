@@ -77,6 +77,9 @@ mod joint_layout_tests;
 pub mod joint_order;
 #[cfg(test)]
 mod joint_order_tests;
+pub mod joint_planes;
+#[cfg(test)]
+mod joint_planes_tests;
 mod joint_sheet;
 mod joints;
 #[cfg(test)]
