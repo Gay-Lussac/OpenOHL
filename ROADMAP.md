@@ -3511,6 +3511,33 @@ only where it helps):
   ends off their host's flange with no roll laying them flat, 5 092 of them
   where two other horizontals (or one and a leg) meet; 3 282 with their
   axis out of the host's face.
+  **3. Plates with several bends and welded assemblies of several plates**
+  (the owner, 2026-11-23, asked about them: "go ahead to improve").
+  **3a. Measured** (the weighed column, all 78 private towers; the reason
+  the layout gives for each member end it leaves — an upper bound: every
+  such end taken as laid out, nothing checked yet): 6 780 ends refused
+  because a plate welded in their own plane would have their outstanding
+  leg stand on the flat plate (it points into the flange: a flap in their
+  plane does not free it — the member would need half a turn, which its
+  other end refuses, or a stand-off holding the flap clear; up to 1 062
+  joints whole); 5 674 because that plate would put their axis farther out
+  of the flange than one plate's thickness (the rule keeping the line of
+  action within what the analysis takes; 5 065 of them within 40 mm, 1 806
+  with their leg at most 15° off the flange, where a joggle — two bends —
+  could bring the axis back; up to 656 joints whole); 7 266 on
+  a flange's inner face running towards the other leg (a plate wrapping
+  the leg; up to 1 525 joints whole); 9 961 whose axis runs out of the
+  host's face (up to 2 305 joints whole); the first three kinds together:
+  up to 5 130 joints whole. Plan and hip ends among them: 2 889, 2 270,
+  1 490 and 2 656. The format: a chain of bends (a flat bent from a bent
+  flat) reads as one part of its flats, each bend on the flat naming it,
+  drawn flat by flat, weighed from the developed area and checked bend by
+  bend (tested on an invented joint); a welded assembly is every plate
+  joined by `welded_to`, any number. **3b. Not built**: what was measured
+  does not support the two forms as asked — a flap in the member's plane
+  does not free an outstanding leg pointing into the flange, and a joggle
+  does not take out a tilt (most of the second kind are more than 15° off)
+  — so nothing was built on a guess (the owner's question below).
   > **Owner:** (1) The automatic turns weighed in the run (the owner's
   > rule): 66 % of the joints whole and 97 % of the ends the unweighed
   > turns gained, 122 joints worse than L17 instead of 2 400 — at the cost of
@@ -3538,7 +3565,20 @@ only where it helps):
   > next as its own step: a plate held by two members (a format field,
   > `[plate.also_bolts]`, version 26), drawn, clash-checked, its holding
   > bolts on both members checked as holding bolts (L14's force path),
-  > weighed per joint.
+  > weighed per joint. (7) Plates with several bends and welded assemblies
+  > (item 3): the format already carries them (a chain of bends tested);
+  > the ends they could take are many (up to 5 130 joints whole) but the
+  > largest kind, an outstanding leg pointing into the flange (6 780 ends),
+  > is not freed by a flap in the member's plane, and a joggle helps only
+  > the ends at most 15° off (1 806) → Recommended: next, (a) the axis
+  > offset of a plate in the member's own plane taken into the analysis
+  > (the estimated eccentricities, O45) instead of refusing it beyond a
+  > plate's thickness — most of the 5 674, the plate already drawn and
+  > checked; (b) the joggle for the ends at most 15° off; (c) the
+  > outstanding leg into the flange: a stand-off (a welded assembly of
+  > three parts) or a half turn — the owner to choose; each weighed per
+  > joint with the fabrication order direct → one plate → one bend →
+  > several bends → welded (fewer parts, no weld to inspect, first).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

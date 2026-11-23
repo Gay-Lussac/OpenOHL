@@ -60,6 +60,22 @@ on its own, reported; built, in active development, not approved yet;
   median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s weighed (about five and
   a half layouts), 426.7 / 433.9 s both weighed — once per imported tower.
   Owner questions in the roadmap.
+- **The owner, 2026-11-23**: asked about plates with several bends and
+  welded assemblies of several plates — "go ahead to improve" (roadmap O44
+  L19, item 3). Measured first (an upper bound from the reasons the layout
+  gives for the ends it leaves, the weighed column, 78 private towers):
+  6 780 ends whose own-plane welded plate would have their outstanding leg
+  stand on the flat plate (not freed by a flap in their plane), 5 674 whose
+  axis that plate would put more than a plate's thickness out (a joggle:
+  two bends), 7 266 on an inner face towards the other leg (a plate
+  wrapping the leg) — up to 5 130 joints whole if all were laid out. The
+  format carries a chain of bends (tested: read as one part, drawn,
+  weighed and checked bend by bend) and welded assemblies of any number of
+  plates. Nothing built: a flap in the member's plane does not free an
+  outstanding leg pointing into the flange, and a joggle does not take out
+  a tilt (most of the second kind are more than 15° off); the axis offset
+  taken into the analysis recommended first (owner question in the
+  roadmap).
 - **Not built**: a level or bent plate across two horizontals (L17's
   question 5, the roadmap's item 2) — counted only: 6 793 plan and hip
   ends lie off their host's flange with no roll laying them flat, 5 092 of

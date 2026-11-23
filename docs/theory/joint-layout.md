@@ -3465,6 +3465,27 @@ the stages' turns kept laid out again; 2 on the smallest tower, where no
 turn helped); both weighed 426.7 and 433.9 s (599.9 and 605.2 s). Paid
 once per imported tower: the file written lists nothing more to weigh.
 
+**Plates with several bends, welded assemblies of several plates** (the
+owner, 2026-11-23: asked about them, "go ahead to improve"; measured, the
+planner not built yet). What the layout leaves that they could take, from
+the reasons it gives (the weighed column, 78 private towers; an upper
+bound — every such end taken as laid out): 6 780 member ends whose plate
+welded in their own plane would have their outstanding leg stand on the
+flat plate — it points into the flange, so a flap in the member's plane
+does not free it (half a turn of the member, which its other end refuses,
+or a stand-off holding the flap clear would); 5 674 whose axis that plate
+would put farther out of the flange than one plate's thickness (the rule
+keeping the line of action within what the analysis takes; a joggle, two
+bends, could bring the axis back only where the leg lies at most 15° off
+the flange — 1 806 of them); 7 266 on a
+flange's inner face running towards the angle's other leg (a plate
+wrapping the leg). Were all of these laid out, up to 5 130 joints more
+would be whole. The format already carries both: a chain of bends (a flat
+bent from a bent flat) is one part of its flats, each bend on the flat
+naming it, drawn flat by flat, weighed from the developed area and
+checked bend by bend (tested on an invented joint); a welded assembly is
+every plate joined by `welded_to`, any number of them.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
