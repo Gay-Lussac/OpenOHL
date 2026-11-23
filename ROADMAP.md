@@ -3579,6 +3579,51 @@ only where it helps):
   > three parts) or a half turn — the owner to choose; each weighed per
   > joint with the fabrication order direct → one plate → one bend →
   > several bends → welded (fewer parts, no weld to inspect, first).
+- [x] L20. **A level plate across two horizontals** (L19's question 6 and
+  the owner's "go ahead to improve" of 2026-11-23 for plates with several
+  bends and welded assemblies; the owner busy: built on its own,
+  reported). **Built 2026-11-24, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-level-plate-across-two-horizontals-l20),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#lay-out-joints),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-joint-layout-a-level-plate-across-two-horizontals-l20);
+  structure file version 26: a plate's `[plate.also_bolts]`). **1. The
+  level plate** (`LayoutSettings::level_plates`, on): a level plan or hip
+  end lying on no flange of what it bolts onto, where two other level
+  single angles ending at the joint (not in line) have their level legs'
+  outer faces in one plane with its axis (normals within 2°, faces within
+  1 mm), is named onto the first (before a member running through where it
+  already lies flat on that plane, else after it; weighed joint by joint as
+  L13's names); the flat plate the plan lays there (held by its own
+  provisional bolts onto the first, grown along it) gets its own
+  provisional bolts onto the second where both holders' level legs are
+  still in one plane as drawn (each moved as the plan moves it), placed as
+  the first holder's are, the plate grown round them clear of what it
+  would run into — one plate held by both, `[plate.also_bolts]`. Drawn as
+  the second holder's end bolted onto the plate, the plate known to the
+  clash check (both holders exempt: it lies on them), the after-writing
+  checks alike for both holders' bolts; the joint checks take both as
+  holding bolts, each holder's group carrying the other ends' forces whole
+  (on the safe side), the ends riding on each holder's own end bolts
+  (L14's path); NOT ON THE SAFE SIDE, said on the rows: a force the plate
+  passes between its two holders. Measured: below (L20 docs).
+  **2. Not built** (time; item 1 first): the own-plane welded plate's axis
+  offset carried into the analysis (L19's question 7a) and the joggle for
+  ends at most 15° off (7b) — see the owner's questions. 7c (a stand-off
+  or a half turn) waits for the owner, as asked.
+  > **Owner:** (1) The level plate across two horizontals held by its own
+  > bolts onto both (`[plate.also_bolts]`) → Recommended: keep (the usual
+  > plan-bracing detail; nothing laid out before is changed where it does
+  > not apply). (2) The force the plate passes between its two holders,
+  > not counted (said NOT ON THE SAFE SIDE on its rows) → Recommended:
+  > next, each holder's bolts also checked under the other holder's force
+  > up to what the plate's bolts onto it carry. (3) A plate's own holding
+  > bolts (`[plate.leg_bolts]` since L5o, `[plate.also_bolts]` now) are
+  > placed clear by the plan but their heads and nuts are no pieces of the
+  > clash check after writing → Recommended: add them (measured first, as
+  > a change of results). (4) Two level legs a few millimetres apart as
+  > drawn (a step: the members' gauge lines through the work point move
+  > them differently) take no level plate → Recommended: a filler under
+  > the lower one is usual practice — the owner to decide (a new part).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

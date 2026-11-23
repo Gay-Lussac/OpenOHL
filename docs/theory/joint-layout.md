@@ -3486,6 +3486,120 @@ naming it, drawn flat by flat, weighed from the developed area and
 checked bend by bend (tested on an invented joint); a welded assembly is
 every plate joined by `welded_to`, any number of them.
 
+## A level plate across two horizontals (L20)
+
+(L19's question 6 and the owner's "go ahead to improve" of 2026-11-23;
+roadmap O44 L20, the owner busy: built on its own, reported. Built
+2026-11-24, in active development, not approved yet. Structure file
+version 26: a plate's `[plate.also_bolts]`.)
+
+**Why.** A plan or hip member at a tower's corner, or where a plan member
+meets two horizontals, lies level; the leg or the member running through
+the joint stands steep, so its leg bolted lies on none of their flanges
+(no roll lays it flat at both its ends), and L13 names a member ending at
+the joint only where one horizontal of a class at least its own carries
+it. L19 counted 6 793 plan and hip ends left so on the 78 private towers,
+5 092 of them where two other horizontals (or one and a leg) meet. Usual
+practice joins such ends on a horizontal plate lying on the level legs of
+the horizontals and bolted to them.
+
+**Which ends, which plate** (`joint_layout::level_pair`,
+`LayoutSettings::level_plates`, on by default). For a level end (within
+5°, a single angle): two other single angles at the joint, each level and
+**ending** there (not one part with a member, not in line with another of
+its members), not in line with the end nor with each other (20° to 160°),
+neither bolting onto it, each with a flange in whose plane the end's axis
+lies (2°), and those two flanges' outer faces **in one plane**: their
+normals within 2°, their faces within the clash check's tolerance (1 mm)
+of each other at the joint. Of such pairs the first by class, then the
+wider, then the id; the plate lies on the first, its own bolts onto both.
+The run names the first for the end (in its planning copy, as L13 names a
+member):
+
+1. an end whose leg already lies flat on that plane (no turn needed; an
+   equal angle whose leg bolted is not given: either leg) — before a
+   member running through the joint in whose flange's plane its axis lies
+   (that one would need the end turned, and its other ends refuse most
+   such turns);
+2. any other such end — after a member running through, before L13's
+   name.
+
+Both kinds are weighed as L13's names (the run's as-drawn pass plans the
+joint again without them and keeps the plan without where it is not
+better; a name whose turn no one roll gives with the member's other ends
+is taken back).
+
+**The plate** (`joint_layout::level_holds`). The plan lays the end onto
+the first holder's level leg as any end onto a member: directly where its
+bolts land, else onto a flat plate there held by its own provisional bolts
+onto that member (L5o) — grown along it as a plate between a built-up
+member's angles is (L15), so that those bolts find room past the end's
+leg. Then, after every plane of the joint is laid out, the second
+holder's bolts (`joint_layout::level_partner`: for any flat plate on a
+level member carrying a level end — also one the run named otherwise,
+and a first or second holder running on through the joint —, another
+level single angle not in line with the end nor with the first holder,
+its level leg's outer face in one plane with the first's, by class, the
+wider, the id):
+
+- both holders **as drawn**: each moved and lifted as the plan lays its
+  own end out (its gauge line through the work point moves it within the
+  face it bolts onto); their level legs still in one plane within 1 mm,
+  else none (said: "… lies N mm out of the plate's plane");
+- the plate's ends taken onto the second holder's flange (the same plane,
+  its axes), as the plan places them; the bolts placed as the first
+  holder's are (`plate_holds`): as many as onto the first, one gauge line
+  along the second holder, within its flange (clear of its heel's leg and
+  root by the nut, its edge distance from its toe), past where its steel
+  starts by its end distance, inside the plate grown over that flange by
+  its edge and end distances, the default minimum spacing from every hole
+  through that flange and every bolt on the plate, each head clear of the
+  legs on the plate and of what is fixed over the face, each nut of what
+  is fixed behind it;
+- the plate grown round them (each with its distances, the flange under
+  them) clear of what it would run into (as any plate the plan grows),
+  each bolt inside the plate's heel line and straight cuts by its
+  distances;
+- not for a plate in a member's own plane, a bent plate, a plate between
+  a built-up member's angles, or one whose outline the plan lays out.
+
+Where they do not fit, said ("H2: no level plate across two horizontals
+— …"); the plate stays held by the first alone, as before. Written as the
+plate's `[plate.also_bolts]` (the fields of `[plate.leg_bolts]`, the
+second member), provisional as the first holder's. **Weighed per joint**:
+the bolts onto the second holder only add to a plan; a joint laid out
+with fewer ends after the clash rounds than its plan without them is
+planned again without them (the run's guard, `PlanCtx::no_level`, as for
+L11's and L15's steps).
+
+**Drawn, clash-checked, checked.** Joint details draw the second
+holder's end as bolted onto the plate by those bolts (as the leg's for
+`[plate.leg_bolts]`), the plate's outline worked out round every bolt on
+it. The clash check tests the plate against every part of the joint
+except the members bolted onto it (both holders: it lies on them); the
+holding bolts' heads and nuts are not pieces of it — the plan places them
+clear, as for `[plate.leg_bolts]` since L5o (an owner question). The
+after-writing checks take both holders' bolts alike (inside the outline,
+on the member's steel past its cut, no hole overlapped). The joint checks
+take both as the plate's holding bolts (`joint_groups`): each holder's
+group carries the forces of every other end on the plate (each along its
+line through its bolts' centroid, the resultant's moment about these
+bolts' centroid, shared elastically) **whole** — *on the safe side*: how
+the two share them is not counted on —, neither holder's own force taken
+as a force on the plate; each holder's flange in bearing under its bolts;
+and the ends on the plate ride on each holder ending at the joint (L14's
+path: its own end bolts carry their forces too, each bolt the larger of
+with and without them).
+
+**Not on the safe side.** The plate joins its two holders: a force it
+passes between them (their ends deform differently) is not counted — said
+**NOT ON THE SAFE SIDE** on the plate's holding rows. The end on the plate
+lies a plate's thickness out of the holders' level legs, as on any plate
+(its framing eccentricity, gauge to centroid, as for any end bolted by one
+leg: the code's slenderness curve). No member's size or work point
+changes.
+
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

@@ -8,6 +8,51 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (joint layout: a level plate across two horizontals, L20)
+
+**A level plan or hip end lying on no flange of what it bolts onto goes
+onto a plate lying on the level legs of two horizontals meeting at the
+joint, held by its own bolts onto both** (roadmap O44 L20, L19's question
+6 and the owner's "go ahead to improve" of 2026-11-23; the owner busy:
+built on its own, reported; built, in active development, not approved
+yet; [theory](../theory/joint-layout.md#a-level-plate-across-two-horizontals-l20)).
+
+- **Format** (structure file version 26, `PLATE_ALSO_BOLTS_VERSION`; older
+  files read unchanged, an older reader refuses 26): a plate's
+  `[plate.also_bolts]` — its own bolts onto a second member, the fields of
+  `[plate.leg_bolts]` (member, leg, bolts, bolt_points). Named
+  `also_bolts` as L19's question proposed (the plate's `on` and
+  `leg_bolts` stay the first holder's). A member not at the joint, the
+  member `leg_bolts` names, no places, a count differing or `both`/`none`
+  said in the file's notes, kept, not used.
+- **Which ends** (`joint_layout::level_pair`, `LayoutSettings::level_plates`,
+  on): two other level single angles ending at the joint, not in line
+  with the end nor with each other, neither bolting onto it, each with a
+  flange in whose plane the end's axis lies (2°), their outer faces in one
+  plane (normals within 2°, faces within the clash check's 1 mm). Named
+  onto the first (class, the wider, the id) in the run's planning copy:
+  where the end already lies flat on that plane, before a member running
+  through in whose flange's plane its axis lies; else after it, before
+  L13's name — both weighed as L13's names.
+- **The plate** (`joint_layout::level_holds`): the flat plate on the first
+  holder's level leg (L5o's own bolts onto it, grown along it as L15's
+  plate between) gets bolts onto the second where both holders' level legs
+  are in one plane **as drawn** (each moved as the plan moves it), placed
+  as the first holder's are, the plate grown round them clear of what it
+  would run into, of its heel line and of its straight cuts; else said and
+  the plate stays held by the first alone.
+- **Checks**: both holders' bolts are the plate's holding bolts (each
+  holder's group carrying the other ends' forces whole; neither holder's
+  own force a force on the plate); the ends on the plate ride on each
+  holder's own end bolts (L14). Said NOT ON THE SAFE SIDE: a force the
+  plate passes between its two holders. The holding bolts' heads and nuts
+  are not pieces of the clash check (placed clear by the plan), as for
+  `[plate.leg_bolts]` since L5o — asked.
+- **Measured**: in the roadmap block and on the theory page (L20 docs).
+- **Not built** (time): L19's question 7a (the own-plane welded plate's
+  axis offset into the analysis) and 7b (the joggle); 7c waits for the
+  owner.
+
 ## 2026-11-23 (joint layout: turns weighed over every joint they reach, L19)
 
 **The turns Orient angles sets from the joints' planes are weighed by the

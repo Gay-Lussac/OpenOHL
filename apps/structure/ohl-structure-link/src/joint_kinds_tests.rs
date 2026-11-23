@@ -309,6 +309,7 @@ fn a_plates_own_bolts_name_the_leg_the_map_carries_theirs_onto() {
                 short: false,
                 cuts: Vec::new(),
                 between: false,
+                also: None,
             }],
             ..Default::default()
         };

@@ -93,6 +93,8 @@ mod leg_roll_tests;
 pub mod leg_splices;
 #[cfg(test)]
 mod leg_splices_tests;
+#[cfg(test)]
+mod level_plate_tests;
 mod member_solids;
 #[cfg(test)]
 mod member_solids_tests;

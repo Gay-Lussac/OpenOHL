@@ -546,6 +546,7 @@ mod tests {
                 edges: Vec::new(),
                 notes: Vec::new(),
                 leg_bolts: None,
+                also_bolts: None,
                 bend: None,
                 held_by: None,
                 between: false,

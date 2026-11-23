@@ -395,6 +395,9 @@ impl LayoutWindow {
             // L19 (2026-11-23): the turns Orient angles set from the
             // joints' planes weighed over every joint they reach.
             weigh_turns: true,
+            // L20 (2026-11-24): a level plate across two horizontals (the
+            // plate's also_bolts onto the second).
+            level_plates: true,
         }
     }
 

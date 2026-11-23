@@ -527,6 +527,12 @@ pub struct PlateDetail {
     /// on (`plate_leg_arrival`); none: not given, or not usable (said in
     /// `notes`).
     pub leg_bolts: Option<Box<Arrival>>,
+    /// Its own bolts onto a second member (`[plate.also_bolts]`,
+    /// 2026-11-24, structure file version 26, the joint layout's L20: a
+    /// level plate across two horizontals): that member's end as bolted
+    /// onto this plate by them, as `leg_bolts`; none: not given, or not
+    /// usable (said in `notes`).
+    pub also_bolts: Option<Box<Arrival>>,
     /// Bent from another plate of the joint (`[plate.bend]`, J2b,
     /// 2026-11-19): the two flats one part (its `assembly`, without a weld
     /// between them); none: a flat plate, or the flat the other is bent
@@ -546,6 +552,17 @@ pub struct PlateDetail {
     /// False: as before (also where the file says so but the member is no
     /// built-up member of angles with such a gap: said in `notes`).
     pub between: bool,
+}
+
+impl PlateDetail {
+    /// Its own bolts onto the members holding it, as those members' ends
+    /// bolted onto it: `leg_bolts`, then (L20) `also_bolts`.
+    pub fn holding_ends(&self) -> impl Iterator<Item = &Arrival> {
+        self.leg_bolts
+            .as_deref()
+            .into_iter()
+            .chain(self.also_bolts.as_deref())
+    }
 }
 
 /// A bent plate's bend, on the flat naming it (J2b, 2026-11-19).
@@ -1024,29 +1041,39 @@ pub(crate) fn joint_details_and_model(
                         p.on.as_deref().unwrap_or("the member it is on")
                     ));
                 }
-                if !level3 || p.leg_bolts.is_none() {
+                if !level3 || (p.leg_bolts.is_none() && p.also_bolts.is_none()) {
                     return d;
                 }
-                // Its own bolts onto the leg (2026-11-19): drawn round them
-                // too (their edge distances kept), as the leg's end bolted
-                // onto it.
-                match plate_leg_arrival(p, at, &arrivals, &d, bolts) {
-                    Ok(a) => {
-                        let mut with = arrivals.clone();
-                        with.push(a.clone());
-                        let mut d2 = plate(p, at, &with, seats.get(&p.id), &rules, short);
-                        d2.leg_bolts = Some(Box::new(a));
-                        if p.between && !d2.between {
-                            d2.notes = d.notes;
+                // Its own bolts onto the leg (2026-11-19) and (L20) onto a
+                // second member: drawn round them too (their edge distances
+                // kept), as those members' ends bolted onto it.
+                let mut with = arrivals.clone();
+                let mut own: [Option<Box<Arrival>>; 2] = [None, None];
+                let mut errs = Vec::new();
+                for (k, lb) in [&p.leg_bolts, &p.also_bolts].into_iter().enumerate() {
+                    let Some(lb) = lb else { continue };
+                    match plate_leg_arrival(p, lb, at, &arrivals, &d, bolts) {
+                        Ok(a) => {
+                            with.push(a.clone());
+                            own[k] = Some(Box::new(a));
                         }
-                        d2
-                    }
-                    Err(w) => {
-                        let mut d = d;
-                        d.notes.push(w);
-                        d
+                        Err(w) => errs.push(w),
                     }
                 }
+                if own.iter().all(Option::is_none) {
+                    let mut d = d;
+                    d.notes.extend(errs);
+                    return d;
+                }
+                let mut d2 = plate(p, at, &with, seats.get(&p.id), &rules, short);
+                let [legs, also] = own;
+                d2.leg_bolts = legs;
+                d2.also_bolts = also;
+                if p.between && !d2.between {
+                    d2.notes = d.notes;
+                }
+                d2.notes.extend(errs);
+                d2
             })
             .collect();
         let splices: Vec<SpliceDetail> = t
@@ -3336,6 +3363,7 @@ fn plate(
             edges,
             notes,
             leg_bolts: None,
+            also_bolts: None,
             bend: None,
             held_by: held_by_of(p),
             between: seat.is_some_and(|s| s.between),
@@ -3361,6 +3389,7 @@ fn plate(
             edges,
             notes: vec![format!("{}: {NO_OUTLINE}", p.id)],
             leg_bolts: None,
+            also_bolts: None,
             bend: None,
             held_by: held_by_of(p),
             between: seat.is_some_and(|s| s.between),
@@ -3513,6 +3542,7 @@ fn plate(
         edges,
         notes,
         leg_bolts: None,
+        also_bolts: None,
         bend: None,
         held_by: held_by_of(p),
         between: seat.is_some_and(|s| s.between),
@@ -3527,9 +3557,10 @@ fn held_by_of(p: &ohl_structures::connections::TypePlate) -> Option<String> {
     p.held_by.clone()
 }
 
-/// The leg's member end at a joint as a plate's own bolts onto it
-/// (`[plate.leg_bolts]`, 2026-11-19) bolt it onto the plate `d` (`p` in
-/// the file, at `joint`): `all`'s end of the member, bolted onto the plate
+/// The leg's member end at a joint as a plate's own bolts onto it `lb`
+/// (`[plate.leg_bolts]`, 2026-11-19; L20 `[plate.also_bolts]` alike) bolt
+/// it onto the plate `d` (`p` in the file, at `joint`): `all`'s end of the
+/// member, bolted onto the plate
 /// by those bolts — each where it is, along the member from the work point
 /// and across the flange from the heel, through the flange the plate lies
 /// on (given as the long or short leg, else the one whose face is the
@@ -3537,14 +3568,12 @@ fn held_by_of(p: &ohl_structures::connections::TypePlate) -> Option<String> {
 /// joint, not an angle, no bolts.
 pub(crate) fn plate_leg_arrival(
     p: &ohl_structures::connections::TypePlate,
+    lb: &ohl_structures::connections::PlateLegBolts,
     joint: [f64; 3],
     all: &[Arrival],
     d: &PlateDetail,
     bolts: &ohl_structures::bolts::BoltLibrary,
 ) -> Result<Arrival, String> {
-    let Some(lb) = &p.leg_bolts else {
-        return Err(format!("plate {}: no bolts onto the leg", p.id));
-    };
     let a = all.iter().find(|a| a.member == lb.member).ok_or_else(|| {
         format!(
             "plate {}: its bolts onto the leg name {}, which does not meet at the joint",
