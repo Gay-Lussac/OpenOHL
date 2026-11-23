@@ -248,3 +248,49 @@ fn a_turn_is_weighed_only_by_a_run_laying_out_every_joint_it_reaches() {
     // Nothing listed: nothing to settle.
     assert!(settle_turns(&plain.text, &ask).unwrap().is_none());
 }
+
+/// The weighing's promise: no joint laid out worse than with every turn
+/// taken back (the base), but those it counts in its notes (no turn
+/// reaches them, no member turned otherwise meets them).
+#[test]
+fn no_joint_is_laid_out_worse_than_with_every_turn_taken_back() {
+    let lib = library();
+    let o = orient_angles(&tower(), &lib, &OrientAsk::default()).unwrap();
+    let t = parse(&o.text);
+    let mut doc: toml_edit::DocumentMut = o.text.parse().unwrap();
+    for c in candidates_of(&t) {
+        for r in &c.members {
+            crate::layout_run::put_roll(&mut doc, &r.member, &r.before);
+        }
+    }
+    let mut rec = LayoutRecord::of(&t);
+    rec.plane_turns.clear();
+    rec.write(&mut doc);
+    let s = settings(true);
+    let base = run(&doc.to_string(), &s);
+    assert!(base.weighed.is_empty());
+    let r = run(&o.text, &s);
+    assert!(!r.weighed.is_empty());
+    let left: usize = r
+        .notes
+        .iter()
+        .find(|n| n.contains("where no turn reaches"))
+        .and_then(|n| n.split_whitespace().next()?.parse().ok())
+        .unwrap_or(0);
+    let (b, a) = (
+        crate::weighed_turns::counts_of(&base),
+        crate::weighed_turns::counts_of(&r),
+    );
+    let worse = a
+        .iter()
+        .filter(|(j, x)| x.worse_than(&b.get(*j).copied().unwrap_or_default()))
+        .count();
+    assert!(worse <= left, "{worse} worse, {left} said: {:?}", r.notes);
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("the weighing laid the tower out")),
+        "{:?}",
+        r.notes
+    );
+}

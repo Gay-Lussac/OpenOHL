@@ -578,7 +578,7 @@ fn knock_on(
 /// A joint as a run laid it out: whole, its member ends laid out and its
 /// plates (all none where it is not written).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-struct Counts {
+pub(crate) struct Counts {
     whole: bool,
     ends: usize,
     plates: usize,
@@ -587,7 +587,7 @@ struct Counts {
 impl Counts {
     /// Laid out worse than `b`: fewer ends, as many on more plates, or no
     /// longer whole.
-    fn worse_than(&self, b: &Counts) -> bool {
+    pub(crate) fn worse_than(&self, b: &Counts) -> bool {
         self.ends < b.ends
             || (self.ends == b.ends && self.plates > b.plates)
             || (b.whole && !self.whole)
@@ -603,7 +603,7 @@ impl Counts {
 }
 
 /// Each joint of run `r` laid out ([`Counts`]).
-fn counts_of(r: &LayoutRun) -> BTreeMap<&str, Counts> {
+pub(crate) fn counts_of(r: &LayoutRun) -> BTreeMap<&str, Counts> {
     r.joints
         .iter()
         .map(|o| {
