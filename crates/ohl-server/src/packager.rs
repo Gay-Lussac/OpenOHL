@@ -218,7 +218,7 @@ pub(crate) struct Libs {
         ohl_structures::InsulatorLibrary,
     )>,
     cache: ohl_line::library::ResolveCache,
-    notes: Vec<String>,
+    pub(crate) notes: Vec<String>,
 }
 
 /// A model's line resolved at a revision, with its lookups.

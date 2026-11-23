@@ -323,8 +323,17 @@ fn signing_in_to_a_local_network() {
 /// never replaced; a stale export said in red with what changed meanwhile;
 /// 2 the offline file checked with the network's code; 3 its bundle made
 /// after a commit; 4 brought back onto a branch, never main; Escape
-/// closes. With `OHL_SHOTS` (made as `USER=tester`): the user guide's
-/// pictures.
+/// closes. With it (2026-11-23), the ordinary check windows on the
+/// offline file read its export's neighbours: the Clearances window's
+/// rules to other lines find what the network's own check finds there,
+/// said with the export's date, the lines read and that they may be
+/// stale; Structure loads name the tower shared with another line, the
+/// fields the lines near (NOT ALL CHECKED). With `OHL_SHOTS` (made as
+/// `USER=tester`): the user guide's pictures.
+/// The test's synthetic country without pictures: the fewest pylons with
+/// a tower shared by two lines.
+const PYLONS: usize = 150;
+
 #[test]
 fn offline_working_set_window_on_a_local_network() {
     use crate::network_offline::{Exported, OfflineWindow, Step};
@@ -341,11 +350,12 @@ fn offline_working_set_window_on_a_local_network() {
     let url = cluster.url("net");
     let dir = cluster.scratch();
     // The pictures on a country of several lines (other lines near, a
-    // whole route's clearances: seconds); the test alone on a small one
-    // and the loads on shared towers (light beside the other tests).
+    // whole route's clearances: seconds); the test alone on a smaller one
+    // with a tower shared by two lines (the check windows with the
+    // export's neighbours) and the loads on shared towers.
     let pictures = ohl_core::env::var("OHL_SHOTS").is_ok();
     let country = ohl_synth::country(&ohl_synth::Settings {
-        pylons: if pictures { 300 } else { 60 },
+        pylons: if pictures { 300 } else { PYLONS },
         ..Default::default()
     })
     .unwrap();
@@ -367,7 +377,20 @@ fn offline_working_set_window_on_a_local_network() {
             },
         )
         .unwrap();
-        codes[0].clone()
+        // A line sharing a tower with another (its neighbours exported).
+        codes
+            .iter()
+            .find(|c| {
+                !ohl_store_pg::import::twins(&net, c, 0.5)
+                    .unwrap()
+                    .is_empty()
+            })
+            .expect("a shared tower in the synthetic country")
+            .clone()
+    };
+    let twin = {
+        let net = Network::connect(&url).unwrap();
+        ohl_store_pg::import::twins(&net, &code, 0.5).unwrap()[0].clone()
     };
     cluster.wait_for_locks_gone("net");
     let server = Server::start_network(
@@ -385,15 +408,15 @@ fn offline_working_set_window_on_a_local_network() {
     )
     .unwrap();
     let invitation = server.invitation_for("tester");
-    // The working set: the line's first route, followed by OHL-Design.
+    // The working set: the route of the shared tower, followed by
+    // OHL-Design.
     let route = {
         let net = Network::connect(&url).unwrap();
-        net.route_list()
-            .unwrap()
-            .into_iter()
-            .find(|(l, _)| *l == code)
-            .unwrap()
-            .1
+        let mut s = Session::open_on(Box::new(net.store(&code).unwrap()), &code).unwrap();
+        s.object_routes(&[(ohl_session::Kind::Structure, twin.structure.clone())])
+            .pop()
+            .and_then(|r| r.into_iter().next())
+            .expect("the shared tower's route")
     };
     let spec = WorkingSetSpec {
         name: String::new(),
@@ -577,7 +600,14 @@ fn offline_working_set_window_on_a_local_network() {
     }
     let mut offline = Harness::builder()
         .with_size(egui::vec2(1100.0, 800.0))
-        .build_eframe(|_| App::with_model(load(ws.clone()), None));
+        .build_eframe(|_| {
+            // The shipped wire library, as an installed OHL-Design finds it
+            // beside itself (the synthetic lines hold no wire file; the
+            // tests' build folder may lie outside the source tree).
+            let mut m = load(ws.clone());
+            m.library = ohl_cables::Library::load(&root().join("libraries/cables")).unwrap();
+            App::with_model(m, None)
+        });
     offline.run_steps(2);
     crate::network_offline::open(offline.state_mut().ready().unwrap(), Step::Check);
     let rules = dir.join("rules.ohlr");
@@ -626,6 +656,29 @@ fn offline_working_set_window_on_a_local_network() {
             .query_by_label_contains("Join the network first")
             .is_some()
     );
+    window(offline.state_mut()).step = Step::Check;
+    offline.run_steps(2);
+    offline_files_neighbours_in_the_check_windows(
+        &mut offline,
+        &ws,
+        &rules,
+        report.number,
+        &twin,
+        &|h, name| {
+            if let Ok(shots) = ohl_core::env::var("OHL_SHOTS") {
+                assert_eq!(crate::files::user(), "tester", "made with USER=tester");
+                h.input_mut().events.push(egui::Event::PointerGone);
+                h.run_steps(2);
+                let image = h.render().unwrap();
+                let ppp = image.width() as f32 / 1100.0;
+                let image = match super::tool_shots::window_rect(h, "Clearances") {
+                    Some(rect) => super::tool_shots::crop(&image, rect, ppp),
+                    None => image,
+                };
+                image.save(format!("{shots}/{name}.png")).unwrap();
+            }
+        },
+    );
 
     // 4. Brought back onto a branch, never main.
     crate::network_offline::open(harness.state_mut().ready().unwrap(), Step::BringBack);
@@ -655,4 +708,269 @@ fn offline_working_set_window_on_a_local_network() {
     });
     drop(harness);
     server.stop();
+}
+
+/// The check windows on offline file `ws` (open in `h`) with its export's
+/// neighbours (2026-11-23): `rules` the window's rule file, `number` the
+/// export's number as the window wrote it into the file, `twin` a tower
+/// of the working set shared with another line; `shot` the pictures.
+fn offline_files_neighbours_in_the_check_windows(
+    h: &mut Harness<'_, App>,
+    ws: &Path,
+    rules: &Path,
+    number: i64,
+    twin: &ohl_store_pg::import::Twin,
+    shot: &dyn Fn(&mut Harness<'_, App>, &str),
+) {
+    use crate::offline_neighbours::{ExportRecord, Neighbours, RECORD_KEY};
+    // What the file holds: the other line, and the server's word on the
+    // export the window kept in it.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let n = r
+            .model
+            .offline_neighbours()
+            .expect("an offline working set");
+        let n = n.as_ref().as_ref().unwrap();
+        assert!(
+            n.lines.iter().any(|l| l.model == twin.other_line),
+            "{}",
+            n.read_words()
+        );
+        assert_eq!(
+            n.record,
+            Some(ExportRecord {
+                number,
+                stale: false,
+                changed_meanwhile: 0
+            })
+        );
+        assert!(n.stale_words().contains("They may be stale"));
+        assert!(
+            n.stale_words()
+                .contains("Nothing changed on the network while")
+        );
+    }
+    // A stale export said with what changed meanwhile.
+    {
+        let s = Session::open(ws).unwrap();
+        let kept = s.setting(RECORD_KEY).unwrap();
+        let stale = ExportRecord {
+            number,
+            stale: true,
+            changed_meanwhile: 3,
+        };
+        s.set_setting(RECORD_KEY, Some(&serde_json::to_string(&stale).unwrap()))
+            .unwrap();
+        let n = Neighbours::read(&s).unwrap().unwrap();
+        assert!(
+            n.stale_words()
+                .contains("STALE already when exported: 3 object(s)"),
+            "{}",
+            n.stale_words()
+        );
+        s.set_setting(RECORD_KEY, kept.as_deref()).unwrap();
+    }
+    // The rules to other lines with the neighbours: what the network's own
+    // check finds on the same file (the same pairs and distances).
+    let text = "[[rule]]\nname = \"other lines\"\ntarget = \"other_lines\"\nradial = 60.0\n";
+    let set = ohl_clearance::RuleSet::parse(text).unwrap().rules;
+    let wanted: Vec<String> = Session::open(ws)
+        .unwrap()
+        .part()
+        .unwrap()
+        .iter()
+        .filter(|(k, _)| *k == ohl_session::Kind::Section)
+        .map(|(_, id)| id.clone())
+        .collect();
+    let (with, without) = {
+        let r = h.state_mut().ready().unwrap();
+        let m = &r.model;
+        // The case the network's check takes (the line has no weather
+        // file of its own: the shipped default cases).
+        let case = ohl_scope::default_cases()
+            .unwrap()
+            .weather
+            .into_iter()
+            .find(|c| c.name == "10 °C")
+            .unwrap();
+        let states = ohl_clearance::zone::wind_states(&[case], |_| true, &Default::default());
+        let input = |neighbours| crate::clearance::Input {
+            states: states.clone(),
+            solved: None,
+            sections: wanted.clone(),
+            neighbours,
+            ..super::clearances::clearance_input(m, set.clone())
+        };
+        // Without first: the first solve of a process is the slowest (its
+        // times then compare).
+        let without = crate::clearance::run(&input(None)).unwrap();
+        (
+            crate::clearance::run(&input(m.offline_neighbours())).unwrap(),
+            without,
+        )
+    };
+    assert!(
+        without
+            .notes
+            .iter()
+            .any(|n| n.contains("other lines are checked by")),
+        "{:?}",
+        without.notes
+    );
+    assert!(without.findings.is_empty() && without.neighbours.is_empty());
+    eprintln!(
+        "clearances of the working set: {:.2?} with the export's neighbours, {:.2?} without",
+        with.took, without.took
+    );
+    assert!(
+        with.neighbours[0].contains("Neighbours from the export of")
+            && with
+                .neighbours
+                .iter()
+                .any(|t| t.contains(&format!("line {}", twin.other_line))),
+        "{:?}",
+        with.neighbours
+    );
+    assert!(
+        with.not_all_checked.is_empty(),
+        "{:?}",
+        with.not_all_checked
+    );
+    let server = ohl_server::offline_checks::check_offline(
+        ws,
+        &ohl_server::ScopedCheck::Clearances {
+            case: "10 °C".into(),
+            rules: text.into(),
+        },
+    )
+    .unwrap();
+    eprintln!("the network's check on the file: {:.2} s", server.seconds);
+    // The server's words for a wire as the window's.
+    let wire = |s: &str| match s.strip_prefix("jumper:") {
+        Some(j) => format!("jumper {j}"),
+        None => s.to_owned(),
+    };
+    let other = |s: &str| {
+        let (line, w) = s.strip_prefix("line ").unwrap().split_once(": ").unwrap();
+        match w.strip_prefix("jumper:") {
+            Some(j) => format!("jumper {line}:{j}"),
+            None => format!("{line}:{w}"),
+        }
+    };
+    let mut on_server: Vec<(String, String, f64)> = server
+        .findings
+        .iter()
+        .filter(|f| f.violates && f.what == "other lines")
+        .map(|f| (wire(&f.on), other(f.against.as_deref().unwrap()), f.value))
+        .collect();
+    let mut here: Vec<(String, String, f64)> = with
+        .findings
+        .iter()
+        .map(|f| {
+            (
+                f.wire.describe(),
+                f.other.as_ref().unwrap().describe(),
+                f.distance,
+            )
+        })
+        .collect();
+    on_server.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    here.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    assert!(!on_server.is_empty(), "{server:?}");
+    assert!(
+        !here.is_empty(),
+        "{:?} {:?} {:?}",
+        with.neighbours,
+        with.notes,
+        with.rules
+    );
+    assert_eq!(
+        on_server.iter().map(|x| (&x.0, &x.1)).collect::<Vec<_>>(),
+        here.iter().map(|x| (&x.0, &x.1)).collect::<Vec<_>>()
+    );
+    for (a, b) in on_server.iter().zip(&here) {
+        assert!((a.2 - b.2).abs() < 1e-6, "{a:?} {b:?}");
+    }
+    // Structure loads: the shared tower named, NOT ALL CHECKED for it.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let m = &r.model;
+        let ids: Vec<String> = m.line.structures.iter().map(|s| s.id.clone()).collect();
+        let notes = crate::loads::offline_notes(m, &m.offline_neighbours().unwrap(), &ids);
+        assert!(
+            notes[0].starts_with("NOT ALL CHECKED")
+                && notes[0].contains(&format!(
+                    "{} (line {} {})",
+                    twin.structure, twin.other_line, twin.other
+                )),
+            "{notes:?}"
+        );
+        // The fields: the other line within 500 m, its field not added.
+        let field = crate::offline_neighbours::field_notes(m, true);
+        assert!(
+            field[0].starts_with("NOT ALL CHECKED")
+                && field[0].contains(&format!("line {}", twin.other_line)),
+            "{field:?}"
+        );
+    }
+    // The Clearances window: the export's neighbours said before Run,
+    // then the report with them.
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.network_offline = None;
+        r.clearances = crate::clearance::Clearances::new(&r.model, Some(rules));
+        r.clearances.open = true;
+    }
+    h.run_steps(3);
+    assert!(
+        h.query_by_label_contains("Offline working set: neighbours from its export")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("Neighbours from the export of")
+            .is_some()
+    );
+    shot(h, "offline-neighbours-setup");
+    let run = |h: &mut Harness<'_, App>| {
+        h.get_by_label("Run").click();
+        let t0 = std::time::Instant::now();
+        while h.state_mut().ready().unwrap().clearances.report.is_none() {
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(300),
+                "checked"
+            );
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(3);
+    };
+    // The pictures' before: the same window as before 2026-11-23 (the
+    // neighbours not read; the rules to other lines skipped).
+    if ohl_core::env::var("OHL_SHOTS").is_ok() {
+        crate::offline_neighbours::IGNORED.with(|c| c.set(true));
+        h.run_steps(3);
+        run(h);
+        shot(h, "offline-neighbours-clearances-before");
+        crate::offline_neighbours::IGNORED.with(|c| c.set(false));
+        let r = h.state_mut().ready().unwrap();
+        r.clearances = crate::clearance::Clearances::new(&r.model, Some(rules));
+        r.clearances.open = true;
+        h.run_steps(3);
+    }
+    run(h);
+    let rep = h.state_mut().ready().unwrap().clearances.report.clone();
+    let rep = rep.unwrap().unwrap();
+    assert!(
+        rep.neighbours
+            .iter()
+            .any(|t| t.contains("Within the rules' reach")),
+        "{:?}",
+        rep.neighbours
+    );
+    assert!(
+        h.query_by_label_contains("Within the rules' reach")
+            .is_some()
+    );
+    shot(h, "offline-neighbours-clearances");
 }

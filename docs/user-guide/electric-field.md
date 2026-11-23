@@ -270,6 +270,11 @@ and [what is left out](../theory/electric-field.md#what-is-left-out):
   from them, not at their tops.
 - **DC systems** are left out (said).
 
+On an **offline working set's file**, the lines of its export within
+500 m are named in the results: their field is not added — NOT ALL
+CHECKED, not on the safe side where they come near
+([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
+
 ## Without the window
 
 `ohl electrical electric` runs the same calculation from the command line,

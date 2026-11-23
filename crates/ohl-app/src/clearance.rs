@@ -88,6 +88,12 @@ pub struct Report {
     pub rules: Vec<(String, String)>,
     /// What was skipped and why.
     pub notes: Vec<String>,
+    /// Why it is not complete (each "NOT ALL CHECKED: …"): the verdict
+    /// never says every rule met while one is here.
+    pub not_all_checked: Vec<String>,
+    /// An offline working set's neighbours (2026-11-23): which were
+    /// included and read, and that they may be stale (empty: not one).
+    pub neighbours: Vec<String>,
     /// How long it took.
     pub took: Duration,
 }
@@ -148,6 +154,10 @@ pub struct Input {
     /// The swing arc between the wires, with the bands' margins (the
     /// states then hold each windy case's still air and full blowouts).
     pub arc: Option<ohl_clearance::positions::BandMargins>,
+    /// An offline working set's neighbours (2026-11-23): the rules to
+    /// other lines take their wires ([`crate::offline_neighbours`]); an
+    /// error: they could not be read (NOT ALL CHECKED).
+    pub neighbours: Option<Arc<Result<crate::offline_neighbours::Neighbours, String>>>,
 }
 
 impl Input {
@@ -187,6 +197,7 @@ impl Input {
             cancel: Default::default(),
             points: 0,
             arc: None,
+            neighbours: None,
         }
     }
 }
@@ -495,6 +506,192 @@ pub fn safe_side_notes(
     notes
 }
 
+/// The export's neighbour lines near the wires checked, with their
+/// sections near (none: not an offline working set, or no rule to other
+/// lines): what was included, read and may be stale said in `report`, and
+/// the export's gaps and a reach beyond what it holds as NOT ALL CHECKED.
+fn neighbours_near<'a>(
+    input: &'a Input,
+    line: &Line,
+    voltages: &[Option<ohl_line::electrical::Potential>],
+    report: &mut Report,
+) -> (
+    Vec<(&'a ohl_server::offline_checks::NeighbourWires, Vec<String>)>,
+    f64,
+) {
+    let Some(n) = input.neighbours.as_deref() else {
+        return (Vec::new(), 0.0);
+    };
+    let n = match n {
+        Ok(n) => n,
+        Err(e) => {
+            report.not_all_checked.push(format!(
+                "NOT ALL CHECKED: the offline working set's neighbours could not be read ({e}): \
+                 the rules to other lines checked nothing"
+            ));
+            return (Vec::new(), 0.0);
+        }
+    };
+    let to_others: Vec<&Rule> = input
+        .rules
+        .iter()
+        .filter(|r| matches!(r.target, ohl_clearance::Target::OtherLines))
+        .filter(|r| report.cases.iter().any(|c| ohl_clearance::applies(r, c)))
+        .collect();
+    if to_others.is_empty() {
+        report.neighbours.push(format!(
+            "Neighbours from {} read: {} — no rule of this check is to other lines, so none is \
+             needed (the rules between this line's wires take the line's own read-only \
+             neighbours the file holds).",
+            n.export_words(),
+            n.read_words()
+        ));
+        return (Vec::new(), 0.0);
+    }
+    // The rules' reach for every voltage the neighbours can have, at the
+    // highest point (as the network's checks look for candidates).
+    let mut all: Vec<Option<ohl_line::electrical::Potential>> = Vec::new();
+    for l in &n.lines {
+        for p in ohl_clearance::voltages_of(&l.line).unwrap_or_default() {
+            if !all.contains(&p) {
+                all.push(p);
+            }
+        }
+    }
+    let top = line
+        .structures
+        .iter()
+        .chain(n.lines.iter().flat_map(|l| l.line.structures.iter()))
+        .flat_map(|s| s.points.iter().map(|p| p.position[2]))
+        .fold(0.0, f64::max);
+    let reach = to_others
+        .iter()
+        .map(|r| r.reach_in_plan(voltages, &all, top))
+        .fold(0.0, f64::max);
+    let Some(checked) = crate::offline_neighbours::sections_bounds(line, &input.sections) else {
+        return (Vec::new(), reach);
+    };
+    let near = n.near(&checked, reach);
+    report
+        .neighbours
+        .push(n.included_words("the targets of the rules to other lines"));
+    report.neighbours.push(if near.is_empty() {
+        format!("Within the rules' reach ({reach:.1} m): no wire of another line.")
+    } else {
+        format!(
+            "Within the rules' reach ({reach:.1} m), solved in every position checked with \
+             their own lines' settings and wires (named LINE:SECTION): {}.",
+            near.iter()
+                .map(|(l, s)| format!(
+                    "line {} ({} of its {} sections)",
+                    l.model,
+                    s.len(),
+                    l.line.sections.len()
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    });
+    report.neighbours.push(n.stale_words());
+    report.not_all_checked.extend(n.gaps());
+    if reach > n.meta.reach_m || !n.covers(&checked.grown(reach)) {
+        report.not_all_checked.push(format!(
+            "NOT ALL CHECKED: the rules to other lines reach {reach:.0} m around the wires \
+             checked, beyond what the export holds (other lines within {:.0} m of the working \
+             set as exported): narrow 2 Scope to the working set's routes, export again with a \
+             larger reach, or check on the network",
+            n.meta.reach_m
+        ));
+    }
+    (near, reach)
+}
+
+/// Of the other lines' wires `others`, those with a piece within `reach`
+/// of a piece of `wires` in plan (the targets a pair can be found with:
+/// the distance in plan is never more than in space), in their order.
+fn targets_near(others: Vec<Wire>, wires: &[Wire], reach: f64) -> Vec<Wire> {
+    if others.is_empty() {
+        return others;
+    }
+    let mut grid = ohl_scope::bound::SegmentGrid::new(50.0);
+    for w in wires {
+        grid.add_polyline(&w.points);
+    }
+    let within = reach + 1.0;
+    others
+        .into_iter()
+        .filter(|w| {
+            w.points.windows(2).any(|s| {
+                grid.nearest([s[0][0], s[0][1]], [s[1][0], s[1][1]], within)
+                    .is_some()
+            }) || (w.points.len() == 1
+                && grid
+                    .nearest(
+                        [w.points[0][0], w.points[0][1]],
+                        [w.points[0][0], w.points[0][1]],
+                        within,
+                    )
+                    .is_some())
+        })
+        .collect()
+}
+
+/// The export's neighbour lines `near` in every position of `states`, by
+/// calculation `calc` (as the rules' own), each with its own line's
+/// settings and wire library: per state, their wires (sections named
+/// `LINE:SECTION`, jumpers `jumper:LINE:ID`). What does not solve is NOT
+/// ALL CHECKED in `report`.
+fn other_wires(
+    input: &Input,
+    near: &[(&ohl_server::offline_checks::NeighbourWires, Vec<String>)],
+    calc: ohl_clearance::calculation::Calc,
+    states: &[WindState],
+    budget: &dyn Fn() -> ohl_core::budget::Budget,
+    report: &mut Report,
+) -> Result<Vec<Vec<Wire>>, String> {
+    let mut per: Vec<Vec<Wire>> = vec![Vec::new(); states.len()];
+    for (n, sections) in near {
+        let nl = ohl_clearance::calculation::line_for(&n.line, calc);
+        let solved = ohl_clearance::zone::solve_states(
+            &nl,
+            &n.library,
+            states,
+            sections,
+            true,
+            &budget(),
+            &AtomicUsize::new(0),
+        );
+        let solved = match solved {
+            Ok(s) => s,
+            Err(e) if input.cancel.is_cancelled() => return Err(e),
+            Err(e) => {
+                report.not_all_checked.push(format!(
+                    "NOT ALL CHECKED: line {}'s wires near not solved ({e}): not checked against",
+                    n.model
+                ));
+                continue;
+            }
+        };
+        for f in &solved.failed {
+            report.not_all_checked.push(format!(
+                "NOT ALL CHECKED: line {}: not solved: {f} — not checked against",
+                n.model
+            ));
+        }
+        for (k, (shapes, jumpers)) in solved.shapes.iter().zip(&solved.jumpers).enumerate() {
+            let mut w = ohl_clearance::wires_of(&nl, shapes, jumpers);
+            for wire in &mut w {
+                wire.section = match wire.section.strip_prefix("jumper:") {
+                    Some(j) => format!("jumper:{}:{j}", n.model),
+                    None => format!("{}:{}", n.model, wire.section),
+                };
+            }
+            per[k].extend(w);
+        }
+    }
+    Ok(per)
+}
+
 /// Runs the check.
 pub fn run(input: &Input) -> Result<Report, String> {
     let named = input.surfaces.read();
@@ -530,11 +727,28 @@ pub fn run(input: &Input) -> Result<Report, String> {
     let line = &*base;
     // Voltages of the sections: every rule must cover them.
     let voltages = ohl_clearance::voltages_of(line)?;
+    // An offline working set's neighbours near the checked wires: the
+    // rules to other lines take their wires (2026-11-23).
+    let (near, reach) = neighbours_near(input, line, &voltages, &mut report);
+    let mut other_voltages: Vec<Option<ohl_line::electrical::Potential>> = Vec::new();
+    for (n, _) in &near {
+        for p in
+            ohl_clearance::voltages_of(&n.line).map_err(|e| format!("line {}: {e}", n.model))?
+        {
+            if !other_voltages.contains(&p) {
+                other_voltages.push(p);
+            }
+        }
+    }
     for rule in rules
         .iter()
         .filter(|r| report.cases.iter().any(|c| ohl_clearance::applies(r, c)))
     {
-        rule.check_voltages(&voltages, &[])?;
+        rule.check_voltages(&voltages, &other_voltages)
+            .map_err(|e| match near.is_empty() {
+                true => e,
+                false => format!("{e} (a voltage of the export's neighbour lines)"),
+            })?;
     }
     let limit = ohl_clearance::zone::time_limit(input.points);
     let budget = || {
@@ -657,6 +871,8 @@ pub fn run(input: &Input) -> Result<Report, String> {
                 s.shapes.into_iter().zip(s.jumpers).collect()
             }
         };
+        // The export's neighbours in every position (2026-11-23).
+        let others = other_wires(input, &near, calc, states, &budget, &mut report)?;
         // The circuits, routes and alignments chosen only (owner, 2026-10-27).
         let on = input.check.wires_on(line);
         let wires: Vec<Vec<Wire>> = solved
@@ -678,6 +894,13 @@ pub fn run(input: &Input) -> Result<Report, String> {
         if wires.iter().all(Vec::is_empty) && (!input.check.circuits.is_empty() || on.is_some()) {
             return Err("no wire of the circuits, routes and alignments chosen".into());
         }
+        // The neighbours' wires a checked wire can come within the rules'
+        // reach of (as the network's checks take them).
+        let others: Vec<Vec<Wire>> = others
+            .into_iter()
+            .zip(&wires)
+            .map(|(o, w)| targets_near(o, w, reach))
+            .collect();
         for (k, state) in states.iter().enumerate() {
             if input.cancel.is_cancelled() {
                 return Err("stopped".into());
@@ -693,12 +916,12 @@ pub fn run(input: &Input) -> Result<Report, String> {
                 &wires[k],
                 CaseTargets {
                     voltages: &voltages,
-                    other_voltages: &[],
+                    other_voltages: &other_voltages,
                     ground: input.ground.as_deref(),
                     surfaces: &surfaces,
                     point_classes: &point_classes,
                     points: input.cloud.is_some().then_some(&mut feed as _),
-                    other_wires: &[],
+                    other_wires: &others[k],
                     min_reach: 0.0,
                 },
             )?;
@@ -715,8 +938,14 @@ pub fn run(input: &Input) -> Result<Report, String> {
                             Skipped::NoPoints => {
                                 format!("{}: no point cloud in this model", rule.name)
                             }
+                            Skipped::NoOtherLines if input.neighbours.is_some() => format!(
+                                "{}: no wire of the export's neighbour lines within its reach \
+                                 ({}): nothing of other lines to check against here",
+                                rule.name, state.name
+                            ),
                             Skipped::NoOtherLines => format!(
-                                "{}: other lines are checked by `ohl line --other-line`",
+                                "{}: other lines are checked by `ohl line --other-line` (or \
+                                 with an offline working set's neighbours)",
                                 rule.name
                             ),
                             // Below: across the cases.
@@ -739,14 +968,21 @@ pub fn run(input: &Input) -> Result<Report, String> {
                         }
                         results[c.rule].extend(list.iter().cloned());
                     }
-                    // Wires of this line only (no other lines here).
+                    // Wires of this line, or of the export's neighbour
+                    // lines for the rules to other lines.
                     Outcome::Pairs(pairs) => {
+                        let targets: &[Wire] =
+                            if matches!(rule.target, ohl_clearance::Target::OtherLines) {
+                                &others[k]
+                            } else {
+                                &c.wires
+                            };
                         for p in pairs {
                             findings(
                                 c.rule,
                                 rule,
                                 &c.wires[p.a],
-                                Some(&c.wires[p.b]),
+                                Some(&targets[p.b]),
                                 &p.result,
                                 &label,
                                 k + offset,
@@ -827,14 +1063,20 @@ pub fn run(input: &Input) -> Result<Report, String> {
             continue;
         }
         if !matches!(rule.target, ohl_clearance::Target::SameLine { .. }) {
-            skipped.insert((
-                k,
-                format!(
-                    "{}: other lines across weather cases are checked by `ohl line --weather \
-                     --other-line`",
-                    rule.name
-                ),
-            ));
+            let text = format!(
+                "{}: other lines across weather cases are checked by `ohl line --weather \
+                 --other-line`",
+                rule.name
+            );
+            // With the export's neighbours at hand: not checked here, so
+            // never passing on that account.
+            if !near.is_empty() {
+                report.not_all_checked.push(format!(
+                    "NOT ALL CHECKED: {text} — not in this window, even with the export's \
+                     neighbours"
+                ));
+            }
+            skipped.insert((k, text));
         } else if !paired.contains(&k) {
             skipped.insert((
                 k,
@@ -1110,7 +1352,7 @@ impl Clearances {
                 }
                 let mut r = r;
                 if let (Ok(rep), Some(n)) = (&mut r, &self.replica_note) {
-                    rep.notes.insert(0, n.clone());
+                    rep.not_all_checked.insert(0, n.clone());
                 }
                 self.report = Some(r);
                 self.running = None;

@@ -807,8 +807,10 @@ pub struct LoadsPage {
     /// longer read).
     pub notes: Vec<String>,
     /// On a network's working set (phase 10): the other lines' sections
-    /// on shared towers not pulled in here, said with every run.
-    pub replica_note: Option<String>,
+    /// on shared towers not pulled in here, said with every run; on an
+    /// offline working set's file (2026-11-23): the towers shared with
+    /// the export's neighbour lines named, or that there is none.
+    pub replica_note: Vec<String>,
     /// The load case shown.
     pub case: usize,
     /// Structures shown (id contains this text).
@@ -854,6 +856,56 @@ pub struct LoadsPage {
     pub guide: Option<&'static str>,
     /// Runs started (a test: opening the window starts none).
     pub runs_started: u64,
+}
+
+/// What the Structure loads window says on an offline working set's file
+/// (2026-11-23) for the structures computed (`order`): the towers shared
+/// with a line of the export (twins) named — their other lines' sections
+/// are not added here, NOT ALL CHECKED — or that none is; with the
+/// export's date, that it may be stale and its gaps.
+pub fn offline_notes(
+    model: &Model,
+    n: &Result<crate::offline_neighbours::Neighbours, String>,
+    order: &[String],
+) -> Vec<String> {
+    let n = match n {
+        Ok(n) => n,
+        Err(e) => {
+            return vec![format!(
+                "NOT ALL CHECKED: the offline working set's neighbours could not be read ({e}): \
+                 towers shared with other lines not looked for"
+            )];
+        }
+    };
+    let twins = n.twins(&model.line, order);
+    let mut out = Vec::new();
+    if twins.is_empty() {
+        out.push(format!(
+            "Neighbours from {} read: {} — no structure computed here is shared with another \
+             line (none of the same type within {} m): nothing of other lines is missing from \
+             these loads.",
+            n.export_words(),
+            n.read_words(),
+            ohl_scope::reach::TWIN_TOLERANCE
+        ));
+    } else {
+        let named: Vec<String> = twins
+            .iter()
+            .map(|t| format!("{} (line {} {})", t.structure, t.model, t.other))
+            .collect();
+        out.push(format!(
+            "NOT ALL CHECKED: {} structure(s) shared with another line of {}: {} — the other \
+             lines' sections hanging there are not added in this window: Versions › Offline copy \
+             › Check the offline working set… › Loads on shared towers computes each such tower \
+             under each line's cases with them, the worst kept",
+            twins.len(),
+            n.export_words(),
+            named.join(", ")
+        ));
+    }
+    out.push(n.stale_words());
+    out.extend(n.gaps());
+    out
 }
 
 /// The project setting keeping the Structure loads window's setup, per
@@ -1037,13 +1089,20 @@ impl LoadsPage {
     /// Computes the loads of the model as it is now (in the background),
     /// for the plan of the setup.
     pub fn start(&mut self, model: &Model, ctx: &egui::Context) {
-        self.replica_note = model.network_replica().then(|| {
-            ohl_scope::reach::replica_note(
-                "the structure loads",
-                &ohl_scope::reach_of(&ohl_scope::CheckKind::StructureLoads),
-            )
-            .unwrap_or_default()
-        });
+        self.replica_note = match model.offline_neighbours() {
+            Some(n) => offline_notes(model, &n, &self.planned(model).plan.order),
+            None => model
+                .network_replica()
+                .then(|| {
+                    ohl_scope::reach::replica_note(
+                        "the structure loads",
+                        &ohl_scope::reach_of(&ohl_scope::CheckKind::StructureLoads),
+                    )
+                    .unwrap_or_default()
+                })
+                .into_iter()
+                .collect(),
+        };
         let Some(path) = model.sources.load_cases.clone() else {
             self.results = Some(Err(
                 "no load case file: Line › Structures › Load cases… (the project's own, or a \
@@ -1163,7 +1222,7 @@ impl LoadsPage {
                 self.failed = run.failed;
                 self.given = run.given;
                 self.notes = notes;
-                if let Some(n) = &self.replica_note {
+                for n in self.replica_note.iter().rev() {
                     self.notes.insert(0, n.clone());
                 }
                 Some(run.loads)

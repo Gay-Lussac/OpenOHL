@@ -577,7 +577,17 @@ fn take_answers(r: &mut Ready) {
         };
         match (a, waiting.what) {
             (ServerMsg::WorkingSetExported { result, .. }, WaitFor::Export(file)) => {
-                match result.and_then(|f| write_export(&file, &f.file).map(|_| f.report)) {
+                // The server's word on the export kept in the file: its
+                // check windows say it later (stale, what changed
+                // meanwhile; 2026-11-23).
+                let written = result.and_then(|f| {
+                    write_export(&file, &f.file)?;
+                    if let Err(e) = crate::offline_neighbours::record_export(&file, &f.report) {
+                        log::warn!("the export's record not kept in {}: {e}", file.display());
+                    }
+                    Ok(f.report)
+                });
+                match written {
                     Ok(report) => {
                         let e = Exported { file, report };
                         r.status = Some((
