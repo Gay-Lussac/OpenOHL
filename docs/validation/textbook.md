@@ -513,6 +513,41 @@ profiles take which clause, and `ohl_sections`'
 `shear_centre_and_warping` the thin-walled properties against hand
 values.
 
+### Connection capacities (`benchmarks/structures-fe/joint-capacities.toml`)
+
+Calculations `structures.joint_groups` and `structures.joint_parts` (output
+`usage_<i>`, one case, strength factor 1): invented bolt groups and plate
+parts sent to the bundled plugins (`asce10`, `sia263`) as a structure's run
+sends them; the expected usages worked out line by line in
+`benchmarks/structures-fe/reference_joint_capacities.py` from the methods of
+the theory pages ([joint groups](../theory/joint-groups.md),
+[joint plates](../theory/joint-plates.md)) with the values the plugins take
+(2026-11-23, stage 5 of the joint details). Tolerance \( 10^{-9} \).
+
+| Case | What |
+|---|---|
+| joints-001 | bolt shear, one plane: 0.62 f_ub on the root area (ASCE 10-97 4.3.2) |
+| joints-002 | the same, two planes |
+| joints-003 | bearing on a thin ply, 1.5 F_u d t (4.4) |
+| joints-004 | the end distance along the bolt's force not kept (4.5.1) |
+| joints-005 | a bolt in tension with prying (the T-stub of Struik and de Back): the flange's bending governs |
+| joints-006 | the same with a stiff flange: the bolt's tension with its prying force governs (4.3.3) |
+| joints-007 | block shear of a plate round a bolt line (Eq. 3.10-1 applied to the plate) |
+| joints-008 | a gusset plate in compression as a strut of Whitmore's width (an assumption on the safe side) |
+| joints-009 | a fillet weld with the moment of its force about its middle (SIA 263 (87), (88)) |
+| joints-010 | a fillet weld bent about its seam: over 100 % |
+| joints-011 | bolt shear by SIA 263 Table 16 (73), grade 8.8 |
+| joints-012 | the same, the grade not given: (74) |
+| joints-013 | the edge distance square to the bolt's force not kept (4.5.3, a rolled edge) |
+| joints-014 | a plate torn out towards its side edge (Eq. 3.10-1) |
+
+The members' connection capacities were also compared, privately, with a
+tower design program's on a real line's towers (163 690 members): bolt shear
+and bearing agree within 1 % on all but a few hundred members, the net section
+is 1.3 % lower (the punched hole); 100 members are higher than the program's
+(members without holes given, built-up members' bearing) — owner questions
+in the roadmap (O19).
+
 ## What the cases showed
 
 - The code agreed with every independent reference to the tolerances

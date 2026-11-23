@@ -8,6 +8,26 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-23 (joint checks: validation of the connection capacities, O19 stage 5)
+
+**The connection capacities validated against hand calculations** (roadmap
+O19 stage 5, queue item C10 of 2026-11-18; built, in active development, not
+approved yet): two validation calculations, `structures.joint_groups` and
+`structures.joint_parts` (`crates/ohl-validation/src/joints.rs`), send
+invented bolt groups and plate parts to a design code's plugin through the
+same interface a structure's run uses (`ohl_member_check::joints`); 14 cases
+(`benchmarks/structures-fe/joint-capacities.toml`) cover bolt shear in one
+and two planes, bearing, end and edge distances, prying (the T-stub), block
+shear between two planes and towards a side edge, the Whitmore strut, fillet
+welds with their moments (SIA 263) and SIA 263's bolt shear — each against a
+hand calculation written out in
+`benchmarks/structures-fe/reference_joint_capacities.py`, all to 10⁻⁹. The
+private comparison with a tower program's capacities on the real towers found
+two kinds of members ours rates higher (no holes given; a built-up member's
+bearing on both its angles) — owner questions in the roadmap; nothing
+changed in the plugins (they are independent of the core, and a change of
+what they check is the owner's).
+
 ## 2026-11-23 (structure analysis: end releases and bolt slip as options, O19 stage 4.4)
 
 **End releases and bolt slip from the joints' bolts, options of the analysis

@@ -71,8 +71,8 @@ from here. The owner's order of 2026-11-19:
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
    validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5;
    end releases and bolt slip built 2026-11-23 as options, off by default,
-   in active development, not approved yet — the owner's questions under
-   O19).
+   and the connection capacities' validation the same day, in active
+   development, not approved yet — the owner's questions under O19).
 
 The owner's answers of 2026-11-19 to the plans' open questions are in
 their items ("decided 2026-11-19") and, briefly, in the
@@ -1765,9 +1765,35 @@ Six stages, the questions per stage and per detail level:
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)
-- [ ] Stage 5, validation — connection capacities against hand
+- [x] Stage 5, validation — connection capacities against hand
   calculations and a tower program's results (on the real towers, kept
-  locally); the theory page (queue C10)
+  locally); the theory page (queue C10) — *built 2026-11-23, in active
+  development, not approved yet*: `benchmarks/structures-fe/joint-capacities.toml`
+  (`joints-001` to `joints-014`, `ohl validate`): invented bolt groups and
+  plate parts sent to the bundled plugins as a run sends them (calculations
+  `structures.joint_groups`, `structures.joint_parts`) — bolt shear in one
+  and two planes, bearing, end and edge distances, prying (the flange's
+  bending and the bolt's tension governing), block shear between two planes
+  and towards a plate's side edge, the Whitmore strut, fillet welds with
+  their moments about the middle and about the seam (SIA 263), SIA 263's bolt
+  shear (73) and (74) — against hand calculations written out in
+  `benchmarks/structures-fe/reference_joint_capacities.py`: all agree to
+  10⁻⁹, no discrepancy between the theory pages, the plugins and the hand
+  calculations. Against a tower program's capacities of the real line's
+  towers (163 690 members, kept privately): bolt shear and bearing agree
+  within 1 % on 99.3 % of the members it governs, the net section is 1.3 %
+  lower (the punched hole, on the safe side); 100 members are higher than the
+  program's (validation pages:
+  [textbook](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/validation/textbook.md#connection-capacities-benchmarksstructures-fejoint-capacitiestoml)).
+  > **Owner:** (questions, 2026-11-23) (1) 64 members whose design data
+  > gives no bolt or hole are checked on their gross section, where the
+  > tower program takes a net section 20 % lower: take a hole per leg until
+  > the bolts are known? → yes, on the safe side (said). (2) A built-up
+  > member's bearing at member level counts both its angles (2 × t), the
+  > program one (36 double angles, up to 1.8 times ours against it); the
+  > plate between them is checked only where the joint's plate is defined:
+  > take one ply's thickness at member level until the plate is known? →
+  > yes, on the safe side (a plugin change: both codes' plugins).
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition
