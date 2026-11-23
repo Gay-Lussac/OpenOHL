@@ -40,8 +40,8 @@ cases = {}
 d = 16 * MM
 rv1 = BOLT_SHEAR * 800 * MPA * ROOT_AREA * gross(d)
 cases["joints-001"] = 30 * KN / rv1
-# B: the same bolt in two shear planes, 50 kN.
-cases["joints-002"] = 50 * KN / (2 * rv1)
+# B: the same bolt in two shear planes, 45 kN.
+cases["joints-002"] = 45 * KN / (2 * rv1)
 # C: bearing (4.4): 1.5 F_u d t on the thinner ply, F_u the lower of the
 # ply's and the bolt's (the bolt's not given: the ply's), 4 mm of 360 MPa,
 # 20 kN; the bolt's shear capacity given as 100 kN a plane.

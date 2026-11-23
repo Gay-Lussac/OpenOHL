@@ -29,14 +29,14 @@ id = "joints-002"
 title = "Bolt shear, two planes (ASCE 10-97 4.3.2)"
 calculation = "structures.joint_groups"
 reference = "ASCE 10-97 4.3.2 as the asce10 plugin takes it, by hand"
-notes = "joints-001's bolt in two shear planes: 2 x 59.84 kN; 50 kN -> 0.41781 (bearing 50/244.8 = 0.20)"
+notes = "joints-001's bolt in two shear planes: 2 x 59.84 kN; 45 kN -> 0.37603 (bearing 45/244.8 = 0.18)"
 max_seconds = 30.0
 inputs.method = "asce10-97"
 inputs.groups = [
   { plies = [{ kind = "plate", thickness = "20 mm", fy = "355 MPa", fu = "510 MPa" }],
-    bolts = [{ diameter = "16 mm", hole = "17.5 mm", bolt_ultimate = "800 MPa", planes = 2, force = "50 kN" }] },
+    bolts = [{ diameter = "16 mm", hole = "17.5 mm", bolt_ultimate = "800 MPa", planes = 2, force = "45 kN" }] },
 ]
-expected.usage_0 = { value = 0.41780846535800814, rel_tol = 1e-9 }
+expected.usage_0 = { value = 0.37602761882220737, rel_tol = 1e-9 }
 
 [[case]]
 id = "joints-003"
