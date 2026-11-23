@@ -307,6 +307,9 @@ impl LayoutWindow {
             // L16 (2026-11-22): an end planned on the face the joint details
             // then seat it on.
             seat_as_drawn: true,
+            // L18 (2026-11-22): a joint's planes of one rank high to low
+            // (the program's default).
+            planes_high_to_low: ohl_structure_link::LayoutSettings::default().planes_high_to_low,
         }
     }
 

@@ -369,6 +369,15 @@ pub struct LayoutSettings {
     /// planned on the outer face and drawn on the inner). On by default;
     /// off: as before.
     pub seat_as_drawn: bool,
+    /// O44 L18 (the owner, 2026-11-22: "if there are multiple planes …
+    /// then we should go from high to low"): a joint's planes on members of
+    /// one rank laid out from the plane of the biggest member down (its
+    /// class, then its wider leg; the structure file stores no analysis
+    /// forces, so size alone), before the member's id decided between them.
+    /// Off by default: measured on six private real towers, fewer joints
+    /// whole and more plates than the planes in the members' order (−4
+    /// whole after the outline's rolls, −15 after the joints' planes').
+    pub planes_high_to_low: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -420,6 +429,7 @@ impl Default for LayoutSettings {
             base_holds: true,
             between_plates: true,
             seat_as_drawn: true,
+            planes_high_to_low: false,
         }
     }
 }
@@ -2630,15 +2640,26 @@ fn plan_once(
         }
         d
     };
-    let mut planes: BTreeMap<(usize, u8, String, PlaneKey), Vec<usize>> = BTreeMap::new();
+    // (L18: of one rank, high to low — the plane of the biggest member
+    // first — where asked.)
+    let mut planes: BTreeMap<(usize, u8, (u8, i64), String, PlaneKey), Vec<usize>> =
+        BTreeMap::new();
     for (key, ks) in by_plane {
         let first = ks
             .iter()
             .map(|&k| (strips[k].host_rank, strips[k].host.clone()))
             .min()
             .expect("a plane has ends");
+        let size = if s.planes_high_to_low {
+            ks.iter()
+                .map(|&k| (strips[k].rank.0, strips[k].rank.1))
+                .min()
+                .unwrap_or((0, 0))
+        } else {
+            (0, 0)
+        };
         let deep = ks.iter().map(|&k| depth(k)).max().unwrap_or(0);
-        planes.insert((deep, first.0, first.1, key), ks);
+        planes.insert((deep, first.0, size, first.1, key), ks);
     }
     // The cut of each member laid out so far (where its steel now starts).
     let mut laid_cut: BTreeMap<String, f64> = BTreeMap::new();
@@ -2646,7 +2667,7 @@ fn plan_once(
     let mut plate_of: BTreeMap<usize, usize> = BTreeMap::new();
     let mut bent_wait: BTreeMap<PlaneKey, Vec<Placed>> = BTreeMap::new();
     let mut budget = limit;
-    for ((_, _, _, plane_key), ks) in &planes {
+    for ((_, _, _, _, plane_key), ks) in &planes {
         // L2 (b), 2026-11-20: a plane on a member whose own end is laid out
         // in this plan (its planes come first) taken where that member will
         // be drawn — moved across by its move and lifted onto its plate —,
