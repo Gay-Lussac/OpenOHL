@@ -45,17 +45,20 @@ on its own, reported; built, in active development, not approved yet;
   effects laid out from the file so settled, every joint a turn kept
   reaches laid out with it); the turns taken back are said in the notes
   and offered by the window beside the other proposals.
-- **Measured** (private towers; L17 main and L18 main reproduced on all
-  78; the weighing on samples, for its time): on every second tower (39)
-  L17 → L18 unweighed → weighed: joints whole 18 301 → 18 679 → 18 531,
-  member ends 66 074 → 67 128 → 67 065, plates 34 447 → 34 673 → 34 704,
-  joints better / worse than L17 1 789 / 1 187 → 879 / 59 (24 of them
+- **Measured** (the 78 private towers; L17 main and L18 main reproduced):
+  L17 → L18 unweighed → weighed: joints whole 37 315 → 38 042 → 37 796,
+  member ends 133 265 → 135 259 → 135 194, plates 69 295 → 69 840 →
+  69 763, members left after the clash rounds 11 179 → 11 670 → 11 179,
+  joints better / worse than L17 3 461 / 2 400 → 1 679 / 122 (44 of them
   worse than the weighing's base, where no turn reaches and no member
   turned otherwise meets; the rest the base's own: pieces confirmed one
-  part after the turns); both weighed (the leg-rotation check's turns
-  too, every third tower, 26): whole 12 161 → 12 382 → 12 342, ends
-  42 967 → 43 587 → 43 797, plates 22 232 → 22 409 → 22 314, 828 / 90 (L18
-  1 083 / 768). A run again identical on 8 of 8 towers. The time per tower (six towers, twice, load 2.6–7.6): the layout after Orient angles median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s weighed (about five and a half layouts), 426.7 / 433.9 s both weighed — once per imported tower.
+  part after the turns). Both weighed (the leg-rotation check's turns too,
+  every third tower, 26): whole 12 161 → 12 382 → 12 342 (weighed 12 304),
+  ends 42 967 → 43 587 → 43 797, plates 22 232 → 22 409 → 22 314, 828 / 90
+  (L18 1 083 / 768). A run again identical on 8 of 8 towers. The time per
+  tower (six towers, twice, load 2.6–7.6): the layout after Orient angles
+  median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s weighed (about five and
+  a half layouts), 426.7 / 433.9 s both weighed — once per imported tower.
   Owner questions in the roadmap.
 - **Not built**: a level or bent plate across two horizontals (L17's
   question 5, the roadmap's item 2) — counted only: 6 793 plan and hip

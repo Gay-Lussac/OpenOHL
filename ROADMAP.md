@@ -3474,43 +3474,46 @@ only where it helps):
   only the turns kept until they all still help. A turn refused: its roll
   back, said, offered in Lay out joints; a turn weighed only by a run
   laying out every joint it reaches; Lay out joints weighs once per
-  preview on the whole tower. On the private towers (the bundled plugin;
-  L17 main and L18 main reproduced on all 78; the weighing on samples):
+  preview on the whole tower. On the 78 private towers (the bundled
+  plugin; L17 main and L18 main reproduced exactly):
 
-  | every second tower (39) | L17 main | L18 main (unweighed) | weighed | its base |
+  | | L17 main | L18 main (unweighed) | weighed | its base |
   |---|---|---|---|---|
-  | joints whole | 18 301 | 18 679 | 18 531 | 18 353 |
-  | member ends laid out | 66 074 | 67 128 | 67 065 | 66 218 |
-  | plates | 34 447 | 34 673 | 34 704 | 34 414 |
-  | members left after the clash rounds | 5 910 | 6 202 | 5 934 | 5 912 |
-  | joints better / worse than L17 | — | 1 789 / 1 187 | 879 / 59 | 100 / 35 |
-  | joints better / worse than L18 | | — | 1 183 / 997 | |
+  | joints whole | 37 315 | 38 042 | 37 796 | 37 434 |
+  | member ends laid out | 133 265 | 135 259 | 135 194 | 133 610 |
+  | plates | 69 295 | 69 840 | 69 763 | 69 211 |
+  | members left after the clash rounds | 11 179 | 11 670 | 11 179 | 11 177 |
+  | not fitting as given | 48 | 46 | 46 | 48 |
+  | joints better / worse than L17 | — | 3 461 / 2 400 | 1 679 / 122 | 225 / 80 |
+  | joints better / worse than L18 | | — | 2 391 / 1 946 | |
 
-  | every third tower (26) | L17 main | L18 main | both weighed (L11's turns too) |
-  |---|---|---|---|
-  | joints whole | 12 161 | 12 382 | 12 342 |
-  | member ends laid out | 42 967 | 43 587 | 43 797 |
-  | plates | 22 232 | 22 409 | 22 314 |
-  | joints better / worse than L17 | — | 1 083 / 768 | 828 / 90 |
-  | joints better / worse than L18 | | — | 929 / 503 |
+  | every third tower (26) | L17 main | L18 main | weighed | both weighed (L11's turns too) |
+  |---|---|---|---|---|
+  | joints whole | 12 161 | 12 382 | 12 304 | 12 342 |
+  | member ends laid out | 42 967 | 43 587 | 43 572 | 43 797 |
+  | plates | 22 232 | 22 409 | 22 368 | 22 314 |
+  | joints better / worse than L17 | — | 1 083 / 768 | 539 / 43 | 828 / 90 |
 
-  Weighed keeps 61 % of the joints whole the turns gained and 94 % of the
-  ends; of its 59 joints worse than L17, 24 are worse than its base (no
-  turn reaches them, no member turned otherwise meets them) and 35 the
-  base's own (pieces confirmed one part after the turns, rolls averaged
-  then; runs one part with a piece not listed left as written). Kept: 12 of
-  81 legs' runs, 278 of 997 chords', 349 of 9 013 face members'. Groups:
-  a body's member running on with plan members a few degrees out whole
-  110 → 366 (L18) → 185 of 715; the unweighed turns' losses gone (a
-  built-up leg with bracing in plane 225 → 183 → 226 of 314). A run again
-  identical 8 of 8. The time per tower (six towers, twice, load 2.6–7.6): the layout after Orient angles median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s weighed (about five and a half layouts), 426.7 / 433.9 s both weighed — once per imported tower. **2. Not built** (time): a level or bent
-  plate across two horizontals (L17's question 5) — counted: 6 793 plan
-  and hip ends off their host's flange with no roll laying them flat,
-  5 092 of them where two other horizontals (or one and a leg) meet;
-  3 282 with their axis out of the host's face.
+  Weighed keeps 66 % of the joints whole the turns gained and 97 % of the
+  ends; of its 122 joints worse than L17, 44 are worse than its base (no
+  turn reaches them, no member turned otherwise meets them), the rest where
+  the base differs from L17 (pieces confirmed one part after the turns;
+  runs one part with a piece not listed, left as written). Kept: 18 of 156
+  legs' runs, 462 of 1 938 chords', 684 of 18 519 face members'. Groups: a
+  body's member running on with plan members a few degrees out whole 255
+  → 692 (L18) → 406 of 1 281; the unweighed turns' losses gone (a built-up
+  leg with bracing in plane 413 → 338 → 411 of 560). A run again identical
+  8 of 8. The time per tower (six towers, twice, load 2.6–7.6): the layout
+  after Orient angles median 45.0 / 70.9 s unweighed, 265.7 / 335.3 s
+  weighed (about five and a half layouts), 426.7 / 433.9 s both weighed —
+  once per imported tower. **2. Not built** (time): a level or bent plate
+  across two horizontals (L17's question 5) — counted: 6 793 plan and hip
+  ends off their host's flange with no roll laying them flat, 5 092 of them
+  where two other horizontals (or one and a leg) meet; 3 282 with their
+  axis out of the host's face.
   > **Owner:** (1) The automatic turns weighed in the run (the owner's
-  > rule): 61 % of the joints whole and 94 % of the ends the unweighed
-  > turns gained, 59 joints worse than L17 instead of 1 187 — at the cost of
+  > rule): 66 % of the joints whole and 97 % of the ends the unweighed
+  > turns gained, 122 joints worse than L17 instead of 2 400 — at the cost of
   > the layout run laid out about five and a half times (once, after
   > Orient angles) → Recommended: keep as the default; the time is paid
   > once per imported tower. (2) Both weighed (L11's turns as a stage
@@ -3520,9 +3523,9 @@ only where it helps):
   > leg-rotation check's turns too" as a tick in Lay out joints with this
   > measured effect. (3) The guard past the turned members (a joint
   > elsewhere worse where a member the layout turned otherwise beside it
-  > meets) and a joint's wholeness in the guard → Recommended: keep (24
+  > meets) and a joint's wholeness in the guard → Recommended: keep (44
   > joints worse than the base remain, where nothing turned meets them).
-  > (4) The base differs from L17 (35 worse, 100 better): pieces in line
+  > (4) The base differs from L17 (80 worse, 225 better): pieces in line
   > confirmed one part after Orient angles average their rolls with the
   > turns in → Recommended: next, Orient angles' runs joined as one-part
   > proposals join pieces (in line within 1°, rolls within 2°), so that a

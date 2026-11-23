@@ -3400,57 +3400,61 @@ out from the file so settled.
 same members; neither changes a member's size, work point or what is
 checked: nothing here is less safe than the layout without it.
 
-**Measured** on the private tower files (the bundled plugin, L14's
+**Measured** on the 78 private tower files (the bundled plugin, L14's
 settings, the layout without the bends' checks; each column after its
-Orient angles). *L17* (the outline's turn) and *L18* (the planes' turns
-unweighed) on all 78 towers reproduce L17 main and L18 main exactly
-(37 315 and 38 042 joints whole; 3 461 better, 2 400 worse). The weighing
-lays a tower out several times, so it was measured on samples: *weighed*
-on every second tower (39), with *base* (the weighing's base laid out:
-every turn taken back) on the same towers; *both weighed* — the
-leg-rotation check's turns (L11) applied on top and weighed as a stage
-between the legs' and chords' and the face members' — on every third
-tower (26):
+Orient angles): *L17* the outline's turn and *L18* the planes' turns
+unweighed (reproducing L17 main and L18 main exactly), *weighed* the
+planes' turns weighed by the run, *base* the weighing's base laid out
+(every turn taken back):
 
-| every second tower (39) | L17 | L18 | base | weighed |
+| | L17 | L18 | base | weighed |
 |---|---|---|---|---|
-| joints laid out whole | 18 301 | 18 679 | 18 353 | 18 531 |
-| member ends laid out | 66 074 | 67 128 | 66 218 | 67 065 |
-| plates written | 34 447 | 34 673 | 34 414 | 34 704 |
-| members left after the clash rounds | 5 910 | 6 202 | 5 912 | 5 934 |
-| not fitting as given | 37 | 37 | 37 | 37 |
-| joints better / worse than L17 | — | 1 789 / 1 187 | 100 / 35 | 879 / 59 |
-| … than the base | | | — | 779 / 24 |
-| … than L18 | | | | 1 183 / 997 |
+| joints laid out whole | 37 315 | 38 042 | 37 434 | 37 796 |
+| member ends laid out | 133 265 | 135 259 | 133 610 | 135 194 |
+| plates written | 69 295 | 69 840 | 69 211 | 69 763 |
+| members left after the clash rounds | 11 179 | 11 670 | 11 177 | 11 179 |
+| not fitting as given | 48 | 46 | 48 | 46 |
+| joints better / worse than L17 | — | 3 461 / 2 400 | 225 / 80 | 1 679 / 122 |
+| … than the base | | | — | 1 456 / 44 |
+| … than L18 | | | | 2 391 / 1 946 |
 
-| every third tower (26) | L17 | L18 | both weighed |
-|---|---|---|---|
-| joints laid out whole | 12 161 | 12 382 | 12 342 |
-| member ends laid out | 42 967 | 43 587 | 43 797 |
-| plates written | 22 232 | 22 409 | 22 314 |
-| members left after the clash rounds | 3 223 | 3 423 | 3 262 |
-| joints better / worse than L17 | — | 1 083 / 768 | 828 / 90 |
-| … than L18 | | | 929 / 503 |
+Weighed keeps 66 % of the joints whole the unweighed turns gained (+481
+of +727) and 97 % of their member ends (+1 929 of +1 994), with no more
+members left after the clash rounds than L17 and 122 joints worse than
+L17 instead of 2 400: 44 of them worse than the base (where no turn
+reaches and no member turned otherwise meets them — the layout's order),
+the rest where the base itself differs from L17 (pieces confirmed one part
+after the turns, their rolls averaged then; runs one part with a piece not
+listed, left as written). L18's offline weighing (each run's turn kept
+where every joint it reaches lay out better, judged on the unweighed
+layout and not laid out again) had +567 whole and 293 worse. Kept: 18 of
+156 legs' runs turned, 462 of 1 938 chords', 684 of 18 519 face
+members' — most turns lay no joint out better. By group: a body's member
+running on with plan members, a few degrees out, whole 255 → 692 (L18) →
+406 (weighed) of 1 281; an arm's chord with bracing a few degrees out
+107 → 300 → 200 of 747; and the unweighed turns' losses gone — a built-up
+leg with bracing all in a flange's plane 413 → 338 → 411 of 560, an arm's
+chord with plan members all in plane 6 019 → 5 956 → 6 013 of 8 259.
 
-Weighed keeps 61 % of the unweighed turns' joints whole (+230 of +378)
-and 94 % of their member ends (+991 of +1 054), with 59 joints worse than
-L17 instead of 1 187: 24 of them worse than the base (the joints no turn
-reaches and no member turned otherwise meets — the layout's order), the
-other 35 the base's own (it differs from L17 where pieces in line were
-confirmed one part after the turns, their rolls averaged then, and where
-a run one part with a piece not listed is left as written). Kept: 12 of
-81 legs' runs turned, 278 of 997 chords', 349 of 9 013 face members' —
-most turns lay no joint out better. Both weighed lays out the most member
-ends (+830 against L18's +620 on its sample) on fewer plates (+82 against
-+177), 82 % of L18's joints whole (+181 of +221), 90 joints worse than
-L17 (L18: 768). A run again on the weighed result: identical on 8 of 8
-towers (every sixth; the rows go with the first run, so a run again
-weighs nothing). By group (every second tower): a body's member running
-on with plan members, a few degrees out, whole 110 → 366 (L18) → 185
-(weighed) of 715; an arm's chord with bracing a few degrees out 49 → 142
-→ 95 of 383; and the losses of the unweighed turns gone — a built-up leg
-with bracing all in a flange's plane 225 → 183 → 226 of 314, an arm's
-chord with plan members all in plane 2 832 → 2 815 → 2 831 of 3 992.
+*Both weighed* — the leg-rotation check's turns (L11) applied on top and
+weighed as a stage between the legs' and chords' and the face members' —
+was measured on every third tower (26; its time):
+
+| every third tower (26) | L17 | L18 | weighed | both weighed |
+|---|---|---|---|---|
+| joints laid out whole | 12 161 | 12 382 | 12 304 | 12 342 |
+| member ends laid out | 42 967 | 43 587 | 43 572 | 43 797 |
+| plates written | 22 232 | 22 409 | 22 368 | 22 314 |
+| members left after the clash rounds | 3 223 | 3 423 | 3 226 | 3 262 |
+| joints better / worse than L17 | — | 1 083 / 768 | 539 / 43 | 828 / 90 |
+| … than L18 | | | | 929 / 503 |
+| … than weighed | | | | 317 / 48 |
+
+Both weighed lays out the most member ends on fewer plates than L18
+(+830 against +620 ends, +82 against +177 plates), 82 % of L18's joints
+whole, 90 joints worse than L17 (L18: 768). A run again on the weighed
+result: identical on 8 of 8 towers (every sixth; the rows go with the
+first run, so a run again weighs nothing).
 
 The time per tower (six towers, every thirteenth, two at a time, back to
 back, twice; other work on the computer, load 2.6 to 7.6): the layout run
