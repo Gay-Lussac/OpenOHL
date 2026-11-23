@@ -73,6 +73,55 @@ pub struct Preview {
     /// With turns ticked: the run without them (joints laid out whole,
     /// member ends laid out, plates) — their measured effect.
     pub without: Option<(usize, usize, usize)>,
+    /// O44 L18: the leg's and chord's runs at the joints asked that their
+    /// joints' planes turn (from the file as it is), each with whether its
+    /// roll is automatic (set by the program: Orient angles or the layout —
+    /// an import's, ticked by default) or given by hand (a proposal).
+    pub plane_turns: Vec<(ohl_structure_link::plane_rolls::PlaneRoll, bool)>,
+    /// Each proposal's measured effect (by its key: [`turn_key`]): every
+    /// joint its members reach laid out without and with it (all the
+    /// proposals of its kind applied together), joints laid out whole,
+    /// member ends, plates there — never judged on one joint.
+    pub effects: BTreeMap<String, ((usize, usize, usize), (usize, usize, usize))>,
+}
+
+/// A turn proposal's key: `j:` and the leg-rotation check's piece (L11),
+/// `p:` and the run's first piece (the joints' planes, L18).
+fn turn_key(planes: bool, member: &str) -> String {
+    format!("{}{member}", if planes { "p:" } else { "j:" })
+}
+
+/// A run's joints laid out whole, member ends laid out and plates at the
+/// joints `at`.
+fn counts_at(r: &LayoutRun, at: &BTreeSet<String>) -> (usize, usize, usize) {
+    let mut c = (0, 0, 0);
+    for o in r.laid_out().filter(|o| at.contains(&o.joint)) {
+        c.0 += usize::from(o.hand.is_empty());
+        c.1 += o.plan.ends.len();
+        c.2 += o.plates.len();
+    }
+    c
+}
+
+/// The joints the members `members` reach in `t` (both ends of each).
+fn reach_of<'a>(
+    t: &ohl_structures::StructureType,
+    members: impl IntoIterator<Item = &'a String>,
+) -> BTreeSet<String> {
+    let set: BTreeSet<&String> = members.into_iter().collect();
+    t.members
+        .iter()
+        .filter(|m| set.contains(&m.id))
+        .flat_map(|m| m.nodes.iter().cloned())
+        .collect()
+}
+
+/// `text` with the runs of `rolls` turned (each piece by its run's turn).
+fn with_plane_turns<'a>(
+    text: &str,
+    rolls: impl Iterator<Item = &'a ohl_structure_link::plane_rolls::PlaneRoll>,
+) -> Result<String, String> {
+    ohl_structure_link::plane_rolls::with_turns(text, rolls)
 }
 
 /// A run's joints laid out whole, member ends laid out and plates.
@@ -200,6 +249,9 @@ pub struct LayoutWindow {
     /// O44 L13: the leg and chord turns ticked (by the proposal's piece):
     /// applied with the run (one undo step); none by default.
     pub turns: BTreeSet<String>,
+    /// O44 L18: the plane turns ticked or not (by the run's first piece);
+    /// a run not listed: ticked where its roll is automatic.
+    pub plane_ticks: BTreeMap<String, bool>,
 }
 
 impl LayoutWindow {
@@ -324,6 +376,7 @@ impl LayoutWindow {
         }
         (&self.bolt, &self.presets, self.welded, self.replace).hash(&mut h);
         self.turns.hash(&mut h);
+        self.plane_ticks.hash(&mut h);
         h.finish()
     }
 }
@@ -381,6 +434,7 @@ impl StructureApp {
             usage: None,
             usage_job: None,
             turns: BTreeSet::new(),
+            plane_ticks: BTreeMap::new(),
         })
     }
 
@@ -502,6 +556,7 @@ impl StructureApp {
             let replace = w.replace;
             let joints = targets.clone();
             let ticked = w.turns.clone();
+            let plane_ticks = w.plane_ticks.clone();
             let (tx, rx) = channel();
             std::thread::spawn(move || {
                 let ask = RunAsk {
@@ -519,23 +574,135 @@ impl StructureApp {
                         &bolts2.0,
                         Some(&joints),
                     )?;
+                    let t = <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+                        std::path::Path::new("s.ohls"),
+                        &text,
+                    )
+                    .map_err(|e| e.message)?;
                     // (O44 L13) The turns proposed, from the file as it is;
-                    // those ticked applied before the run, the run without
-                    // them kept for their effect.
+                    // (L18) beside them the leg's and chord's runs as their
+                    // joints' planes turn them (on the whole tower: a run
+                    // reaches past the joints asked), ticked by default where
+                    // the roll is the program's.
                     let turns = proposed_turns(&before);
+                    let record = ohl_structure_link::LayoutRecord::of(&t);
+                    let whole = ohl_structure_link::joint_details(&text, &lib, &bolts2.0)?;
+                    let plane_turns: Vec<(ohl_structure_link::plane_rolls::PlaneRoll, bool)> =
+                        ohl_structure_link::plane_rolls::proposed_runs(&whole, Some(&joints))
+                            .into_iter()
+                            .map(|r| {
+                                let auto = r.members.iter().all(|m| {
+                                    record.oriented.contains_key(m)
+                                        || record.rolled.contains_key(m)
+                                        || t.members.iter().any(|x| {
+                                            &x.id == m
+                                                && x.roll.is_none()
+                                                && x.reference.is_none()
+                                                && x.orientation.is_none()
+                                        })
+                                });
+                                (r, auto)
+                            })
+                            .collect();
+                    let planes_on: Vec<&ohl_structure_link::plane_rolls::PlaneRoll> = plane_turns
+                        .iter()
+                        .filter(|(r, auto)| {
+                            plane_ticks.get(&r.members[0]).copied().unwrap_or(*auto)
+                        })
+                        .map(|(r, _)| r)
+                        .collect();
+                    // One turn per member: a piece a plane turn ticked covers
+                    // is not turned by the leg-rotation check's too.
+                    let covered: BTreeSet<&String> =
+                        planes_on.iter().flat_map(|r| r.members.iter()).collect();
                     let ticked: BTreeSet<String> = ticked
                         .into_iter()
-                        .filter(|m| turns.iter().any(|(r, _)| &r.member == m))
+                        .filter(|m| {
+                            turns.iter().any(|(r, _)| {
+                                &r.member == m
+                                    && !std::iter::once(&r.member)
+                                        .chain(r.partners.iter())
+                                        .any(|x| covered.contains(x))
+                            })
+                        })
                         .collect();
-                    let (run, without) = if ticked.is_empty() {
+                    // The joints every proposal reaches (its members' both
+                    // ends): a turn is never judged on one joint.
+                    let reach_l11 = |r: &ohl_structure_link::LegRoll| {
+                        reach_of(&t, std::iter::once(&r.member).chain(r.partners.iter()))
+                    };
+                    let mut effects = BTreeMap::new();
+                    let (run, without) = if turns.is_empty() && plane_turns.is_empty() {
                         (ohl_structure_link::lay_out(&text, &ask)?, None)
                     } else {
-                        let plain = ohl_structure_link::lay_out(&text, &ask)?;
-                        let turned = with_turns(&text, &turns, &ticked)?;
-                        (
-                            ohl_structure_link::lay_out(&turned, &ask)?,
-                            Some(run_counts(&plain)),
-                        )
+                        let mut all: BTreeSet<String> = joints.clone();
+                        for (r, _) in &turns {
+                            all.extend(reach_l11(r));
+                        }
+                        for (r, _) in &plane_turns {
+                            all.extend(reach_of(&t, r.members.iter()));
+                        }
+                        let wide = RunAsk {
+                            joints: Some(all.clone()),
+                            ..ask.clone()
+                        };
+                        let plain = ohl_structure_link::lay_out(&text, &wide)?;
+                        // Each kind's proposals applied together, each
+                        // counted over the joints it reaches.
+                        if !turns.is_empty() {
+                            let every: BTreeSet<String> =
+                                turns.iter().map(|(r, _)| r.member.clone()).collect();
+                            let r1 = ohl_structure_link::lay_out(
+                                &with_turns(&text, &turns, &every)?,
+                                &wide,
+                            )?;
+                            for (r, _) in &turns {
+                                let at = reach_l11(r);
+                                effects.insert(
+                                    turn_key(false, &r.member),
+                                    (counts_at(&plain, &at), counts_at(&r1, &at)),
+                                );
+                            }
+                        }
+                        if !plane_turns.is_empty() {
+                            let r2 = ohl_structure_link::lay_out(
+                                &with_plane_turns(&text, plane_turns.iter().map(|(r, _)| r))?,
+                                &wide,
+                            )?;
+                            for (r, _) in &plane_turns {
+                                let at = reach_of(&t, r.members.iter());
+                                effects.insert(
+                                    turn_key(true, &r.members[0]),
+                                    (counts_at(&plain, &at), counts_at(&r2, &at)),
+                                );
+                            }
+                        }
+                        if ticked.is_empty() && planes_on.is_empty() {
+                            (ohl_structure_link::lay_out(&text, &ask)?, None)
+                        } else {
+                            // What Apply writes: the turns ticked, every joint
+                            // they reach laid out with them.
+                            let mut at: BTreeSet<String> = joints.clone();
+                            for (r, _) in turns.iter().filter(|(r, _)| ticked.contains(&r.member)) {
+                                at.extend(reach_l11(r));
+                            }
+                            for r in &planes_on {
+                                at.extend(reach_of(&t, r.members.iter()));
+                            }
+                            let turned = with_plane_turns(
+                                &with_turns(&text, &turns, &ticked)?,
+                                planes_on.iter().copied(),
+                            )?;
+                            let asked = RunAsk {
+                                joints: Some(at.clone()),
+                                ..ask.clone()
+                            };
+                            let plain_at = ohl_structure_link::lay_out(&text, &asked)?;
+                            (
+                                ohl_structure_link::lay_out(&turned, &asked)?,
+                                Some(run_counts(&plain_at)),
+                            )
+                        }
                     };
                     let after = ohl_structure_link::joint_details_at(
                         &run.text,
@@ -551,6 +718,8 @@ impl StructureApp {
                         after,
                         turns,
                         without,
+                        plane_turns,
+                        effects,
                     })
                 })();
                 let _ = tx.send(r);
@@ -802,7 +971,7 @@ impl StructureApp {
                     }
                     Some(p) => {
                         layout_summary(ui, p);
-                        layout_turns(ui, p, &mut w.turns);
+                        layout_turns(ui, p, &mut w.turns, &mut w.plane_ticks);
                         in_line = layout_in_line(ui, p);
                         leg_places = layout_leg_splices(ui, p);
                         layout_changes(ui, p);
@@ -1144,29 +1313,55 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
 
 /// O44 L13 (the owner's answers to L12's questions 4 and 5): the leg and
 /// chord pieces the joints asked say are turned, each with a tick (off by
-/// default) applying its turn with the run; with turns ticked, the run with
-/// and without them (their measured effect).
-fn layout_turns(ui: &mut egui::Ui, p: &Preview, ticked: &mut BTreeSet<String>) {
-    if p.turns.is_empty() {
+/// default) applying its turn with the run; and (O44 L18, the owner's
+/// decision of 2026-11-22) beside them the leg's and chord's runs as their
+/// joints' planes turn them, each with its own tick (on by default where
+/// the roll is the program's — an import's —, off where given by hand).
+/// Each with its measured effect over every joint its members reach; with
+/// turns ticked, the run with and without them. One turn per member: a tick
+/// clears the other kind's tick of the same pieces.
+fn layout_turns(
+    ui: &mut egui::Ui,
+    p: &Preview,
+    ticked: &mut BTreeSet<String>,
+    plane_ticks: &mut BTreeMap<String, bool>,
+) {
+    if p.turns.is_empty() && p.plane_turns.is_empty() {
         return;
     }
+    let effect =
+        |k: &str| -> String {
+            p.effects.get(k).map_or(String::new(), |((w0, e0, p0), (w1, e1, p1))| {
+            format!(
+                " — at the joints it reaches: whole {w0} to {w1}, member ends {e0} to {e1}, \
+                 plates {p0} to {p1}"
+            )
+        })
+        };
     ui.horizontal_wrapped(|ui| {
         ui.label(
             egui::RichText::new(format!(
-                "{} leg or chord piece(s) turned against their joints — proposed, applied only \
-                 when ticked (with the run, one undo step)",
-                p.turns.len()
+                "Legs and chords turned against their joints, two ways side by side: {} from the \
+                 ends at their joints, {} from their joints' planes — each applied only when \
+                 ticked (with the run, one undo step)",
+                p.turns.len(),
+                p.plane_turns.len()
             ))
             .small()
             .color(ui.visuals().warn_fg_color),
         );
         ohl_ui::tool_window::question(ui, LEG_ROLL_HELP);
     });
+    let plane_on = |r: &ohl_structure_link::plane_rolls::PlaneRoll,
+                    auto: bool,
+                    ticks: &BTreeMap<String, bool>| {
+        ticks.get(&r.members[0]).copied().unwrap_or(auto)
+    };
     for (r, chord) in &p.turns {
         let mut on = ticked.contains(&r.member);
         let words = if *chord {
             format!(
-                "Chord: {}",
+                "Chord (from the ends at its joints): {}",
                 r.words().replacen("leg piece", "chord piece", 1).replacen(
                     "one leg",
                     "one chord",
@@ -1174,13 +1369,54 @@ fn layout_turns(ui: &mut egui::Ui, p: &Preview, ticked: &mut BTreeSet<String>) {
                 )
             )
         } else {
-            format!("Leg: {}", r.words())
+            format!("Leg (from the ends at its joints): {}", r.words())
         };
+        let words = format!("{words}{}", effect(&turn_key(false, &r.member)));
         if ui.checkbox(&mut on, words).changed() {
             if on {
                 ticked.insert(r.member.clone());
+                // (The plane turn of the same pieces cleared.)
+                for (x, _) in &p.plane_turns {
+                    if x.members
+                        .iter()
+                        .any(|m| m == &r.member || r.partners.contains(m))
+                    {
+                        plane_ticks.insert(x.members[0].clone(), false);
+                    }
+                }
             } else {
                 ticked.remove(&r.member);
+            }
+        }
+    }
+    for (r, auto) in &p.plane_turns {
+        let mut on = plane_on(r, *auto, plane_ticks);
+        let words = format!(
+            "{} ({}): {}{}",
+            if r.kind == ohl_structure_link::plane_rolls::RunKind::Leg {
+                "Leg"
+            } else {
+                "Chord"
+            },
+            if *auto {
+                "from its joints' planes; its roll the program's — automatic, untick to keep it"
+            } else {
+                "from its joints' planes; its roll given by hand — proposed"
+            },
+            r.words(),
+            effect(&turn_key(true, &r.members[0]))
+        );
+        if ui.checkbox(&mut on, words).changed() {
+            plane_ticks.insert(r.members[0].clone(), on);
+            if on {
+                for (x, _) in &p.turns {
+                    if r.members
+                        .iter()
+                        .any(|m| m == &x.member || x.partners.contains(m))
+                    {
+                        ticked.remove(&x.member);
+                    }
+                }
             }
         }
     }
@@ -1188,8 +1424,9 @@ fn layout_turns(ui: &mut egui::Ui, p: &Preview, ticked: &mut BTreeSet<String>) {
         let (w1, e1, p1) = run_counts(&p.run);
         ui.label(
             egui::RichText::new(format!(
-                "With the turns ticked: {w1} joint(s) laid out whole, {e1} member end(s), {p1} \
-                 plate(s); without them: {w0}, {e0}, {p0} (measured: the layout run both ways)"
+                "With the turns ticked (every joint they reach laid out with them): {w1} \
+                 joint(s) laid out whole, {e1} member end(s), {p1} plate(s); without them: \
+                 {w0}, {e0}, {p0} (measured: the layout run both ways)"
             ))
             .small(),
         );
@@ -1205,8 +1442,14 @@ pub const LEG_ROLL_HELP: &str = "A leg piece, or a chord running on through a jo
      neighbouring legs (Orient angles) are said beside a leg as a hint only. Never applied \
      silently: tick it to apply its turn with the run (the pieces in line with it turned alike, \
      one leg or chord; one undo step with the layout) — the preview then shows the run with and \
-     without the turns ticked. Joint details › Solve the clashes offers the same turns per \
-     joint with the joint's solution worked out with them.";
+     without the turns ticked. Beside it (O44 L18) the turn from the joints' planes: the whole leg \
+     or chord in line turned so that the most ends bolting onto it lie within 2° of its flanges' \
+     planes at all its joints, centred in the turns that keep them so; ticked by default where \
+     its roll is the program's (Orient angles, the layout: an import's), proposed where given by \
+     hand. One turn per member: ticking one clears the other. Each shows its effect over every \
+     joint its members reach (all the proposals of its kind applied together, the joints laid out \
+     without and with them): a turn is never judged on one joint. Joint details › Solve the \
+     clashes offers the same turns per joint with the joint's solution worked out with them.";
 
 /// The help of the pieces in line (O44 J9).
 pub const IN_LINE_HELP: &str = "Two pieces of one section in line through a joint (within 1°, \

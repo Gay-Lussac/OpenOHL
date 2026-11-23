@@ -190,7 +190,10 @@ pub use run::{
     CheckSummary, PoleInfo, PoleResult, RunInput, SectionUse, StructureCase, StructureRun,
     analyse_structure, cases_to_run, has_model,
 };
-pub use solve::{Candidate, Counts, Effect, EffectKind, LegTurn, Solution, SolveAsk, solve_joint};
+pub use solve::{
+    Candidate, Counts, Effect, EffectKind, LegTurn, Solution, SolveAsk, TurnReach, TurnSource,
+    solve_joint,
+};
 pub use volumes::{VolumeMesh, string_volumes};
 pub use welds::{Flat, PlannedPlate, Weld, flat_roll, joint_legs, seam, welded_plan};
 

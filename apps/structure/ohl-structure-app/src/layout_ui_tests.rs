@@ -1393,7 +1393,9 @@ fn the_clashes_of_a_joint_are_solved_in_one_click() {
 
 /// O44 L13 (the owner's answers to L12's questions 4 and 5): an invented
 /// K-brace whose chord (bracing running on, not a leg) is turned 5° against
-/// its joint. The preview lists the chord's turn, not ticked: nothing turned;
+/// its joint. The preview lists the chord's turn, not ticked, and (O44 L18)
+/// beside it the run's turn from its joints' planes, not ticked either (the
+/// roll is given by hand): nothing turned;
 /// ticked, the run is worked out again with it (the run with and without it
 /// shown) and Apply writes the turn with the layout in one undo step.
 #[test]
@@ -1428,8 +1430,24 @@ fn a_chord_turn_is_offered_with_a_tick_and_applied_with_the_run() {
         );
         assert!(p.without.is_none());
         assert!(p.run.text.contains("roll = \"5 deg\""));
+        // (O44 L18) Beside it the chord's run from its joints' planes: its
+        // roll given by hand, so proposed (not ticked), with its effect at
+        // every joint it reaches.
+        let (r, auto) = p
+            .plane_turns
+            .iter()
+            .find(|(r, _)| r.members.iter().any(|m| m == "L1" || m == "L2"))
+            .unwrap_or_else(|| panic!("{:?}", p.plane_turns));
+        assert!(!auto, "{r:?}");
+        assert!((r.turn + 5.0).abs() < 0.1, "{r:?}");
+        assert!(
+            p.effects.keys().any(|k| k.starts_with("p:")),
+            "{:?}",
+            p.effects
+        );
     }
-    h.get_by_label_contains("Chord: turn").click();
+    h.get_by_label_contains("Chord (from the ends at its joints): turn")
+        .click();
     let mut done = false;
     for _ in 0..600 {
         h.step();

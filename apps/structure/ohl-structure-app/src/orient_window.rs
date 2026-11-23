@@ -379,7 +379,7 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
         ui.label(
             egui::RichText::new(format!(
                 "From their joints' planes: {turned} of {} run(s) turned beyond the outline's; \
-                 member ends within {:.0}° of their flange's plane {b} → {a} of {n}",
+                 member ends within {:.0}° of their flange's plane {b} to {a} of {n}",
                 r.planes.len(),
                 ohl_structure_link::FLAT_OFF
             ))

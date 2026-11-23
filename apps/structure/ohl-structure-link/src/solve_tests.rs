@@ -214,7 +214,7 @@ fn a_chord_turned_against_its_joint_is_offered() {
         .iter()
         .find(|l| l.members.iter().any(|m| m == "L1" || m == "L2"))
         .unwrap_or_else(|| panic!("{:?}", s.leg_turns));
-    assert!((t.roll.turn.unwrap() + 5.0).abs() < 0.1, "{t:?}");
+    assert!((t.turn + 5.0).abs() < 0.1, "{t:?}");
     // Not applied: the solution chosen keeps the chord's roll.
     if let Some(c) = s.best() {
         assert!(c.text.contains("roll = \"5 deg\""), "{}", c.label);

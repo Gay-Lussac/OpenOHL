@@ -232,8 +232,10 @@ impl StructureApp {
                      problems, then members left for a hand detail. A way is refused where it \
                      pulls back a leg or a member running on through the joint, turns a leg, \
                      changes a member's section, or leaves more clashes and problems at the \
-                     other joints of the members meeting here. A leg piece the joints say is \
-                     turned is only proposed, with its effect measured: tick it to apply it. \
+                     other joints of the members meeting here. A leg or chord turned against \
+                     its joints is only proposed, two ways side by side (from the ends at its \
+                     joints, from its joints' planes), each with its effect over every joint the \
+                     turned members reach: tick one to apply it. \
                      Nothing is written before Apply (one undo step).",
                     SOLVE_ANCHOR,
                     || crate::help::open_section(SOLVE_PAGE.0, SOLVE_PAGE.1),
@@ -304,32 +306,50 @@ impl StructureApp {
                                 ui,
                                 "Proposed, not applied",
                                 "A leg piece, or a chord running on through the joint (an \
-                                 arm's chord, a body's member running on), whose joints say it \
-                                 is turned about its axis: the bracing ends meeting it lie in \
-                                 planes turned against its flanges by about the same angle (the \
-                                 tower's faces through the neighbouring legs or chords are a \
-                                 hint only). Never applied silently: tick it to apply the \
-                                 solution worked out with that turn instead (the pieces in line \
-                                 with it turned alike, so that the whole leg or chord keeps \
-                                 matching).",
+                                 arm's chord, a body's member running on), turned about its \
+                                 axis two ways, side by side: from the ends at its joints (the \
+                                 bracing ends meeting it lie in planes turned against its \
+                                 flanges by about the same angle; the piece and the pieces in \
+                                 line with it) and from its joints' planes (the whole leg or \
+                                 chord in line turned so that the most ends lie within 2° of \
+                                 its flanges' planes at all its joints). Each is worked out \
+                                 with every joint the turned members reach laid out with it and \
+                                 checked there — a turn is never judged on one joint, and one \
+                                 leaving those joints with more clashes and problems is \
+                                 refused. Never applied silently: tick one to apply the solution \
+                                 worked out with that turn instead.",
                             );
                             for (k, l) in sol.leg_turns.iter().enumerate() {
                                 let mut on = w.leg == Some(k);
+                                let reach = l.reach.as_ref().map_or(String::new(), |r| {
+                                    format!(
+                                        "; at the {} joint(s) the turned members reach: clashes \
+                                         and problems {} to {}, {} laid out whole, {} member \
+                                         end(s)",
+                                        r.joints.len(),
+                                        r.before,
+                                        r.after,
+                                        r.whole,
+                                        r.ends
+                                    )
+                                });
                                 let words = match &l.with {
                                     Some(c) => format!(
-                                        "Turn {} by {:+.1}°: with it clashes {} to {}, other \
-                                         problems {} to {}",
+                                        "Turn {} by {:+.2}° ({}): here clashes {} to {}, other \
+                                         problems {} to {}{reach}",
                                         l.members.join(", "),
-                                        l.roll.turn.unwrap_or(0.0),
+                                        l.turn,
+                                        l.source.as_str(),
                                         b.clashes,
                                         c.counts.clashes,
                                         b.problems,
                                         c.counts.problems
                                     ),
                                     None => format!(
-                                        "Turn {} by {:+.1}°: no better solution with it",
+                                        "Turn {} by {:+.2}° ({}): no better solution with it",
                                         l.members.join(", "),
-                                        l.roll.turn.unwrap_or(0.0)
+                                        l.turn,
+                                        l.source.as_str()
                                     ),
                                 };
                                 let r = ui
@@ -337,7 +357,7 @@ impl StructureApp {
                                         l.with.is_some(),
                                         egui::Checkbox::new(&mut on, words),
                                     )
-                                    .on_hover_text(l.roll.words());
+                                    .on_hover_text(&l.words);
                                 if r.changed() {
                                     w.leg = on.then_some(k);
                                 }

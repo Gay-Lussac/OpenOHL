@@ -26,9 +26,12 @@
 //! leaves more clashes and problems at the joints of the members it touches
 //! (their other ends). The best that is strictly better than the joint as it
 //! is is the solution; else none, with why. A leg piece the joints say is
-//! turned ([`crate::leg_roll`]) is only **proposed**, with the solution
-//! worked out again with that turn (its effect measured), never applied
-//! unless asked.
+//! turned ([`crate::leg_roll`]) and (O44 L18) a leg's or chord's run turned
+//! from its joints' planes ([`crate::plane_rolls`]) are only **proposed**,
+//! side by side, each with the solution worked out again with that turn —
+//! every joint the turned members reach laid out with it and checked, the
+//! turn refused where those joints are left with more clashes and problems
+//! (its effect measured over them all) — never applied unless asked.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -140,16 +143,64 @@ pub struct Candidate {
     pub hand: Vec<String>,
 }
 
-/// A leg piece the joints say is turned: proposed, never applied unless
-/// asked, with the solution worked out again with it.
+/// Where a turn proposed comes from (O44 L18: both offered side by side).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnSource {
+    /// What the ends bolting onto the piece at its joints say (the
+    /// leg-rotation check, L11): the piece and the pieces in line with it.
+    Joints,
+    /// Its run turned from its joints' planes (L18,
+    /// [`crate::plane_rolls`]): the whole leg or chord in line.
+    Planes,
+}
+
+impl TurnSource {
+    /// In words, short.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Joints => "from the ends at its joints (L11)",
+            Self::Planes => "from its joints' planes (L18)",
+        }
+    }
+}
+
+/// A turn's effect over every joint the turned members reach (O44 L18, the
+/// owner: "when turning a member both sides should be reverified").
+#[derive(Debug, Clone, PartialEq)]
+pub struct TurnReach {
+    /// The joints (both ends of every member turned).
+    pub joints: Vec<String>,
+    /// Clashes and other problems at them as they are.
+    pub before: usize,
+    /// With the turn's solution.
+    pub after: usize,
+    /// Of them laid out whole with the turn (the layout's run of them all).
+    pub whole: usize,
+    /// Member ends laid out at them with the turn.
+    pub ends: usize,
+}
+
+/// A leg or chord piece the joints say is turned: proposed, never applied
+/// unless asked, with the solution worked out again with it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LegTurn {
-    /// What the joints say.
-    pub roll: crate::LegRoll,
-    /// The members turned alike (the piece and the pieces in line with it).
+    /// Where the proposal comes from.
+    pub source: TurnSource,
+    /// The turn, degrees (added to each member's roll).
+    pub turn: f64,
+    /// The proposal in words.
+    pub words: String,
+    /// What the joints say (the leg-rotation check's).
+    pub roll: Option<crate::LegRoll>,
+    /// The run turned from its joints' planes.
+    pub plane: Option<crate::plane_rolls::PlaneRoll>,
+    /// The members turned alike (the piece and the pieces in line with it;
+    /// from the planes, the whole run).
     pub members: Vec<String>,
     /// The best solution with the turn (none: nothing better found).
     pub with: Option<Candidate>,
+    /// Its effect over every joint the members reach (none: no solution).
+    pub reach: Option<TurnReach>,
 }
 
 /// The solution of one joint.
@@ -793,9 +844,14 @@ fn fix_rounds(
 }
 
 /// The leg pieces (and, O44 L13, the chord pieces running on) at the joint
-/// whose joints say they are turned
-/// ([`crate::leg_roll`]), each with the solution worked out again with the
-/// turn (the piece and the pieces in line with it turned alike).
+/// whose joints say they are turned ([`crate::leg_roll`], L11), and (O44
+/// L18) the leg's and chord's runs at the joint that their joints' planes
+/// turn ([`crate::plane_rolls`]) — side by side, each with the solution
+/// worked out again with its turn. The turn is never judged on one joint
+/// (the owner, 2026-11-22: "when turning a member both sides should be
+/// reverified"): every joint the turned members reach is laid out with it
+/// and checked ([`TurnReach`]); a solution leaving more clashes and problems
+/// there is refused.
 fn leg_turns(
     text: &str,
     ask: &SolveAsk<'_>,
@@ -846,7 +902,16 @@ fn leg_turns(
         ));
     }
     let rolls = crate::leg_roll::with_faces(found, text, ask.library);
-    let mut out = Vec::new();
+    // (The proposals, each: its source, the members turned alike, the turn,
+    // its words, the leg-rotation check's or the planes' own.)
+    let mut props: Vec<(
+        TurnSource,
+        Vec<String>,
+        f64,
+        String,
+        Option<crate::LegRoll>,
+        Option<crate::plane_rolls::PlaneRoll>,
+    )> = Vec::new();
     let mut done: BTreeSet<String> = BTreeSet::new();
     for r in rolls
         .into_iter()
@@ -861,10 +926,44 @@ fn leg_turns(
         members.sort();
         members.dedup();
         done.extend(members.iter().cloned());
+        let words = r.words();
+        props.push((TurnSource::Joints, members, turn, words, Some(r), None));
+    }
+    // (O44 L18) The runs of the leg and chord pieces here as their joints'
+    // planes turn them (on the whole tower: a run reaches past this joint's
+    // members).
+    let at = BTreeSet::from([j0.id.clone()]);
+    let whole = crate::joint_details(text, ask.library, ask.bolts)?;
+    for p in crate::plane_rolls::proposed_runs(&whole, Some(&at)) {
+        if !p.members.iter().any(|m| legs.contains(&m.as_str())) {
+            continue;
+        }
+        props.push((
+            TurnSource::Planes,
+            p.members.clone(),
+            p.turn,
+            p.words(),
+            None,
+            Some(p),
+        ));
+    }
+    let mut out = Vec::new();
+    for (source, members, turn, words, roll, plane) in props {
         let ok: BTreeSet<String> = members.iter().cloned().collect();
-        // On each starting point, the layout of the joint with the turn
-        // (values given by hand kept, then replaced): the best.
-        let mut best: Option<Candidate> = None;
+        // Every joint the members reach (both ends of each), and as they
+        // are there.
+        let reached: BTreeSet<String> = t0
+            .members
+            .iter()
+            .filter(|m| ok.contains(&m.id))
+            .flat_map(|m| m.nodes.iter().cloned())
+            .chain(std::iter::once(j0.id.clone()))
+            .collect();
+        let wide: BTreeSet<String> = focus.union(&reached).cloned().collect();
+        let reach_before = problems_at(text, ask, &reached)?;
+        // On each starting point, the layout of every joint reached with
+        // the turn (values given by hand kept, then replaced): the best.
+        let mut best: Option<(Candidate, TurnReach)> = None;
         for b in bases {
             let mut doc: DocumentMut = b.text.parse().map_err(|e| format!("not TOML: {e}"))?;
             let tb = parse(&b.text)?;
@@ -892,15 +991,42 @@ fn leg_turns(
                         bolts: ask.bolts,
                         settings: ask.settings,
                         preset_fields: ask.preset_fields.clone(),
-                        joints: Some(BTreeSet::from([j0.id.clone()])),
+                        joints: Some(reached.clone()),
                         replace_hand: replace,
                     },
                 )?;
-                let (mut counts, d1) = measure(&run.text, ask, focus, &j0.id)?;
+                let (mut counts, d1) = measure(&run.text, ask, &wide, &j0.id)?;
                 let outcome = run.joints.iter().find(|o| o.joint == j0.id);
                 counts.left = outcome.map_or(0, |o| o.plan.hand_members.len());
+                let after = d1
+                    .joints
+                    .iter()
+                    .filter(|j| reached.contains(&j.id))
+                    .map(problems_of)
+                    .sum::<usize>();
+                let reach = TurnReach {
+                    joints: reached.iter().cloned().collect(),
+                    before: reach_before,
+                    after,
+                    whole: run
+                        .laid_out()
+                        .filter(|o| o.hand.is_empty() && reached.contains(&o.joint))
+                        .count(),
+                    ends: run
+                        .laid_out()
+                        .filter(|o| reached.contains(&o.joint))
+                        .map(|o| o.plan.ends.len())
+                        .sum(),
+                };
                 let t1 = parse(&run.text)?;
-                let refused = refusal(t0, &t1, j0, d1.joint(&j0.id), &ok);
+                let refused = refusal(t0, &t1, j0, d1.joint(&j0.id), &ok).or_else(|| {
+                    (after > reach_before).then(|| {
+                        format!(
+                            "more clashes and problems at the joints the turned members reach \
+                             ({reach_before} to {after})"
+                        )
+                    })
+                });
                 let mut effects: Vec<Effect> = b
                     .confirms
                     .iter()
@@ -912,9 +1038,10 @@ fn leg_turns(
                 effects.push(Effect {
                     kind: EffectKind::Turned,
                     words: format!(
-                        "{} turned by {turn:+.1}° (proposed: {})",
+                        "{} turned by {turn:+.2}° (proposed: {words}); every joint they reach \
+                         laid out with it ({})",
                         members.join(", "),
-                        r.words()
+                        reach.joints.len()
                     ),
                 });
                 effects.extend(diff(t0, &t1, j0, d1.joint(&j0.id)).into_iter().filter(|e| {
@@ -930,7 +1057,7 @@ fn leg_turns(
                 }));
                 let c = Candidate {
                     label: format!(
-                        "{} turned by {turn:+.1}°, {}the layout{}",
+                        "{} turned by {turn:+.2}°, {}the layout of every joint they reach{}",
                         members.join(", "),
                         b.prefix,
                         if replace {
@@ -946,19 +1073,55 @@ fn leg_turns(
                     hand,
                 };
                 if c.refused.is_none()
-                    && best
-                        .as_ref()
-                        .is_none_or(|x| c.counts.key() < x.counts.key())
+                    && best.as_ref().is_none_or(|(x, r)| {
+                        (c.counts.key(), reach.after) < (x.counts.key(), r.after)
+                    })
                 {
-                    best = Some(c);
+                    best = Some((c, reach));
                 }
             }
         }
+        let (with, reach) = match best {
+            Some((c, r)) => (Some(c), Some(r)),
+            None => (None, None),
+        };
         out.push(LegTurn {
-            roll: r,
+            source,
+            turn,
+            words,
+            roll,
+            plane,
             members,
-            with: best,
+            with,
+            reach,
         });
     }
     Ok(out)
+}
+
+/// The clashes and other problems at joint `j`.
+fn problems_of(j: &JointDetail) -> usize {
+    j.clashes.len()
+        + j.arrivals
+            .iter()
+            .flat_map(|a| &a.problems)
+            .filter(|(p, _)| !matches!(p, Problem::Clash { .. }))
+            .count()
+}
+
+/// The clashes and other problems at the joints `at` of `text`.
+fn problems_at(text: &str, ask: &SolveAsk<'_>, at: &BTreeSet<String>) -> Result<usize, String> {
+    let doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
+    let keep = crate::reduce::members_for(&doc, at);
+    let cut = if crate::reduce::worth(&doc, &keep) {
+        crate::reduce::cut_down(&doc, &keep).to_string()
+    } else {
+        text.to_owned()
+    };
+    let d = crate::joint_details_at(&cut, ask.library, ask.bolts, Some(at))?;
+    Ok(d.joints
+        .iter()
+        .filter(|j| at.contains(&j.id))
+        .map(problems_of)
+        .sum())
 }

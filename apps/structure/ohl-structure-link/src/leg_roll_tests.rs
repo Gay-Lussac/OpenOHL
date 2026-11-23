@@ -84,6 +84,54 @@ fn the_leg_turn_is_proposed_in_solve_the_clashes_not_applied() {
     }
 }
 
+/// O44 L18: beside it the leg's run turned from its joints' planes (the
+/// whole leg in line, about −5°), its own tick; each worked out with every
+/// joint the turned members reach laid out with it and its effect counted
+/// there (both ends of both pieces), never applied unless ticked.
+#[test]
+fn the_planes_turn_is_offered_beside_it_and_checked_at_every_joint_it_reaches() {
+    let lib = library();
+    let bolts = Default::default();
+    let s = LayoutSettings {
+        bolt: Some(BoltArea::picked(None, 0.016, None)),
+        ..Default::default()
+    };
+    let sol = solve_joint(
+        &k_turned(5.0),
+        &SolveAsk {
+            library: &lib,
+            bolts: &bolts,
+            settings: &s,
+            preset_fields: BTreeMap::new(),
+            leg_bolt: None,
+            joint: "N2".to_owned(),
+        },
+    )
+    .unwrap();
+    let j = sol
+        .leg_turns
+        .iter()
+        .find(|l| l.source == crate::TurnSource::Joints)
+        .unwrap_or_else(|| panic!("{:?}", sol.leg_turns));
+    let p = sol
+        .leg_turns
+        .iter()
+        .find(|l| l.source == crate::TurnSource::Planes)
+        .unwrap_or_else(|| panic!("{:?}", sol.leg_turns));
+    assert!((p.turn + 5.0).abs() < 0.1, "{p:?}");
+    assert!(p.plane.is_some() && j.roll.is_some());
+    assert!(p.members.contains(&"L1".to_owned()) && p.members.contains(&"L2".to_owned()));
+    if let Some(r) = &p.reach {
+        for n in ["N1", "N2", "N3"] {
+            assert!(r.joints.iter().any(|x| x == n), "{r:?}");
+        }
+        assert!(r.after <= r.before, "{r:?}");
+    }
+    if let Some(b) = sol.best() {
+        assert!(b.text.contains("roll = \"5 deg\""), "the leg kept");
+    }
+}
+
 /// Lay out joints says it too (the run's leg turns, never applied: the
 /// legs keep their roll).
 #[test]
