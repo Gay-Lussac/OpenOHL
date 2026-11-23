@@ -398,7 +398,7 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
                                     .iter()
                                     .map(|e| {
                                         format!(
-                                            "{} at {} (on {}): {:.1}° → {:.1}° out of its \
+                                            "{} at {} (on {}): {:.1}° to {:.1}° out of its \
                                              flange's plane",
                                             e.member, e.joint, e.piece, e.before, e.after
                                         )
