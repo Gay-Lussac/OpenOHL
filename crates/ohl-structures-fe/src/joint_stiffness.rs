@@ -259,7 +259,15 @@ pub fn release_of(section: &Section, b: &EndBolting) -> (EndRelease, String) {
                     leg.as_str()
                 ),
             ),
-            None => (EndRelease::default(), "both legs bolted: held".into()),
+            None if matches!(leg, ConnectedLeg::Both) => {
+                (EndRelease::default(), "both legs bolted: held".into())
+            }
+            // Not an angle's leg (a channel, a tube…): a row's plane is not
+            // known here — counted with the ends whose leg is not known.
+            None => (
+                EndRelease::default(),
+                "not an angle: the leg bolted not known".into(),
+            ),
         },
         (Some(1), None) => (EndRelease::default(), "the leg bolted not known".into()),
         (Some(_), _) => (EndRelease::default(), "two rows or more: held".into()),
