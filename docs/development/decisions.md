@@ -8,6 +8,38 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-23 (joint layout: one plate in one gap; a turn tried as before the plates between, L17)
+
+**The ends across one gap between a built-up member's angles share one
+plate between them; a turn refused after writing is first tried with its
+joints planned without the plates between** (roadmap O44 L17, L16's
+questions 2 and 3; the owner busy: built on its own, reported; built, in
+active development, not approved yet;
+[theory](../theory/joint-layout.md#one-plate-in-one-gap-a-turn-tried-as-before-the-plates-between-l17);
+no format change).
+
+- **One plate in one gap**: the plan's plane of an end across a gap (L15)
+  is the gap's own — its normal turned one way, its first back along it —
+  rather than the back the end lies on, so that ends across it from either
+  side, and those on the pieces of a member one part through the joint,
+  share one plate between, each on its own face. Found: two plates in one
+  gap (each end its own) ran into each other after writing; the joint was
+  taken back and fell back to plans laying out less.
+- **A turn refused after writing** (its member laid out at none of its
+  joints, L16's question 2): where a joint of its member was planned onto
+  a plate between, that joint is planned without them first (the run's
+  guard, planned with them again where that lays out less there), each
+  member once; refused only if it still helps none.
+- **Tried, not kept**: the half turn onto a plate between for an end on a
+  built-up member's angle's inner face running towards its other leg,
+  weighed with the plates between (more joints worse than better).
+- **Measured** on the 78 private towers (L16 main → L17): joints whole
+  37 100 → 37 315, member ends 133 075 → 133 265, plates 69 391 → 69 295,
+  members left after the clash rounds 11 366 → 11 179, not fitting as
+  given 48 → 48, a run again identical 78 of 78; joint by joint 273 better
+  and 47 worse (owner question); against L14 main 1 761 better and 321
+  worse.
+
 ## 2026-11-22 (joint layout: the newest step never leaving a joint worse; the plan's face as drawn, L16)
 
 **The plates between a built-up member's angles (L15) no longer change a

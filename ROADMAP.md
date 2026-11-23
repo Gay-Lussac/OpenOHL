@@ -3318,6 +3318,64 @@ only where it helps):
   > smaller of the bolt's shear capacity and its bearing in the part (a
   > code plugin change, the source cited; the joint checks still check the
   > bearing), and the toe of a rolled angle taken as a rolled edge.
+- [x] L17. **One plate in one gap; a turn refused after writing tried as
+  before the plates between** (L16's questions 2 and 3; the owner busy:
+  built on its own, reported). **Built 2026-11-23, in active development,
+  not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#one-plate-in-one-gap-a-turn-tried-as-before-the-plates-between-l17),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-joint-layout-one-plate-in-one-gap-a-turn-tried-as-before-the-plates-between-l17);
+  no format change). **1. Traced**: most joints worse than before the
+  plates between that are not where L16 made plan and drawing agree came
+  from **two plates between in one gap** — two ends across a built-up
+  member's gap from either side (mirror-image redundants), or on the two
+  pieces of a member one part through the joint, each given a plate in the
+  one gap (L15 keyed a plate by the back it lies on): the clash check after
+  writing found the plates in each other, the joint was taken back and fell
+  back. Now the ends across one gap **share its plate**, each on its own
+  face (the plan's plane the gap's own; the joint details seat each end on
+  the face its outstanding leg looks out of, as before). And a turn refused
+  after writing (its member laid out at none of its joints) is first tried
+  with its joints that were planned onto a plate between planned without
+  them (the turns are weighed so since L16), each member once. On the 78
+  real towers (kept privately; with the bundled plugin), L16 main → L17:
+  joints whole 37 100 → 37 315, ends 133 075 → 133 265, plates 69 391 →
+  69 295, members left after the clash rounds 11 366 → 11 179, not fitting
+  48 / 11 538 → 48 / 11 537, a run again identical 78/78; joint by joint
+  273 better and 47 worse (whole gained 217, lost 2); against L14 main
+  1 761 better and 321 worse (L16: 1 744 and 301). Of the 47 worse, 26
+  have a member turned otherwise: its one roll now lays it out at a built-up
+  joint on the shared plate (that joint whole) and no longer onto a bent
+  plate at its other joint (as many of its ends, one joint each way); 21 lay
+  out as many ends on two plates where L16 had one. The time per tower
+  (six towers, two at a time, back to back, twice) unchanged within the
+  scatter: median 90.7 and 78.7 s → 77.9 and 83.2 s (the computer busier
+  than for L16's 41 s). **2. Tried, not kept**: the ends on the inner face of a built-up
+  member's angle that run towards its other leg (574 left; 981 more on
+  single angles where the bent plate round the other leg finds no room for
+  its own bolts — the code plugin's edge distance, L16's question 4) — the
+  half turn onto a plate between weighed with the plates between: 10 joints
+  better, 17 worse, 4 whole lost on 70 towers; not built. **3. Not built**
+  (time): a level or bent plate across two horizontals (the plan and hip
+  ends left: about 6 700 lying off their host's flange with no roll laying
+  them flat, about 3 200 with their axis out of its face).
+  > **Owner:** (1) One plate between in one gap, its ends on its two faces
+  > (whole +215, 273 better, 47 worse — 26 of them a member's one roll
+  > now serving its other joint) → Recommended: keep. (2) The joints still
+  > worse than before the plates between (321 against L14 main): mostly
+  > where L16 made plan and drawing agree (built-up members' angles whose
+  > inner face a bolt or a plate cannot take as drawn) and members' one
+  > roll serving one joint or the other → Recommended: accept as the sound
+  > layout (the L14 result there was planned on another face than drawn);
+  > next, the joint checks' view of those joints by hand. (3) The ends on a
+  > built-up member's inner face: the half turn onto the plate between made
+  > more joints worse than better → Recommended: next, a bent plate round
+  > the angle's other leg on a built-up member (the leg's outer face free in
+  > two angles back to back) — the joint details to draw it first. (4) The
+  > 981 single-angle ends whose bent plate finds no room for its own bolts
+  > wait for L16's question 4 (the edge distance) → Recommended: answer
+  > L16's question 4 first. (5) A level plate across two horizontals for
+  > the plan and hip members → Recommended: next, as its own step (a plate
+  > on two members, a format field).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

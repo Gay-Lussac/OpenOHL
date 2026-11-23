@@ -3107,6 +3107,60 @@ mostly on built-up members (their angles' inner faces). The time per tower
 (six towers, two at a time, back to back, twice): median 40.8 and 39.8 s →
 41.7 and 41.1 s, the largest 41.9 and 40.7 s → 42.2 and 41.8 s.
 
+## One plate in one gap; a turn tried as before the plates between (L17)
+
+(L16's questions 2 and 3; the owner busy: built on its own, reported.
+Built 2026-11-23, in active development, not approved yet. No format
+change.)
+
+- **One plate between in one gap.** L15 gave each end across a gap
+  between a built-up member's angles a plane of its own, keyed by the back
+  it lies on. Two ends across one gap from either side — mirror-image
+  redundants at a built-up member's middle joint, say — or on the two
+  pieces of a member one part through the joint then each had a plate in
+  the one gap; the clash check after writing found the two plates in each
+  other (as deep as the gap), the joint was taken back and fell back to
+  plans without the plates between, often laying out less than before
+  L15. The ends across one gap now share its plate: their plane is the
+  gap's own (its normal turned one way, the gap's first back along it),
+  each end on its own face of the plate — the joint details seat each on
+  the face its outstanding leg looks out of, as before, and the plate in
+  the gap whichever of them it is drawn from. The planner keeps the ends
+  of the two faces apart in the plate's plane as it keeps those of one face
+  apart (on the safe side: on different faces they could overlap there);
+  the clash check after writing judges the plate and both ends as drawn.
+- **A turn refused after writing, tried as before the plates between.**
+  The turns are weighed on plans without the plates between (L16); a
+  turned member that, once written, is laid out at none of its joints is
+  not turned (its roll as before). Where one of its joints was planned
+  onto a plate between, that joint is now first planned without them (the
+  run's guard, as for a joint laid out worse with them; planned with them
+  again where that lays out less there) and the turn kept if it then
+  helps; refused only if it still helps none (each member tried once).
+- **Tried, not kept**: an end on the inner face of a built-up member's
+  angle running towards the angle's other leg (no bent plate round a
+  built-up member's leg is laid out) turned half a turn onto a plate
+  between, weighed with the plates between — measured on 70 of the private
+  towers: 10 joints better, 17 worse, 4 no longer whole.
+
+**Measured** on the 78 private tower files (the bundled plugin, after
+Orient angles, L14's settings; L16 main → L17): joints laid out whole
+37 100 → 37 315, member ends laid out 133 075 → 133 265, plates 69 391 →
+69 295, members left after the clash rounds 11 366 → 11 179, joints that do
+not fit as given 48 → 48 (as assumed 11 538 → 11 537), a run again
+identical 78 of 78. Joint by joint 273 better and 47 worse (whole gained
+217, lost 2): the gains on built-up members (a built-up member with
+bracing on it, all in a flange's plane: whole 311 → 406 of 424; with
+redundants 2 766 → 2 880 of 3 656); of the worse, 26 have a member whose
+one roll now lays it out at a built-up joint on the shared plate (that
+joint whole) and no longer onto a bent plate at its other joint, 21 lay
+out as many ends on two plates where one was. Against L14 (before the
+plates between): 1 761 better and 321 worse (L16: 1 744 and 301) — most of
+those where L16 made plan and drawing agree. The time per tower (six
+towers, two at a time, back to back, twice) unchanged within the scatter:
+median 90.7 and 78.7 s → 77.9 and 83.2 s, the largest 104.2 and 84.8 s →
+84.3 and 86.4 s (the computer busier than for L16's measurement).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
