@@ -95,6 +95,11 @@ pub const PULL_BACK_START: f64 = 0.300;
 /// standard's value.
 pub const SHIFT_LIMIT_START: f64 = 0.030;
 
+/// The order a joint's planes are laid out in: how deep what they bolt
+/// onto is laid out on others, its rank, (L18, where asked) the plane's
+/// biggest member's class and leg width, its id, the plane.
+type PlaneOrder = (usize, u8, (u8, i64), String, PlaneKey);
+
 /// What the layout is told.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayoutSettings {
@@ -2642,8 +2647,7 @@ fn plan_once(
     };
     // (L18: of one rank, high to low — the plane of the biggest member
     // first — where asked.)
-    let mut planes: BTreeMap<(usize, u8, (u8, i64), String, PlaneKey), Vec<usize>> =
-        BTreeMap::new();
+    let mut planes: BTreeMap<PlaneOrder, Vec<usize>> = BTreeMap::new();
     for (key, ks) in by_plane {
         let first = ks
             .iter()

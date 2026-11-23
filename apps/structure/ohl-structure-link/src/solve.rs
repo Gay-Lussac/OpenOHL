@@ -904,14 +904,7 @@ fn leg_turns(
     let rolls = crate::leg_roll::with_faces(found, text, ask.library);
     // (The proposals, each: its source, the members turned alike, the turn,
     // its words, the leg-rotation check's or the planes' own.)
-    let mut props: Vec<(
-        TurnSource,
-        Vec<String>,
-        f64,
-        String,
-        Option<crate::LegRoll>,
-        Option<crate::plane_rolls::PlaneRoll>,
-    )> = Vec::new();
+    let mut props: Vec<TurnProposal> = Vec::new();
     let mut done: BTreeSet<String> = BTreeSet::new();
     for r in rolls
         .into_iter()
@@ -1098,6 +1091,17 @@ fn leg_turns(
     }
     Ok(out)
 }
+
+/// A turn proposed: its source, the members turned alike, the turn
+/// (degrees), its words, the leg-rotation check's or the planes' own.
+type TurnProposal = (
+    TurnSource,
+    Vec<String>,
+    f64,
+    String,
+    Option<crate::LegRoll>,
+    Option<crate::plane_rolls::PlaneRoll>,
+);
 
 /// The clashes and other problems at joint `j`.
 fn problems_of(j: &JointDetail) -> usize {

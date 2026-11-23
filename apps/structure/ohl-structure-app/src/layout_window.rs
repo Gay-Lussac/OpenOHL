@@ -85,8 +85,11 @@ pub struct Preview {
     /// joint its members reach laid out without and with it (all the
     /// proposals of its kind applied together), joints laid out whole,
     /// member ends, plates there — never judged on one joint.
-    pub effects: BTreeMap<String, ((usize, usize, usize), (usize, usize, usize))>,
+    pub effects: BTreeMap<String, (RunCounts, RunCounts)>,
 }
+
+/// Joints laid out whole, member ends laid out, plates.
+pub type RunCounts = (usize, usize, usize);
 
 /// A turn proposal's key: `j:` and the leg-rotation check's piece (L11),
 /// `p:` and the run's first piece (the joints' planes, L18).
