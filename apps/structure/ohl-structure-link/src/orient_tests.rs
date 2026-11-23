@@ -91,6 +91,10 @@ fn orient(text: &str, replace: bool) -> OrientRun {
         &OrientAsk {
             members: None,
             replace_hand: replace,
+            // The outline's turn (kept selectable since O44 L18; the
+            // joints' planes: plane_rolls_tests).
+            method: crate::orient::OrientMethod::Outline,
+            ..Default::default()
         },
     )
     .unwrap()
@@ -460,6 +464,7 @@ fn only_the_members_asked() {
         &OrientAsk {
             members: Some(BTreeSet::from(["L00".to_owned()])),
             replace_hand: false,
+            ..Default::default()
         },
     )
     .unwrap();

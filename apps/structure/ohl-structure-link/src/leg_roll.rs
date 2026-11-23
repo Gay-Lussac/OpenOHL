@@ -328,6 +328,9 @@ pub fn with_faces(
         &crate::orient::OrientAsk {
             members: Some(members),
             replace_hand: true,
+            // The tower's faces (the second explanation), not the joints'.
+            method: crate::orient::OrientMethod::Outline,
+            ..Default::default()
         },
     ) else {
         return rolls;

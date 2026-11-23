@@ -24,6 +24,7 @@ fn oriented_body() -> String {
         &crate::OrientAsk {
             members: None,
             replace_hand: true,
+            ..Default::default()
         },
     )
     .unwrap()

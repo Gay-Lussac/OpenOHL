@@ -25,6 +25,14 @@
 //!   (each flange off its face by half the difference, said). A built-up
 //!   leg of two angles in a star or four in a cross is turned the same way
 //!   (its legs along the faces); two angles back to back are left.
+//! - **From the joints' planes** (O44 L18, [`OrientMethod::Planes`], the
+//!   default; the outline alone, [`OrientMethod::Outline`], kept for
+//!   comparison): then each single-angle leg's run in line (and the legs
+//!   left above, from the roll they have), then each chord's, then each
+//!   face member's turned about its axis so that the most member ends at
+//!   all its joints lie within the owner's 2° of its flanges' planes
+//!   ([`crate::plane_rolls`]), at most 22.5° from where the outline put it
+//!   (the heel stays out); each run's residual at each joint reported.
 //! - **Plan and hip members** — horizontal angles (within
 //!   [`HORIZONTAL_OFF`]) lying in no steep face of the tower: one leg
 //!   flat (horizontal) and the other pointing down (assumed: no water
@@ -129,13 +137,49 @@ pub struct OrientedMember {
     pub neighbours: Vec<String>,
 }
 
+/// How the legs and chords are turned (O44 L18).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OrientMethod {
+    /// From the joints' planes (Orient angles v2, the default since L18):
+    /// first as [`OrientMethod::Outline`] (the heel out of the tower), then
+    /// each leg's and chord's run turned so that its flanges lie in the
+    /// planes of what bolts onto it at all its joints
+    /// ([`crate::plane_rolls`]).
+    #[default]
+    Planes,
+    /// From the tower's outline alone (as before L18, kept for comparison):
+    /// the middle of the angle's legs on the middle of the two faces.
+    Outline,
+}
+
 /// What to orient.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OrientAsk {
     /// The members (none: every member).
     pub members: Option<BTreeSet<String>>,
     /// Rolls given by hand replaced too.
     pub replace_hand: bool,
+    /// How the legs and chords are turned.
+    pub method: OrientMethod,
+    /// How the ends weigh in a run's turn from its joints' planes.
+    pub weighting: crate::plane_rolls::Weighting,
+    /// The face members (bracing) turned from their joints' planes too,
+    /// after the legs and chords ([`OrientMethod::Planes`]; on by default:
+    /// measured on six private real towers, more joints whole than legs and
+    /// chords alone, +60 against +31 over the outline's turn).
+    pub bracing: bool,
+}
+
+impl Default for OrientAsk {
+    fn default() -> Self {
+        Self {
+            members: None,
+            replace_hand: false,
+            method: OrientMethod::default(),
+            weighting: crate::plane_rolls::Weighting::default(),
+            bracing: true,
+        }
+    }
 }
 
 /// A run of Orient angles on a structure file.
@@ -161,6 +205,11 @@ pub struct OrientRun {
     pub by_layout: Vec<OrientedMember>,
     /// How long it took, s.
     pub seconds: f64,
+    /// O44 L18: each leg's and chord's run as its joints' planes turned it
+    /// ([`OrientMethod::Planes`]; legs first), with every end's angle out of
+    /// its flange's plane before and after; empty with
+    /// [`OrientMethod::Outline`].
+    pub planes: Vec<crate::plane_rolls::PlaneRoll>,
 }
 
 /// A member as this command sees it.
@@ -236,6 +285,164 @@ impl FaceOf {
 /// The tower's legs and chords and its plan members turned as they stand
 /// (as the module docs say) in `text`, as `ask` says.
 pub fn orient_angles(
+    text: &str,
+    library: &SectionLibrary,
+    ask: &OrientAsk,
+) -> Result<OrientRun, String> {
+    let start = std::time::Instant::now();
+    let run = orient_outline(text, library, ask)?;
+    let mut run = match ask.method {
+        OrientMethod::Outline => run,
+        OrientMethod::Planes => by_planes(text, library, ask, run)?,
+    };
+    run.seconds = start.elapsed().as_secs_f64();
+    Ok(run)
+}
+
+/// O44 L18: the run `run` of [`orient_outline`] on `text` with each leg's
+/// and chord's run (those it turned or found as it would turn them, and the
+/// legs it left whose roll is not kept by hand) turned from its joints'
+/// planes ([`crate::plane_rolls::turn_runs`]).
+fn by_planes(
+    text: &str,
+    library: &SectionLibrary,
+    ask: &OrientAsk,
+    mut run: OrientRun,
+) -> Result<OrientRun, String> {
+    let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+        .map_err(|e| e.message)?;
+    let record = LayoutRecord::of(&t);
+    let member = |id: &str| t.members.iter().find(|m| m.id == id);
+    let class_leg = |id: &str| {
+        member(id)
+            .and_then(|m| m.design.as_ref())
+            .and_then(|d| d.get("class"))
+            .and_then(toml::Value::as_str)
+            == Some("leg")
+    };
+    let asked = |id: &str| ask.members.as_ref().is_none_or(|s| s.contains(id));
+    let (mut legs, mut chords, mut faces) = (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+    for o in run.turned.iter().chain(&run.same) {
+        match o.kind {
+            OrientKind::Chord if class_leg(&o.member) => legs.insert(o.member.clone()),
+            OrientKind::Chord => chords.insert(o.member.clone()),
+            OrientKind::Face if ask.bracing => faces.insert(o.member.clone()),
+            _ => false,
+        };
+    }
+    // The legs left (no faces found, not at a corner): from the roll they
+    // have, where it is not given by hand (or hand rolls are replaced).
+    for (id, _) in &run.left {
+        let Some(m) = member(id) else { continue };
+        let auto = record.oriented.contains_key(id) || record.rolled.contains_key(id);
+        let by_hand =
+            !auto && (m.roll.is_some() || m.reference.is_some() || m.orientation.is_some());
+        if asked(id) && (!by_hand || ask.replace_hand) {
+            legs.insert(id.clone());
+        }
+    }
+    if legs.is_empty() && chords.is_empty() {
+        return Ok(run);
+    }
+    use crate::plane_rolls::RunKind;
+    let (after, rolls) = crate::plane_rolls::turn_runs(
+        &run.text,
+        library,
+        &[
+            (RunKind::Leg, legs),
+            (RunKind::Chord, chords),
+            (RunKind::Bracing, faces),
+        ],
+        ask.weighting,
+    )?;
+    run.planes = rolls;
+    if after == run.text {
+        return Ok(run);
+    }
+    let t1 = StructureType::parse(std::path::Path::new("structure.ohls"), &after)
+        .map_err(|e| e.message)?;
+    let mut doc: DocumentMut = after.parse().map_err(|e| format!("not TOML: {e}"))?;
+    let mut rec = LayoutRecord::of(&t1);
+    let order: BTreeMap<&str, usize> = t
+        .members
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.id.as_str(), i))
+        .collect();
+    for r in run.planes.iter().filter(|r| r.turns()) {
+        let worst = round_deg(r.worst());
+        for m in &r.members {
+            let Some(x) = t1.members.iter().find(|x| &x.id == m) else {
+                continue;
+            };
+            let roll = round_deg(x.roll.as_ref().map_or(0.0, roll_deg));
+            let orig = member(m);
+            let before = roll_text(orig.and_then(|o| o.roll.as_ref()));
+            let now = orig.and_then(|o| o.roll.as_ref()).map_or(0.0, roll_deg);
+            let turn = round_deg(roll - now);
+            let pos = run
+                .turned
+                .iter()
+                .position(|o| &o.member == m)
+                .map(|i| run.turned.remove(i))
+                .or_else(|| {
+                    run.same
+                        .iter()
+                        .position(|o| &o.member == m)
+                        .map(|i| run.same.remove(i))
+                });
+            let o = match pos {
+                Some(mut o) => {
+                    o.roll = roll;
+                    o.turn = turn;
+                    o.off = worst;
+                    o
+                }
+                None => {
+                    // A leg left by the outline: now turned, marked.
+                    run.left.retain(|(id, _)| id != m);
+                    let first = rec
+                        .oriented
+                        .get(m)
+                        .map(|x| x.0.clone())
+                        .or_else(|| rec.rolled.get(m).cloned())
+                        .unwrap_or_else(|| before.clone());
+                    rec.rolled.remove(m);
+                    rec.oriented.insert(m.clone(), (first, OrientKind::Chord));
+                    OrientedMember {
+                        member: m.clone(),
+                        kind: OrientKind::Chord,
+                        before,
+                        roll,
+                        turn,
+                        off: worst,
+                        neighbours: Vec::new(),
+                    }
+                }
+            };
+            if o.turn.abs() < 0.005 {
+                run.same.push(o);
+            } else {
+                run.turned.push(o);
+            }
+        }
+    }
+    let key = |o: &OrientedMember| order.get(o.member.as_str()).copied().unwrap_or(usize::MAX);
+    run.turned.sort_by_key(key);
+    run.same.sort_by_key(key);
+    if rec != LayoutRecord::of(&t1) {
+        rec.write(&mut doc);
+    }
+    run.text = doc.to_string();
+    if run.turned.is_empty() && LayoutRecord::of(&t1) == record {
+        run.text = text.to_owned();
+    }
+    Ok(run)
+}
+
+/// [`orient_angles`] from the tower's outline alone
+/// ([`OrientMethod::Outline`]).
+fn orient_outline(
     text: &str,
     library: &SectionLibrary,
     ask: &OrientAsk,

@@ -105,6 +105,9 @@ mod other_face;
 mod other_face_tests;
 #[cfg(test)]
 mod plane_hosts_tests;
+pub mod plane_rolls;
+#[cfg(test)]
+mod plane_rolls_tests;
 mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
@@ -171,8 +174,8 @@ pub use ohl_structures::connections::{
 };
 pub use ohl_structures_fe::bolt_rules::{BoltRules, Breach, Snap, breaches, snap};
 pub use orient::{
-    CORNER_DEG, IN_LINE_DEG, OrientAsk, OrientKind, OrientRun, OrientedMember, PARALLEL_DEG,
-    orient_angles,
+    CORNER_DEG, IN_LINE_DEG, OrientAsk, OrientKind, OrientMethod, OrientRun, OrientedMember,
+    PARALLEL_DEG, orient_angles,
 };
 pub use plate_checks::{
     EndForces, NotFitting, PlateCase, PlatePart, PlatePlans, PlateUsage, joint_plate_usage,

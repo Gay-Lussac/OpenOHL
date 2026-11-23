@@ -81,6 +81,7 @@ fn open(tag: &str) -> (Harness<'static, StructureApp>, std::path::PathBuf) {
         &ohl_structure_link::OrientAsk {
             members: None,
             replace_hand: true,
+            ..Default::default()
         },
     )
     .unwrap()

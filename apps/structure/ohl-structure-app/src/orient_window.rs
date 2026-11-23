@@ -18,7 +18,7 @@ use std::sync::mpsc::{Receiver, channel};
 
 use eframe::egui;
 use ohl_structure_edit::Handle;
-use ohl_structure_link::{OrientAsk, OrientKind, OrientRun};
+use ohl_structure_link::{OrientAsk, OrientKind, OrientMethod, OrientRun};
 
 use crate::app::StructureApp;
 
@@ -55,6 +55,9 @@ pub struct OrientWindow {
     pub scope: OrientScope,
     /// Rolls given by hand replaced too.
     pub replace: bool,
+    /// How the legs and chords are turned (O44 L18: from the joints'
+    /// planes, the default; from the tower's outline, as before).
+    pub method: OrientMethod,
     /// The preview.
     pub preview: Option<OrientPreview>,
     job: Job,
@@ -67,6 +70,7 @@ impl OrientWindow {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (revision, libs, members, self.replace).hash(&mut h);
+        (self.method == OrientMethod::Planes).hash(&mut h);
         h.finish()
     }
 }
@@ -83,6 +87,7 @@ impl StructureApp {
                 OrientScope::Tower
             },
             replace: false,
+            method: OrientMethod::default(),
             preview: None,
             job: None,
             error: None,
@@ -152,6 +157,8 @@ impl StructureApp {
             let ask = OrientAsk {
                 members: members.clone(),
                 replace_hand: w.replace,
+                method: w.method,
+                ..Default::default()
             };
             let (tx, rx) = channel();
             std::thread::spawn(move || {
@@ -201,7 +208,11 @@ impl StructureApp {
                      of its neighbouring legs' lines (the tower's section through its middle). \
                      Where the faces do not meet at 90°, the middle of the angle's legs is put on \
                      the middle of the faces (each flange off its face by half the difference, \
-                     said). Plan and hip members (horizontal angles in no steep face): one leg \
+                     said). From their joints' planes (the default, O44 L18): then each leg's \
+                     and chord's run in line is turned so that the most member ends bolting onto \
+                     it lie within 2° of its flanges' planes at all its joints (its own ends \
+                     first), centred in the turns that keep them so, at most 22.5°; the residual \
+                     at each joint is listed. Plan and hip members (horizontal angles in no steep face): one leg \
                      flat, the other pointing down (assumed: no water lying in it). Face members \
                      (the other angles lying in a steep face, between its legs or chords): one \
                      leg in the face, the other out of the tower, the leg in the face down from \
@@ -246,6 +257,23 @@ impl StructureApp {
                     OrientScope::Tower,
                     format!("The whole tower ({all} members)"),
                 );
+                ui.horizontal(|ui| {
+                    ui.label("Legs and chords turned");
+                    ui.radio_value(&mut w.method, OrientMethod::Planes, "from their joints' planes")
+                        .on_hover_text(
+                            "As from the outline first (heel out of the tower), then each leg's \
+                             and chord's run in line turned so that the most member ends bolting \
+                             onto it lie within 2° of its flanges' planes at all its joints (a \
+                             member's own ends first), centred in the turns that keep them so, \
+                             at most 22.5° — the residual at each joint listed below.",
+                        );
+                    ui.radio_value(&mut w.method, OrientMethod::Outline, "from the tower's outline")
+                        .on_hover_text(
+                            "As before (kept for comparison): the middle of the angle's legs on \
+                             the middle of the two faces meeting at it; where the faces are off \
+                             square each flange lies off its face by half the difference.",
+                        );
+                });
                 ui.checkbox(&mut w.replace, "Replace rolls given by hand")
                     .on_hover_text(
                         "Off: a member's roll, reference or orientation given by hand is kept \
@@ -341,6 +369,47 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
         r.left.len(),
         r.seconds
     ));
+    // (O44 L18) From the joints' planes: each run's ends within 2° before
+    // and after, and the residual at each joint.
+    if !r.planes.is_empty() {
+        let turned = r.planes.iter().filter(|p| p.turns()).count();
+        let (b, a, n) = r.planes.iter().fold((0, 0, 0), |(b, a, n), p| {
+            (b + p.within.0, a + p.within.1, n + p.ends.len())
+        });
+        ui.label(
+            egui::RichText::new(format!(
+                "From their joints' planes: {turned} of {} run(s) turned beyond the outline's; \
+                 member ends within {:.0}° of their flange's plane {b} → {a} of {n}",
+                r.planes.len(),
+                ohl_structure_link::FLAT_OFF
+            ))
+            .small(),
+        );
+        egui::CollapsingHeader::new(format!("Runs turned from their joints' planes ({turned})"))
+            .id_salt("orient-planes")
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("orient-planes-list")
+                    .max_height(160.0)
+                    .show(ui, |ui| {
+                        for p in r.planes.iter().filter(|p| p.turns()) {
+                            ui.label(p.words()).on_hover_text(
+                                p.ends
+                                    .iter()
+                                    .map(|e| {
+                                        format!(
+                                            "{} at {} (on {}): {:.1}° → {:.1}° out of its \
+                                             flange's plane",
+                                            e.member, e.joint, e.piece, e.before, e.after
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n"),
+                            );
+                        }
+                    });
+            });
+    }
     let worst = r
         .turned
         .iter()
@@ -348,7 +417,7 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
         .filter(|o| o.kind == OrientKind::Chord)
         .map(|o| o.off)
         .fold(0.0, f64::max);
-    if worst > 0.05 {
+    if worst > 0.05 && r.planes.is_empty() {
         ui.label(
             egui::RichText::new(format!(
                 "Where the faces do not meet at 90°, each flange lies off its face by half the \
@@ -382,7 +451,14 @@ fn orient_preview(ui: &mut egui::Ui, r: &OrientRun) {
             o.before,
             o.roll,
             if o.kind == OrientKind::Chord && o.off > 0.05 {
-                format!(", each flange {:.1}° off its face", o.off)
+                if r.planes.is_empty() {
+                    format!(", each flange {:.1}° off its face", o.off)
+                } else {
+                    format!(
+                        ", an end at its joints up to {:.1}° out of its flange's plane",
+                        o.off
+                    )
+                }
             } else {
                 String::new()
             }
