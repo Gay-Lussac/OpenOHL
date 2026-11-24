@@ -8,6 +8,26 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (joint layout: a plate's own holding bolts in the clash check, L21 item 2)
+
+**A plate's own bolts onto the member holding it are pieces of the clash
+check** (roadmap O44 L21, L20's question 3; the owner busy: built on its
+own, reported; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#a-plates-own-holding-bolts-in-the-clash-check-l21-item-2)).
+
+- **Before**: `[plate.leg_bolts]` (L5o) and `[plate.also_bolts]` (L20)
+  were placed clear by the plan and never tested after writing.
+- **Now** (no format change): their heads, shanks and nuts are tested
+  (`ClashPart::PlateBolt`), excused only against their plate, their
+  shank against the member they hold it onto (and one in line), and the
+  bolts of ends bolted onto that member; a clash is the plate's in the
+  layout's checks after writing (its members pulled back, then left as
+  they were), said in Joint details as any clash. The plan's fixed steel
+  is unchanged.
+- **Measured first** (in the roadmap block and the theory page): the
+  clashes the check now finds on layouts written before, and what the
+  run's reaction costs on four private towers.
+
 ## 2026-11-24 (joint checks: the force a level plate passes between its two holders, L21)
 
 **Each holder of a level plate takes the force the plate may pass from

@@ -1435,7 +1435,9 @@ the bolt libraries beside the structure (`Bolts/`).
 tested against every other it does not bolt to: each member's steel as
 placed (from where it stops out to half its length — the other half is
 the other joint's), the plates and a splice's covers, and every bolt
-with its head, shank and nut. Two that run into each other by more than
+with its head, shank and nut — since 2026-11-24 (L21) also a plate's own
+bolts onto the member holding it (`[plate.leg_bolts]`, `[plate.also_bolts]`:
+"the nut of plate G1's bolt 2 onto L1", in the plate's notes). Two that run into each other by more than
 1 mm (faces lying on each other only touch; the 1 mm is the program's
 own tolerance for the drawings' rounding, not a standard's value) are a
 **clash**: a problem of each member end in it under **Problems (n)**
@@ -1456,7 +1458,9 @@ bolts onto (its head and nut are tested: they lie on its faces); the
 bolts of two members one bolting onto the other (they may be the same
 bolts); a bolt and a built-up member it bolts onto (taken as passing
 through its angles with their fillers); a plate and the bolts of the leg it
-lies on (a splice's: taken as passing through it too). A joint never laid out — a
+lies on (a splice's: taken as passing through it too); a plate's own
+holding bolt and its plate, its shank and the member it holds the plate
+onto, and the bolts of an end bolted onto that member. A joint never laid out — a
 tower brought in from another program, with its bolts where the program
 assumes them — usually has many clashes: [Lay out joints](#lay-out-joints)
 places its members so that they fit.

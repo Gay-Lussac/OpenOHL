@@ -4027,21 +4027,23 @@ fn write_rounds(
                     // (L9, 2026-11-21: a flat plate with plates in their
                     // members' own planes welded to it — nothing bolted on
                     // it, perhaps — is those members' too: before, its
-                    // clashes were nobody's and stayed written.)
-                    crate::ClashPart::Plate(id) => o
-                        .plates
-                        .iter()
-                        .position(|p| p == id)
-                        .map(|k| {
-                            let mut m = o.plan.plates[k].members.clone();
-                            for q in &o.plan.plates {
-                                if q.own.as_ref().is_some_and(|w| w.welded_to == k) {
-                                    m.extend(q.members.iter().cloned());
+                    // clashes were nobody's and stayed written.) (L21) Its
+                    // own holding bolts are the plate's.
+                    crate::ClashPart::Plate(id) | crate::ClashPart::PlateBolt { plate: id, .. } => {
+                        o.plates
+                            .iter()
+                            .position(|p| p == id)
+                            .map(|k| {
+                                let mut m = o.plan.plates[k].members.clone();
+                                for q in &o.plan.plates {
+                                    if q.own.as_ref().is_some_and(|w| w.welded_to == k) {
+                                        m.extend(q.members.iter().cloned());
+                                    }
                                 }
-                            }
-                            m
-                        })
-                        .unwrap_or_default(),
+                                m
+                            })
+                            .unwrap_or_default()
+                    }
                     crate::ClashPart::Cover(id, _) => j
                         .splices
                         .iter()
@@ -4077,6 +4079,20 @@ fn write_rounds(
                     .iter()
                     .position(|p| p == id)
                     .map(|k| format!("a plate on {}", o.plan.plates[k].on))
+                    .unwrap_or_else(|| x.words()),
+                crate::ClashPart::PlateBolt {
+                    plate: id, piece, ..
+                } => o
+                    .plates
+                    .iter()
+                    .position(|p| p == id)
+                    .map(|k| {
+                        format!(
+                            "the {} of a holding bolt of a plate on {}",
+                            piece.words(),
+                            o.plan.plates[k].on
+                        )
+                    })
                     .unwrap_or_else(|| x.words()),
                 other => other.words(),
             };

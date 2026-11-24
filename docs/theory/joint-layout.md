@@ -3573,9 +3573,9 @@ many on more plates, is planned again without them (the run's guard,
 holder's end as bolted onto the plate by those bolts (as the leg's for
 `[plate.leg_bolts]`), the plate's outline worked out round every bolt on
 it. The clash check tests the plate against every part of the joint
-except the members bolted onto it (both holders: it lies on them); the
-holding bolts' heads and nuts are not pieces of it — the plan places them
-clear, as for `[plate.leg_bolts]` since L5o (an owner question). The
+except the members bolted onto it (both holders: it lies on them); since
+L21 its holding bolts are pieces of it too
+([below](#a-plates-own-holding-bolts-in-the-clash-check-l21-item-2)). The
 after-writing checks take both holders' bolts alike (inside the outline,
 on the member's steel past its cut, no hole overlapped). The joint checks
 take both as the plate's holding bolts (`joint_groups`): each holder's
@@ -3655,10 +3655,64 @@ of such a structure. The welded plate itself is drawn, clash-checked and
 checked (its weld, its own sections) as before.
 
 
+## A plate's own holding bolts in the clash check (L21 item 2)
+
+(L20's question 3; roadmap O44 L21, built on its own, reported. Built
+2026-11-24, in active development, not approved yet. No format change.)
+
+**Before.** A plate's own bolts onto the member holding it
+(`[plate.leg_bolts]` since 2026-11-19, the layout's L5o; `[plate.also_bolts]`
+since L20) were drawn and checked but were **no pieces of the clash
+check**: the plan places them clear (each head and nut by its footprint
+against what is fixed over and behind the face, the default spacing from
+the holes through that flange), and nothing tested them after writing.
+
+**Now** each such bolt is a part of the clash check
+(`ClashPart::PlateBolt`: the plate, the member, its place): its head,
+shank and nut, drawn as the holder's end bolted onto the plate draws them
+(the head on the holder's side, the nut on the plate's face). Not tested:
+the bolt and its own plate; its shank and the member it holds the plate
+onto, with a member running on in line (its head and nut lie on that
+member's faces and are tested; a built-up member: the whole bolt, as for
+an end's bolts); it and the bolts of an end bolted onto that member (they
+may be the same bolts). Everything else is tested: the holder's own end
+bolts, the other ends' steel and bolts, other plates. A clash is said as
+any other (Joint details' problems of the member ends in it, the plate's
+notes: "the nut of plate G1's bolt 2 onto L1 and D3 run 4 mm into each
+other"); for the layout run's checks after writing it is the plate's (its
+members laid out are pulled back, then left as they were, as for a clash
+of the plate itself); the plan's fixed steel to place round is unchanged
+(those bolts are placed by the plan itself).
+
+**Measured first** (kept privately; L20 main's layouts of 32 of the 78
+private towers, read again with the new pieces): **2 418 new clashes** at
+978 of 29 312 joints (3.3 %; 10 605 plate holding ends) — the pieces in
+them: 1 184 heads, 894 shanks, 340 nuts; what they run into: another
+plate 1 151, a member 969, a bolt 298; depth under 2 mm 171, 2–5 mm 804,
+5–10 mm 930, 10 mm or more 513. **Turned the other way** (the head on the
+plate's face) the same plate and holder still clash at 514 of 531 (on 16
+of those towers): the bolt's side does not help. Traced (a horizontal with
+two gussets on the same face of its flange, one for the diagonals below,
+one for those above): the second gusset, drawn a few millimetres off the
+flange, lies over the first one's holding bolts — the plan places a
+plate's own bolts clear of what is fixed but not of the other plates and
+ends it lays out itself, nor of the bolts on the holder's other flange in
+the angle's corner. **The run's reaction** (the guard after writing,
+as for a clash of the plate), on four private towers L20 used (L20 main
+as the base, the same settings): 276 such clashes at 109 of 3 111 joints
+before; after, joints whole 2 099 → 2 090, member ends laid out 7 150 →
+7 099 (−0.7 %), plates 3 837 → 3 730, 45 joints better and 64 worse (52
+with fewer ends, 12 as many ends on more plates; better: the weighed
+turns now kept otherwise); 77 such clashes left at 27 joints (with
+members left as they were — their clashes are said, not acted on, as for
+every part — or where the clash rounds ran out). A run again identical (one
+tower).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
-half its length, plates, covers, each bolt's head, shank and nut — is cut
+half its length, plates, covers, each bolt's head, shank and nut (since
+L21 also a plate's own holding bolts) — is cut
 into convex pieces and each pair of pieces of parts that do not bolt to
 each other is tested by separating axes (the faces' normals and the
 edges' cross products: exact for convex polyhedra). A pair overlapping

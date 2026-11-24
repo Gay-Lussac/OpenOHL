@@ -4,7 +4,7 @@
 
 //! The 3D clash check at joints, on invented joints: two diagonals on one
 //! flange, an X-brace crossing, a plate through a member it does not
-//! hold, faces lying on each other.
+//! hold, faces lying on each other; (L21) a plate's own holding bolts.
 
 use crate::clash::{ClashPart, convex_parts};
 use crate::joints::joint_details;
@@ -259,4 +259,67 @@ cut = "0 mm"
     );
     let g1 = j.plates.iter().find(|p| p.id == "G1").unwrap();
     assert!(g1.notes.iter().any(|n| n.contains("into each other")));
+}
+
+/// L21: a gusset G1 on the leg running on through N2, held by its own two
+/// bolts onto L1 (`[plate.leg_bolts]`) at `points`, D1 bolted onto G1.
+fn held_by_own(points: &str) -> String {
+    format!(
+        "{TOWER}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\n\
+         kind = \"continuous\"\nonto = \"L2\"\n\
+         \n[[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G1\"\nleg = \"short\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n\
+         gauges = [\"28 mm\"]\ngauge_lines = 1\npitch = \"50 mm\"\nend_distance = \"30 mm\"\n\
+         \n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         \n[plate.leg_bolts]\nmember = \"L1\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n\
+         bolt_points = {points}\n"
+    )
+}
+
+/// L21: a plate's own holding bolts are pieces of the clash check — two
+/// of them in one place run into each other (said, a note of the plate);
+/// one through its plate and the leg it holds the plate onto is not a
+/// clash with either.
+#[test]
+fn a_plates_own_holding_bolts_are_clash_checked() {
+    let own = |c: &crate::clash::Clash| {
+        c.a.plate_of_bolt() == Some("G1") || c.b.plate_of_bolt() == Some("G1")
+    };
+    let apart = joint(
+        &held_by_own("[[\"-60 mm\", \"30 mm\"], [\"60 mm\", \"30 mm\"]]"),
+        "N2",
+    );
+    for c in apart.clashes.iter().filter(|c| own(c)) {
+        let other = if c.a.plate_of_bolt().is_some() {
+            &c.b
+        } else {
+            &c.a
+        };
+        assert!(
+            !matches!(other, ClashPart::Plate(p) if p == "G1")
+                && other.member() != Some("L1")
+                && other.member() != Some("L2"),
+            "{:?}",
+            apart.clashes
+        );
+    }
+    let same = joint(
+        &held_by_own("[[\"60 mm\", \"30 mm\"], [\"60 mm\", \"30 mm\"]]"),
+        "N2",
+    );
+    let both = same
+        .clashes
+        .iter()
+        .find(|c| c.a.plate_of_bolt() == Some("G1") && c.b.plate_of_bolt() == Some("G1"))
+        .unwrap_or_else(|| panic!("{:?}", same.clashes));
+    assert!(both.depth > 0.01, "{both:?}");
+    assert!(both.words().contains("plate G1's bolt"), "{}", both.words());
+    assert!(both.involves_plate("G1"));
+    let g1 = same.plates.iter().find(|p| p.id == "G1").unwrap();
+    assert!(
+        g1.notes.iter().any(|n| n.contains("plate G1's bolt")),
+        "{:?}",
+        g1.notes
+    );
 }

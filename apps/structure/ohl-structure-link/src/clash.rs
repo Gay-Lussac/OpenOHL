@@ -18,7 +18,12 @@
 //!   through the joint, within 20°), the plates of one welded plate;
 //! - a bolt and its own member (it passes through it, its head on it); a
 //!   bolt's shank and what its member bolts onto (it passes through: the
-//!   head and the nut are still tested, they lie on its faces).
+//!   head and the nut are still tested, they lie on its faces);
+//! - (L21) a plate's own holding bolts (`[plate.leg_bolts]`,
+//!   `[plate.also_bolts]`) and their plate; their shank and the member
+//!   they bolt it onto (with a member running on in line; a built-up
+//!   member: the whole bolt); a bolt of a member end bolted onto that
+//!   member (they may be the same bolts).
 //!
 //! Each solid is cut into convex pieces (a profile's outline into convex
 //! polygons run along the member; a bolt's head, shank and nut) and each
@@ -58,6 +63,20 @@ pub enum ClashPart {
         /// The member whose end it bolts.
         member: String,
         /// Its place among the end's bolts (0: the first).
+        index: usize,
+        /// Head, shank or nut.
+        piece: BoltPiece,
+    },
+    /// (L21) A plate's own holding bolt (`[plate.leg_bolts]`, then
+    /// `[plate.also_bolts]`: its place among them) onto `member`, and the
+    /// piece that runs deepest into the other part.
+    PlateBolt {
+        /// The plate.
+        plate: String,
+        /// The member it bolts the plate onto.
+        member: String,
+        /// Its place among the plate's bolts onto that member (0: the
+        /// first).
         index: usize,
         /// Head, shank or nut.
         piece: BoltPiece,
@@ -106,11 +125,30 @@ impl ClashPart {
                 index,
                 piece,
             } => format!("the {} of {member}'s bolt {}", piece.words(), index + 1),
+            Self::PlateBolt {
+                plate,
+                member,
+                index,
+                piece,
+            } => format!(
+                "the {} of plate {plate}'s bolt {} onto {member}",
+                piece.words(),
+                index + 1
+            ),
+        }
+    }
+
+    /// The plate whose own holding bolt it is (L21); none for any other
+    /// part.
+    pub fn plate_of_bolt(&self) -> Option<&str> {
+        match self {
+            Self::PlateBolt { plate, .. } => Some(plate),
+            _ => None,
         }
     }
 
     /// The member it is or belongs to (a member's steel, a bolt of its
-    /// end); none for a plate or a cover.
+    /// end); none for a plate, a cover or a plate's own holding bolt.
     pub fn member(&self) -> Option<&str> {
         match self {
             Self::Member(m) | Self::Bolt { member: m, .. } => Some(m),
@@ -118,10 +156,48 @@ impl ClashPart {
         }
     }
 
+    /// The same part with a bolt's piece `piece` (none, or not a bolt: as
+    /// it is).
+    fn with_piece(&self, piece: Option<BoltPiece>) -> ClashPart {
+        match (self, piece) {
+            (Self::Bolt { member, index, .. }, Some(piece)) => Self::Bolt {
+                member: member.clone(),
+                index: *index,
+                piece,
+            },
+            (
+                Self::PlateBolt {
+                    plate,
+                    member,
+                    index,
+                    ..
+                },
+                Some(piece),
+            ) => Self::PlateBolt {
+                plate: plate.clone(),
+                member: member.clone(),
+                index: *index,
+                piece,
+            },
+            (other, _) => other.clone(),
+        }
+    }
+
     /// The same part, whatever piece of a bolt.
     fn key(&self) -> ClashPart {
         match self {
             Self::Bolt { member, index, .. } => Self::Bolt {
+                member: member.clone(),
+                index: *index,
+                piece: BoltPiece::Head,
+            },
+            Self::PlateBolt {
+                plate,
+                member,
+                index,
+                ..
+            } => Self::PlateBolt {
+                plate: plate.clone(),
                 member: member.clone(),
                 index: *index,
                 piece: BoltPiece::Head,
@@ -161,10 +237,14 @@ impl Clash {
         self.a.key() == part.key() || self.b.key() == part.key()
     }
 
-    /// It involves plate `id`.
+    /// It involves plate `id` (since L21 also its own holding bolts).
     pub fn involves_plate(&self, id: &str) -> bool {
-        matches!(&self.a, ClashPart::Plate(p) if p == id)
-            || matches!(&self.b, ClashPart::Plate(p) if p == id)
+        let of = |x: &ClashPart| match x {
+            ClashPart::Plate(p) => p == id,
+            ClashPart::PlateBolt { plate, .. } => plate == id,
+            _ => false,
+        };
+        of(&self.a) || of(&self.b)
     }
 
     /// The other part than one of member `m` (its steel or bolts); none
@@ -461,14 +541,7 @@ pub(crate) fn piece_corners(
         .iter()
         .filter(|x| keep(&p.parts[x.part], x.bolt))
         .map(|x| {
-            let part = match (&p.parts[x.part], x.bolt) {
-                (ClashPart::Bolt { member, index, .. }, Some(piece)) => ClashPart::Bolt {
-                    member: member.clone(),
-                    index: *index,
-                    piece,
-                },
-                (other, _) => other.clone(),
-            };
+            let part = p.parts[x.part].with_piece(x.bolt);
             (part, x.pts.iter().map(|q| sub(*q, at)).collect())
         })
         .collect()
@@ -551,6 +624,32 @@ fn parts_of(
                     .collect();
                 if let Some(x) = Piece::from_faces(k, Some(BoltPiece::of(part)), &f) {
                     p.pieces.push(x);
+                }
+            }
+        }
+    }
+    // (L21) A plate's own holding bolts (its bolts onto the leg, onto a
+    // second member): head, shank and nut, as a member end's.
+    for pl in plates {
+        for h in pl.holding_ends() {
+            let Some(b) = &h.bolts.value else { continue };
+            for (index, (q, axis, grip)) in h.bolts_with_axes().enumerate() {
+                let k = p.add(ClashPart::PlateBolt {
+                    plate: pl.id.clone(),
+                    member: h.member.clone(),
+                    index,
+                    piece: BoltPiece::Head,
+                });
+                let faces = crate::bolt_faces(q, axis, b.diameter, grip, b.drawn);
+                for part in [BoltPart::Head, BoltPart::Shank, BoltPart::Nut] {
+                    let f: Vec<Vec<[f64; 3]>> = faces
+                        .iter()
+                        .filter(|(_, x)| *x == part)
+                        .map(|(f, _)| f.clone())
+                        .collect();
+                    if let Some(x) = Piece::from_faces(k, Some(BoltPiece::of(part)), &f) {
+                        p.pieces.push(x);
+                    }
                 }
             }
         }
@@ -648,6 +747,43 @@ fn clashes_of(
                 if welded { Together::Yes } else { Together::No }
             }
             (Cover(a, _), Cover(b, _)) if a == b => Together::Yes,
+            // (L21) A plate's own holding bolt: through its plate and the
+            // member it bolts the plate onto.
+            (
+                PlateBolt {
+                    plate: pid,
+                    member: holder,
+                    ..
+                },
+                other,
+            )
+            | (
+                other,
+                PlateBolt {
+                    plate: pid,
+                    member: holder,
+                    ..
+                },
+            ) => {
+                let built_up = arrival(holder)
+                    .and_then(|a| a.profile.as_ref())
+                    .is_some_and(|p| !p.parts.is_empty());
+                match other {
+                    Plate(q) if q == pid => Together::Yes,
+                    Member(m) if same_run(holder, m) && built_up => Together::Yes,
+                    Member(m) if same_run(holder, m) => Together::ShankOnly,
+                    // A member end's bolt onto the member it bolts the
+                    // plate onto: they may be the same bolts.
+                    Bolt { member: m2, .. }
+                        if arrival(m2).is_some_and(|x| {
+                            x.onto.value.as_deref().is_some_and(|o| same_run(o, holder))
+                        }) =>
+                    {
+                        Together::Yes
+                    }
+                    _ => Together::No,
+                }
+            }
             (Bolt { member, .. }, other) | (other, Bolt { member, .. }) => {
                 let Some(e) = arrival(member) else {
                     return Together::No;
@@ -782,14 +918,7 @@ fn clashes_of(
     found
         .into_iter()
         .map(|((x, y), (depth, at, pa, pb))| {
-            let name = |k: usize, piece: Option<BoltPiece>| match (&p.parts[k], piece) {
-                (ClashPart::Bolt { member, index, .. }, Some(pc)) => ClashPart::Bolt {
-                    member: member.clone(),
-                    index: *index,
-                    piece: pc,
-                },
-                (other, _) => other.clone(),
-            };
+            let name = |k: usize, piece: Option<BoltPiece>| p.parts[k].with_piece(piece);
             Clash {
                 a: name(x, pa),
                 b: name(y, pb),

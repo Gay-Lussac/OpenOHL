@@ -3731,6 +3731,47 @@ only where it helps):
   through the joint as one part: each piece's force taken), every other
   row unchanged (that tower's 3 160 rows; 27 other private towers laid out
   by L20 main, 91 687 rows, identical).
+  **2. A plate's own holding bolts in the clash check** (L20's question 3;
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plates-own-holding-bolts-in-the-clash-check-l21-item-2)):
+  `[plate.leg_bolts]` and `[plate.also_bolts]` heads, shanks and nuts are
+  tested (`ClashPart::PlateBolt`; excused against their plate, their shank
+  against the member they hold it onto, the bolts of ends onto that
+  member); a clash is the plate's in the run's checks after writing (its
+  members pulled back, then left as they were). Measured
+  (kept privately): on L20 main's layouts of 32 private towers 2 418 new
+  clashes at 978 of 29 312 joints (3.3 %), the ones traced real
+  (another plate the same plan lays over a plate's bolts, a head in the
+  angle's corner by a bolt of the holder's other flange); turned the
+  other way the same bolts still clash (514 of 531). The guard's reaction
+  on four towers L20 used: joints whole 2 099 → 2 090, member ends
+  7 150 → 7 099, plates 3 837 → 3 730 (45 joints better, 64 worse); 77
+  such clashes left at 27 joints (with members left as they were, said);
+  a run again identical (one tower).
+  **3. Not built** (time): the 22 joints L20 item 2 left worse (member
+  rolls weighed with the welded plates, as L19 weighs turns).
+  > **Owner:** (1) The force a level plate passes between its two holders
+  > taken by a statically safe bound — each holder's bolts under every
+  > share from none to whole of the other holder's force (a run: each
+  > piece's), the other ends' forces whole or none, the larger bolt by
+  > bolt (L20's question 2) → Recommended: keep (no load path needed; a
+  > usage can only grow; measured on the one private level plate: its
+  > holding bolts 3 % → 27 % and 4 % → 20 %). (2) Assumed: a holder passes
+  > at most its whole force through the plate (a force circulating round
+  > the joint from its own deformation not counted, as everywhere a
+  > group's force is shared elastically) → Recommended: accept (said in
+  > the theory). (3) A plate's own holding bolts in the clash check (L20's
+  > question 3): about 75 new clashes per tower, the ones traced real (another
+  > plate the same plan lays over a plate's bolts, heads in the angle's
+  > corner) → Recommended: keep them in the check and the run's guard
+  > reacting (no clash with what it laid out left written; costs 0.7 %
+  > of the member ends, 51 of 7 150, and 9 joints whole on four towers).
+  > (4) The cause → Recommended: next, the plan
+  > places a plate's own bolts clear of the plates and ends it lays out
+  > itself (their outlines, heads, shanks with what stands out past the
+  > nut, the holder's other flange's bolts in the corner), measured, so
+  > that the guard rarely has to take ends back. (5) Clashes of those
+  > bolts with members left for a hand detail stay said, not acted on (as
+  > for every part) → Recommended: keep.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

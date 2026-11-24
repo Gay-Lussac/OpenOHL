@@ -7416,6 +7416,10 @@ fn fixed_slab(
                 }
                 part.words()
             }
+            // (L21) A plate's own holding bolts: not fixed steel to plan
+            // round (the plan places them itself; the check after writing
+            // tests them).
+            ClashPart::PlateBolt { .. } => continue,
             ClashPart::Cover(sid, _) => {
                 if x.through.as_ref() == Some(sid)
                     || j.splices.iter().any(|sp| {
@@ -7882,6 +7886,8 @@ fn plate_hits(
                 }
             }
             ClashPart::Plate(_) | ClashPart::Cover(..) => part.words(),
+            // (L21) As above: not fixed steel to plan round.
+            ClashPart::PlateBolt { .. } => continue,
         };
         if let Some(f) = hit(pts) {
             return Some((name, f));

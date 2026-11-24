@@ -1147,8 +1147,11 @@ fn note_clashes(
                 ));
                 a.notes.push(text);
             }
-            if let crate::clash::ClashPart::Plate(id) = me
-                && let Some(p) = plates.iter_mut().find(|p| &p.id == id)
+            if let Some(id) = match me {
+                crate::clash::ClashPart::Plate(id) => Some(id.as_str()),
+                // (L21) A plate's own holding bolt: a note of its plate.
+                other => other.plate_of_bolt(),
+            } && let Some(p) = plates.iter_mut().find(|p| p.id == id)
             {
                 p.notes.push(c.words());
             }
