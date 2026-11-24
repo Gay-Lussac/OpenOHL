@@ -3698,12 +3698,14 @@ flange, lies over the first one's holding bolts — the plan places a
 plate's own bolts clear of what is fixed but not of the other plates and
 ends it lays out itself, nor of the bolts on the holder's other flange in
 the angle's corner. **The run's reaction** (the guard after writing,
-as for a clash of the plate), on four private towers L20 used (L20 main
-as the base, the same settings): 276 such clashes at 109 of 3 111 joints
-before; after, joints whole 2 099 → 2 090, member ends laid out 7 150 →
-7 099 (−0.7 %), plates 3 837 → 3 730, 45 joints better and 64 worse (52
-with fewer ends, 12 as many ends on more plates; better: the weighed
-turns now kept otherwise); 77 such clashes left at 27 joints (with
+as for a clash of the plate), on eight private towers (the four L20 used
+and the next four of its subset; L20 main as the base, the same
+settings): 583 such clashes at 234 of 6 852 joints before; after, joints
+whole 4 304 → 4 278, member ends laid out 15 337 → 15 233 (−0.7 %),
+plates 8 527 → 8 382, 70 joints better and 139 worse (97 with fewer
+ends, 42 as many ends on more plates; on the first four, 60 of the 64
+worse had such a clash; better: the weighed turns kept otherwise); 170
+such clashes left at 71 joints (with
 members left as they were — their clashes are said, not acted on, as for
 every part — or where the clash rounds ran out). A run again identical (one
 tower).

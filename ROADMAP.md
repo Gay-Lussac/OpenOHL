@@ -3789,9 +3789,9 @@ only where it helps):
   (another plate the same plan lays over a plate's bolts, a head in the
   angle's corner by a bolt of the holder's other flange); turned the
   other way the same bolts still clash (514 of 531). The guard's reaction
-  on four towers L20 used: joints whole 2 099 → 2 090, member ends
-  7 150 → 7 099, plates 3 837 → 3 730 (45 joints better, 64 worse); 77
-  such clashes left at 27 joints (with members left as they were, said);
+  on eight towers: joints whole 4 304 → 4 278, member ends 15 337 →
+  15 233, plates 8 527 → 8 382 (70 joints better, 139 worse); 583 such
+  clashes → 170 (with members left as they were, said);
   a run again identical (one tower).
   **3. Not built** (time): the 22 joints L20 item 2 left worse (member
   rolls weighed with the welded plates, as L19 weighs turns).
@@ -3810,7 +3810,8 @@ only where it helps):
   > plate the same plan lays over a plate's bolts, heads in the angle's
   > corner) → Recommended: keep them in the check and the run's guard
   > reacting (no clash with what it laid out left written; costs 0.7 %
-  > of the member ends, 51 of 7 150, and 9 joints whole on four towers).
+  > of the member ends, 104 of 15 337, and 26 joints whole on eight
+  > towers).
   > (4) The cause → Recommended: next, the plan
   > places a plate's own bolts clear of the plates and ends it lays out
   > itself (their outlines, heads, shanks with what stands out past the
