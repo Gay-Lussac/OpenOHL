@@ -298,6 +298,66 @@ pub(super) fn write_export(plan: ExportPlan) -> ExportWritten {
 }
 
 impl NetHost {
+    /// Records model `code`'s main line — its changes since its last
+    /// revision, made by any of its users — as a revision **by the
+    /// network's server** ([`nr::SERVER_AUTHOR`]) before `user`'s export
+    /// (2026-11-23): the export's base must be a revision, and recording
+    /// others' work is not the exporter's to do. The revision records only
+    /// what main holds already (edits each allowed when made); it is
+    /// audited under the exporter's name, broadcast as any commit, and
+    /// made on a protected main too (it moves nothing).
+    fn record_main_for_export(&mut self, code: &str, user: &str) -> Result<(), String> {
+        let before = self.position;
+        let op = Op::Commit {
+            message: format!(
+                "Recorded by the network's server for an offline working set of {user}"
+            ),
+        };
+        self.net.begin_unit().map_err(s)?;
+        let executed = {
+            let m = self.models.get_mut(code).ok_or("no such line")?;
+            crate::execute_checked(&mut m.session, nr::SERVER_AUTHOR, MAIN, &op, |_, _| Ok(()))
+        };
+        let applied = match executed {
+            Ok(a) => a,
+            Err(e) => {
+                let _ = self.net.roll_back_unit();
+                return Err(e.to_string());
+            }
+        };
+        let written = self.written(nr::SERVER_AUTHOR, code, MAIN, &op, applied.as_ref(), before);
+        let (change, touch) = match written.and_then(|w| {
+            self.net.commit_unit().map_err(|e| e.to_string())?;
+            Ok(w)
+        }) {
+            Ok(w) => w,
+            Err(e) => {
+                let _ = self.net.roll_back_unit();
+                self.reload(code);
+                return Err(e);
+            }
+        };
+        self.position = change.at;
+        if let Err(e) = self.net.audit(
+            user,
+            "server revision",
+            code,
+            &format!(
+                "main's changes since its last revision recorded by the network's server ({}) \
+                 before an offline export of {user}",
+                nr::SERVER_AUTHOR
+            ),
+        ) {
+            crate::server::log(&format!("the audit: {e}"));
+        }
+        self.common.send(crate::server::Event::to(
+            None,
+            crate::ServerMsg::Change(Box::new(change)),
+            crate::stream::To::Touching(Arc::new(touch)),
+        ));
+        Ok(())
+    }
+
     /// Whether every object of `part` (of model `code`) is seen by
     /// `rights`.
     fn sees_part(&mut self, rights: &UserRights, code: &str, part: &ohl_line::Line) -> bool {
@@ -445,7 +505,9 @@ impl NetHost {
             return Err(self.sanitise(rights, &why));
         }
         // The base: the main line's revision, its changes recorded first
-        // (the rule of a branch over a working set, phase 11).
+        // — by the network's server itself (2026-11-23, the owner's
+        // question 2 of phase 12: any designer who may export can, not
+        // only who may record every change).
         let clean = {
             let m = self.models.get_mut(&code).expect("checked");
             match m.session.branch_revision(MAIN).map_err(s)? {
@@ -454,23 +516,12 @@ impl NetHost {
             }
         };
         if !clean {
-            self.apply(
-                None,
-                user,
-                &code,
-                MAIN,
-                Op::Commit {
-                    message: format!("Recorded for an offline working set of {user}"),
-                },
-            )
-            .map_err(|e| {
-                let e = e.strip_prefix("refused: ").unwrap_or(&e).to_owned();
+            self.record_main_for_export(&code, user).map_err(|e| {
                 self.sanitise(
                     rights,
                     &format!(
-                        "refused: the main line's changes since its last revision are recorded \
-                         before an export (as for a branch over a working set), and {e} — ask \
-                         whoever may edit them all to commit the main line"
+                        "refused: the main line's changes since its last revision could not be \
+                         recorded before the export ({e})"
                     ),
                 )
             })?;

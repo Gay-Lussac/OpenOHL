@@ -79,6 +79,136 @@ yet; [theory](../theory/joint-layout.md#a-level-plate-across-two-horizontals-l20
   axis offset into the analysis) and 7b (the joggle); 7c waits for the
   owner.
 
+## 2026-11-23 (country server: a revision of main made by the server so any designer can export)
+
+**Main's unrecorded changes recorded by the network's server itself
+before an offline export** (ROADMAP O17: phase 12's "left"; the owner's
+question 2 of phase 12, answered 2026-11-20 "go ahead with
+recommendations": "yes for now; a revision of main made by the server
+itself (audited) when someone exports, next — so any designer can
+export"; built, in active development, not approved yet;
+[the user guide](../user-guide/server.md#offline-working-sets-phase-12-in-active-development)).
+
+- **Before**: an export's base must be a revision, so main's changes not
+  yet recorded were recorded first **by the exporter** — by phase 11's
+  rule for a commit (it records only what its user may edit): a
+  designer of one route could not export while anyone had left an
+  unrecorded change elsewhere on main ("ask whoever may edit them all to
+  commit the main line").
+- **Now** the network's server records them itself: a revision of main
+  whose **author is `network:server`** (a name no user can have: users'
+  names hold no ':'), message "Recorded by the network's server for an
+  offline working set of USER", in its own unit of work, broadcast as
+  any commit; **audited under the exporter's name** (*server revision*),
+  after the export's own checks of rights (the working set seen whole,
+  export on each of its objects, something editable on each route) —
+  nothing is recorded for a user the export refuses. It records only
+  what main holds already (each edit allowed by the rules when it was
+  made); it moves nothing, gives the exporter nothing more (the file
+  holds only what they may see), and is made **on a protected main too**
+  (decided as recorded: the session's rule for a protected branch is for
+  changes; this revision changes nothing — the owner's question 1
+  below). The session sees the server's author as an admin of every
+  model (`ModelRoles`), for this one act.
+- **Tested** on PostgreSQL (`offline_working_sets_go_out_and_come_back`):
+  the designer of one route exports while main has never been recorded
+  (refused before): the export goes out, its base is main's new head, a
+  revision by `network:server` naming her, in the audit under her name;
+  her next export records nothing first.
+
+> **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+> 1. The server's revision also on a protected main (it records what main
+> holds; no review)? → yes: it changes nothing a review would look at.
+> 2. Always the server's revision, even when the exporter could record
+> every change themselves? → yes: one author for main's bookkeeping,
+> the exporter named in the message and the audit.
+> 3. Its author `network:server` (not a user)? → yes.
+
+## 2026-11-23 (country server: the check windows with an offline file's neighbours)
+
+**OHL-Design's check windows read an offline working set's neighbours**
+(ROADMAP O17: phase 16's and phase 12's "left"; the owner, 2026-11-23:
+"go ahead with the server too"; built, in active development, not
+approved yet; [the user guide](../user-guide/offline-working-set.md#checks-with-the-exports-neighbours)).
+Before, the Offline working set window ran the network's checks with
+the neighbours an offline file holds, but the ordinary check windows ran
+on the file alone (the rules to other lines skipped, "checked by `ohl
+line --other-line`").
+
+- **The Clearances window's rules to other lines** take the export's
+  other lines: those whose sections' structures come within the rules'
+  reach of the checked wires (the reach as the network's checks work it
+  out — every voltage the neighbours have, at the highest point — plus
+  30 m for the arms and the network's largest span margin: more
+  candidates, never fewer), each solved in **every position checked**
+  (each weather case and wind position, by the rules' calculation) with
+  **its own line's settings and wire library** — the library built by
+  the network's own code (`ohl_server::offline_checks::neighbour_wires`,
+  as `check_offline` builds it: its wire files, else the shipped
+  library). Their wires are named `LINE:SECTION`. **Tested**: on the same
+  offline file (a synthetic country of 150 pylons with a tower shared by
+  two lines, exported through OHL-Design's window from a local network's
+  server), the rule to other lines finds **the same pairs at the same
+  distances** (within 1e-6 m) as the network's own check on it.
+- **Never silently**: the window's block *Offline working set:
+  neighbours from its export* before Run (its (?) and User guide ↗), and
+  the report's lines after it: the export's date (and its number when
+  OHL-Design wrote the file), the lines read (their sections), those
+  within the rules' reach, and **that they may be stale** (in the warning
+  colour). **The stale export's logic re-used**: the Offline working set
+  window keeps the server's answer (`stale`, `changed_meanwhile`) in the
+  file it writes, as the application setting `app.offline_export` — not
+  part of the line, not in its revisions, not in a bundle — and the
+  check windows say *STALE already when exported: N object(s) …* or that
+  nothing changed while it was written; a file written by `ohl network
+  export-working-set` does not know (said).
+- **NOT ALL CHECKED**, in red, for: neighbours left out of the export
+  (the user may not see them), a rule reaching farther than the export's
+  reach or outside its area, a neighbour line not solved, a neighbour's
+  wire file not read, a rule to other lines across weather cases (case
+  pairs: not in this window). **The verdict** then says *NOT ALL
+  CHECKED — no violation among what was checked* instead of *Every rule
+  met* — also for a network's working set joined (its "neighbours not
+  pulled in" was a note under a ✔ before: found and fixed).
+- **Decided as conservative** (the owner's questions below): **Structure
+  loads, the fields and plugins name the neighbours instead of adding
+  them** — the towers shared with another line of the export (the same
+  type within 0.5 m, as the network finds twins), the lines within 500 m
+  (the network's field distance), the lines within a plugin's declared
+  reach — NOT ALL CHECKED for them, with where they are computed (the
+  Offline working set window's *Loads on shared towers* and *Magnetic
+  field*; for the electric field nothing yet: NOT ON THE SAFE SIDE where
+  they come near). Nothing near: said, complete for neighbours. **Found**:
+  the field windows on a network's working set joined said nothing of
+  the neighbours not pulled in; they now say it (phase 10's note).
+- **Measured** on the synthetic country of 300 pylons (two runs, a
+  shared machine): a route's clearances (one weather case, its rules to
+  other lines and between its wires) 3.5–3.9 s on the file alone,
+  5.8–7.3 s with its 2 neighbour lines (in OHL-Design's window); the
+  network's own check on the same file 5.2–5.6 s. The neighbours' wires
+  taken as targets are those within the rules' reach of a checked wire
+  in plan (as the network's checks take them).
+- **The desktop format unchanged**: one application setting key added
+  (the settings are free keys, documented in the data model).
+
+> **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+> 1. Structure loads, the fields and plugins name the export's
+> neighbours (NOT ALL CHECKED) instead of adding them; the Offline
+> working set window adds them for the loads on shared towers and the
+> magnetic field? → yes for now; next, those two computed with them in
+> the windows themselves by the network's code.
+> 2. The server's answer on the export kept in the exported file as an
+> application setting (not in the line, its revisions or a bundle)? →
+> yes.
+> 3. The neighbours solved in the weather case and wind position of this
+> line's check (the same weather at the same place), each with its own
+> settings and wires? → yes, as the network's checks.
+> 4. Rules to other lines across weather cases still not in the window,
+> NOT ALL CHECKED when the export's neighbours are there? → yes, until
+> the network's checks take case pairs.
+> 5. The verdict NOT ALL CHECKED whenever a reason holds, also on a
+> network's working set joined? → yes.
+
 ## 2026-11-23 (joint layout: turns weighed over every joint they reach, L19)
 
 **The turns Orient angles sets from the joints' planes are weighed by the

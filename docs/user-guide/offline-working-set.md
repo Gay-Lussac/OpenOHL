@@ -121,9 +121,80 @@ press the button.
   export the network does not know, or brought back already.
 - **Nothing is reserved** for you while you work offline: others may
   change your working set on the network; bringing back lists it.
+- **Main's unrecorded changes** (edits on the network not yet in a
+  revision, anyone's) are recorded first by the network's server itself —
+  a revision by `network:server`, in the audit under your name — so you
+  can export whoever made them (since 2026-11-23; before, only someone
+  who could record them all could export then).
 - The export and the bundle go through your connection to the network
   (one per user); the check and the bundle work on the open file alone,
   without the network.
 - Versions › Offline copy's first two entries (Export line as bundle,
   Import bundle) carry a project line between copies of a **project
   file**; they are not for a network.
+
+## Checks with the export's neighbours
+
+*Built 2026-11-23, in active development, not approved yet*
+([decisions](../development/decisions.md#2026-11-23-country-server-the-check-windows-with-an-offline-files-neighbours)).
+
+**What it is for**: the ordinary check windows (Checks menu) on an
+offline working set's file read the **other lines near your working
+set** that the network exported with it — not only step 2's network
+checks. Each window says so, never silently.
+
+![The Clearances window's Setup on an offline working set's file: under 1 What it checks, the block "Offline working set: neighbours from its export" with its (?) and user guide button, the line naming the export's date, its number and the two lines read, and the orange line saying they may be stale](../images/user-guide/offline-neighbours-setup.png)
+
+**How to use it**:
+
+1. Export your working set (step 1 above), leave the network and **open
+   the file** (File › Open).
+2. Open a check window as usual — **Checks › Wire clearances** (the
+   Clearances window), **Structure loads**, **Magnetic field**,
+   **Electric field** or a plugin's check.
+3. Read the block **Offline working set: neighbours from its export**
+   (Clearances: under *1 What it checks*; the others: first in their
+   results' notes): which export (its date, its number when OHL-Design
+   wrote it), which lines it read, and that they may be stale.
+4. **Run** the check. The results say again what was read — for the
+   Clearances window, how many sections of each line lie within the
+   rules' reach — and whether anything is NOT ALL CHECKED.
+
+   ![The Clearances window's Results after Run: the red verdict with the violations, the lines naming the export and the sections of each line within the rules' reach, the orange line saying they may be stale, and the table whose Other wire column names the other lines' wires as LINE:SECTION span N](../images/user-guide/offline-neighbours-clearances.png)
+
+**What each window does with them**:
+
+| Window | With the export's neighbours |
+|---|---|
+| Clearances (wire clearances by rule) | The **rules to other lines** (`target = "other_lines"`, crossings among them) take the other lines' wires: each line near is solved in every weather case and wind position checked, with its own line's settings and wires (as the network's checks solve it). Their wires are named `LINE:SECTION span N` in the *Other wire* column. On the same file the rule finds the same pairs and distances as step 2's network check (tested). Before, these rules were skipped ("other lines are checked by `ohl line --other-line`"). |
+| Structure loads | The towers of your working set **shared with another line** (one of the same type within 0.5 m) are named: the other lines' sections hanging there are **not added** in this window — NOT ALL CHECKED for them; step 2's *Loads on shared towers* computes them. No shared tower: said, nothing of other lines is missing. |
+| Magnetic field, Electric field | The lines within **500 m** (the network's field distance) are named: their field is **not added** in these windows — NOT ALL CHECKED. Step 2's *Magnetic field* adds it by size; for the electric field nothing does yet (NOT ON THE SAFE SIDE where they come near). |
+| A plugin's check (e.g. Distance between conductors) | A check whose declared reach needs neighbours gets this line only: the lines it would reach are named, NOT ALL CHECKED. |
+
+**They may be stale** (said in orange in each window): the file holds
+the neighbours **as of its export** and knows nothing of the network
+after it. When OHL-Design wrote the file, the window also says whether
+something changed **while** it was written — *STALE already when
+exported: N object(s) … changed on the network while the file was
+written* (in red), or *Nothing changed on the network while the file was
+written*. A file written by `ohl network export-working-set` does not
+know it (said). Bringing the work back (step 4) lists what changed
+since.
+
+**NOT ALL CHECKED** (in red, and the verdict never says *every rule
+met* then): neighbours you may not see were left out of the export
+(only counted); a rule reaching farther than the export's reach (export
+again with a larger reach, or check on the network); a neighbour line
+that does not solve; a neighbour's wire library that could not be read;
+a rule to other lines across weather cases (case pairs: not in this
+window).
+
+**Good to know**:
+
+- The neighbours are read once when the file opens; nothing about them
+  changes while you work offline (they are read-only).
+- What the server said of the export is kept in the file as an
+  application setting (`app.offline_export`): not part of the line, not
+  in its revisions, not in a bundle.
+- On a network's working set while joined, the check windows still say
+  that its neighbours are not pulled in (run the check on the network).

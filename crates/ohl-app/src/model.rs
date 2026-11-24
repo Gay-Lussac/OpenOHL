@@ -1408,6 +1408,13 @@ pub struct ModelKept {
     /// every pointer move for the snap marker).
     pub pick_set:
         crate::kept::Kept<crate::selection::PickKey, std::sync::Arc<crate::selection::PickSet>>,
+    /// An offline working set's neighbours, by the file's path
+    /// ([`Model::offline_neighbours`]: read once, they never change in the
+    /// file).
+    pub offline_neighbours: crate::kept::Kept<
+        std::path::PathBuf,
+        std::sync::Arc<Result<crate::offline_neighbours::Neighbours, String>>,
+    >,
 }
 
 #[cfg(test)]

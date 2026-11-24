@@ -4411,9 +4411,10 @@ or three, L four or more. The phases, in order:
   country: a whole route exported in 0.25 s (7.7 MB, 15 other lines near), bundles of 20 / 500 changes brought back in 0.29 / 0.66 s, the country as one model opened with its branches 20.8 → 4.7 s; moves, replicas, joining again and the start as with main's code.
   Left: ~~OHL-Design's Offline copy menu for a network~~ (built
   2026-11-21, phase 16); the export on a thread of its own (built with
-  phase 14); OHL-Design's
-  check windows using a file's neighbours; a revision of main's changes
-  made by the server so any designer can export.
+  phase 14); ~~OHL-Design's
+  check windows using a file's neighbours~~ (built 2026-11-23, below);
+  ~~a revision of main's changes made by the server so any designer can
+  export~~ (built 2026-11-23, below).
   > **Owner:** (answered 2026-11-20: as recommended — "Go ahead with
   > recommendations"; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-20-owner-country-server-phases-7-10-11-and-12--recommendations-approved); question 6, the export on a thread of
   > its own, still to build: see phase 13; the recommendation after the
@@ -4623,10 +4624,9 @@ or three, L four or more. The phases, in order:
   the window stays usable).
   Left: the web viewer's glue driven in a real browser against a real
   provider (its script tested in Node.js; the page checked to parse);
-  OHL-Design's check windows using an offline file's neighbours (the
-  window runs the network's checks; the check windows still run on the
-  file alone); a server setting naming a token endpoint on another
-  origin, if a real provider needs it.
+  ~~OHL-Design's check windows using an offline file's neighbours~~
+  (built 2026-11-23, below); a server setting naming a token endpoint on
+  another origin, if a real provider needs it.
   > **Owner:** (to answer, 2026-11-21; the recommendation after the arrow)
   > 1. The web viewer's tokens in the page's memory only, a reload signing
   > in again? → yes, as built (a session storage of tokens only if users
@@ -4680,6 +4680,80 @@ or three, L four or more. The phases, in order:
   upgrades are marked done once every line is (tested on an invented
   project of the same shape: refused before, open after). The real line
   refused in phase 14 now imports (measured locally only).
+- [x] Follow-up of 2026-11-23 (S): phase 16's and phase 12's "left" —
+  **OHL-Design's check windows with an offline file's neighbours**
+  (owner, 2026-11-23: "go ahead with the server too"). **Built
+  2026-11-23, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-country-server-the-check-windows-with-an-offline-files-neighbours),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/offline-working-set.md#checks-with-the-exports-neighbours)):
+  on an offline working set's file, **the Clearances window's rules to
+  other lines take the export's other lines** — those within the rules'
+  reach solved in every position checked with their own lines' settings
+  and wire libraries (the library built by the network's code) — and
+  find the same pairs at the same distances as the network's own check
+  on the file (tested against a local network's server, a synthetic
+  country of 150 pylons with a tower shared by two lines); **never
+  silently**: a block before Run and the report's lines say the export's
+  date (and number), the lines read, those within reach, and that they
+  **may be stale** — with what changed while the file was written when
+  OHL-Design wrote it (the server's answer kept in the file as the
+  application setting `app.offline_export`; the format unchanged);
+  **NOT ALL CHECKED** in red for what the file cannot give (neighbours
+  left out, a reach beyond the export, a neighbour not solved, case pairs
+  to other lines), and **the verdict never *Every rule met* then** (also
+  fixed for a joined working set's replica, where it was a note under a
+  ✔). **Structure loads, the fields and plugins name the export's
+  neighbours** (the shared towers, the lines within 500 m, those within a
+  plugin's reach), NOT ALL CHECKED, pointing to the Offline working set
+  window's checks; **found**: the field windows on a joined replica said
+  nothing of the neighbours not pulled in — they now do. Measured on the
+  synthetic country of 300 pylons (two runs, a shared machine): a
+  route's clearances (one weather case, its rules to other lines and
+  between its wires) 3.5–3.9 s on the file alone → 5.8–7.3 s with its 2
+  neighbour lines (OHL-Design's window); the network's own check on the
+  same file 5.2–5.6 s.
+  Left: the loads on shared towers and the magnetic field computed with
+  the export's neighbours in the windows themselves (now in the Offline
+  working set window only); rules to other lines across weather cases.
+  > **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+  > 1. Structure loads, the fields and plugins name the export's
+  > neighbours (NOT ALL CHECKED) instead of adding them; the Offline
+  > working set window adds them for the loads on shared towers and the
+  > magnetic field? → yes for now; next, those two computed with them in
+  > the windows themselves by the network's code.
+  > 2. The server's answer on the export kept in the exported file as an
+  > application setting (not in the line, its revisions or a bundle)? →
+  > yes.
+  > 3. The neighbours solved in the weather case and wind position of this
+  > line's check, each with its own settings and wires? → yes, as the
+  > network's checks.
+  > 4. Rules to other lines across weather cases still not in the window,
+  > NOT ALL CHECKED when the export's neighbours are there? → yes, until
+  > the network's checks take case pairs.
+  > 5. The verdict NOT ALL CHECKED whenever a reason holds, also on a
+  > network's working set joined? → yes.
+- [x] Follow-up of 2026-11-23, second (S): phase 12's last "left" — **a
+  revision of main's changes made by the server so any designer can
+  export** (phase 12's question 2, approved 2026-11-20: "a revision of
+  main made by the server itself (audited) when someone exports, next").
+  **Built 2026-11-23, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-country-server-a-revision-of-main-made-by-the-server-so-any-designer-can-export)):
+  main's unrecorded changes are recorded before an export as a revision
+  by the network's server (`network:server`, a name no user can have),
+  after the export's own rights checks, audited under the exporter's
+  name (*server revision*), broadcast as any commit, on a protected main
+  too (it moves nothing); before, the exporter recorded them and a
+  route's designer was refused while others' changes were unrecorded.
+  Tested on PostgreSQL: such a designer's export, refused before, goes
+  out on the server's revision.
+  > **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
+  > 1. The server's revision also on a protected main (it records what
+  > main holds; no review)? → yes: it changes nothing a review would
+  > look at.
+  > 2. Always the server's revision, even when the exporter could record
+  > every change themselves? → yes: one author for main's bookkeeping,
+  > the exporter named in the message and the audit.
+  > 3. Its author `network:server` (not a user)? → yes.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

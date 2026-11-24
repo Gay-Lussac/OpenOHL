@@ -3887,6 +3887,7 @@ once, the server logs who changed which key).
 | `app.structure_loads.<project line>` | `ohl-design` (Checks › Structure loads) | JSON (`ohl_app::loads_plan::Choice`): `local` (bool, 2026-11-14: Use local conditions; kept so that the loads sent to OHL-Structure follow it, `LineInputs::of_with`, `ohl_structure_link::StructureCases::with_local`); `level3` (bool?, 2026-11-16: absent — the line's calculation level; set — Structures flexible ticked or unticked for this window's runs and the loads sent to OHL-Structure); since 2026-11-15 `groups_off` (the structure groups not run, by name; absent: every group run), `alone_cases` (the load cases run for the structures in no group; absent: every case), `structures_off` (structures on an alignment unticked) and `structures_on` (structures on no alignment ticked: those are left out by default), each written only when not empty; the plan of a run (per structure, the cases computed) is `ohl_app::loads_plan::plan` from it and `Line::case_sets` |
 | `app.safety_volumes.<project line>` | `ohl-design` (Checks › Safety volumes…) | JSON: `settings` (as a saved run's settings, its `cases` by name) (2026-10-27), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored) |
 | `app.phase_distance.<project line>`, `app.unequal_wind.<project line>` | `ohl-design` (a check plugin's Distance between conductors…, and under unequal wind) | JSON (2026-10-27): `cases` (names), `circuits` (names, `null` every circuit), `scope` (2026-10-28, `ohl_app::check_ui::Scope`: the circuits and the routes and alignments; a file without it takes the circuits), `spacing`, `nearby`, `max_distance` (m), `choices` (the plugin's choices, indices), `wind_step` (Pa), `low_share`, `calculation` (2026-11-01), `local` (bool, 2026-11-03: Use local conditions; the old `overrides` ignored); missing fields keep the window's values |
+| `app.offline_export` | `ohl-design` (Versions › Offline copy › Export working set for offline work…: written into the exported file right after it is written, 2026-11-23) | JSON (`ohl_app::offline_neighbours::ExportRecord`): `number` (the export's number on the server), `stale` (a change landed on the network while the file was written), `changed_meanwhile` (objects of the working set or within its reach changed meanwhile — not in the file) — the server's `OfflineExported` answer, read by the check windows on the file to say whether its neighbours were stale already when exported; absent (a file written by `ohl network export-working-set`): not known, said. Not part of the line, not in its revisions, not in a bundle |
 | `app.surfaces`, `app.lidar_percent` | earlier builds only | read when the user has no choice of their own yet (the ground and the surfaces shown; the share of the point cloud near the camera, %) |
 
 Since 2026-11-10 `sheet` also holds `profile_lines` (`corridor`, `distance`, `lowest_arm`; none: the template's), `profile_distance` (m; none: the template's, else 10) and `profile_circuits` (circuit names; none: the template's, else every circuit with a system) — each left out when none, so older settings read and write the same. Since 2026-11-11 `sheet` also holds `name` (the name the files take in place of the route's; left out when empty); `ohl_drawing::export::Export` has `name` for it and `export::named` composes it with a route's or plan's own name when several are written.
@@ -4057,10 +4058,20 @@ what solving each reads; `part_users` as a replica's (filtered by the
 rights). Its first revision is the **export's revision** (`network.offline`
 `export`, by its exporter, message "Offline working set N of USER: … (from
 revision R, TIME)"), the exported state; the server keeps its tree's text
-(`offline_export.tree`). Other lines' neighbours are not objects of the
+(`offline_export.tree`). R, its base, is the model's main revision; when
+main holds changes not yet recorded, the server records them first as a
+revision of main by **`network:server`** (since 2026-11-23; a name no
+user can have — users' names hold no `:` —; message "Recorded by the
+network's server for an offline working set of USER"; audited as
+*server revision* under the exporter's name). Other lines' neighbours are not objects of the
 file: they are in `network.neighbours` (read by `ohl network
-check-offline`; OHL-Design's checks on the file say NOT ALL CHECKED as on
-a replica). The work comes back as a **bundle** (the bundle format,
+check-offline` and, since 2026-11-23, by OHL-Design's check windows on
+the file — `ohl_app::offline_neighbours`, each line's wire library built
+as the network's checks build it, `ohl_server::offline_checks::neighbour_wires`:
+the Clearances window's rules to other lines take their wires; Structure
+loads, the fields and plugins name the lines near and say NOT ALL
+CHECKED). OHL-Design keeps the server's answer on the export in the
+application setting `app.offline_export` ([above](#the-applications-settings-setting)). The work comes back as a **bundle** (the bundle format,
 `ohl_session::versions::Bundle`) holding only the main line's revisions
 since the export's and the blobs they need that the export does not hold
 (an object as exported stays behind) — `Session::offline_bundle`;

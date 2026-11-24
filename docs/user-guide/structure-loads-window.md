@@ -159,6 +159,12 @@ it, and the structures left out with why. A structure that was to be
 computed in a case that could not be computed is **not checked** in the
 governing usage (grey), never a pass.
 
+On an **offline working set's file**, the results name the structures
+shared with another line of its export (one of the same type within
+0.5 m): the other lines' sections hanging there are not added — NOT ALL
+CHECKED; the Offline working set window's *Loads on shared towers* adds
+them ([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
+
 ## Add the default cases… and the weather cases
 
 The Load cases library's **Add the default cases…** adds OpenOHL's

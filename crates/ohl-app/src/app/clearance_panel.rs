@@ -734,10 +734,14 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
     // worked on (View › Work on route).
     let on = check.wires_on(&m.line).map(|(s, _)| s);
     let worked = m.scope().map(|s| s.sections);
+    // An offline working set's file: its export's neighbours are the
+    // targets of the rules to other lines (2026-11-23), said with the
+    // report.
+    let neighbours = m.offline_neighbours();
     // On a network's working set: the wire rules' neighbours are not
     // pulled in here (phase 10), said with the report.
     r.clearances.replica_note = match &r.clearances.rules {
-        Some(Ok(rules)) if m.network_replica() => {
+        Some(Ok(rules)) if m.network_replica() && neighbours.is_none() => {
             let voltages = ohl_clearance::case::voltages_of(&m.line).unwrap_or_default();
             let top = m
                 .line
@@ -804,7 +808,30 @@ pub(super) fn start_clearance_check(ctx: &egui::Context, r: &mut Ready) {
         progress: Default::default(),
         done: Default::default(),
         cancel: Default::default(),
+        neighbours,
     });
+}
+
+/// The Clearances window's block for an offline working set's file
+/// (2026-11-23): its export's neighbours included as the targets of the
+/// rules to other lines, which, and that they may be stale — before Run.
+fn offline_block(ui: &mut egui::Ui, r: &mut Ready) {
+    let Some(n) = r.model.offline_neighbours() else {
+        return;
+    };
+    let lines = match n.as_ref() {
+        Ok(n) => {
+            let mut v = vec![n.included_words("the targets of the rules to other lines")];
+            v.push(n.stale_words());
+            v.extend(n.gaps());
+            v
+        }
+        Err(_) => Vec::new(),
+    };
+    ui.separator();
+    if crate::offline_neighbours::banner(ui, &n, &lines) {
+        r.status = Some(crate::offline_neighbours::open_guide());
+    }
 }
 
 /// The three ways to check clearances, in words (the Checks menu and the
@@ -1126,6 +1153,7 @@ pub(super) fn clearance_panel_body(ui: &mut egui::Ui, r: &mut Ready) -> bool {
             r.radial_clearances.show(&r.model);
         }
     });
+    offline_block(ui, r);
     ui.separator();
     guide = guide.or(crate::check_ui::section_help(
         ui,
@@ -1387,6 +1415,7 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
         }
         Some(Ok(rep)) => {
             let n = rep.findings.len();
+            let incomplete = !rep.not_all_checked.is_empty();
             let text = match rep.findings.first() {
                 Some(f) => format!(
                     "✖ {n} violation{} in {} — worst {} {:.2} m of {:.2} m: {} ({}, {})",
@@ -1399,10 +1428,27 @@ fn clearance_results(ui: &mut egui::Ui, r: &mut Ready) {
                     f.rule,
                     f.case
                 ),
+                // Never passing on what was not checked (2026-11-23).
+                None if incomplete => format!(
+                    "NOT ALL CHECKED — no violation among what was checked in {}",
+                    rep.cases_words()
+                ),
                 None => format!("✔ Every rule met in {}", rep.cases_words()),
             };
-            if crate::check_ui::verdict(ui, n > 0, &text, n > 0) {
+            if crate::check_ui::verdict(ui, n > 0 || incomplete, &text, n > 0) {
                 go = rep.findings.first().cloned();
+            }
+            // What is not complete, and an offline working set's
+            // neighbours: visible, not folded.
+            for t in &rep.not_all_checked {
+                ui.colored_label(ui.visuals().error_fg_color, egui::RichText::new(t).small());
+            }
+            for t in &rep.neighbours {
+                if t.starts_with("They may be stale") {
+                    ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(t).small());
+                } else {
+                    ui.label(egui::RichText::new(t).small());
+                }
             }
             // Built once per report, not every frame.
             let key = (c.generation, rep.findings.len());
