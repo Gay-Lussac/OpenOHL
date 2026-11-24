@@ -74,6 +74,84 @@ no file format change):
   1.55), most bracing relieved, the solve 16 times slower (33 passes). The
   tower program's results match the model without the options (0.1 %).
 
+## 2026-11-24 (joint layout: the welded plate's axis offset carried into the analysis, L20 item 2)
+
+**An end on a plate in its own plane whose axis that plate puts more than
+a plate's thickness out of the flange is laid out up to 40 mm, the offset
+recorded and carried into the analysis by the estimated eccentricities**
+(roadmap O44 L20, L19's question 7a; the owner busy: built on its own,
+reported; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-welded-plates-axis-offset-carried-into-the-analysis-l20-item-2)).
+
+- **Layout** (`LayoutSettings::own_offset_analysed`, on): up to
+  `OWN_OUT_MAX` = 40 mm (the program's value, measured: about nine in ten
+  of the ends L19 counted refused); beyond, a hand detail as before.
+- **Record** (no format change): the plate's mark `axis_out=<mm>`
+  (`layout_run::OWN_OUT`, `LayoutRecord::own_out`), written when the
+  offset exceeds the plate's thickness.
+- **Analysis**: O45's rules kept — the estimated eccentricities (an
+  option at level 3, off by default) take the recorded offset as the laid
+  out end's plate offset, whole and of either sign in its member's own
+  check; off, or at level 4, the run says NOT ON THE SAFE SIDE (count and
+  largest). Hand ends left off their flange: the plate case's upper bound
+  the larger of the leg's thickness and 40 mm.
+- **Weighed per joint** (where an end lies off its flange): the plan with
+  and without these plates, the one laying out more ends or as many on
+  fewer plates kept, on a tie the plan without (unweighed, two private
+  towers: 23 joints better, 12 worse — 10 as many ends on more plates);
+  after writing, the run's guard (`PlanCtx::no_level`, shared with the
+  level plates, now also for as many ends on more plates) plans a joint
+  again without them where it laid out less than its plan without.
+- **Measured**: in the roadmap block and on the theory page (L20 docs).
+
+## 2026-11-24 (joint layout: a level plate across two horizontals, L20)
+
+**A level plan or hip end lying on no flange of what it bolts onto goes
+onto a plate lying on the level legs of two horizontals meeting at the
+joint, held by its own bolts onto both** (roadmap O44 L20, L19's question
+6 and the owner's "go ahead to improve" of 2026-11-23; the owner busy:
+built on its own, reported; built, in active development, not approved
+yet; [theory](../theory/joint-layout.md#a-level-plate-across-two-horizontals-l20)).
+
+- **Format** (structure file version 26, `PLATE_ALSO_BOLTS_VERSION`; older
+  files read unchanged, an older reader refuses 26): a plate's
+  `[plate.also_bolts]` — its own bolts onto a second member, the fields of
+  `[plate.leg_bolts]` (member, leg, bolts, bolt_points). Named
+  `also_bolts` as L19's question proposed (the plate's `on` and
+  `leg_bolts` stay the first holder's). A member not at the joint, the
+  member `leg_bolts` names, no places, a count differing or `both`/`none`
+  said in the file's notes, kept, not used.
+- **Which ends** (`joint_layout::level_pair`, `LayoutSettings::level_plates`,
+  on): two other level single angles ending at the joint, not in line
+  with the end nor with each other, neither bolting onto it, each with a
+  flange in whose plane the end's axis lies (2°), their outer faces in one
+  plane (normals within 2°, faces within the clash check's 1 mm). Named
+  onto the first (class, the wider, the id) in the run's planning copy
+  only where nothing else is named for it (after a member running through
+  and L13's name; not within 10° of today's choice's flange), weighed as
+  L13's names. Measured, not kept: named before a member running through
+  wherever it already lay flat on that plane — 12 joints worse on four
+  private towers (a bracing member's name costing the plan member bolted
+  onto it).
+- **The plate** (`joint_layout::level_holds`): the flat plate on the first
+  holder's level leg (L5o's own bolts onto it, grown along it as L15's
+  plate between) gets bolts onto the second where both holders' level legs
+  are in one plane **as drawn** (each moved as the plan moves it), placed
+  as the first holder's are, the plate grown round them clear of what it
+  would run into, of its heel line and of its straight cuts; else said and
+  the plate stays held by the first alone.
+- **Checks**: both holders' bolts are the plate's holding bolts (each
+  holder's group carrying the other ends' forces whole; neither holder's
+  own force a force on the plate); the ends on the plate ride on each
+  holder's own end bolts (L14). Said NOT ON THE SAFE SIDE: a force the
+  plate passes between its two holders. The holding bolts' heads and nuts
+  are not pieces of the clash check (placed clear by the plan), as for
+  `[plate.leg_bolts]` since L5o — asked.
+- **Measured**: in the roadmap block and on the theory page (L20 docs).
+- **Not built** (time): L19's question 7a (the own-plane welded plate's
+  axis offset into the analysis) and 7b (the joggle); 7c waits for the
+  owner.
+
 ## 2026-11-23 (country server: a revision of main made by the server so any designer can export)
 
 **Main's unrecorded changes recorded by the network's server itself

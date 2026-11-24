@@ -175,12 +175,32 @@ fn the_planned_shift_is_estimated_and_the_laid_out_one_taken() {
     }
 }
 
-/// No layout fits D1 (a welded plate would move it too far out): the
-/// upper bound — the shift limit and the plate's offset at its limit, its
-/// leg's thickness — said why.
+/// L20 item 2: D1 30° off, its welded plate putting its axis more than a
+/// plate's thickness (but at most `OWN_OUT_MAX`) out: estimated from its
+/// plan with that plate's offset (either sign), no longer an upper bound.
+#[test]
+fn a_welded_plate_far_out_is_estimated_with_its_offset() {
+    let e = estimates(&d1_spoiled(30.0));
+    let d1 = e
+        .ends
+        .iter()
+        .find(|x| x.member == "D1" && x.joint == "N2")
+        .unwrap_or_else(|| panic!("{e:?}"));
+    assert_eq!(d1.source, Source::Estimated, "{d1:?}");
+    assert!(
+        d1.plate > 0.007 && d1.plate <= crate::joint_layout::OWN_OUT_MAX + 1e-9,
+        "{d1:?}"
+    );
+    assert!(d1.either_sign());
+}
+
+/// No layout fits D1 (80° off: on the inner face, no welded plate fits):
+/// the upper bound — the shift limit and the plate's offset at its limit
+/// (L20 item 2: the larger of its leg's thickness and `OWN_OUT_MAX`) —
+/// said why.
 #[test]
 fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
-    let e = estimates(&d1_spoiled(30.0));
+    let e = estimates(&d1_spoiled(80.0));
     let d1 = e
         .ends
         .iter()
@@ -188,9 +208,12 @@ fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
         .unwrap_or_else(|| panic!("{e:?}"));
     assert_eq!(d1.source, Source::UpperBound, "{d1:?}");
     assert_eq!(d1.shift, crate::SHIFT_LIMIT_START);
-    assert!((d1.plate - 0.007).abs() < 1e-9, "{d1:?}");
+    let bound = crate::joint_layout::OWN_OUT_MAX;
+    assert!((d1.plate - bound).abs() < 1e-9, "{d1:?}");
     assert!(
-        d1.why.as_deref().is_some_and(|w| w.contains("farther out")),
+        d1.why
+            .as_deref()
+            .is_some_and(|w| w.contains("off the flange")),
         "{d1:?}"
     );
     assert!(d1.either_sign());
@@ -198,7 +221,7 @@ fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
     // In the model (2026-11-19): two parts of unknown sign — the shift and
     // the plate's offset, square to each other, across the member — never
     // in the solve, only in its own check.
-    let text = d1_spoiled(30.0);
+    let text = d1_spoiled(80.0);
     let m = Model::from_structure_type_with(&text, &library()).unwrap();
     let (list, _) = offsets(&m, &e);
     let k = m.members.iter().position(|x| x.id == "D1").unwrap();
@@ -207,8 +230,8 @@ fn where_no_layout_fits_the_upper_bound_with_the_plate_case() {
     assert_eq!(p.offset, [0.0; 3], "nothing of known sign: {p:?}");
     assert_eq!(p.free.len(), 2, "{p:?}");
     assert!((size(p.free[0]) - 0.030).abs() < 1e-9, "{p:?}");
-    assert!((size(p.free[1]) - 0.007).abs() < 1e-9, "{p:?}");
-    let expect = (0.030f64.powi(2) + 0.007f64.powi(2)).sqrt();
+    assert!((size(p.free[1]) - bound).abs() < 1e-9, "{p:?}");
+    let expect = (0.030f64.powi(2) + bound.powi(2)).sqrt();
     assert!((p.e() - expect).abs() < 1e-9, "{p:?}");
     let dot = |a: [f64; 3], b: [f64; 3]| (0..3).map(|c| a[c] * b[c]).sum::<f64>();
     assert!(

@@ -66,6 +66,18 @@ a joint detail; they are made again from the file at every run, so they
 follow every edit. The same file, libraries and presets give the same
 estimates (the planner is deterministic).
 
+Since 2026-11-24 (O44 L20 item 2) an end the layout **laid out** on a
+plate in its own plane welded to the flat plate (step 4) that puts its
+axis more than a plate's thickness farther out of the flange (up to
+40 mm) has that offset recorded with the plate (the layout record's
+`axis_out=<mm>` mark) and the estimates take it as the end's plate
+offset beside its shift as written (before: a laid-out end's shift
+alone — the layout then laid out no such end); an end still left off its
+flange takes the plate case's upper bound at the larger of its leg's
+thickness and 40 mm. Without the option, or at level 4, the run says
+NOT ON THE SAFE SIDE for such plates
+([joint layout](joint-layout.md#the-welded-plates-axis-offset-carried-into-the-analysis-l20-item-2)).
+
 ## In the analysis (A2)
 
 Each end with a shift or a plate's offset becomes the member's rigid end

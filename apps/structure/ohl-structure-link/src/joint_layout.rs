@@ -392,6 +392,28 @@ pub struct LayoutSettings {
     /// the turn offered ([`crate::weighed_turns`]). On by default; off: the
     /// rolls as written (L18).
     pub weigh_turns: bool,
+    /// O44 L20 (L19's question 6, the owner's "go ahead to improve" of
+    /// 2026-11-23): a **level plate across two horizontals** — a plan or
+    /// hip end lying on no flange of what today's rule names for it, at a
+    /// joint where two other level single angles ending there (not in line)
+    /// have their level legs in one plane with its axis
+    /// (`joint_layout::level_pair`), is named onto the first ([`hosts_to_name_by`];
+    /// weighed joint by joint as L13's names); a flat plate the plan lays on
+    /// that member's level leg (held by its own bolts onto it, L5o) is also
+    /// given its own provisional bolts onto the second where they fit (the
+    /// plate's `[plate.also_bolts]`, structure file version 26): one plate
+    /// held by both. On by default; off: as before.
+    pub level_plates: bool,
+    /// O44 L20 item 2 (L19's question 7a): an end on a plate in its own
+    /// plane welded to the flat plate (step 4) whose axis that plate puts
+    /// more than a plate's thickness farther out of the flange is laid out
+    /// up to `joint_layout::OWN_OUT_MAX` — the offset recorded with the plate (the
+    /// record's `layout_run::OWN_OUT` mark) and carried into the
+    /// analysis by the estimated eccentricities (O45; an option, off by
+    /// default: off, or at level 4, the analysis says NOT ON THE SAFE SIDE
+    /// for those ends). On by default; off: as before (a hand detail beyond
+    /// a plate's thickness).
+    pub own_offset_analysed: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -445,6 +467,8 @@ impl Default for LayoutSettings {
             seat_as_drawn: true,
             planes_high_to_low: false,
             weigh_turns: true,
+            level_plates: true,
+            own_offset_analysed: true,
         }
     }
 }
@@ -599,6 +623,10 @@ pub struct PlatePlan {
     /// Between the angles of the built-up member it is on (L15, the
     /// record's `between`): on the back of one of them, as thick as the gap.
     pub between: bool,
+    /// L20: its own bolts onto a second member it lies on (a level plate
+    /// across two horizontals: `hold` onto the one it is `on`, these onto
+    /// the other; written as `[plate.also_bolts]`); none: as before.
+    pub also: Option<HoldPlan>,
 }
 
 /// A plate's own bolts onto the member whose flange it lies on (J2b,
@@ -1373,6 +1401,7 @@ fn bent_over(
         short: false,
         cuts: Vec::new(),
         between: false,
+        also: None,
     };
     let bent = PlatePlan {
         members: placed.iter().map(|p| strips[p.k].member.clone()).collect(),
@@ -1401,6 +1430,7 @@ fn bent_over(
         short: false,
         cuts: Vec::new(),
         between: false,
+        also: None,
     };
     Ok(BentOver {
         flat,
@@ -1810,7 +1840,24 @@ fn hold_flat(
         .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max);
     let planned = poly;
     let grown_room;
-    let poly = if flat.between && poly.len() >= 3 {
+    // (L20) A level plate (an end on it whose level plate's first holder is
+    // this member): grown along it as a plate between is, so that its
+    // holding bolts find room on the flange beyond the ends' legs.
+    let level = s.level_plates
+        && j.arrivals
+            .iter()
+            .find(|h| h.member == x0.host)
+            .is_some_and(|h| {
+                flat.members.iter().any(|m| {
+                    j.arrivals
+                        .iter()
+                        .find(|a| &a.member == m)
+                        .and_then(|a| level_partner(&j.arrivals, a, h))
+                        .is_some()
+                })
+            });
+    let grows = flat.between || level;
+    let poly = if grows && poly.len() >= 3 {
         let [_, spacing, _] = s.defaults.of(x0.d);
         let reach = 4.0 * spacing + 2.0 * keep_ring;
         let (lo, hi) = poly
@@ -1915,8 +1962,8 @@ fn hold_flat(
     };
     // (L15) Between the angles, grown along the member round them: its
     // outline (each bolt with its distances in it) clear of what it could
-    // run into; else none (as before), said.
-    if flat.between {
+    // run into; else none (as before), said. (L20: a level plate alike.)
+    if grows {
         const N: usize = 16;
         let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
         let mut all = planned.to_vec();
@@ -1931,11 +1978,15 @@ fn hold_flat(
         }
         let grown = crate::joint_sheet::hull(all);
         if let Some(by) = (at.clear)(&grown) {
+            let what = if flat.between {
+                format!("a plate between {}'s angles", x0.host)
+            } else {
+                format!("a level plate on {}", x0.host)
+            };
             notes.push(format!(
-                "a plate between {}'s angles: no provisional bolts of its own onto {} (round \
-                 them its outline would run into {by}); how it is held not checked (lay them \
-                 out by hand)",
-                x0.host, x0.host
+                "{what}: no provisional bolts of its own onto {} (round them its outline would \
+                 run into {by}); how it is held not checked (lay them out by hand)",
+                x0.host
             ));
             return;
         }
@@ -2303,6 +2354,12 @@ pub(crate) struct PlanCtx {
     /// the run's guard found the joint laid out with fewer ends after
     /// writing with them than without.
     pub no_between: bool,
+    /// Planned without the level plates' bolts onto their second holders
+    /// and (item 2) the plates in their members' own planes farther out
+    /// than a plate's thickness (L20): the run's guard found the joint laid
+    /// out with fewer ends after writing with them than without, or as
+    /// many on more plates.
+    pub no_level: bool,
 }
 
 /// How many faces bolted directly are tried on a plate per joint (L1 b,
@@ -2333,11 +2390,16 @@ pub(crate) fn plan_joint_ctx(
     let l11_off = (ctx.plain || ctx.no_l11) && (s.plate_shift || s.both_faces);
     // (L15) Without the plates between a built-up member's angles.
     let between_off = ctx.no_between && s.between_plates;
-    let s = if l11_off || between_off {
+    // (L20) Without the level plates' bolts onto their second holders and
+    // the plates in their members' own planes farther out (item 2).
+    let level_off = ctx.no_level && (s.level_plates || s.own_offset_analysed);
+    let s = if l11_off || between_off || level_off {
         plain = LayoutSettings {
             plate_shift: s.plate_shift && !l11_off,
             both_faces: s.both_faces && !l11_off,
             between_plates: s.between_plates && !between_off,
+            level_plates: s.level_plates && !level_off,
+            own_offset_analysed: s.own_offset_analysed && !level_off,
             ..s.clone()
         };
         &plain
@@ -2438,6 +2500,30 @@ fn plan_joint_searched(
         if !better(&plan, &p1) {
             plan = p1;
             direct = d1;
+        }
+    }
+    // L20 item 2: the plates in their members' own planes farther out than
+    // a plate's thickness kept only where the plan lays out more ends, or
+    // as many on fewer plates, than without them (only where an end lies
+    // off its flange); on a tie the plan without.
+    if s.own_offset_analysed
+        && j.arrivals
+            .iter()
+            .any(|a| a.flat.is_some_and(|f| f.off > FLAT_OFF))
+    {
+        let s1 = LayoutSettings {
+            own_offset_analysed: false,
+            ..s.clone()
+        };
+        let (p1, d1) = once(&s1);
+        if !better(&plan, &p1) {
+            plan = p1;
+            direct = d1;
+        }
+        // (An end still left off its flange: such a plate may put it as
+        // far out — the estimates' upper bound that far either way.)
+        for x in plan.off_flange.iter_mut() {
+            x.1 = x.1.max(OWN_OUT_MAX);
         }
     }
     if !s.more_plates || ctx.plain || plan.hand_members.is_empty() {
@@ -3183,8 +3269,8 @@ fn plan_once(
                     // work point about as a filler would put it; more is not
                     // in the analysis: a hand detail). L3, bent down: at
                     // most a plate's thickness nearer either.
-                    if !within(room, geo.out_more, x.own_t) {
-                        errs.push((room, farther_out(geo.out_more, x.own_t)));
+                    if !within(room, geo.out_more, x.own_t, s) {
+                        errs.push((room, farther_out(geo.out_more, x.own_t, room, s)));
                         continue;
                     }
                     if let Err(e) = own_fits(&strips, x, &geo, &flat_ends, &owns, j.position, s.gap)
@@ -3403,6 +3489,7 @@ fn plan_once(
                 short,
                 cuts,
                 between: between.is_some(),
+                also: None,
             };
             let mut own_plates: Vec<PlatePlan> = Vec::new();
             let mut seams3: Vec<([f64; 3], [f64; 3])> = Vec::new();
@@ -3479,6 +3566,7 @@ fn plan_once(
                     short: false,
                     cuts: Vec::new(),
                     between: false,
+                    also: None,
                 });
             }
             // L9 (L8's question 5, 2026-11-21): a flat plate with plates in
@@ -3757,7 +3845,7 @@ fn plan_once(
     }
     // In the joint's member order.
     placed_all.sort_by_key(|p| p.k);
-    for p in placed_all {
+    for p in placed_all.iter().cloned() {
         let x = &strips[p.k];
         // Concentric: the gauge line through the work point, drawn so (the
         // `gauge` mark), no shift; a move beyond it is the shift.
@@ -3830,6 +3918,26 @@ fn plan_once(
             );
         }
     }
+    // L20: a flat plate on a level leg holding level ends given its own
+    // bolts onto the second member whose level leg it lies on too.
+    if s.level_plates && !ctx.plain {
+        level_holds(
+            &mut plan,
+            Laid {
+                strips: &strips,
+                placed: &placed_all,
+                plate_of: &plate_of,
+                pieces: &pieces,
+                fixed: &fixed,
+                laid3: &laid3,
+                laid_cut: &laid_cut,
+            },
+            j,
+            s,
+            edge,
+            (&others, except),
+        );
+    }
     // The members left whose bolted leg lies off its flange (the plate
     // case of the estimated eccentricities, O45 A1).
     plan.off_flange = plan
@@ -3839,7 +3947,16 @@ fn plan_once(
             let a = find(m.as_str())?;
             a.flat.filter(|f| f.off > FLAT_OFF)?;
             let t = a.profile.as_ref()?.angle.as_ref()?.t;
-            Some((m.clone(), t))
+            // (L20 item 2: such a plate may put it up to the most the
+            // analysis takes farther out — the upper bound that far.)
+            Some((
+                m.clone(),
+                if s.own_offset_analysed {
+                    t.max(OWN_OUT_MAX)
+                } else {
+                    t
+                },
+            ))
         })
         .collect();
     plan.hand_hosts = plan
@@ -3855,6 +3972,372 @@ fn plan_once(
         })
         .collect();
     (plan, direct_planes)
+}
+
+/// What a plan laid out, for a pass after its planes ([`level_holds`]).
+struct Laid<'a> {
+    strips: &'a [Strip],
+    placed: &'a [Placed],
+    plate_of: &'a BTreeMap<usize, usize>,
+    pieces: &'a [(crate::ClashPart, Vec<[f64; 3]>)],
+    fixed: &'a BTreeSet<String>,
+    laid3: &'a [Laid3],
+    laid_cut: &'a BTreeMap<String, f64>,
+}
+
+/// The note of a level plate whose bolts onto its second member do not fit
+/// (L20): the plate stays held by the first alone, as before.
+pub const LEVEL_NOT_HELD: &str = "no level plate across two horizontals";
+
+/// L20 (the level plate across two horizontals): each flat plate of `plan`
+/// on a member's flange, held by its own bolts onto that member (L5o), with
+/// a level end on it whose [`level_pair`] is that member and a second one —
+/// that second member's level leg in the plate's plane **as drawn** (each
+/// holder moved as the plan moves it) — given its own provisional bolts
+/// onto the second ([`PlatePlan::also`]): placed on its flange as the first
+/// holder's are ([`plate_holds`]: inside the plate grown over that flange,
+/// clear of its holes, of the bolts and legs on the plate and of the steel
+/// in the way, past that member's steel start by the end distance), as
+/// many as onto the first, the plate grown round them clear of what it
+/// would run into ([`plate_hits`]), of its heel line and of its straight
+/// cuts. Where they do not fit, said ([`LEVEL_NOT_HELD`]); the plate stays
+/// as before.
+fn level_holds(
+    plan: &mut JointPlan,
+    l: Laid<'_>,
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    who: (&[&str], &BTreeMap<String, String>),
+) {
+    let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
+    let strips = l.strips;
+    for pi in 0..plan.plates.len() {
+        let pl = &plan.plates[pi];
+        if pl.own.is_some()
+            || pl.reach.is_some()
+            || pl.between
+            || pl.outline.is_some()
+            || pl.also.is_some()
+        {
+            continue;
+        }
+        let Some(hold) = pl.hold.clone() else {
+            continue;
+        };
+        if hold.member != pl.on {
+            continue;
+        }
+        let flats: Vec<Placed> = l
+            .placed
+            .iter()
+            .filter(|p| l.plate_of.get(&p.k) == Some(&pi) && strips[p.k].tilted.is_none())
+            .cloned()
+            .collect();
+        let Some(x0) = flats.first().map(|p| &strips[p.k]) else {
+            continue;
+        };
+        let Some(host) = find(&pl.on) else {
+            continue;
+        };
+        let Some((lead, b)) = flats.iter().enumerate().find_map(|(i, p)| {
+            let a = find(&strips[p.k].member)?;
+            level_partner(&j.arrivals, a, host).map(|b| (i, b))
+        }) else {
+            continue;
+        };
+        let on = pl.on.clone();
+        let tp = pl.thickness;
+        let short = pl.short;
+        let cuts = pl.cuts.clone();
+        let heel = pl.heel;
+        let mut members: BTreeSet<&str> = pl.members.iter().map(String::as_str).collect();
+        members.insert(b.member.as_str());
+        let why = |e: String| format!("{}: {LEVEL_NOT_HELD} — {e}", b.member);
+        // (What the planes laid out, the plate itself left out: it grows.)
+        let own_name = format!("a plate on {on}");
+        let laid3: Vec<Laid3> = l
+            .laid3
+            .iter()
+            .filter(|x| x.0 != own_name)
+            .cloned()
+            .collect();
+        // Each holder as drawn: moved across and lifted as the plan lays
+        // its own end out (a member not laid out here: as it is).
+        let moved = |m: &str| -> Option<[f64; 3]> {
+            let Some(hk) = strips.iter().position(|y| y.member == m) else {
+                return Some([0.0; 3]);
+            };
+            let Some(hp) = l.placed.iter().find(|q| q.k == hk) else {
+                return Some([0.0; 3]);
+            };
+            let h = &strips[hk];
+            if h.tilted.is_some() {
+                return None;
+            }
+            let v3 = add(scale(h.x3, h.v[0]), scale(h.y3, h.v[1]));
+            let lift = match l.plate_of.get(&hk) {
+                Some(&i) if plan.plates[i].own.is_none() => plan.plates[i].thickness,
+                _ => 0.0,
+            };
+            Some(add(scale(v3, hp.moved), scale(h.n3, lift)))
+        };
+        let (Some(da), Some(db)) = (moved(&on), moved(&b.member)) else {
+            plan.notes.push(why(format!(
+                "{on} or {} lies on a plate in its own plane",
+                b.member
+            )));
+            continue;
+        };
+        let Some(lead_a) = find(&strips[flats[lead].k].member) else {
+            continue;
+        };
+        let (Some(ha), Some(fa), Some(fb)) = (
+            find(&on),
+            find(&on).and_then(|h| crate::joints::host_flange_along(lead_a, h, false)),
+            crate::joints::host_flange_along(lead_a, b, false),
+        ) else {
+            continue;
+        };
+        let _ = ha;
+        let step = dot(sub(add(fb.heel, db), add(fa.heel, da)), fa.out);
+        if dot(fa.out, fb.out) < FLAT_OFF.to_radians().cos() - 1e-12
+            || step.abs() > crate::clash::CLASH_TOLERANCE + 1e-9
+        {
+            plan.notes.push(why(format!(
+                "as laid out, {}'s level leg lies {:.0} mm out of the plate's plane on {on}",
+                b.member,
+                step.abs() * 1000.0
+            )));
+            continue;
+        }
+        // The plate's ends lying on the second member's flange (one plane
+        // with the first's), in its axes; each where the plan places it.
+        let mut sb: Vec<Strip> = Vec::new();
+        let mut pb: Vec<Placed> = Vec::new();
+        let mut failed: Option<String> = None;
+        for p in &flats {
+            let x = &strips[p.k];
+            let Some(e) = find(&x.member) else {
+                failed = Some(format!("{} not at the joint", x.member));
+                break;
+            };
+            let mut y = match strip_of(j, e, b, s, edge, who, None, false, None) {
+                Ok(y) => y,
+                Err(w) => {
+                    failed = Some(format!("{} on {}'s flange: {w}", x.member, b.member));
+                    break;
+                }
+            };
+            let dp = [dot(db, y.x3), dot(db, y.y3)];
+            y.heel3 = add(y.heel3, db);
+            y.face3 = add(y.face3, db);
+            y.heel = add(y.heel, db);
+            y.w = sub2(y.w, dp);
+            for (c, _) in y.obstacles.iter_mut() {
+                *c = sub2(*c, dp);
+            }
+            for (c, _, _) in y.partners.iter_mut() {
+                *c = sub2(*c, dp);
+            }
+            let va = add(scale(x.x3, x.v[0]), scale(x.y3, x.v[1]));
+            let vb = add(scale(y.x3, y.v[0]), scale(y.y3, y.v[1]));
+            pb.push(Placed {
+                k: sb.len(),
+                cut: p.cut,
+                moved: p.moved * dot(va, vb),
+            });
+            sb.push(y);
+        }
+        if let Some(w) = failed {
+            plan.notes.push(why(w));
+            continue;
+        }
+        {
+            let y = &mut sb[lead];
+            y.fixed = fixed_in(y, j, l.pieces, l.fixed, &laid3);
+            let thick = y.own_t.max(y.t);
+            let far = thick + (BOLT_DRAWN[2] + BOLT_DRAWN[3]) * y.d;
+            y.fixed_far = fixed_slab(y, j, l.pieces, l.fixed, &laid3, (-far, -FACE_TOUCH));
+        }
+        let xb = sb[lead].clone();
+        // Where the second member's steel starts (its cut as laid out).
+        let from = xb
+            .host_ends
+            .then(|| l.laid_cut.get(&b.member).copied().unwrap_or(xb.host_cut));
+        let [_, spacing, _] = s.defaults.of(xb.d);
+        let keep = flats
+            .iter()
+            .map(|p| strips[p.k].keep_plate.0.max(strips[p.k].keep_plate.1))
+            .fold(x0.keep_plate.0.max(x0.keep_plate.1), f64::max);
+        // The plate as planned, and the second member's flange beside it.
+        let poly_a = plate_outline2(
+            strips,
+            &flats,
+            s.gap,
+            if short {
+                Outline::Short
+            } else {
+                Outline::Round
+            },
+        );
+        let a3 = |q: [f64; 2]| add(x0.heel3, add(scale(x0.x3, q[0]), scale(x0.y3, q[1])));
+        let b3 = |q: [f64; 2]| add(xb.heel3, add(scale(xb.x3, q[0]), scale(xb.y3, q[1])));
+        let to_b = |q: [f64; 3]| {
+            let d = sub(q, xb.heel3);
+            [dot(d, xb.x3), dot(d, xb.y3)]
+        };
+        let to_a = |q: [f64; 3]| {
+            let d = sub(q, x0.heel3);
+            [dot(d, x0.x3), dot(d, x0.y3)]
+        };
+        let start = from.unwrap_or(0.0) + xb.host_end;
+        let reach = 4.0 * spacing + 2.0 * keep;
+        let mut pts: Vec<[f64; 2]> = poly_a.iter().map(|q| to_b(a3(*q))).collect();
+        for along in [start - keep, start + reach] {
+            let xq = xb.w[0] + along / xb.host_along;
+            pts.push([xq, 0.0]);
+            pts.push([xq, xb.width]);
+        }
+        let poly_b = crate::joint_sheet::hull(pts);
+        let mut holes = leg_holes(
+            strips,
+            l.placed,
+            &flats,
+            j,
+            &xb,
+            xb.heel3,
+            (xb.n3, xb.y3),
+            xb.t + tp,
+        );
+        for p in &pb {
+            let y = &sb[p.k];
+            for (along, line) in &y.bolts {
+                let g = y.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
+                holes.push(y.at(p.cut + along, g));
+            }
+        }
+        let room = HoldRoom {
+            holes,
+            ends: pb.iter().collect(),
+            seams: Vec::new(),
+            poly: &poly_b,
+            through: BTreeSet::new(),
+        };
+        let n = hold.points.len().max(2);
+        let got = match plate_holds(&sb, &xb, &room, s, from, n, 0.0) {
+            Ok(q) => q,
+            Err(e) => {
+                plan.notes.push(why(e));
+                continue;
+            }
+        };
+        // The plate grown round them (each with its distances, the flange
+        // under them), as the joint details will draw it: clear of what it
+        // would run into, of its heel line and of its straight cuts.
+        const N: usize = 16;
+        let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
+        let mut all = poly_a.clone();
+        let (lo, hi) = got
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), q| {
+                (lo.min(q[0]), hi.max(q[0]))
+            });
+        for xq in [lo - keep, hi + keep] {
+            all.push(to_a(b3([xq, 0.0])));
+            all.push(to_a(b3([xq, xb.width])));
+        }
+        for h in &hold.points {
+            let c = [x0.w[0] + h[0] / x0.host_along, h[1]];
+            for i in 0..N {
+                let t = i as f64 * std::f64::consts::TAU / N as f64;
+                all.push([c[0] + keep * grow * t.cos(), c[1] + keep * grow * t.sin()]);
+            }
+        }
+        let mut deep_ok = true;
+        for q in &got {
+            for i in 0..N {
+                let t = i as f64 * std::f64::consts::TAU / N as f64;
+                all.push(to_a(b3([
+                    q[0] + keep * grow * t.cos(),
+                    q[1] + keep * grow * t.sin(),
+                ])));
+            }
+            let q3 = add(j.position, b3(*q));
+            if let Some((h, across)) = heel
+                && dot(sub(q3, h), across) < s.gap / 2.0 + keep - 1e-9
+            {
+                deep_ok = false;
+            }
+            if cuts
+                .iter()
+                .any(|(at, nn)| -dot(sub(q3, *at), *nn) < keep - 1e-9)
+            {
+                deep_ok = false;
+            }
+        }
+        if !deep_ok {
+            plan.notes.push(why(format!(
+                "its bolts onto {} would lie beyond the plate's heel line or a straight cut",
+                b.member
+            )));
+            continue;
+        }
+        let mut grown = crate::joint_sheet::hull(all);
+        for (at, nn) in &cuts {
+            grown = clip(&grown, |q| -dot(sub(add(j.position, a3(q)), *at), *nn));
+        }
+        let excused: BTreeSet<String> = plan.hand_members.iter().cloned().collect();
+        if let Some((by, _)) = plate_hits(
+            x0, &members, j, l.pieces, l.fixed, &excused, &laid3, &grown, tp,
+        ) {
+            plan.notes.push(why(format!(
+                "grown over {}'s flange the plate would run into {by}",
+                b.member
+            )));
+            continue;
+        }
+        // The flange named (`long` or `short`, as `hold_flat` names it).
+        let leg = b
+            .profile
+            .as_ref()
+            .and_then(|p| p.angle.map(|g| (p.axes, g)))
+            .map(|(axes, g)| {
+                let along_y = dot(xb.y3, axes[1]).abs() > 0.5;
+                if along_y == (g.b >= g.h) {
+                    "long"
+                } else {
+                    "short"
+                }
+            });
+        let m = got.len();
+        let d = xb.d;
+        let from_words = format!("{m} bolt(s) of {:.0} mm", d * 1000.0);
+        plan.notes.push(format!(
+            "{}: {m} provisional bolt(s) holding a level plate on {on} too ({from_words}; a level              plate across two horizontals, L20)",
+            b.member
+        ));
+        let also = HoldPlan {
+            member: b.member.clone(),
+            leg,
+            bolt: BoltArea {
+                count: m as u32,
+                from: from_words,
+                ..hold.bolt.clone()
+            },
+            provisional: true,
+            points: got
+                .iter()
+                .map(|q| {
+                    [
+                        round_to((q[0] - xb.w[0]) * xb.host_along, 1e-4),
+                        round_to(q[1], 1e-4),
+                    ]
+                })
+                .collect(),
+        };
+        plan.plates[pi].also = Some(also);
+    }
 }
 
 /// The member ends of `j` the plan leaves as they are because the member
@@ -3966,16 +4449,22 @@ pub fn hosts_to_name(j: &JointDetail) -> Vec<(String, String)> {
 /// of which its axis lies (`host_ending_in_plane`), before today's
 /// choice.
 pub fn hosts_to_name_by(j: &JointDetail, s: &LayoutSettings) -> Vec<(String, String)> {
-    named_hosts(j, s.plane_hosts)
+    named_hosts(j, s.plane_hosts, s.level_plates)
         .into_iter()
         .map(|(m, h, _)| (m, h))
         .collect()
 }
 
 /// [`hosts_to_name_by`]'s names, each with whether it is L13's (a member
-/// ending at the joint, chosen by the plane the end's axis lies in).
-pub(crate) fn named_hosts(j: &JointDetail, plane_hosts: bool) -> Vec<(String, String, bool)> {
-    let first = named_hosts_except(j, plane_hosts, &BTreeSet::new());
+/// ending at the joint, chosen by the plane the end's axis lies in) or
+/// L20's (`level`: the first of a level plate's two holders,
+/// [`level_pair`]) — both weighed alike.
+pub(crate) fn named_hosts(
+    j: &JointDetail,
+    plane_hosts: bool,
+    level: bool,
+) -> Vec<(String, String, bool)> {
+    let first = named_hosts_except(j, plane_hosts, level, &BTreeSet::new());
     // (No chain of such names: an end another is named onto by its plane
     // keeps today's choice — measured on the private real towers, renaming
     // both lost more joints than it gained.)
@@ -3983,13 +4472,14 @@ pub(crate) fn named_hosts(j: &JointDetail, plane_hosts: bool) -> Vec<(String, St
     if !first.iter().any(|x| x.2 && hosts.contains(&x.0)) {
         return first;
     }
-    named_hosts_except(j, plane_hosts, &hosts)
+    named_hosts_except(j, plane_hosts, level, &hosts)
 }
 
 /// [`named_hosts`], the ends `keep` never named by their plane.
 fn named_hosts_except(
     j: &JointDetail,
     plane_hosts: bool,
+    level_plates: bool,
     keep: &BTreeSet<String>,
 ) -> Vec<(String, String, bool)> {
     let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
@@ -4051,6 +4541,23 @@ fn named_hosts_except(
                     {
                         return Some((a.member.clone(), h.member.clone(), true));
                     }
+                    // (L20) A level end lying on no flange of today's
+                    // choice nor of a member running through, none ending
+                    // here named for it by L13, two level angles ending
+                    // here with their level legs in its plane: onto the
+                    // first, a level plate held by both (the plan gives the
+                    // second its bolts). Only here: measured on the private
+                    // real towers, named before a member running through it
+                    // took ends from joints laid out whole.
+                    if level_plates
+                        && level
+                        && !in_line
+                        && !near
+                        && !keep.contains(&a.member)
+                        && let Some((h, _)) = level_pair(&j.arrivals, a)
+                    {
+                        return Some((a.member.clone(), h.member.clone(), true));
+                    }
                     match (a.onto.value.is_none(), h0) {
                         (true, Some(h)) => Some((a.member.clone(), h.member.clone(), false)),
                         _ => None,
@@ -4059,6 +4566,166 @@ fn named_hosts_except(
             }
         })
         .collect()
+}
+
+/// L20: the second holder of a level plate for end `a` on the flange of
+/// `first` in whose plane `a`'s axis lies (the member the plate is `on`,
+/// ending at the joint or running through it): `a` level, a single angle;
+/// another level single angle at the joint, not `a`, not `first` nor in
+/// line with either, not bolting onto `a`, 20° to 160° from both, with a
+/// flange in whose plane `a`'s axis lies, its outer face in one plane with
+/// `first`'s (normals within [`FLAT_OFF`], faces within the clash check's
+/// tolerance at the joint, as given) — by class, the wider, the id; none:
+/// no such member.
+pub(crate) fn level_partner<'a>(
+    all: &'a [Arrival],
+    a: &Arrival,
+    first: &Arrival,
+) -> Option<&'a Arrival> {
+    let level_sin = crate::joints::HORIZONTAL_OFF.to_radians().sin();
+    let single = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .is_some_and(|p| p.angle.is_some() && p.parts.is_empty())
+    };
+    if a.direction[2].abs() > level_sin
+        || first.direction[2].abs() > level_sin
+        || !single(a)
+        || !single(first)
+        || a.continuous.is_some()
+    {
+        return None;
+    }
+    let sin_flat = FLAT_OFF.to_radians().sin();
+    let cos_flat = FLAT_OFF.to_radians().cos();
+    let fa = crate::joints::host_flange_along(a, first, false)?;
+    if dot(a.direction, fa.out).abs() > sin_flat {
+        return None;
+    }
+    let rank = |b: &Arrival| match b.class.as_deref() {
+        Some("leg") => 0,
+        Some("bracing") | Some("crossing") => 1,
+        Some("redundant") => 2,
+        _ => 3,
+    };
+    let width = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map_or(0, |g| -((g.b.max(g.h) * 1e6) as i64))
+    };
+    all.iter()
+        .filter(|b| b.member != a.member && b.member != first.member && single(b))
+        .filter(|b| b.direction[2].abs() <= level_sin)
+        .filter(|b| {
+            (20.0..=160.0).contains(&angle_deg(a.direction, b.direction))
+                && (20.0..=160.0).contains(&angle_deg(first.direction, b.direction))
+        })
+        .filter(|b| b.onto.value.as_deref() != Some(a.member.as_str()))
+        // (Not an end itself bolting onto the first holder or a piece in
+        // line with it — an end on the plate's face, not a holder —, nor
+        // one the first bolts onto.)
+        .filter(|b| {
+            let onto_first = b
+                .onto
+                .value
+                .as_deref()
+                .and_then(|o| all.iter().find(|x| x.member == o))
+                .is_some_and(|x| {
+                    x.member == first.member || angle_deg(x.direction, first.direction) > 160.0
+                });
+            !onto_first && first.onto.value.as_deref() != Some(b.member.as_str())
+        })
+        .filter(|b| {
+            crate::joints::host_flange_along(a, b, false).is_some_and(|f| {
+                dot(a.direction, f.out).abs() <= sin_flat
+                    && dot(fa.out, f.out) >= cos_flat - 1e-12
+                    && dot(sub(f.heel, fa.heel), fa.out).abs()
+                        <= crate::clash::CLASH_TOLERANCE + 1e-9
+            })
+        })
+        .min_by(|x, y| (rank(x), width(x), &x.member).cmp(&(rank(y), width(y), &y.member)))
+}
+
+/// L20: the two holders of a **level plate** for end `a` — `a` level
+/// (within [`crate::joints::HORIZONTAL_OFF`]), a single angle; two other
+/// single angles at the joint, each level, **ending** there (not one part
+/// with a member, not in line with another of its members), not in line
+/// with `a` nor with each other (20° to 160°), neither bolting onto `a`,
+/// each with a flange in whose plane `a`'s axis lies ([`FLAT_OFF`]), those
+/// two flanges' outer faces in one plane (their normals within
+/// [`FLAT_OFF`], their faces within the clash check's tolerance of each
+/// other at the joint, as given). The pair by the members' class, then the
+/// wider, the id (the first holder first, the plate is `on` it); none: no
+/// such pair. Where the plan moves either member, its plate checks that
+/// plane again as drawn.
+pub(crate) fn level_pair<'a>(
+    all: &'a [Arrival],
+    a: &Arrival,
+) -> Option<(&'a Arrival, &'a Arrival)> {
+    let level_sin = crate::joints::HORIZONTAL_OFF.to_radians().sin();
+    let single = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .is_some_and(|p| p.angle.is_some() && p.parts.is_empty())
+    };
+    if a.direction[2].abs() > level_sin || !single(a) || a.continuous.is_some() {
+        return None;
+    }
+    let rank = |b: &Arrival| match b.class.as_deref() {
+        Some("leg") => 0,
+        Some("bracing") | Some("crossing") => 1,
+        Some("redundant") => 2,
+        _ => 3,
+    };
+    let width = |b: &Arrival| {
+        b.profile
+            .as_ref()
+            .and_then(|p| p.angle)
+            .map_or(0, |g| -((g.b.max(g.h) * 1e6) as i64))
+    };
+    let runs = |b: &Arrival| {
+        b.continuous.is_some()
+            || all.iter().any(|c| {
+                c.member != b.member
+                    && (c.continuous.as_deref() == Some(b.member.as_str())
+                        || angle_deg(b.direction, c.direction) > 160.0)
+            })
+    };
+    let sin_flat = FLAT_OFF.to_radians().sin();
+    let mut cands: Vec<(&Arrival, crate::joints::HostFlange)> = all
+        .iter()
+        .filter(|b| b.member != a.member && single(b) && !runs(b))
+        .filter(|b| b.direction[2].abs() <= level_sin)
+        .filter(|b| (20.0..=160.0).contains(&angle_deg(a.direction, b.direction)))
+        .filter(|b| b.onto.value.as_deref() != Some(a.member.as_str()))
+        .filter_map(|b| {
+            let f = crate::joints::host_flange_along(a, b, false)?;
+            (dot(a.direction, f.out).abs() <= sin_flat).then_some((b, f))
+        })
+        .collect();
+    cands.sort_by(|x, y| {
+        (rank(x.0), width(x.0), &x.0.member).cmp(&(rank(y.0), width(y.0), &y.0.member))
+    });
+    let cos_flat = FLAT_OFF.to_radians().cos();
+    for (i, (x, fx)) in cands.iter().enumerate() {
+        for (y, fy) in &cands[i + 1..] {
+            if !(20.0..=160.0).contains(&angle_deg(x.direction, y.direction))
+                || x.onto.value.as_deref() == Some(y.member.as_str())
+                || y.onto.value.as_deref() == Some(x.member.as_str())
+            {
+                continue;
+            }
+            if dot(fx.out, fy.out) < cos_flat - 1e-12 {
+                continue;
+            }
+            if dot(sub(fy.heel, fx.heel), fx.out).abs() > crate::clash::CLASH_TOLERANCE + 1e-9 {
+                continue;
+            }
+            return Some((x, y));
+        }
+    }
+    None
 }
 
 /// L13: an end lying within this of a flange's plane of today's choice
@@ -5020,14 +5687,14 @@ fn strip_of(
             let mut fit = false;
             for room in rooms_for(&t, s) {
                 match own_geometry(&t, 0.0, 0.0, t.face, t.out, g.t, s.gap, room) {
-                    Ok(geo) if within(room, geo.out_more, g.t) => {
+                    Ok(geo) if within(room, geo.out_more, g.t, s) => {
                         fit = true;
                         for c in &geo.outline {
                             lo = lo.min(l(*c));
                             hi = hi.max(l(*c));
                         }
                     }
-                    Ok(geo) => errs.push((room, farther_out(geo.out_more, g.t))),
+                    Ok(geo) => errs.push((room, farther_out(geo.out_more, g.t, room, s))),
                     Err(e) => errs.push((room, e)),
                 }
             }
@@ -5343,12 +6010,22 @@ fn rooms_words(errs: &[(Room, String)]) -> String {
 /// within the limit (`more` farther out of the flange than on a flat
 /// plate, m): at most a plate's thickness `t` farther out (step 4); bent
 /// (L3), at most that nearer either.
-fn within(room: Room, more: f64, t: f64) -> bool {
+fn within(room: Room, more: f64, t: f64, s: &LayoutSettings) -> bool {
     match room {
-        Room::Weld => more <= t + 1e-9,
+        Room::Weld => more <= t + 1e-9 || (s.own_offset_analysed && more <= OWN_OUT_MAX + 1e-9),
         Room::Bend { .. } => more.abs() <= t + 1e-9,
     }
 }
+
+/// The most a plate in an end's own plane welded to the flat plate (step
+/// 4) may put its axis farther out of the flange than a flat plate would,
+/// m, where that offset is carried into the analysis
+/// ([`LayoutSettings::own_offset_analysed`]; L20 item 2): **the program's
+/// value, not a standard's** — measured on the private real towers (L19:
+/// of the ends refused beyond a plate's thickness, 89 % lie within 40 mm).
+/// The analysis takes the offset whole and of either sign in the member's
+/// own check (O45's estimated eccentricities).
+pub const OWN_OUT_MAX: f64 = 0.040;
 
 /// The cut of end `t` along it (m, up to the millimetre) from its cut on
 /// the flange's plane `c`.
@@ -5717,7 +6394,15 @@ fn own_fits(
 /// Why a plate in a member's own plane is not laid out: its axis `more`
 /// farther out of the flange than on a flat plate, more than a plate of
 /// thickness `t` (its leg's), m.
-fn farther_out(more: f64, t: f64) -> String {
+fn farther_out(more: f64, t: f64, room: Room, s: &LayoutSettings) -> String {
+    if room == Room::Weld && s.own_offset_analysed && more > 0.0 {
+        return format!(
+            "its axis would lie {:.0} mm farther out of the flange than on a flat plate (more \
+             than the {:.0} mm the analysis takes for a plate in its own plane)",
+            more * 1000.0,
+            OWN_OUT_MAX * 1000.0
+        );
+    }
     format!(
         "its axis would lie {:.0} mm {} than on a flat plate (more than a plate's {:.0} mm: its \
          line of action that far off the work point is not in the analysis)",

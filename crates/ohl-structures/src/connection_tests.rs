@@ -667,5 +667,60 @@ fn a_plate_between_a_built_up_members_angles_is_read() {
     let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"6 mm\"\n");
     assert!(!parse(&plain).unwrap().plates[0].between);
     assert_eq!(crate::connections::PLATE_BETWEEN_VERSION, 25);
-    assert!(parse(&text.replace("version = 25", "version = 26")).is_err());
+    assert!(parse(&text.replace("version = 25", "version = 26")).is_ok());
+}
+
+/// A plate's own bolts onto a second member (`[plate.also_bolts]`, version
+/// 26, 2026-11-24, the joint layout's L20: a level plate across two
+/// horizontals): read; a member not at the joint, the member its
+/// `leg_bolts` name, no places or a count differing said and kept; a plate
+/// without them reads as before; a file of version 26 is read, a newer one
+/// refused.
+#[test]
+fn a_plates_own_bolts_onto_a_second_member_are_read() {
+    let text = format!(
+        "format = \"ohl-structure\"\nversion = 26\n{BODY}\
+         [[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\non = \"L2\"\n\
+         [plate.leg_bolts]\nmember = \"L2\"\nleg = \"long\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n\
+         bolt_points = [[\"60 mm\", \"35 mm\"], [\"110 mm\", \"35 mm\"]]\n\
+         [plate.also_bolts]\nmember = \"D1\"\nleg = \"short\"\n\
+         bolts = {{ count = 2, diameter = \"16 mm\" }}\n\
+         bolt_points = [[\"70 mm\", \"30 mm\"], [\"120 mm\", \"30 mm\"]]\n"
+    );
+    let t = parse(&text).unwrap();
+    let a = t.plates[0].also_bolts.as_ref().expect("read");
+    assert_eq!(a.member, "D1");
+    assert_eq!(a.bolt_points.len(), 2);
+    assert!(
+        t.connection_notes().is_empty(),
+        "{:?}",
+        t.connection_notes()
+    );
+    let away = text.replace("member = \"D1\"", "member = \"D9\"");
+    let notes = parse(&away).unwrap().connection_notes();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("also_bolts onto D9") && n.contains("does not meet at joint N2")),
+        "{notes:?}"
+    );
+    let same = text.replace("member = \"D1\"", "member = \"L2\"");
+    let notes = parse(&same).unwrap().connection_notes();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.contains("also_bolts onto L2") && n.contains("its leg_bolts name")),
+        "{notes:?}"
+    );
+    let count = text.replacen("count = 2", "count = 3", 2);
+    let notes = parse(&count).unwrap().connection_notes();
+    assert!(
+        notes.iter().any(|n| n.contains("also_bolts count 3 but 2")),
+        "{notes:?}"
+    );
+    let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n");
+    assert!(parse(&plain).unwrap().plates[0].also_bolts.is_none());
+    assert_eq!(crate::connections::PLATE_ALSO_BOLTS_VERSION, 26);
+    assert!(parse(&text.replace("version = 26", "version = 27")).is_err());
 }

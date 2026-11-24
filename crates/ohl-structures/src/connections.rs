@@ -83,6 +83,12 @@
 //! bolts = { count = 2, diameter = "16 mm", grade = "8.8" }   # either
 //! bolt_points = [["-40 mm", "35 mm"], ["40 mm", "35 mm"]]    # piece)
 //!
+//! [plate.also_bolts]      # its own bolts onto a second member (2026-11-24,
+//! member = "H2"           #   version 26): a level plate lying on the level
+//! leg = "short"           #   legs of two horizontals meeting at the joint,
+//! bolts = { count = 2, diameter = "16 mm", grade = "8.8" }   # held by both
+//! bolt_points = [["60 mm", "35 mm"], ["110 mm", "35 mm"]]    # (as leg_bolts)
+//!
 //! [[plate]]
 //! id = "G3"
 //! joint = "N7"
@@ -104,6 +110,16 @@
 //! it — a leg running on through the joint (`kind = "continuous"`): each
 //! bolt along the member from the joint's work point (negative: past the
 //! joint, on the piece running on) and across its flange from the heel.
+//!
+//! A plate's **own bolts onto a second member** (`[plate.also_bolts]`,
+//! 2026-11-24, the automatic joint layout's L20, [`TypePlate::also_bolts`])
+//! hold it on that member too: a level plate lying on the level legs of two
+//! horizontals meeting at the joint (its `leg_bolts` onto the one it is
+//! `on`, these onto the other), carrying plan and hip ends that lie on
+//! neither member's own flange. Given as `[plate.leg_bolts]` (the member,
+//! its leg, the bolts, each along that member from the joint's work point
+//! and across its flange from the heel); the joints' own checks take both
+//! as the plate's holding bolts.
 //!
 //! A **bent plate** (`[plate.bend]`, 2026-11-19, the automatic joint
 //! layout's step J2b, [`TypeBend`]) is one plate folded along a line: its
@@ -617,6 +633,12 @@ pub const PLATE_HELD_BY_VERSION: u32 = 24;
 /// says so.
 pub const PLATE_BETWEEN_VERSION: u32 = 25;
 
+/// The structure file version of a plate's own bolts onto a second member
+/// (`[plate.also_bolts]`, 2026-11-24, the automatic joint layout's L20: a
+/// level plate across two horizontals): a file is written at 26 only when
+/// a plate gives them.
+pub const PLATE_ALSO_BOLTS_VERSION: u32 = 26;
+
 /// A plate bent from another plate of its joint (`[plate.bend]`,
 /// 2026-11-19, structure file version 22): the two are the two flats of
 /// one bent plate, folded along `line`. Read as one part (its weight from
@@ -700,6 +722,13 @@ pub struct TypePlate {
     /// that member facing its members, as before.
     #[serde(default)]
     pub between: bool,
+    /// Its own bolts onto a second member of the joint
+    /// (`[plate.also_bolts]`, 2026-11-24, version 26, the automatic joint
+    /// layout's L20: a level plate lying on the level legs of two
+    /// horizontals, held by both — `leg_bolts` onto the one it is `on`,
+    /// these onto the other); none: held as before.
+    #[serde(default)]
+    pub also_bolts: Option<PlateLegBolts>,
 }
 
 impl TypePlate {
@@ -1170,6 +1199,47 @@ impl StructureType {
                 if matches!(l.leg, Some(BoltedLeg::Both | BoltedLeg::None)) {
                     out.push(format!(
                         "plate {}: leg_bolts leg = \"{}\": long or short only (worked out instead)",
+                        p.id,
+                        l.leg.map_or("", |x| x.as_str())
+                    ));
+                }
+            }
+            if let Some(l) = &p.also_bolts {
+                if !self
+                    .members
+                    .iter()
+                    .any(|x| x.id == l.member && x.nodes.contains(&p.joint))
+                {
+                    out.push(format!(
+                        "plate {}: also_bolts onto {}: it does not meet at joint {} (kept, not \
+                         used)",
+                        p.id, l.member, p.joint
+                    ));
+                }
+                if p.leg_bolts.as_ref().is_some_and(|x| x.member == l.member) {
+                    out.push(format!(
+                        "plate {}: also_bolts onto {}, the member its leg_bolts name (kept, not \
+                         used)",
+                        p.id, l.member
+                    ));
+                }
+                if l.bolt_points.is_empty() {
+                    out.push(format!(
+                        "plate {}: also_bolts without bolt_points (kept, not used)",
+                        p.id
+                    ));
+                } else if l.bolts.count as usize != l.bolt_points.len() {
+                    out.push(format!(
+                        "plate {}: also_bolts count {} but {} bolt_points: the points taken",
+                        p.id,
+                        l.bolts.count,
+                        l.bolt_points.len()
+                    ));
+                }
+                if matches!(l.leg, Some(BoltedLeg::Both | BoltedLeg::None)) {
+                    out.push(format!(
+                        "plate {}: also_bolts leg = \"{}\": long or short only (worked out \
+                         instead)",
                         p.id,
                         l.leg.map_or("", |x| x.as_str())
                     ));

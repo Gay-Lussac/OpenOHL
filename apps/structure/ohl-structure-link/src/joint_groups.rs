@@ -818,11 +818,18 @@ fn riders_into<'a>(
     let Some(h) = j.arrivals.iter().find(|a| a.member == host) else {
         return;
     };
+    // (L20) A level plate held by this member and a second one (its
+    // `also_bolts`): the plate's force goes on through this member's own
+    // end bolts as a rider's does (below).
+    let level = |p: &&crate::joints::PlateDetail| {
+        p.also_bolts.is_some() && p.holding_ends().any(|l| l.member == host)
+    };
     if h.modelling
         || crate::welds::joint_legs(j).iter().any(|l| l.member == host)
         || j.plates.iter().any(|p| {
-            p.leg_bolts.as_deref().is_some_and(|l| l.member == host)
-                || p.held_by.as_deref() == Some(host)
+            !level(&p)
+                && (p.leg_bolts.as_deref().is_some_and(|l| l.member == host)
+                    || p.held_by.as_deref() == Some(host))
         })
         || run_at(j, host).0.len() > 1
     {
@@ -843,6 +850,27 @@ fn riders_into<'a>(
         seen.push(e.member.clone());
         out.push(e);
         riders_into(j, &e.member, seen, out);
+    }
+    // (L20) The ends bolted onto a level plate it holds (not its other
+    // holder): each holder's own end bolts taken carrying their whole force
+    // (on the safe side: how the two share it is not counted on).
+    for p in j.plates.iter().filter(level) {
+        for e in j.arrivals.iter().filter(|e| {
+            e.onto.value.as_deref() == Some(p.id.as_str())
+                && !e.modelling
+                && e.continuous.is_none()
+                && !p.holding_ends().any(|l| l.member == e.member)
+                && e.kind
+                    .value
+                    .is_none_or(|k| k == ohl_structures::connections::ConnectionKind::Bolted)
+        }) {
+            if seen.contains(&e.member) {
+                continue;
+            }
+            seen.push(e.member.clone());
+            out.push(e);
+            riders_into(j, &e.member, seen, out);
+        }
     }
 }
 
@@ -1221,13 +1249,8 @@ fn end_bolt_groups(
 /// leg (`[plate.leg_bolts]`, 2026-11-19) as that leg's end bolted onto it.
 fn onto_plate<'a>(j: &'a JointDetail, q: &str) -> Vec<Cow<'a, Arrival>> {
     let mut v = crate::joints::bolted_onto(&j.arrivals, q);
-    if let Some(a) = j
-        .plates
-        .iter()
-        .find(|p| p.id == q)
-        .and_then(|p| p.leg_bolts.as_deref())
-    {
-        v.push(Cow::Borrowed(a));
+    if let Some(p) = j.plates.iter().find(|p| p.id == q) {
+        v.extend(p.holding_ends().map(Cow::Borrowed));
     }
     v
 }
@@ -1248,10 +1271,10 @@ fn holding_groups(
     // (L14) the member whose own end bolts onto a plate are said to hold it
     // (`held_by`: where nothing runs through the joint, the base member).
     for p in &j.plates {
-        if let Some(a) = p.leg_bolts.as_deref()
-            && !legs.contains(&a.member)
-        {
-            legs.push(a.member.clone());
+        for a in p.holding_ends() {
+            if !legs.contains(&a.member) {
+                legs.push(a.member.clone());
+            }
         }
         if let Some(m) = p.held_by.as_deref()
             && !legs.iter().any(|l| l == m)
@@ -1281,6 +1304,23 @@ fn holding_groups(
             .filter(|(_, a)| !a.modelling)
             .collect();
         let held = |a: &Arrival| legs.contains(&a.member);
+        // (L20) A level plate held by two members (`also_bolts`): neither
+        // holder's force taken as a force on it — each holder's bolts carry
+        // the other ends' forces whole (on the safe side for the bolts; the
+        // force the plate may pass between its two holders is not counted:
+        // said).
+        let level = asm.iter().any(|q| {
+            j.plates
+                .iter()
+                .any(|p| &p.id == q && p.also_bolts.is_some())
+        });
+        let other_end = |run: &[String], a: &Arrival| {
+            if level {
+                !held(a)
+            } else {
+                !run.contains(&a.member)
+            }
+        };
         if on.iter().all(|(_, a)| held(a)) {
             continue;
         }
@@ -1361,7 +1401,7 @@ fn holding_groups(
                 // the plate's own prying).
                 let pulls: Vec<V3> = on
                     .iter()
-                    .filter(|(_, a)| !run.contains(&a.member))
+                    .filter(|(_, a)| other_end(&run, a))
                     .flat_map(|(_, a)| a.bolt_points.iter().copied())
                     .collect();
                 let holding: Vec<V3> = holders
@@ -1446,7 +1486,7 @@ fn holding_groups(
                 };
                 let sources: Vec<Source> = on
                     .iter()
-                    .filter(|(_, a)| !run.contains(&a.member))
+                    .filter(|(_, a)| other_end(&run, a))
                     .map(|(_, a)| {
                         if a.bolt_points.is_empty() {
                             push_once(
@@ -1520,6 +1560,36 @@ fn holding_groups(
                     notes.push(format!(
                         "plate {q}'s own bolts onto {} ([plate.leg_bolts]) among its holding bolts",
                         l.member
+                    ));
+                }
+                if let Some(l) = pd.also_bolts.as_deref() {
+                    let other: Vec<&str> = pd
+                        .holding_ends()
+                        .map(|x| x.member.as_str())
+                        .filter(|m| !run.iter().any(|r| r == m))
+                        .collect();
+                    if run.contains(&l.member) {
+                        notes.push(format!(
+                            "plate {q}'s own bolts onto {} ([plate.also_bolts]) among its holding \
+                             bolts",
+                            l.member
+                        ));
+                    }
+                    notes.push(format!(
+                        "plate {q} is a level plate held by two members ({}): these bolts \
+                         taken carrying the force of every other end on it alone (on the safe \
+                         side), the other holder's force not taken as a force on it; NOT ON THE \
+                         SAFE SIDE: a force the plate passes between its two holders (they are \
+                         joined by it) is not counted ({} its other holder)",
+                        pd.holding_ends()
+                            .map(|x| x.member.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        if other.is_empty() {
+                            "none".to_owned()
+                        } else {
+                            other.join(", ")
+                        }
                     ));
                 }
                 if plates.len() > 1 {
@@ -1620,7 +1690,7 @@ fn bearing_groups(
     let leg_ends: Vec<&Arrival> = j
         .arrivals
         .iter()
-        .chain(j.plates.iter().filter_map(|p| p.leg_bolts.as_deref()))
+        .chain(j.plates.iter().flat_map(|p| p.holding_ends()))
         .collect();
     for (k, g) in out.groups.iter().enumerate().skip(first) {
         if !g.holding {

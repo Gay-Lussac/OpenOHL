@@ -192,7 +192,7 @@ fn holes_through(j: &JointDetail, id: &str, leg: Option<Option<CoverLeg>>) -> f6
         .plates
         .iter()
         .filter(|p| p.id == id)
-        .filter_map(|p| p.leg_bolts.as_deref())
+        .flat_map(|p| p.holding_ends())
         .map(std::borrow::Cow::Borrowed);
     bolted_onto(&j.arrivals, id)
         .into_iter()
@@ -317,11 +317,11 @@ pub(crate) fn quantities_of(
     };
     for j in &details.joints {
         // A plate's own bolts onto the leg (`[plate.leg_bolts]`,
-        // 2026-11-19): bolts, and holes through the leg.
+        // 2026-11-19) and (L20) onto a second member (`[plate.also_bolts]`):
+        // bolts, and holes through that member.
         for p in &j.plates {
-            if let Some(a) = p.leg_bolts.as_deref()
-                && let Some(b) = &a.bolts.value
-            {
+            for a in p.holding_ends() {
+                let Some(b) = &a.bolts.value else { continue };
                 let hole = hole_area(b.hole.unwrap_or(b.diameter));
                 let through: f64 = a.bolts_with_axes().map(|(_, _, g)| hole * g[0]).sum();
                 *member_holes.entry(a.member.clone()).or_default() += through;

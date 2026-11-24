@@ -1091,10 +1091,14 @@ fn d1_spoiled(deg: f64) -> String {
 /// Step 4 never forced: 30° off, the welded plate would put D1's axis
 /// more than the plate's thickness farther out of the flange than a flat
 /// plate would — its line of action off the work point, not in the
-/// analysis: a hand detail, said.
+/// analysis: a hand detail, said (L20 item 2 off: as before).
 #[test]
 fn a_welded_plate_that_would_move_the_member_far_out_is_a_hand_detail() {
-    let r = run(&d1_spoiled(30.0), &settings(), Some(&["N2"]), false);
+    let s = LayoutSettings {
+        own_offset_analysed: false,
+        ..settings()
+    };
+    let r = run(&d1_spoiled(30.0), &s, Some(&["N2"]), false);
     let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
     assert!(o.plan.ends.iter().all(|e| e.member != "D1"), "{:?}", o.plan);
     assert!(
@@ -1104,6 +1108,62 @@ fn a_welded_plate_that_would_move_the_member_far_out_is_a_hand_detail() {
         "{:?}",
         o.hand
     );
+}
+
+/// L20 item 2 (L19's question 7a): the same end 30° off, its welded plate
+/// putting its axis more than a plate's thickness farther out of the
+/// flange, is laid out where that offset (at most `OWN_OUT_MAX`) is carried
+/// into the analysis: recorded with the plate (`axis_out=`), taken by the
+/// estimated eccentricities as the end's plate offset (either sign).
+#[test]
+fn a_welded_plate_moving_the_member_far_out_is_laid_out_with_its_offset_recorded() {
+    let r = run(&d1_spoiled(30.0), &settings(), Some(&["N2"]), false);
+    let o = r.joints.iter().find(|j| j.joint == "N2").unwrap();
+    assert!(o.written, "{:?} {:?}", o.hand, r.notes);
+    let e = o
+        .plan
+        .ends
+        .iter()
+        .find(|e| e.member == "D1")
+        .unwrap_or_else(|| panic!("D1 not laid out: {:?}", o.hand));
+    let crate::Onto::Plate(k) = e.onto else {
+        panic!("{e:?}")
+    };
+    let pl = &o.plan.plates[k];
+    let own = pl.own.as_ref().expect("in its own plane");
+    assert!(own.bend.is_none(), "{own:?}");
+    assert!(
+        own.out_more > pl.thickness && own.out_more <= crate::joint_layout::OWN_OUT_MAX + 1e-9,
+        "{own:?}"
+    );
+    let t = parse(&r.text);
+    let rec = LayoutRecord::of(&t);
+    let id = &o.plates[k];
+    let got = rec.own_out(id).expect("the offset recorded");
+    assert!((got - own.out_more).abs() < 1e-4, "{got} {}", own.out_more);
+    // The estimates take it as the end's plate offset (laid out).
+    let lib = library();
+    let bolts = Default::default();
+    let est = crate::eccentricities::estimate(
+        &r.text,
+        &crate::eccentricities::EstimateAsk {
+            library: &lib,
+            bolts: &bolts,
+            presets: &[],
+        },
+    )
+    .unwrap();
+    let d1 = est
+        .ends
+        .iter()
+        .find(|x| x.member == "D1" && x.joint == "N2")
+        .expect("D1 at N2 estimated");
+    assert_eq!(d1.source, crate::eccentricities::Source::LaidOut);
+    assert!((d1.plate - got).abs() < 1e-9, "{d1:?}");
+    assert!(d1.either_sign());
+    // A run again: the same file.
+    let again = run(&r.text, &settings(), Some(&["N2"]), false);
+    assert_eq!(again.text, r.text);
 }
 
 /// The owner's step 4 (2026-11-19): an end no roll lays flat goes onto a
@@ -1255,6 +1315,12 @@ fn a_run_keeps_the_place_of_a_member_left_by_hand() {
 #[test]
 fn a_member_named_but_not_laid_out_is_planned_where_it_is_drawn() {
     let text = tall();
+    // (L20 item 2 off: a member it leaves would now go onto a welded plate
+    // farther out where the file draws it — laid out, not left.)
+    let settings = || LayoutSettings {
+        own_offset_analysed: false,
+        ..settings()
+    };
     let r = run(&text, &settings(), None, false);
     let off = LayoutSettings {
         as_drawn: false,
@@ -1927,9 +1993,12 @@ fn a_welded_plates_flat_plate_is_planned_as_written_clear_of_a_run_on_its_face()
          \n[[connection]]\nmember = \"D2\"\njoint = \"N2\"\nonto = \"L2\"\n",
         d1_spoiled(10.0)
     );
+    // (L20 item 2 off: the plates of L9's time, their members' axes at
+    // most a plate's thickness out.)
     let welded = |reach_clear: bool| LayoutSettings {
         small_bends: false,
         reach_clear,
+        own_offset_analysed: false,
         ..settings()
     };
     let on = run(&text, &welded(true), Some(&["N2"]), false);

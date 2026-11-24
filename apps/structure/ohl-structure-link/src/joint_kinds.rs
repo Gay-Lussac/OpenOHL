@@ -465,6 +465,11 @@ pub fn map_plan(p: &crate::joint_layout::JointPlan, l: &Like) -> crate::joint_la
                     h.member = m(&h.member);
                     h
                 }),
+                also: x.also.as_ref().map(|h| {
+                    let mut h = h.clone();
+                    h.member = m(&h.member);
+                    h
+                }),
             })
             .collect(),
         hand: p.hand.iter().map(|h| l.words(h)).collect(),
@@ -497,10 +502,11 @@ pub fn map_hold_legs(
         let along_y = (name == "long") == (g.b >= g.h);
         Some(if along_y { q.axes[1] } else { q.axes[2] })
     };
-    for x in &mut p.plates {
-        let Some(h) = x.hold.as_mut() else {
-            continue;
-        };
+    for h in p
+        .plates
+        .iter_mut()
+        .flat_map(|x| x.hold.iter_mut().chain(x.also.iter_mut()))
+    {
         let Some(name) = h.leg else {
             continue;
         };

@@ -72,6 +72,18 @@ pub const BENT: &str = "bend";
 /// the layout gave (`made`; a bent plate's flat on the flange, J2b): the
 /// plate is then also listed among the provisional bolts as (plate, joint).
 pub const HOLD: &str = "leg_bolts";
+/// The record's mark of a level plate's own bolts onto its second holder
+/// (L20, `[plate.also_bolts]`).
+pub const ALSO: &str = "also_bolts";
+
+/// The record's mark of a plate in its member's own plane welded to the
+/// flat plate (`made`, with [`OWN_PLANE`]; L20 item 2) that puts its
+/// member's axis more than the plate's thickness farther out of the flange
+/// than a flat plate would: "axis_out=23.4", that offset in millimetres —
+/// carried into the analysis by the estimated eccentricities
+/// ([`crate::eccentricities`]); without them the analysis says NOT ON THE
+/// SAFE SIDE for such ends.
+pub const OWN_OUT: &str = "axis_out=";
 
 /// The record's mark of a splice the layout made (`made`, with `cover`
 /// and the covers' thickness as written; step 1c, 2026-11-19).
@@ -297,6 +309,20 @@ impl RecordSettings {
 }
 
 impl LayoutRecord {
+    /// The offset a plate the layout made in its member's own plane puts
+    /// that member's axis farther out of the flange than a flat plate would
+    /// (its `OWN_OUT` mark), m — plate `id`; none: no such mark (within a
+    /// plate's thickness, or no such plate).
+    pub fn own_out(&self, id: &str) -> Option<f64> {
+        self.made.get(id).and_then(|(_, marks)| {
+            marks
+                .iter()
+                .find_map(|m| m.strip_prefix(OWN_OUT))
+                .and_then(|v| v.parse::<f64>().ok())
+                .map(|mm| mm / 1000.0)
+        })
+    }
+
     /// The record of structure `t` (empty: none).
     pub fn of(t: &StructureType) -> Self {
         t.generators
@@ -1145,7 +1171,9 @@ fn lay_out_once(
             named = true;
         }
         let joined: BTreeSet<&str> = js.iter().map(|x| x.member.as_str()).collect();
-        for (m, host, by_plane) in crate::joint_layout::named_hosts(j, settings.plane_hosts) {
+        for (m, host, by_plane) in
+            crate::joint_layout::named_hosts(j, settings.plane_hosts, settings.level_plates)
+        {
             let in_line_here = js.iter().any(|x| x.member == m || x.onto == m);
             if in_line_here || joined.contains(m.as_str()) {
                 continue;
@@ -1833,6 +1861,8 @@ fn lay_out_once(
                         named: guard.borrow().named.clone(),
                         between_tried: BTreeMap::new(),
                         between_kept: guard.borrow().between_kept.clone(),
+                        level: BTreeMap::new(),
+                        no_level: guard.borrow().no_level.clone(),
                     });
                     let turns: BTreeMap<&String, f64> = t.iter().map(|(m, x)| (m, *x)).collect();
                     let p = planned_in(&turns, &turn_s, &scratch)?;
@@ -2278,6 +2308,7 @@ fn lay_out_once(
                     guard.borrow().plain.contains(joint),
                     guard.borrow().no_l11.contains(joint),
                     guard.borrow().no_between.contains(joint),
+                    guard.borrow().no_level.contains(joint),
                 ),
             );
             p.joins = joins
@@ -2477,6 +2508,35 @@ fn lay_out_once(
                     g.no_l11.insert(j.clone());
                     touched.insert(j.clone());
                 }
+                // L20's guard: a joint a level plate's bolts onto its second
+                // holder, or (item 2) a plate in its member's own plane
+                // farther out, changed laid out with fewer ends than its plan
+                // without them lays out, or as many on more plates — planned
+                // again without them.
+                let mut back20: Vec<String> = Vec::new();
+                for o in &outcomes {
+                    let Some(&(n, np)) = g.level.get(&o.joint) else {
+                        continue;
+                    };
+                    let (laid, plates) = if o.written {
+                        (o.plan.ends.len(), o.plates.len())
+                    } else {
+                        (0, 0)
+                    };
+                    if (laid < n || (laid == n && plates > np))
+                        && !g.no_level.contains(&o.joint)
+                        && !back.contains(&o.joint)
+                        && !back11.contains(&o.joint)
+                        && !back15.contains(&o.joint)
+                        && !kept15.contains(&o.joint)
+                    {
+                        back20.push(o.joint.clone());
+                    }
+                }
+                for j in &back20 {
+                    g.no_level.insert(j.clone());
+                    touched.insert(j.clone());
+                }
                 for j in &back {
                     g.plain.insert(j.clone());
                     touched.insert(j.clone());
@@ -2493,6 +2553,7 @@ fn lay_out_once(
                     || !back11.is_empty()
                     || !back15.is_empty()
                     || !kept15.is_empty()
+                    || !back20.is_empty()
                 {
                     drop(g);
                     if settings.onto_search {
@@ -3180,7 +3241,8 @@ fn plans_of(
         let plain = g.plain.contains(&j.id);
         let no_l11 = g.no_l11.contains(&j.id);
         let no_between = g.no_between.contains(&j.id);
-        let own_with3 = |plain: bool, no_l11: bool, no_between: bool| {
+        let no_level = g.no_level.contains(&j.id);
+        let own_with4 = |plain: bool, no_l11: bool, no_between: bool, no_level: bool| {
             crate::joint_layout::plan_joint_ctx(
                 j,
                 settings,
@@ -3197,14 +3259,18 @@ fn plans_of(
                     plain,
                     no_l11,
                     no_between,
+                    no_level,
                 ),
             )
+        };
+        let own_with3 = |plain: bool, no_l11: bool, no_between: bool| {
+            own_with4(plain, no_l11, no_between, no_level)
         };
         let own_with = |plain: bool, no_l11: bool| own_with3(plain, no_l11, no_between);
         let own = |plain: bool| own_with(plain, no_l11);
         let mut p = match kinds
             .get(&j.id)
-            .filter(|_| !plain && !no_l11 && !no_between)
+            .filter(|_| !plain && !no_l11 && !no_between && !no_level)
             .and_then(|l| planned.get(&l.of).map(|p| (l, p)))
         {
             Some((l, rep)) => {
@@ -3216,7 +3282,7 @@ fn plans_of(
             }
             None => {
                 let p = own(plain);
-                if !plain && !no_l11 && !no_between {
+                if !plain && !no_l11 && !no_between && !no_level {
                     planned.insert(j.id.clone(), p.clone());
                 }
                 p
@@ -3267,6 +3333,39 @@ fn plans_of(
                     .insert(j.id.clone(), (pre.ends.len(), pre.plates.len()));
             }
         }
+        // L20: the plan without the level plates' bolts onto their second
+        // holders, for the guard (only where a plate has them).
+        if !plain && !no_level {
+            g.level.remove(&j.id);
+        }
+        // (Also where a plate's own bolts onto the first holder were laid
+        // out on it grown along it, L20: at a joint with three level ends.)
+        let level_ends = j
+            .arrivals
+            .iter()
+            .filter(|a| a.direction[2].abs() <= crate::joints::HORIZONTAL_OFF.to_radians().sin())
+            .count();
+        // (Item 2: where a plate in its member's own plane puts its axis
+        // farther out than a plate's thickness.)
+        let far_out = settings.own_offset_analysed
+            && p.plates.iter().any(|q| {
+                q.own
+                    .as_ref()
+                    .is_some_and(|w| w.out_more > q.thickness + 1e-9)
+            });
+        if !plain
+            && !no_level
+            && ((settings.level_plates
+                && (p.plates.iter().any(|q| q.also.is_some())
+                    || (level_ends >= 3 && p.plates.iter().any(|q| q.hold.is_some()))))
+                || far_out)
+        {
+            let pre = own_with4(false, no_l11, no_between, true);
+            if pre.ends != p.ends || pre.plates != p.plates {
+                g.level
+                    .insert(j.id.clone(), (pre.ends.len(), pre.plates.len()));
+            }
+        }
         // L1 (b, c in the plan): today's plan of the joint, for the guard.
         if in_plan && !plain {
             let today = own(true);
@@ -3297,6 +3396,7 @@ fn ctx_of(
     plain: bool,
     no_l11: bool,
     no_between: bool,
+    no_level: bool,
 ) -> crate::joint_layout::PlanCtx {
     crate::joint_layout::PlanCtx {
         plated: plated.clone(),
@@ -3305,6 +3405,7 @@ fn ctx_of(
         plain,
         no_l11,
         no_between,
+        no_level,
     }
 }
 
@@ -3343,6 +3444,14 @@ struct Guard {
     /// L16: the joints whose entry in [`Guard::changed`] L1 d's names made
     /// (today's ends before them; kept when the joint is planned again).
     named: BTreeSet<String>,
+    /// L20: the joints whose plan a level plate's bolts onto its second
+    /// holder, or (item 2) a plate in its member's own plane farther out,
+    /// changed, with the ends and plates their plan without them lays out;
+    /// a joint laid out with fewer ends after the clash rounds, or as many
+    /// on more plates, is planned again without them ([`Guard::no_level`]).
+    level: BTreeMap<String, (usize, usize)>,
+    /// L20: the joints planned without the level plates' second holders.
+    no_level: BTreeSet<String>,
 }
 
 /// Join `x` at joint `j` written into `doc` (its end's `kind` and `onto`,
@@ -4152,92 +4261,95 @@ fn write_rounds(
                 let Some(pd) = j.plates.iter().find(|p| &p.id == id) else {
                     continue;
                 };
-                let Some(h) = pd.leg_bolts.as_deref() else {
-                    continue;
-                };
-                // (And on that member's steel where it ends at the joint,
-                // past its cut: as for an end bolted onto it.)
-                let start = j
-                    .arrivals
-                    .iter()
-                    .find(|x| x.member == h.member)
-                    .and_then(|host| {
-                        let ends = host.continuous.is_none()
-                            && !j
-                                .arrivals
-                                .iter()
-                                .any(|b| b.continuous.as_deref() == Some(host.member.as_str()));
-                        (ends && host.cut.known())
-                            .then(|| (host.cut.value.unwrap_or(0.0), host.direction))
+                // (L20: and its own bolts onto a second member, alike.)
+                for h in pd.holding_ends() {
+                    // (And on that member's steel where it ends at the joint,
+                    // past its cut: as for an end bolted onto it.)
+                    let start =
+                        j.arrivals
+                            .iter()
+                            .find(|x| x.member == h.member)
+                            .and_then(|host| {
+                                let ends = host.continuous.is_none()
+                                    && !j.arrivals.iter().any(|b| {
+                                        b.continuous.as_deref() == Some(host.member.as_str())
+                                    });
+                                (ends && host.cut.known())
+                                    .then(|| (host.cut.value.unwrap_or(0.0), host.direction))
+                            });
+                    let outside = pd.outline.len() >= 3
+                        && h.bolt_points.iter().any(|at| {
+                            crate::plate_checks::ray_to_outline(&pd.outline, *at, h.direction)
+                                .is_none()
+                        });
+                    let beyond = start.is_some_and(|(c, d)| {
+                        h.bolt_points
+                            .iter()
+                            .any(|at| dot3(sub3(*at, j.position), d) < c - 0.001)
                     });
-                let outside = pd.outline.len() >= 3
-                    && h.bolt_points.iter().any(|at| {
-                        crate::plate_checks::ray_to_outline(&pd.outline, *at, h.direction).is_none()
-                    });
-                let beyond = start.is_some_and(|(c, d)| {
-                    h.bolt_points
+                    // (J2b fix, 2026-11-20) Nor through a hole of that member's
+                    // own end or of an end bolted onto it (or onto the run it is
+                    // one part of), as written — the joint checks' own rule.
+                    let hole_of = |x: &crate::Arrival| {
+                        x.bolts
+                            .value
+                            .as_ref()
+                            .map_or(0.0, |b| b.hole.unwrap_or(b.diameter))
+                    };
+                    let run = |m: &str| {
+                        m == h.member
+                            || j.arrivals.iter().any(|x| {
+                                (x.member == h.member && x.continuous.as_deref() == Some(m))
+                                    || (x.member == m && x.continuous.as_deref() == Some(&h.member))
+                            })
+                    };
+                    let overlap = j
+                        .arrivals
                         .iter()
-                        .any(|at| dot3(sub3(*at, j.position), d) < c - 0.001)
-                });
-                // (J2b fix, 2026-11-20) Nor through a hole of that member's
-                // own end or of an end bolted onto it (or onto the run it is
-                // one part of), as written — the joint checks' own rule.
-                let hole_of = |x: &crate::Arrival| {
-                    x.bolts
-                        .value
-                        .as_ref()
-                        .map_or(0.0, |b| b.hole.unwrap_or(b.diameter))
-                };
-                let run = |m: &str| {
-                    m == h.member
-                        || j.arrivals.iter().any(|x| {
-                            (x.member == h.member && x.continuous.as_deref() == Some(m))
-                                || (x.member == m && x.continuous.as_deref() == Some(&h.member))
+                        .filter(|x| {
+                            x.member == h.member || x.onto.value.as_deref().is_some_and(run)
                         })
-                };
-                let overlap = j
-                    .arrivals
-                    .iter()
-                    .filter(|x| x.member == h.member || x.onto.value.as_deref().is_some_and(run))
-                    .find(|x| {
-                        x.bolt_points.iter().any(|q| {
-                            h.bolt_points
-                                .iter()
-                                .any(|p| holes_overlap(*p, hole_of(h), *q, hole_of(x)))
+                        .find(|x| {
+                            x.bolt_points.iter().any(|q| {
+                                h.bolt_points
+                                    .iter()
+                                    .any(|p| holes_overlap(*p, hole_of(h), *q, hole_of(x)))
+                            })
                         })
-                    })
-                    .map(|x| x.member.clone());
-                if !outside && !beyond && overlap.is_none() {
-                    continue;
-                }
-                let on = o.plan.plates.get(k).map_or("?", |p| p.on.as_str());
-                let why = if outside {
-                    format!(
-                        "a plate on {on}: its own bolts onto {} would lie outside its outline",
-                        h.member
-                    )
-                } else if beyond {
-                    format!(
-                        "a plate on {on}: its own bolts onto {} would lie beyond the end of its \
+                        .map(|x| x.member.clone());
+                    if !outside && !beyond && overlap.is_none() {
+                        continue;
+                    }
+                    let on = o.plan.plates.get(k).map_or("?", |p| p.on.as_str());
+                    let why = if outside {
+                        format!(
+                            "a plate on {on}: its own bolts onto {} would lie outside its outline",
+                            h.member
+                        )
+                    } else if beyond {
+                        format!(
+                            "a plate on {on}: its own bolts onto {} would lie beyond the end of its \
                          steel (not one part through the joint)",
-                        h.member
-                    )
-                } else {
-                    format!(
-                        "a plate on {on}: its own bolts onto {} would overlap the holes of {}",
-                        h.member,
-                        overlap.as_deref().unwrap_or("?")
-                    )
-                };
-                for (i, p) in o.plan.plates.iter().enumerate() {
-                    if i == k || p.own.as_ref().is_some_and(|w| w.welded_to == k) {
-                        for m in &p.members {
-                            out.entry(m.clone())
-                                .or_insert_with(|| format!("laid out, {why} (left as it was)"));
+                            h.member
+                        )
+                    } else {
+                        format!(
+                            "a plate on {on}: its own bolts onto {} would overlap the holes of {}",
+                            h.member,
+                            overlap.as_deref().unwrap_or("?")
+                        )
+                    };
+                    for (i, p) in o.plan.plates.iter().enumerate() {
+                        if i == k || p.own.as_ref().is_some_and(|w| w.welded_to == k) {
+                            for m in &p.members {
+                                out.entry(m.clone())
+                                    .or_insert_with(|| format!("laid out, {why} (left as it was)"));
+                            }
                         }
                     }
+                    bad.push(why);
+                    break;
                 }
-                bad.push(why);
             }
             // (L2, 2026-11-20, found measuring) The bolts of each member on
             // a plate the layout made within the plate's outline as written
@@ -5103,6 +5215,12 @@ fn write_plan(
             welds.push(weld);
             x.insert("weld", Item::ArrayOfTables(welds));
             auto.extend(["outline".into(), OWN_PLANE.into()]);
+            // L20 item 2: its member's axis more than the plate's thickness
+            // farther out of the flange: the offset recorded for the
+            // analysis.
+            if o.out_more > pl.thickness + 1e-9 {
+                auto.insert(format!("{OWN_OUT}{:.1}", o.out_more * 1000.0));
+            }
         }
         // A bent plate's flat on the flange (J2b): its own bolts onto the
         // member it lies on (`[plate.leg_bolts]`, as
@@ -5112,6 +5230,15 @@ fn write_plan(
             ohl_structure_edit::edits::raise_version(
                 doc,
                 i64::from(ohl_structures::connections::PLATE_LEG_BOLTS_VERSION),
+            );
+        }
+        // L20: a level plate's own bolts onto its second holder
+        // (`[plate.also_bolts]`, written as `leg_bolts` is).
+        if let Some(h) = &pl.also {
+            x.insert("also_bolts", Item::Table(hold_table(h)));
+            ohl_structure_edit::edits::raise_version(
+                doc,
+                i64::from(ohl_structures::connections::PLATE_ALSO_BOLTS_VERSION),
             );
         }
         if doc
@@ -5143,7 +5270,12 @@ fn write_plan(
         if pl.short {
             auto.insert(SHORT.into());
         }
-        if pl.hold.as_ref().is_some_and(|h| h.provisional) {
+        if pl.also.is_some() {
+            auto.insert(ALSO.into());
+        }
+        if pl.hold.as_ref().is_some_and(|h| h.provisional)
+            || pl.also.as_ref().is_some_and(|h| h.provisional)
+        {
             rec.provisional.insert((id.clone(), p.joint.clone()));
         }
         rec.made.insert(id.clone(), (p.joint.clone(), auto));

@@ -1078,6 +1078,27 @@ pub fn analyse_structure_with(
         Some(m) => estimated_models(input, m, &mut run),
         None => None,
     };
+    // (L20 item 2) Ends the layout laid out on a plate in their own plane
+    // putting their axis more than a plate's thickness out: that offset is
+    // in the analysis only with the estimated eccentricities.
+    if model.is_some() && estimated.is_none() {
+        let record = crate::layout_run::LayoutRecord::of(input.structure);
+        let outs: Vec<f64> = record
+            .made
+            .keys()
+            .filter_map(|id| record.own_out(id))
+            .collect();
+        if !outs.is_empty() {
+            run.notes.push(format!(
+                "NOT ON THE SAFE SIDE: {} plate(s) in their member's own plane laid out with the \
+                 member's axis more than the plate's thickness farther out of the flange (up to \
+                 {:.0} mm) — that offset is not in this analysis (the estimated eccentricities \
+                 carry it, an option at level 3)",
+                outs.len(),
+                outs.iter().fold(0.0f64, |a, b| a.max(*b)) * 1000.0
+            ));
+        }
+    }
     let names: Vec<String> = cases.iter().map(|c| c.name.clone()).collect();
     let poles: Vec<Option<Result<PoleResult, String>>> =
         crate::in_case_order(cases.len(), crate::threads(cases.len()), |k| {

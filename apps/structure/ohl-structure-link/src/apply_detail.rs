@@ -247,10 +247,12 @@ fn write(
                     b.insert("line", points(&line));
                 }
             }
-            if let Some(h) = x.get_mut("leg_bolts").and_then(Item::as_table_like_mut)
-                && let Some(m) = h.get("member").and_then(Item::as_str).and_then(onto_here)
-            {
-                h.insert("member", toml_edit::value(m));
+            for key in ["leg_bolts", "also_bolts"] {
+                if let Some(h) = x.get_mut(key).and_then(Item::as_table_like_mut)
+                    && let Some(m) = h.get("member").and_then(Item::as_str).and_then(onto_here)
+                {
+                    h.insert("member", toml_edit::value(m));
+                }
             }
             if !p.outline.is_empty() {
                 let o: Vec<[f64; 3]> = p

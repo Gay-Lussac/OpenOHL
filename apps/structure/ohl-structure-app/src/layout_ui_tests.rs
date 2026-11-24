@@ -1542,3 +1542,141 @@ section = "EA-61x7"
 orientation = "z-y-"
 design = { class = "bracing" }
 "#;
+
+/// An invented corner P (L20): a post V in two pieces, one part there, two
+/// horizontals H1 and H2 ending at P with their level legs in one plane,
+/// and a plan diagonal G between them, lying under those legs.
+const LEVEL: &str = r#"format = "ohl-structure"
+version = 18
+id = "L"
+name = "Level plate example"
+kind = "lattice"
+
+[[node]]
+id = "B0"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+
+[[node]]
+id = "P"
+point = ["0 m", "0 m", "3 m"]
+
+[[node]]
+id = "T0"
+point = ["0 m", "0 m", "6 m"]
+support = "fixed"
+
+[[node]]
+id = "W"
+point = ["-3 m", "0 m", "3 m"]
+support = "fixed"
+
+[[node]]
+id = "S"
+point = ["0 m", "-3 m", "3 m"]
+support = "fixed"
+
+[[node]]
+id = "G0"
+point = ["-2 m", "-2 m", "3 m"]
+support = "fixed"
+
+[[member]]
+id = "V1"
+nodes = ["B0", "P"]
+section = "EA-61x7"
+roll = "180 deg"
+design = { class = "leg" }
+
+[[member]]
+id = "V2"
+nodes = ["P", "T0"]
+section = "EA-61x7"
+roll = "180 deg"
+design = { class = "leg" }
+
+[[connection]]
+member = "V1"
+joint = "P"
+kind = "continuous"
+onto = "V2"
+
+[[member]]
+id = "H1"
+nodes = ["W", "P"]
+section = "EA-61x7"
+design = { class = "bracing" }
+
+[[member]]
+id = "H2"
+nodes = ["P", "S"]
+section = "EA-61x7"
+design = { class = "bracing" }
+
+[[member]]
+id = "G"
+nodes = ["P", "G0"]
+section = "EA-61x7"
+roll = "180 deg"
+design = { class = "redundant" }
+"#;
+
+/// L20 (2026-11-24): the window lays the plan diagonal of an invented
+/// corner onto a level plate across the two horizontals, held by its own
+/// bolts onto both (`[plate.also_bolts]`); its picture for the user guide.
+#[test]
+fn a_level_plate_across_two_horizontals_in_the_window() {
+    let path = copy_of("type-02.ohls", "layout-level");
+    let dir = path.parent().unwrap().to_path_buf();
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../libraries");
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        examples.join("sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        examples.join("bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower = dir.join("level-plate.ohls");
+    std::fs::write(&tower, LEVEL).unwrap();
+    let mut h = harness(&tower);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("P".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    wait_preview(&mut h);
+    {
+        let w = h.state().layout_window.as_ref().unwrap();
+        let p = w.preview.as_ref().unwrap();
+        let o = p.run.joints.iter().find(|o| o.joint == "P").unwrap();
+        assert!(o.written && o.hand.is_empty(), "{:?}", o.hand);
+        let pl = o
+            .plan
+            .plates
+            .iter()
+            .find(|q| q.also.is_some())
+            .unwrap_or_else(|| panic!("no level plate: {:?}", o.plan.notes));
+        assert!(pl.members.iter().any(|m| m == "G"), "{:?}", pl.members);
+        assert!(pl.hold.is_some());
+    }
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        // Turned to see the level plate between the horizontals.
+        if let Some(w) = h.state_mut().layout_window.as_mut() {
+            for v in [&mut w.views.0, &mut w.views.1] {
+                v.yaw += 0.8;
+                v.pitch += 1.0;
+                v.zoom = 0.8;
+            }
+        }
+        h.run_steps(3);
+        crate::tool_window_tests::window_shot(&mut h, "Lay out joints", "lay-out-joints-level");
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
