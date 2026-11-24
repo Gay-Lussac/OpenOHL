@@ -811,6 +811,10 @@ pub struct LoadsPage {
     /// offline working set's file (2026-11-23): the towers shared with
     /// the export's neighbour lines named, or that there is none.
     pub replica_note: Vec<String>,
+    /// On an offline working set's file (2026-11-24): its shared towers
+    /// with the export's other lines' sections, by the network's code
+    /// (the Shared towers view).
+    pub shared: crate::loads_shared::Shared,
     /// The load case shown.
     pub case: usize,
     /// Structures shown (id contains this text).
@@ -859,10 +863,11 @@ pub struct LoadsPage {
 }
 
 /// What the Structure loads window says on an offline working set's file
-/// (2026-11-23) for the structures computed (`order`): the towers shared
-/// with a line of the export (twins) named — their other lines' sections
-/// are not added here, NOT ALL CHECKED — or that none is; with the
-/// export's date, that it may be stale and its gaps.
+/// for the structures computed (`order`): the towers shared with a line
+/// of the export (twins) named — computed with their other lines'
+/// sections in the Shared towers view (2026-11-24; before, only named,
+/// NOT ALL CHECKED) — or that none is; with the export's date, that it
+/// may be stale and its gaps.
 pub fn offline_notes(
     model: &Model,
     n: &Result<crate::offline_neighbours::Neighbours, String>,
@@ -894,14 +899,23 @@ pub fn offline_notes(
             .map(|t| format!("{} (line {} {})", t.structure, t.model, t.other))
             .collect();
         out.push(format!(
-            "NOT ALL CHECKED: {} structure(s) shared with another line of {}: {} — the other \
-             lines' sections hanging there are not added in this window: Versions › Offline copy \
-             › Check the offline working set… › Loads on shared towers computes each such tower \
-             under each line's cases with them, the worst kept",
+            "{} structure(s) shared with another line of {}: {} — each computed with every \
+             line's sections on it, under each line's cases, the worst kept, by the network's \
+             code: the Shared towers view. The Loads and Usage views show this line's own loads \
+             on them.",
             twins.len(),
             n.export_words(),
-            named.join(", ")
+            crate::loads_shared::some(&named)
         ));
+        let (_, outside) = crate::loads_shared::twins_of(model, n, order);
+        if !outside.is_empty() {
+            out.push(format!(
+                "NOT ALL CHECKED: structure(s) {} shared with another line lie outside your \
+                 working set (read-only in the file): their other lines' sections are not added \
+                 — the network computes them for a working set holding them",
+                crate::loads_shared::some(&outside)
+            ));
+        }
     }
     out.push(n.stale_words());
     out.extend(n.gaps());
@@ -1153,6 +1167,9 @@ impl LoadsPage {
             plan: Some(plan.clone()),
         };
         self.units.1 = plan.pairs();
+        // An offline working set's shared towers with the export's other
+        // lines, beside (the network's code on the file).
+        self.shared.start(model, &plan.order, ctx);
         let (tx, rx) = channel();
         let c = ctx.clone();
         self.stamp.started(model.revision());
@@ -1213,6 +1230,7 @@ impl LoadsPage {
 
     /// Takes a finished computation.
     pub fn poll(&mut self) {
+        self.shared.poll();
         let Some((t, rx, _)) = &self.running else {
             return;
         };
@@ -1959,17 +1977,81 @@ impl LoadsPage {
             return None;
         }
         for n in &self.notes {
-            ui.label(egui::RichText::new(n).small().weak());
+            // NOT ALL CHECKED and a stale export in red, "may be stale" in
+            // the warning colour (2026-11-24: they were all grey).
+            if n.starts_with("NOT ALL CHECKED") || n.contains("STALE") {
+                ui.colored_label(ui.visuals().error_fg_color, egui::RichText::new(n).small());
+            } else if n.starts_with("They may be stale") {
+                ui.colored_label(ui.visuals().warn_fg_color, egui::RichText::new(n).small());
+            } else {
+                ui.label(egui::RichText::new(n).small().weak());
+            }
+        }
+        // The shared towers' own reasons, once computed (beside the run).
+        if let Some(c) = &self.shared.last {
+            let n = c.not_all_checked();
+            if !n.is_empty() {
+                ui.colored_label(
+                    ui.visuals().error_fg_color,
+                    egui::RichText::new(format!(
+                        "NOT ALL CHECKED: the shared towers with the export's other lines — {} \
+                         reason(s): the Shared towers view",
+                        n.len()
+                    ))
+                    .small(),
+                );
+            }
+        }
+        let has_shared = self.shared.has_view();
+        if !has_shared {
+            self.shared.show = false;
         }
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.show_usage, false, "Loads");
-            ui.selectable_value(&mut self.show_usage, true, "Usage")
+            if ui
+                .selectable_label(!self.show_usage && !self.shared.show, "Loads")
+                .clicked()
+            {
+                self.show_usage = false;
+                self.shared.show = false;
+            }
+            if ui
+                .selectable_label(self.show_usage && !self.shared.show, "Usage")
                 .on_hover_text(
                     "How much of its capacity each structure uses: its type's allowable spans \
                      (Method 1), allowable loads (Method 2), structure model (fe) and pole",
-                );
+                )
+                .clicked()
+            {
+                self.show_usage = true;
+                self.shared.show = false;
+            }
+            if has_shared
+                && ui
+                    .selectable_label(
+                        self.shared.show,
+                        if self.shared.running() {
+                            "Shared towers (computing…)"
+                        } else {
+                            "Shared towers"
+                        },
+                    )
+                    .on_hover_text(
+                        "Offline working set: the towers shared with another line of the \
+                         export, with every line's sections on them under each line's cases, \
+                         the worst kept (the network's code)",
+                    )
+                    .clicked()
+            {
+                self.shared.show = true;
+            }
         });
+        if self.shared.show {
+            return self.shared.ui(ui);
+        }
         if self.show_usage {
+            if let Some(w) = self.shared.usage_words() {
+                ui.colored_label(ui.visuals().error_fg_color, egui::RichText::new(w).small());
+            }
             let names: Vec<String> = results.iter().map(|r| r.case.name.clone()).collect();
             // A case with sections not solved misses their loads: said so.
             let incomplete: Vec<String> = results

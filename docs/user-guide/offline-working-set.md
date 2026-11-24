@@ -135,7 +135,7 @@ press the button.
 
 ## Checks with the export's neighbours
 
-*Built 2026-11-23, in active development, not approved yet*
+*Built 2026-11-23 (Structure loads with the shared towers and the magnetic field with the lines near 2026-11-24), in active development, not approved yet*
 ([decisions](../development/decisions.md#2026-11-23-country-server-the-check-windows-with-an-offline-files-neighbours)).
 
 **What it is for**: the ordinary check windows (Checks menu) on an
@@ -167,8 +167,9 @@ checks. Each window says so, never silently.
 | Window | With the export's neighbours |
 |---|---|
 | Clearances (wire clearances by rule) | The **rules to other lines** (`target = "other_lines"`, crossings among them) take the other lines' wires: each line near is solved in every weather case and wind position checked, with its own line's settings and wires (as the network's checks solve it). Their wires are named `LINE:SECTION span N` in the *Other wire* column. On the same file the rule finds the same pairs and distances as step 2's network check (tested). Before, these rules were skipped ("other lines are checked by `ohl line --other-line`"). |
-| Structure loads | The towers of your working set **shared with another line** (one of the same type within 0.5 m) are named: the other lines' sections hanging there are **not added** in this window — NOT ALL CHECKED for them; step 2's *Loads on shared towers* computes them. No shared tower: said, nothing of other lines is missing. |
-| Magnetic field, Electric field | The lines within **500 m** (the network's field distance) are named: their field is **not added** in these windows — NOT ALL CHECKED. Step 2's *Magnetic field* adds it by size; for the electric field nothing does yet (NOT ON THE SAFE SIDE where they come near). |
+| Structure loads | The towers of your working set **shared with another line** (one of the same type within 0.5 m) are named and, since 2026-11-24, **computed with every line's sections on them**, under each line's load cases, the worst kept — the network's own check on the file (step 2's *Loads on shared towers*), so the same loads (tested) — in the Results' **Shared towers** view ([the window's guide](structure-loads-window.md#shared-towers-offline-working-set)). The Loads and Usage views keep this line's own loads (the Usage view: NOT ALL CHECKED for the shared towers). A shared tower outside your working set: NOT ALL CHECKED. No shared tower: said, nothing of other lines is missing. |
+| Magnetic field | Since 2026-11-24 the lines whose wires come within **500 m** (the network's field distance) of the spans computed are **added**: each solved in the run's weather case with its own settings and wires, its field added by size at every profile point, given point and cut — the network's own selection and sources, so on your working set's spans the same field as step 2's *Magnetic field* (tested). *Other lines' current* gives their circuits without a current of their own. Spans of the read-only parts around your working set reach beyond the export: NOT ALL CHECKED ([the window's guide](magnetic-field.md#other-lines-on-an-offline-working-sets-file)). |
+| Electric field | The lines within **500 m** are named: their field is **not added** — NOT ALL CHECKED, NOT ON THE SAFE SIDE where they come near. The network computes no electric field with other lines either. |
 | A plugin's check (e.g. Distance between conductors) | A check whose declared reach needs neighbours gets this line only: the lines it would reach are named, NOT ALL CHECKED. |
 
 **They may be stale** (said in orange in each window): the file holds

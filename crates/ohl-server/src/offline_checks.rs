@@ -395,12 +395,48 @@ pub fn neighbour_wires(session: &Session) -> Result<Vec<NeighbourWires>, String>
     Ok(out)
 }
 
-/// Runs scoped check `check` on the offline working set in project file
-/// `path` with the neighbours its export holds: the report as the
-/// network's server gives it to a user who sees everything the file holds,
-/// NOT ALL CHECKED where the file cannot give the server's result.
-pub fn check_offline(path: &Path, check: &ScopedCheck) -> Result<ScopedReport, String> {
-    let started = Instant::now();
+/// What an offline working set cannot give a check, found while it ran.
+struct FileGaps {
+    /// Something outside what the export holds was asked for.
+    beyond: bool,
+    /// The export's reach, m.
+    reach: f64,
+    /// What its user may not see, left out of the export.
+    left_out: ohl_session::offline::LeftOut,
+}
+
+impl FileGaps {
+    /// Each a NOT ALL CHECKED reason.
+    fn reasons(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.beyond {
+            out.push(format!(
+                "the check reaches beyond what the offline working set holds (its neighbours \
+                 within {:.0} m of the working set): ask the network's server, or export it \
+                 again with a larger reach",
+                self.reach
+            ));
+        }
+        if !self.left_out.is_empty() {
+            out.push(format!(
+                "neighbours you may not see were left out of the export ({} of other lines, {} \
+                 of this line): they are checked on the network's server only",
+                self.left_out.other_lines, self.left_out.this_line
+            ));
+        }
+        out
+    }
+}
+
+/// Runs `f` on the offline working set in project file `path` as the
+/// network's server would run a scoped check on it: the file's own line
+/// and the neighbours its export holds ([`FileNet`]), its working set as
+/// exported (the part). Gives `f`'s answer, the session, the working set
+/// (as `f` left it) and what the file could not give.
+fn on_file<T>(
+    path: &Path,
+    f: impl FnOnce(&mut FileNet<'_>, &mut WorkingSet) -> Result<T, String>,
+) -> Result<(T, Session, WorkingSet, FileGaps), String> {
     let mut session = Session::open(path).map_err(|e| e.to_string())?;
     let meta = session
         .offline_meta()
@@ -426,13 +462,12 @@ pub fn check_offline(path: &Path, check: &ScopedCheck) -> Result<ScopedReport, S
         std::process::id(),
         crate::random_code(8)
     ));
-    let name = check.name().to_owned();
     let model = meta.model.clone();
     let left_out = meta.left_out.clone();
     let reach = meta.reach_m;
-    let (raw, beyond) = {
+    let (answer, beyond) = {
         let mut net = FileNet {
-            own: model.clone(),
+            own: model,
             session: &mut session,
             others: neighbours
                 .into_iter()
@@ -452,36 +487,130 @@ pub fn check_offline(path: &Path, check: &ScopedCheck) -> Result<ScopedReport, S
             caches: Caches::new(64, 16),
             work: work.clone(),
         };
-        let raw = crate::scoped_report::run(&mut net, &mut ws, check, |n, m, s| n.has_twin(m, s));
+        let answer = f(&mut net, &mut ws);
         let _ = std::fs::remove_dir_all(&work);
-        (raw?, net.beyond)
+        (answer?, net.beyond)
     };
+    Ok((
+        answer,
+        session,
+        ws,
+        FileGaps {
+            beyond,
+            reach,
+            left_out,
+        },
+    ))
+}
+
+/// Runs scoped check `check` on the offline working set in project file
+/// `path` with the neighbours its export holds: the report as the
+/// network's server gives it to a user who sees everything the file holds,
+/// NOT ALL CHECKED where the file cannot give the server's result.
+pub fn check_offline(path: &Path, check: &ScopedCheck) -> Result<ScopedReport, String> {
+    let started = Instant::now();
+    let name = check.name().to_owned();
+    let (raw, mut session, ws, gaps) = on_file(path, |net, ws| {
+        crate::scoped_report::run(net, ws, check, |n, m, s| n.has_twin(m, s))
+    })?;
     let mut report = crate::scoped_report::report(
         &mut FileViewer {
             session: &mut session,
-            own: model,
+            own: ws.model.clone(),
         },
         &ws,
         &name,
         &raw,
         started.elapsed().as_secs_f64(),
     );
-    if beyond {
-        report.not_all_checked.push(format!(
-            "the check reaches beyond what the offline working set holds (its neighbours within \
-             {reach:.0} m of the working set): ask the network's server, or export it again \
-             with a larger reach"
-        ));
-    }
-    if !left_out.is_empty() {
-        report.not_all_checked.push(format!(
-            "neighbours you may not see were left out of the export ({} of other lines, {} of \
-             this line): they are checked on the network's server only",
-            left_out.other_lines, left_out.this_line
-        ));
-    }
+    report.not_all_checked.extend(gaps.reasons());
     if !report.not_all_checked.is_empty() {
         report.status = "NOT ALL CHECKED".into();
     }
     Ok(report)
+}
+
+/// The loads on an offline working set's shared towers, as the network's
+/// check computes them ([`shared_tower_loads`]).
+#[derive(Debug, Clone)]
+pub struct SharedTowerLoads {
+    /// Per tower: every line's cases on it with every line's sections,
+    /// the worst kept — the network's own result.
+    pub loads: ohl_scope::loads::LoadsResult,
+    /// What the file could not give (each makes it NOT ALL CHECKED): the
+    /// result's own reasons and the export's.
+    pub not_all_checked: Vec<String>,
+    /// Seconds.
+    pub seconds: f64,
+}
+
+/// The loads on structures `structures` of the offline working set in
+/// project file `path` (each of its working set; none: every one shared
+/// with another line of the export), each with every line's sections on
+/// it under each line's cases, the worst kept — **the network's check
+/// itself** ([`check_offline`]'s *structure loads*, before its report),
+/// for OHL-Design's Structure loads window (2026-11-24).
+pub fn shared_tower_loads(path: &Path, structures: &[String]) -> Result<SharedTowerLoads, String> {
+    let started = Instant::now();
+    let check = ScopedCheck::StructureLoads {
+        structures: structures.to_vec(),
+    };
+    let (raw, _, _, gaps) = on_file(path, |net, ws| {
+        crate::scoped_report::run(net, ws, &check, |n, m, s| n.has_twin(m, s))
+    })?;
+    let crate::scoped_report::Raw::Loads(loads) = raw else {
+        return Err("not a structure loads result".into());
+    };
+    let mut not_all_checked = loads.not_all_checked.clone();
+    not_all_checked.extend(gaps.reasons());
+    not_all_checked.dedup();
+    Ok(SharedTowerLoads {
+        loads: *loads,
+        not_all_checked,
+        seconds: started.elapsed().as_secs_f64(),
+    })
+}
+
+/// The other lines near an offline working set for its magnetic field,
+/// as the network's field check selects and computes them
+/// ([`field_neighbours`]).
+#[derive(Debug, Clone)]
+pub struct FieldNeighbours {
+    /// The lines, each its wires as the field's sources.
+    pub others: ohl_scope::fields::OtherLines,
+    /// What the file could not give (each makes it NOT ALL CHECKED): the
+    /// other lines' own reasons and the export's.
+    pub not_all_checked: Vec<String>,
+    /// Seconds.
+    pub seconds: f64,
+}
+
+/// The other lines whose wires can come within `spec.distance` of the
+/// wires of `sections` (none: the working set's) of the offline working
+/// set in project file `path`, in weather case `case`, each computed on
+/// its own as the field's sources — **the network's field check's own
+/// selection and sources** ([`ohl_scope::fields::other_lines`] on the
+/// file), for OHL-Design's Magnetic field window (2026-11-24).
+pub fn field_neighbours(
+    path: &Path,
+    sections: &[String],
+    case: &ohl_weather::WeatherCase,
+    spec: &ohl_scope::fields::FieldSpec,
+) -> Result<FieldNeighbours, String> {
+    let started = Instant::now();
+    let (others, _, _, gaps) = on_file(path, |net, ws| {
+        if !sections.is_empty() {
+            ws.sections = sections.to_vec();
+        }
+        ohl_scope::fields::other_lines(net, ws, case, spec)
+    })?;
+    let mut not_all_checked = others.wires_failed.clone();
+    not_all_checked.extend(others.not_all_checked.iter().cloned());
+    not_all_checked.extend(gaps.reasons());
+    not_all_checked.dedup();
+    Ok(FieldNeighbours {
+        others,
+        not_all_checked,
+        seconds: started.elapsed().as_secs_f64(),
+    })
 }

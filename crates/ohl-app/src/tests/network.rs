@@ -664,14 +664,14 @@ fn offline_working_set_window_on_a_local_network() {
         &rules,
         report.number,
         &twin,
-        &|h, name| {
+        &|h, title, name| {
             if let Ok(shots) = ohl_core::env::var("OHL_SHOTS") {
                 assert_eq!(crate::files::user(), "tester", "made with USER=tester");
                 h.input_mut().events.push(egui::Event::PointerGone);
                 h.run_steps(2);
                 let image = h.render().unwrap();
                 let ppp = image.width() as f32 / 1100.0;
-                let image = match super::tool_shots::window_rect(h, "Clearances") {
+                let image = match super::tool_shots::window_rect(h, title) {
                     Some(rect) => super::tool_shots::crop(&image, rect, ppp),
                     None => image,
                 };
@@ -720,7 +720,7 @@ fn offline_files_neighbours_in_the_check_windows(
     rules: &Path,
     number: i64,
     twin: &ohl_store_pg::import::Twin,
-    shot: &dyn Fn(&mut Harness<'_, App>, &str),
+    shot: &dyn Fn(&mut Harness<'_, App>, &str, &str),
 ) {
     use crate::offline_neighbours::{ExportRecord, Neighbours, RECORD_KEY};
     // What the file holds: the other line, and the server's word on the
@@ -892,18 +892,21 @@ fn offline_files_neighbours_in_the_check_windows(
     for (a, b) in on_server.iter().zip(&here) {
         assert!((a.2 - b.2).abs() < 1e-6, "{a:?} {b:?}");
     }
-    // Structure loads: the shared tower named, NOT ALL CHECKED for it.
+    // Structure loads: the shared tower named, computed with the other
+    // line's sections in the Shared towers view (2026-11-24).
     {
         let r = h.state_mut().ready().unwrap();
         let m = &r.model;
         let ids: Vec<String> = m.line.structures.iter().map(|s| s.id.clone()).collect();
         let notes = crate::loads::offline_notes(m, &m.offline_neighbours().unwrap(), &ids);
+        let named = notes[0].contains(&format!(
+            "{} (line {} {})",
+            twin.structure, twin.other_line, twin.other
+        ));
         assert!(
-            notes[0].starts_with("NOT ALL CHECKED")
-                && notes[0].contains(&format!(
-                    "{} (line {} {})",
-                    twin.structure, twin.other_line, twin.other
-                )),
+            (named || notes[0].contains(" more —"))
+                && notes[0].contains("shared with another line of the export")
+                && notes[0].contains("the Shared towers view"),
             "{notes:?}"
         );
         // The fields: the other line within 500 m, its field not added.
@@ -931,7 +934,7 @@ fn offline_files_neighbours_in_the_check_windows(
         h.query_by_label_contains("Neighbours from the export of")
             .is_some()
     );
-    shot(h, "offline-neighbours-setup");
+    shot(h, "Clearances", "offline-neighbours-setup");
     let run = |h: &mut Harness<'_, App>| {
         h.get_by_label("Run").click();
         let t0 = std::time::Instant::now();
@@ -951,7 +954,7 @@ fn offline_files_neighbours_in_the_check_windows(
         crate::offline_neighbours::IGNORED.with(|c| c.set(true));
         h.run_steps(3);
         run(h);
-        shot(h, "offline-neighbours-clearances-before");
+        shot(h, "Clearances", "offline-neighbours-clearances-before");
         crate::offline_neighbours::IGNORED.with(|c| c.set(false));
         let r = h.state_mut().ready().unwrap();
         r.clearances = crate::clearance::Clearances::new(&r.model, Some(rules));
@@ -972,5 +975,403 @@ fn offline_files_neighbours_in_the_check_windows(
         h.query_by_label_contains("Within the rules' reach")
             .is_some()
     );
-    shot(h, "offline-neighbours-clearances");
+    shot(h, "Clearances", "offline-neighbours-clearances");
+
+    // The Structure loads window (2026-11-24): the shared tower with the
+    // other line's sections on it, under each line's cases, the worst
+    // kept — the same loads as the network's check on the same file.
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.clearances.open = false;
+        // The shipped default weather and load cases: those the network's
+        // check takes for a line without files of its own (the window's
+        // own loads in the same cases).
+        let mut m = model::load(
+            Sources {
+                file: ws.to_path_buf(),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                weather: Some(root().join("libraries/weather/default-weather-cases.ohlwc")),
+                load_cases: Some(root().join("libraries/loadcases/default-load-cases.ohllc")),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap();
+        m.library = ohl_cables::Library::load(&root().join("libraries/cables")).unwrap();
+        r.model = m;
+        r.loads = crate::loads::LoadsPage::default();
+        r.loads.open = true;
+    }
+    h.run_steps(3);
+    let run_loads = |h: &mut Harness<'_, App>| {
+        h.get_by_label("Run").click();
+        let t0 = std::time::Instant::now();
+        loop {
+            let l = &h.state_mut().ready().unwrap().loads;
+            if l.results.is_some() && !l.running() && !l.shared.running() {
+                break;
+            }
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(300),
+                "computed"
+            );
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(3);
+        t0.elapsed()
+    };
+    let window_with = run_loads(h);
+    let (own_model, c, took, cases) = {
+        let r = h.state_mut().ready().unwrap();
+        let n = r.model.offline_neighbours().unwrap();
+        let own = n.as_ref().as_ref().unwrap().meta.model.clone();
+        let cases = match &r.loads.results {
+            Some(Ok(v)) => v.len(),
+            other => panic!("{other:?}"),
+        };
+        (
+            own,
+            r.loads.shared.last.clone().expect("the shared towers"),
+            r.loads.took,
+            cases,
+        )
+    };
+    // The network's check on the same file: every tower of the working
+    // set shared with another line.
+    let server = ohl_server::offline_checks::check_offline(
+        ws,
+        &ohl_server::ScopedCheck::StructureLoads {
+            structures: Vec::new(),
+        },
+    )
+    .unwrap();
+    eprintln!(
+        "structure loads: the window {:.2?} (its own loads, {cases} case(s)), the {} shared \
+         tower(s) with the other line {:.2?} beside (the network's code {:.2} s), the whole run \
+         {window_with:.2?}; the network's check on the file {:.2} s",
+        took.unwrap(),
+        c.computed().len(),
+        c.took,
+        c.result.as_ref().unwrap().seconds,
+        server.seconds
+    );
+    assert!(c.not_all_checked().is_empty(), "{:?}", c.not_all_checked());
+    assert!(
+        c.computed().contains(&twin.structure.as_str()),
+        "{:?}",
+        c.computed()
+    );
+    let measures = [
+        "factored transverse (N)",
+        "factored longitudinal (N)",
+        "factored vertical (N)",
+    ];
+    let on_server: Vec<(String, String, String, f64)> = server
+        .findings
+        .iter()
+        .filter(|f| f.what == "structure loads (worst)")
+        .map(|f| {
+            (
+                f.on.clone(),
+                f.against.clone().unwrap(),
+                f.measure.clone(),
+                f.value,
+            )
+        })
+        .collect();
+    let mut here = Vec::new();
+    let towers = &c.result.as_ref().unwrap().loads.towers;
+    assert!(
+        towers
+            .iter()
+            .any(|t| t.twins.iter().any(|n| n.model == twin.other_line))
+    );
+    for t in towers {
+        assert!(!t.twins.is_empty());
+        for w in &t.worst {
+            for (k, measure) in measures.iter().enumerate() {
+                let (line, case) = &w.governing[k];
+                here.push((
+                    format!(
+                        "structure {} point {}",
+                        t.structure,
+                        if w.point.is_empty() {
+                            "(body)"
+                        } else {
+                            &w.point
+                        }
+                    ),
+                    if *line == own_model {
+                        format!("case {case}")
+                    } else {
+                        format!("line {line}'s case {case}")
+                    },
+                    (*measure).to_owned(),
+                    w.factored[k],
+                ));
+            }
+        }
+    }
+    assert!(!on_server.is_empty(), "{server:?}");
+    // The same points, governing cases and loads, to the bit.
+    assert_eq!(on_server, here);
+    // Some point carries the other line's sections.
+    assert!(
+        c.result.as_ref().unwrap().loads.towers.iter().any(|t| t
+            .cases
+            .iter()
+            .any(|x| x.points.iter().any(|p| p.lines.contains(&twin.other_line)))),
+        "{c:?}"
+    );
+    // Said in the window: the Shared towers view, its verdict.
+    h.get_by_label("Shared towers").click();
+    h.run_steps(3);
+    assert!(
+        h.query_by_label_contains("Shared towers with the export's other lines")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("shared tower(s) computed with every line's sections")
+            .is_some()
+    );
+    shot(h, "Structure loads", "offline-neighbours-loads");
+    // A shared tower outside the working set: NOT ALL CHECKED, in the
+    // view and the Usage view.
+    let mut outside = c.clone();
+    outside.outside = vec!["X1".into()];
+    assert!(
+        outside.not_all_checked()[0].starts_with("NOT ALL CHECKED: structure(s) X1"),
+        "{:?}",
+        outside.not_all_checked()
+    );
+    assert!(
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .loads
+            .shared
+            .usage_words()
+            .unwrap()
+            .starts_with("NOT ALL CHECKED: the usage of the shared tower(s)")
+    );
+
+    // The Magnetic field window (2026-11-24): the export's lines within
+    // 500 m of the spans computed, each solved in the case with its own
+    // settings and wires, their field added by size — by the network's
+    // code; the same field as the network's check on the same file.
+    let amps = 600.0;
+    let server = ohl_server::offline_checks::check_offline(
+        ws,
+        &ohl_server::ScopedCheck::Fields {
+            case: "10 °C".into(),
+            distance: None,
+            amps: Some(amps),
+            limit_ut: None,
+        },
+    )
+    .unwrap();
+    let (own, with, words, took_own, took_with) = {
+        let r = h.state_mut().ready().unwrap();
+        r.loads.open = false;
+        let m = &r.model;
+        let case = m
+            .cases
+            .iter()
+            .find(|c| c.case.name == "10 °C")
+            .expect("the default weather cases")
+            .case
+            .clone();
+        // This line's field as the network's check computes it: profiles
+        // across the working set's spans 1 m above the ground, ±50 m every
+        // 5 m, every circuit without a current of its own at `amps`.
+        let t0 = std::time::Instant::now();
+        let solved = crate::model::Solved::as_shown(&m.line, &m.library, case.clone());
+        let ws_sections: std::collections::BTreeSet<String> = wanted.iter().cloned().collect();
+        let settings = ohl_electrical::magnetic::Settings {
+            height: 1.0,
+            width: 50.0,
+            step: 5.0,
+            profiles: true,
+            stations: ohl_scope::fields::stations_of(&m.line, &ws_sections),
+            currents: ohl_electrical::magnetic::circuits(&m.line)
+                .into_iter()
+                .filter(|c| m.line.system_current(&c.system).is_none())
+                .map(|c| ohl_electrical::magnetic::CircuitCurrent {
+                    circuit: c.system.clone(),
+                    amps,
+                    reverse: false,
+                })
+                .collect(),
+            ..ohl_electrical::magnetic::Settings::default()
+        };
+        let src = ohl_electrical::Sources {
+            line: &m.line,
+            library: &m.library,
+            shapes: &solved.shapes,
+            temperature: case.temperature,
+            ground: None,
+            jumpers: &solved.jumpers,
+        };
+        let (own, _) = ohl_electrical::magnetic::run_keeping(&src, &settings, None).unwrap();
+        let took_own = t0.elapsed();
+        let nb = crate::offline_neighbours::MagneticNeighbours::of(m, Some(amps)).unwrap();
+        let mut with = own.clone();
+        let t1 = std::time::Instant::now();
+        let words = nb.add(&m.line, &case, &mut with);
+        (own, with, words, took_own, t1.elapsed())
+    };
+    eprintln!(
+        "magnetic field of the working set's spans: {took_own:.2?} alone, + {took_with:.2?} with \
+         the export's lines near (the network's code); the network's check on the file {:.2} s",
+        server.seconds
+    );
+    assert!(
+        words[0].starts_with("Neighbours from the export of")
+            && words[0].contains("included")
+            && words[0].contains(&format!("line {}", twin.other_line)),
+        "{words:?}"
+    );
+    assert!(
+        !words.iter().any(|w| w.starts_with("NOT ALL CHECKED")),
+        "{words:?}"
+    );
+    // The other lines added: more field everywhere, never less.
+    for (a, b) in own.profiles.iter().zip(&with.profiles) {
+        for (p, q) in a.points.iter().zip(&b.points) {
+            assert!(q.b_ut >= p.b_ut, "{p:?} {q:?}");
+        }
+    }
+    assert!(
+        own.profiles
+            .iter()
+            .zip(&with.profiles)
+            .any(|(a, b)| b.max_ut > a.max_ut + 1e-9)
+    );
+    // The same sums as the network's (`add_by_size` on the same field,
+    // the same sources): to the bit.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let case = r
+            .model
+            .cases
+            .iter()
+            .find(|c| c.case.name == "10 °C")
+            .unwrap()
+            .case
+            .clone();
+        let f = ohl_server::offline_checks::field_neighbours(
+            ws,
+            &wanted,
+            &case,
+            &ohl_scope::fields::FieldSpec {
+                amps: Some(amps),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let refs: Vec<&ohl_electrical::magnetic::Wires3d> =
+            f.others.lines.iter().map(|l| &l.wires).collect();
+        let (sums, _, _) = ohl_scope::fields::add_by_size(&own, &refs, None);
+        for (a, b) in sums.iter().zip(&with.profiles) {
+            for (p, q) in a.points.iter().zip(&b.points) {
+                assert_eq!(p.b_ut, q.b_ut);
+            }
+        }
+    }
+    // Per span the network's highest value.
+    let on_server: std::collections::BTreeMap<String, f64> = server
+        .findings
+        .iter()
+        .filter(|f| f.what == "magnetic field")
+        .map(|f| (f.on.clone(), f.value))
+        .collect();
+    let here: std::collections::BTreeMap<String, f64> = with
+        .profiles
+        .iter()
+        .map(|p| (format!("span {}–{}", p.from, p.to), p.max_ut))
+        .collect();
+    // Per span the same highest value as the network's check, to the bit
+    // (this line's field there the same too: the file's line holds no
+    // more of it near than the network's sections within 500 m).
+    assert!(!on_server.is_empty(), "{server:?}");
+    assert_eq!(on_server, here);
+
+    // The window itself: this line's circuits and the other lines' at
+    // `amps`, the working set's spans ticked; before (the neighbours not
+    // read: the window alone) and with them.
+    {
+        let r = h.state_mut().ready().unwrap();
+        for c in ohl_electrical::magnetic::circuits(&r.model.line) {
+            r.magnetic_field.set_current(&c.label(), amps);
+        }
+        r.magnetic_field.others_amps = format!("{amps}");
+        r.magnetic_field.tick_sections(&r.model, &wanted);
+        let case = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "10 °C")
+            .unwrap();
+        r.magnetic_field.show(case);
+    }
+    h.run_steps(3);
+    let run_field = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .magnetic_field
+            .common
+            .job
+            .result = None;
+        h.get_by_label("Run").click();
+        let t0 = std::time::Instant::now();
+        loop {
+            let f = &h.state_mut().ready().unwrap().magnetic_field;
+            if f.common.job.result.is_some() && !f.common.job.running() {
+                break;
+            }
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(300),
+                "computed"
+            );
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(3);
+        t0.elapsed()
+    };
+    crate::offline_neighbours::IGNORED.with(|c| c.set(true));
+    h.run_steps(3);
+    let alone = run_field(h);
+    shot(h, "Magnetic field", "offline-neighbours-magnetic-before");
+    crate::offline_neighbours::IGNORED.with(|c| c.set(false));
+    h.run_steps(3);
+    let together = run_field(h);
+    eprintln!(
+        "the Magnetic field window: {alone:.2?} alone, {together:.2?} with the export's lines near"
+    );
+    let notes = match &h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .magnetic_field
+        .common
+        .job
+        .result
+    {
+        Some(Ok(a)) => a.field.notes.clone(),
+        other => panic!("{:?}", other.as_ref().map(|r| r.as_ref().err())),
+    };
+    assert!(
+        notes[0].starts_with("Neighbours from the export of") && notes[0].contains("included"),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|n| n.starts_with("NOT ALL CHECKED")),
+        "{notes:?}"
+    );
+    shot(h, "Magnetic field", "offline-neighbours-magnetic");
 }

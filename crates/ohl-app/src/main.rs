@@ -77,6 +77,7 @@ mod load_case_form;
 mod load_case_sets;
 mod loads;
 mod loads_plan;
+mod loads_shared;
 mod local_solve;
 mod lod;
 mod magnetic_field;

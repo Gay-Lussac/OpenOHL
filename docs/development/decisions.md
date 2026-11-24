@@ -8,6 +8,143 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (country server: the magnetic field with an offline file's lines near)
+
+**OHL-Design's Magnetic field window adds the field of an offline
+working set's other lines** (ROADMAP O17: the 2026-11-23 follow-up's
+last "left" but one; its owner question 1 recommended "next, those two
+computed with them in the windows themselves by the network's code";
+built, in active development, not approved yet;
+[the user guide](../user-guide/magnetic-field.md#other-lines-on-an-offline-working-sets-file)).
+
+- **Before** (2026-11-23): the window named the export's lines within
+  500 m and said NOT ALL CHECKED, pointing to the Offline working set
+  window's *Magnetic field*.
+- **Now**, after this line's own run, the window takes the export's other
+  lines whose wires come within the network's field distance (500 m) of
+  the wires of the **sections whose spans it computed** (profiles, cuts,
+  volumes; the working set's when only points are given), each solved
+  in the run's weather case with its own settings and wires — **the
+  network's own selection and sources**: `ohl_scope::fields::fields` is
+  split in two, `other_lines` (the selection and the other lines'
+  sources, new, public) and the rest, the network's check unchanged in
+  what it computes (the same order of every sum); OHL-Design reaches it
+  through `ohl_server::offline_checks::field_neighbours` (new: the file
+  read as the network's server reads it, its working set's sections
+  replaced by the window's). Their field is **added by size** at every
+  profile point, given point and cut (B and the ellipse's largest value;
+  the profiles' highest value, limit extent and margins again); **the
+  same sums** as the network's `add_by_size`, to the bit (tested).
+  *Other lines' current* (an input shown on such a file) gives their
+  circuits without a current of their own (empty: 0 A, said NOT ON THE
+  SAFE SIDE), as the network check's current.
+- **Tested** against a local network's server (the offline test's
+  synthetic country, the working set's spans, every circuit at 600 A):
+  the other line is added, the field never less than alone, the sums to
+  the bit equal to the network's on the same field, and per span the
+  highest value equal **to the bit** to the network's check on the same
+  file (150 and 300 pylons; the file's line holds no more of this line
+  near the working set than the network's sections within 500 m).
+  **Found**: the field windows drew their NOT ALL CHECKED notes faint
+  (since 2026-11-23); they are now red, an export's "may be stale"
+  orange.
+- **Never silently**: the results' notes start with the export, the lines
+  added (their sections near), that they **may be stale**, then **NOT ALL
+  CHECKED** (red) for a reach beyond the export (spans of the read-only
+  parts around the working set reach farther than it holds), neighbours
+  left out of the export, a neighbour not solved or not read, and **the
+  volumes** (their surfaces are this line's field alone, decided: the
+  owner's question below); **NOT ON THE SAFE SIDE** for the wires beyond
+  500 m, a given point far from the spans computed, a circuit at 0 A.
+- **The electric field** stays as on 2026-11-23 (the lines within 500 m
+  named, NOT ALL CHECKED): the network computes no electric field with
+  other lines — what it needs is in the roadmap (O17's follow-up of
+  2026-11-24).
+- **Measured** on the synthetic country (a heavily shared machine): the
+  working set's spans as the network's check computes them (profiles
+  every 5 m) 6.0–6.8 s for this line, + 3.7–7.7 s for the other lines
+  (opening the file, solving them, adding them); the network's check on
+  the same file 10.0–11.7 s. The window with its defaults (profiles every
+  1 m, 144 spans of 300 pylons) 10.6–11.1 s alone → 17.0–20.0 s with
+  the lines near (150 pylons: 11.9 → 19.7 s): the other lines' field is
+  summed at five times more points.
+- **The desktop format unchanged** (the current typed is not kept).
+
+> **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
+> 1. The other lines taken within 500 m of the sections whose spans the
+> window computes (not of each output point)? → yes: the network's
+> selection; spans beyond the working set say NOT ALL CHECKED when the
+> export does not reach.
+> 2. The volumes' surfaces without the other lines (NOT ALL CHECKED)? →
+> yes for now; the surfaces from the summed field next.
+> 3. The other lines' current typed in the window, not kept with the
+> project? → yes for now; kept with the window's inputs if used.
+
+## 2026-11-24 (country server: Structure loads with the shared towers' other lines)
+
+**OHL-Design's Structure loads window computes an offline working set's
+shared towers with the export's other lines** (ROADMAP O17: the
+follow-up of 2026-11-23's "left"; its owner question 1 recommended
+"next, those two computed with them in the windows themselves by the
+network's code"; the owner, 2026-11-23: "go ahead with the server too";
+built, in active development, not approved yet;
+[the user guide](../user-guide/structure-loads-window.md#shared-towers-offline-working-set)).
+
+- **Before** (2026-11-23): the window named the towers of the working
+  set shared with another line of the export (twins: the same type
+  within 0.5 m) and said NOT ALL CHECKED for them, pointing to the
+  Offline working set window's *Loads on shared towers*.
+- **Now** each Run computes, beside the window's own loads (in a thread
+  of its own), every such tower **with every line's sections on it,
+  under each line's load cases, the worst kept**, by **the network's own
+  check on the file** — `ohl_server::offline_checks::shared_tower_loads`
+  (new), the same run as `check_offline`'s *structure loads* before its
+  report (both now go through one function opening the file as the
+  network's server reads it): each line's sections on its twin solved
+  with its own settings, wires and cases (its own library's, else the
+  shipped defaults), at a point holding several lines' sections their
+  loads added (each line's strings counted again: conservative, said),
+  solved rigid (a line at level 3 or 4: NOT ON THE SAFE SIDE, said).
+  Shown in the Results' new **Shared towers** view: the export and the
+  lines read, that they may be stale, the verdict, the towers' notes, the
+  worst of every line's cases with the governing line and case per
+  direction, or one line's case point by point.
+- **Tested** against a local network's server (the offline test's
+  synthetic country, a route with 11 towers shared with another line,
+  exported through OHL-Design's window): the window's shared towers give
+  **the same points, governing cases and factored loads, to the bit**, as
+  the network's check `check_offline` on the same file.
+- **Never silently**: **NOT ALL CHECKED** in red (in the view and above
+  the views) for a shared tower outside the working set (read-only in
+  the file: the network computes it for a working set holding it), the
+  result's own reasons (a line's sections not read or not solved, its
+  cases not read), a check reaching beyond the export, neighbours left
+  out of the export. **Decided as conservative** (the owner's question
+  below): the Loads and Usage views keep this line's own loads; the
+  Usage view says in red that the usage of the shared towers is this
+  line's loads alone (NOT ALL CHECKED for them) — the combined loads are
+  not fed into the usage check yet. **Found**: the window's notes were
+  all drawn grey, NOT ALL CHECKED among them; they are now red (and "may
+  be stale" orange), as in the other windows.
+- **Measured** on the synthetic country of 300 pylons (a heavily shared
+  machine, two runs): the window's own loads (145 structures, 9 load
+  cases) 4.0 s; its 32 shared towers with the other lines 38–39 s beside
+  them (a thread of its own: the run 39 s); the network's check on the
+  same file 35–37 s. On 150 pylons (11 shared towers) 15.1 s against
+  15.0 s. A shared tower costs about a second: each line's sections on
+  it solved in every case of every line on it.
+- **The desktop format unchanged.**
+
+> **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
+> 1. The shared towers in a view of their own (the Loads and Usage views
+> keep this line's own loads, the usage of the shared towers NOT ALL
+> CHECKED)? → yes for now; next, the usage check of a shared tower on
+> the combined loads (each line's case its own, the worst kept).
+> 2. The shared towers computed with every Run (seconds per tower on a
+> shared machine), not on a button? → yes: a run without them would be
+> incomplete on such a file; a tick to leave them out (said NOT ALL
+> CHECKED) if they prove slow.
+
 ## 2026-11-23 (joint checks: validation of the connection capacities, O19 stage 5)
 
 **The connection capacities validated against hand calculations** (roadmap

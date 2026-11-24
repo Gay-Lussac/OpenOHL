@@ -274,6 +274,8 @@ On an **offline working set's file**, the lines of its export within
 500 m are named in the results: their field is not added — NOT ALL
 CHECKED, not on the safe side where they come near
 ([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
+The network's checks compute no electric field with other lines either;
+the magnetic field adds them (since 2026-11-24).
 
 ## Without the window
 

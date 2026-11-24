@@ -273,6 +273,49 @@ station lies; from the lowest ground up to a reach over the highest wire.
 | **colour the cuts by band** (5) | off | a cut's cells in the colour of the highest level at or below their value | none |
 | **Cross-sections: also in any cross-section panel I open, every [m]** (5) | off (1 m when ticked) | the field in every cross-section panel you open (C), from the run's wires | some seconds per panel, said beside it |
 
+## Other lines on an offline working set's file
+
+*Built 2026-11-24, in active development, not approved yet.* On an
+**offline working set's file**, Run adds the field of the export's
+**other lines whose wires come within 500 m** of the spans computed (the
+network's field distance): each solved in the run's weather case with
+its own line's settings and wires, its field **added by size** at every
+profile point, given point and cut — the network's own selection and
+sources (`ohl_server::offline_checks::field_neighbours`), so on the
+working set's spans the same field as the network's check on the same
+file (step 2 of the Offline working set window; tested).
+
+1. In the inputs, **Other lines' current** gives the current of the other
+   lines' circuits that have no operating current of their own (empty:
+   0 A, said NOT ON THE SAFE SIDE for them).
+2. Tick the spans as usual. The other lines are taken within 500 m of
+   the **sections** of the spans computed: spans of the read-only parts
+   around your working set reach beyond what the export holds — said
+   **NOT ALL CHECKED**; tick your working set's spans for a complete
+   result.
+3. **Run**. The results' notes start with the export, the lines added
+   (their sections), that they **may be stale** (orange; red when the
+   export was stale already) and anything NOT ALL CHECKED (red).
+
+Before (the same window without the export's lines, as on a working
+set's replica): NOT ALL CHECKED, the lines near not pulled in.
+
+![Before: the same Magnetic field window without the export's lines — the red NOT ALL CHECKED line saying the lines within 500 m are not pulled in](../images/user-guide/offline-neighbours-magnetic-before.png)
+
+After:
+
+![The Magnetic field window's Results on an offline working set's file: the profiles table, then the notes — the circuits at 600 A, the line naming the export and the two other lines added within 500 m of the spans computed, the orange line saying they may be stale, the note that their fields are added by size, and NOT ON THE SAFE SIDE for the wires beyond 500 m](../images/user-guide/offline-neighbours-magnetic.png)
+
+**Conservative**: the other lines' fields are added by size (their phase
+angles to this line's are not known). **Not on the safe side** (said):
+the wires farther than 500 m from the spans computed are left out; a
+given point far from those spans may lie nearer another line; a circuit
+of another line without a current takes 0 A. **NOT ALL CHECKED** (red):
+the volumes' surfaces are this line's field alone (the other lines are
+added to the profiles, the given points and the cuts); a reach beyond
+the export; neighbours left out of the export; a neighbour that does not
+solve.
+
 ## What is conservative and what is not
 
 From the theory's [choices](../theory/magnetic-field.md#the-choices-and-why)
@@ -293,8 +336,8 @@ and [what is left out](../theory/magnetic-field.md#what-is-left-out):
 - Left out: the earth's currents, the steel's permeability, harmonics,
   other lines (said), DC systems (said) — small or said in the result.
   On an offline working set's file the lines of its export within 500 m
-  are named, NOT ALL CHECKED
-  ([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
+  are added by size
+  ([above](#other-lines-on-an-offline-working-sets-file)).
 
 ## Without the window
 

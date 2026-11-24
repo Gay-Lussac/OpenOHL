@@ -253,34 +253,65 @@ pub fn add_by_size(
     (profiles, max, above)
 }
 
-/// The field of working set `ws` in weather case `case`, the lines within
-/// `spec.distance` pulled in from `net` (see the module's notes).
-///
-/// Expected cost: the working set's line near it solved and computed at
-/// the profiles; each other line's sections near solved and its wires
-/// summed at the same points.
-pub fn fields(
+/// Another line near a working set, its wires as the field's sources.
+#[derive(Debug, Clone)]
+pub struct OtherLine {
+    /// The model (line).
+    pub model: String,
+    /// Its sections near (whose spans can come within the field distance
+    /// of the working set's wires).
+    pub sections: Vec<String>,
+    /// Its wires solved in the case, with their currents.
+    pub wires: magnetic::Wires3d,
+}
+
+/// The lines near a working set for its field, as the network's field
+/// check selects and computes them ([`other_lines`]).
+#[derive(Debug, Clone, Default)]
+pub struct OtherLines {
+    /// The working set's wires not solved (each makes it *not all
+    /// checked*).
+    pub wires_failed: Vec<String>,
+    /// This line's sections near (computed with the working set as one).
+    pub own_near: BTreeSet<String>,
+    /// Every other line near, each computed on its own (its sections
+    /// there, its own settings and currents).
+    pub lines: Vec<OtherLine>,
+    /// The other lines' sections pulled in.
+    pub pulled: PulledIn,
+    /// What could not be done for the other lines (each makes it *not all
+    /// checked*).
+    pub not_all_checked: Vec<String>,
+    /// What was assumed for them.
+    pub notes: Vec<String>,
+}
+
+/// The lines whose wires can come within `spec.distance` of the wires of
+/// working set `ws` in `case`, from `net`: this line's sections near, and
+/// every other line's sections near computed on its own as the field's
+/// sources (see the module's notes). The network's field check
+/// ([`fields`]) adds them by size to the working set's profiles;
+/// OHL-Design's Magnetic field window on an offline working set's file
+/// adds them to its own outputs (2026-11-24) — the same selection, the
+/// same sources.
+pub fn other_lines(
     net: &mut dyn Neighbourhood,
     ws: &WorkingSet,
     case: &WeatherCase,
     spec: &FieldSpec,
-) -> Result<FieldResult, String> {
+) -> Result<OtherLines, String> {
     if !(spec.distance.is_finite() && spec.distance >= 0.0) {
         return Err(format!("a field distance of {} m", spec.distance));
     }
-    let mut not_all = Vec::new();
-    let mut notes = vec![format!(
-        "NOT ON THE SAFE SIDE: the wires farther than {:.0} m from the working set's wires are \
-         left out (the field distance; owner 2026-11-16): their field is not in the result",
-        spec.distance
-    )];
+    let mut out = OtherLines::default();
     let ws_sections: BTreeSet<String> = ws.sections.iter().cloned().collect();
     let library = net.library(&ws.model)?;
     // The working set's wires: where the distance is measured from.
     let part = net.part(&ws.model, &[], &ws.sections)?;
     let (own_wires, failed) =
         solve_wires(&part, &library, case, &ws_sections, Some(&BTreeSet::new()));
-    not_all.extend(failed.into_iter().map(|f| format!("{f}: not computed")));
+    out.wires_failed
+        .extend(failed.into_iter().map(|f| format!("{f}: not computed")));
     let mut grid = SegmentGrid::new(100.0);
     for w in &own_wires {
         grid.add_polyline(&w.points);
@@ -307,9 +338,91 @@ pub fn fields(
             }
         }
     }
+    out.own_near = keep.remove(&ws.model).unwrap_or_default();
+    // The other lines, each on its own.
+    for (m, secs) in keep {
+        let list: Vec<String> = secs.iter().cloned().collect();
+        let got = net
+            .part(&m, &[], &list)
+            .and_then(|p| net.library(&m).map(|l| (p, l)));
+        let (p, lib) = match got {
+            Ok(x) => x,
+            Err(e) => {
+                out.not_all_checked.push(format!(
+                    "line {m}: {} section(s) near not read ({e}): their field left out",
+                    list.len()
+                ));
+                continue;
+            }
+        };
+        match line_field(&p, &lib, case, spec, Vec::new()) {
+            Ok((f, wires, failed)) => {
+                for x in failed {
+                    out.not_all_checked
+                        .push(format!("line {m}: {x}: its field left out"));
+                }
+                if f.notes.iter().any(|n| n.contains("no current given")) {
+                    out.notes.push(format!(
+                        "line {m}: a circuit without a current (0 A taken) — give the check's \
+                         current or the systems' operating currents"
+                    ));
+                }
+                for s in &secs {
+                    out.pulled
+                        .read
+                        .insert(Neighbour::new(&m, NeighbourKind::Section, s));
+                    out.pulled
+                        .used
+                        .insert(Neighbour::new(&m, NeighbourKind::Section, s));
+                }
+                out.lines.push(OtherLine {
+                    model: m,
+                    sections: list,
+                    wires,
+                });
+            }
+            Err(e) => out
+                .not_all_checked
+                .push(format!("line {m}: its field not computed ({e}): left out")),
+        }
+    }
+    Ok(out)
+}
+
+/// The note said whenever other lines' fields are added by size.
+pub const ADDED_BY_SIZE: &str = "the other lines' fields added by size at each point (their \
+                                 phase angles to this line's are not known: conservative)";
+
+/// The note said with every scoped field: the wires beyond the field
+/// distance left out (NOT ON THE SAFE SIDE).
+pub fn beyond_note(distance: f64) -> String {
+    format!(
+        "NOT ON THE SAFE SIDE: the wires farther than {distance:.0} m from the working set's \
+         wires are left out (the field distance; owner 2026-11-16): their field is not in the \
+         result"
+    )
+}
+
+/// The field of working set `ws` in weather case `case`, the lines within
+/// `spec.distance` pulled in from `net` (see the module's notes).
+///
+/// Expected cost: the working set's line near it solved and computed at
+/// the profiles; each other line's sections near solved and its wires
+/// summed at the same points.
+pub fn fields(
+    net: &mut dyn Neighbourhood,
+    ws: &WorkingSet,
+    case: &WeatherCase,
+    spec: &FieldSpec,
+) -> Result<FieldResult, String> {
+    let others = other_lines(net, ws, case, spec)?;
+    let mut not_all = others.wires_failed.clone();
+    let mut notes = vec![beyond_note(spec.distance)];
+    let ws_sections: BTreeSet<String> = ws.sections.iter().cloned().collect();
+    let library = net.library(&ws.model)?;
     let mut pulled = PulledIn::default();
     // The working set's line, with its sections near.
-    let mut own_sections: BTreeSet<String> = keep.remove(&ws.model).unwrap_or_default();
+    let mut own_sections: BTreeSet<String> = others.own_near.clone();
     for s in own_sections.iter().filter(|s| !ws_sections.contains(*s)) {
         pulled
             .read
@@ -329,55 +442,14 @@ pub fn fields(
             .map(|f| format!("line {}: {f}: its field left out", ws.model)),
     );
     notes.extend(own.notes.iter().cloned());
-    // The other lines, each on its own.
-    let mut others = Vec::new();
-    for (m, secs) in keep {
-        let list: Vec<String> = secs.iter().cloned().collect();
-        let got = net
-            .part(&m, &[], &list)
-            .and_then(|p| net.library(&m).map(|l| (p, l)));
-        let (p, lib) = match got {
-            Ok(x) => x,
-            Err(e) => {
-                not_all.push(format!(
-                    "line {m}: {} section(s) near not read ({e}): their field left out",
-                    list.len()
-                ));
-                continue;
-            }
-        };
-        match line_field(&p, &lib, case, spec, Vec::new()) {
-            Ok((f, wires, failed)) => {
-                for x in failed {
-                    not_all.push(format!("line {m}: {x}: its field left out"));
-                }
-                if f.notes.iter().any(|n| n.contains("no current given")) {
-                    notes.push(format!(
-                        "line {m}: a circuit without a current (0 A taken) — give the check's \
-                         current or the systems' operating currents"
-                    ));
-                }
-                for s in &secs {
-                    pulled
-                        .read
-                        .insert(Neighbour::new(&m, NeighbourKind::Section, s));
-                    pulled
-                        .used
-                        .insert(Neighbour::new(&m, NeighbourKind::Section, s));
-                }
-                others.push(wires);
-            }
-            Err(e) => not_all.push(format!("line {m}: its field not computed ({e}): left out")),
-        }
+    not_all.extend(others.not_all_checked.iter().cloned());
+    notes.extend(others.notes.iter().cloned());
+    pulled.read.extend(others.pulled.read.iter().cloned());
+    pulled.used.extend(others.pulled.used.iter().cloned());
+    if !others.lines.is_empty() {
+        notes.push(ADDED_BY_SIZE.into());
     }
-    if !others.is_empty() {
-        notes.push(
-            "the other lines' fields added by size at each point (their phase angles to this \
-             line's are not known: conservative)"
-                .into(),
-        );
-    }
-    let refs: Vec<&magnetic::Wires3d> = others.iter().collect();
+    let refs: Vec<&magnetic::Wires3d> = others.lines.iter().map(|l| &l.wires).collect();
     let (profiles, max_ut, above_limit) = add_by_size(&own, &refs, spec.limit_ut);
     notes.sort();
     notes.dedup();

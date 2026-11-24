@@ -700,7 +700,9 @@ How the computation is made fast, with its measured times: [Performance](../deve
 - **A substation's earthing grid** at the line's ends (with the earth
   wire network): **not conservative** near the ends.
 - **Other lines** (crossings, parallel lines): not in the model yet
-  (said).
+  (said) — except on an offline working set's file, where the export's
+  lines within 500 m of the spans computed are added by size (the
+  network's code; [checks on a working set](scoped-checks.md#magnetic-field)).
 - **DC systems**: a static field (said).
 - **The modelled length** beyond the line's ends: warned where the line is
   shorter than five times the limit line's reach on either side.

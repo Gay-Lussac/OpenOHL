@@ -125,6 +125,19 @@ each point.
   distance is a setting of the check: larger, less is left out.
 - A circuit without a current (its system gives none and the check gives
   none) takes 0 A, said.
+- **On an offline working set's file** (2026-11-24): OHL-Design's
+  Magnetic field window takes the other lines by this same selection and
+  computes them by the same code (`ohl_scope::fields::other_lines` on the
+  file, through `ohl_server::offline_checks::field_neighbours`), measured
+  from the wires of the sections whose spans it computes, and adds their
+  field by size at its own outputs — profiles, given points and cuts (the
+  same sums as here, to the bit, tested). Its own line is the file's line
+  as the window computes it (the working set and the read-only parts
+  around it): more of this line than the network's sections within the
+  field distance, never less. The volumes' surfaces stay this line's
+  field alone (NOT ALL CHECKED, said); a given point far from the spans
+  computed may lie nearer another line than the distance (NOT ON THE SAFE
+  SIDE, said).
 
 ## Loads on shared towers
 
@@ -152,6 +165,15 @@ twin's points.
   rigid (calculation level 2). A line set to level 3 or 4 takes the larger
   of the rigid and the flexible solve's loads in its own checks; here the
   flexible solve is not made.
+- **On an offline working set's file** (2026-11-24): OHL-Design's
+  Structure loads window runs this same computation on the file
+  (`ohl_server::offline_checks::shared_tower_loads`, the network's check
+  without its report) for the shared towers of the working set among the
+  structures it computes — the same loads, to the bit (tested). A shared
+  tower outside the working set (read-only in the file) is **not
+  checked** there with its other lines (NOT ALL CHECKED, said); the
+  window's usage check keeps this line's loads alone on the shared towers
+  (NOT ALL CHECKED for them, said).
 
 ## Neighbours a user may not see
 

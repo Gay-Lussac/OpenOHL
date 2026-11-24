@@ -14,14 +14,19 @@
 //!   them), each solved in every position checked with its own line's
 //!   settings and wire library, as the network's checks solve them;
 //! - **Structure loads**: the towers shared with another line of the
-//!   export (twins: the same type within 0.5 m) named — their other
-//!   lines' sections are not added in this window (NOT ALL CHECKED,
-//!   with where they are: the Offline working set window's Loads on
-//!   shared towers);
-//! - **Magnetic and electric field**: the export's lines within the
-//!   field distance named — their field is not added in these windows
-//!   (NOT ALL CHECKED; the magnetic field with them: the Offline working
-//!   set window's Magnetic field);
+//!   export (twins: the same type within 0.5 m) named and, since
+//!   2026-11-24, computed with every line's sections on them under each
+//!   line's cases, the worst kept, by the network's own check on the file
+//!   (the Results' Shared towers view, [`crate::loads_shared`]);
+//! - **Magnetic field** (2026-11-24): the export's lines whose wires come
+//!   within the network's field distance of the spans computed, each
+//!   solved in the run's case with its own settings and wires, their
+//!   field added by size at every profile point, given point and cut —
+//!   the network's own selection and sources
+//!   ([`MagneticNeighbours`], `ohl_server::offline_checks::field_neighbours`);
+//! - **Electric field**: the export's lines within the field distance
+//!   named — their field is not added (NOT ALL CHECKED; the network
+//!   computes no electric field with other lines either);
 //! - a **plugin's check** whose reach needs neighbours: they are not
 //!   handed to the plugin (NOT ALL CHECKED, named).
 //!
@@ -438,6 +443,244 @@ pub fn plugin_notes(
     ))
 }
 
+/// What the Magnetic field window takes at Run to add an offline working
+/// set's other lines to its field (2026-11-24): the export's neighbours,
+/// the file, the current of their circuits without one of their own.
+pub struct MagneticNeighbours {
+    n: Arc<Result<Neighbours, String>>,
+    path: std::path::PathBuf,
+    amps: Option<f64>,
+}
+
+impl MagneticNeighbours {
+    /// On an offline working set's file (none otherwise); `amps`: the
+    /// current of the other lines' circuits without an operating current
+    /// of their own, A (none: 0 A, said).
+    pub fn of(model: &crate::model::Model, amps: Option<f64>) -> Option<Self> {
+        Some(Self {
+            n: model.offline_neighbours()?,
+            path: model.sources.file.clone(),
+            amps,
+        })
+    }
+
+    /// Adds to `field` (of `line` in weather case `case`) the field of the
+    /// export's other lines whose wires come within the network's field
+    /// distance of the spans it computed — each line solved in `case` with
+    /// its own settings and wires and its field added by size at every
+    /// profile point, given point and cut, by the network's own code
+    /// ([`ohl_server::offline_checks::field_neighbours`]); gives what the
+    /// results say first (the lines, that they may be stale, NOT ALL
+    /// CHECKED where incomplete).
+    pub fn add(
+        &self,
+        line: &Line,
+        case: &ohl_weather::WeatherCase,
+        field: &mut ohl_electrical::magnetic::MagneticField,
+    ) -> Vec<String> {
+        let n = match self.n.as_ref() {
+            Ok(n) => n,
+            Err(e) => {
+                return vec![format!(
+                    "NOT ALL CHECKED: the offline working set's neighbours could not be read \
+                     ({e}): the field of other lines near not added"
+                )];
+            }
+        };
+        let distance = ohl_scope::reach::FIELD_DISTANCE;
+        // The spans computed: the other lines are taken within the field
+        // distance of their sections' wires (the working set's when only
+        // points are given).
+        let mut spans: Vec<(&str, &str)> = Vec::new();
+        spans.extend(
+            field
+                .profiles
+                .iter()
+                .map(|p| (p.from.as_str(), p.to.as_str())),
+        );
+        spans.extend(field.cuts.iter().map(|c| (c.from.as_str(), c.to.as_str())));
+        spans.extend(
+            field
+                .volumes
+                .iter()
+                .map(|v| (v.from.as_str(), v.to.as_str())),
+        );
+        let sections: Vec<String> = line
+            .sections
+            .iter()
+            .filter(|s| {
+                s.points.windows(2).any(|w| {
+                    spans.iter().any(|(a, b)| {
+                        (w[0].structure == *a && w[1].structure == *b)
+                            || (w[0].structure == *b && w[1].structure == *a)
+                    })
+                })
+            })
+            .map(|s| s.id.clone())
+            .collect();
+        let spec = ohl_scope::fields::FieldSpec {
+            distance,
+            amps: self.amps,
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        let f = match ohl_server::offline_checks::field_neighbours(
+            &self.path, &sections, case, &spec,
+        ) {
+            Ok(f) => f,
+            Err(e) => {
+                out.push(format!(
+                    "NOT ALL CHECKED: the field of the export's other lines was not computed \
+                     ({e}): {} — not added",
+                    n.read_words()
+                ));
+                out.push(n.stale_words());
+                out.extend(n.gaps());
+                return out;
+            }
+        };
+        let refs: Vec<&ohl_electrical::magnetic::Wires3d> =
+            f.others.lines.iter().map(|l| &l.wires).collect();
+        add_others(field, &refs);
+        if f.others.lines.is_empty() {
+            out.push(format!(
+                "Neighbours from {} read: {} — none within {distance:.0} m of the spans computed \
+                 (the network's field distance): nothing of other lines is missing from the \
+                 field.",
+                n.export_words(),
+                n.read_words()
+            ));
+        } else {
+            let lines: Vec<String> = f
+                .others
+                .lines
+                .iter()
+                .map(|l| format!("line {} ({} section(s))", l.model, l.sections.len()))
+                .collect();
+            out.push(format!(
+                "Neighbours from {} included: {} within {distance:.0} m of the spans computed, \
+                 each solved in this case with its own settings and wires, their field added by \
+                 size at every profile point, given point and cut (the network's code, {:.1} s).",
+                n.export_words(),
+                lines.join(", "),
+                f.seconds
+            ));
+        }
+        out.push(n.stale_words());
+        out.extend(n.gaps());
+        out.extend(
+            f.not_all_checked
+                .iter()
+                .map(|t| format!("NOT ALL CHECKED: {t}")),
+        );
+        if !f.others.lines.is_empty() {
+            out.extend(
+                f.others
+                    .notes
+                    .iter()
+                    .map(|t| format!("NOT ON THE SAFE SIDE: {t}")),
+            );
+            out.push(ohl_scope::fields::ADDED_BY_SIZE.to_owned());
+            if !field.volumes.is_empty() {
+                out.push(
+                    "NOT ALL CHECKED: the volumes' surfaces are this line's field alone — the \
+                     other lines' field is added to the profiles, the given points and the cuts"
+                        .to_owned(),
+                );
+            }
+            if !field.points.is_empty() {
+                out.push(format!(
+                    "NOT ON THE SAFE SIDE: the given points take the other lines within \
+                     {distance:.0} m of the spans computed — a point far from them may lie \
+                     nearer another line, left out"
+                ));
+            }
+        }
+        out.push(format!(
+            "NOT ON THE SAFE SIDE: the other lines' wires farther than {distance:.0} m from the \
+             spans computed are left out (the network's field distance): their field is not in \
+             the result"
+        ));
+        out
+    }
+}
+
+/// Adds the field of `others` (wires with their currents) by size to
+/// every profile point, given point and cut of `field` — as the network's
+/// field check adds the other lines' at its profiles
+/// ([`ohl_scope::fields::add_by_size`], the same sums) — the profiles'
+/// highest value and limit extent, the points' margins again.
+pub fn add_others(
+    field: &mut ohl_electrical::magnetic::MagneticField,
+    others: &[&ohl_electrical::magnetic::Wires3d],
+) {
+    if others.is_empty() {
+        return;
+    }
+    let block = |at: &[[f64; 3]]| -> Vec<(f64, f64)> {
+        let mut sum = vec![(0.0, 0.0); at.len()];
+        for w in others {
+            for (s, (b, m)) in sum.iter_mut().zip(w.field_block(at)) {
+                s.0 += b * 1e6;
+                s.1 += m * 1e6;
+            }
+        }
+        sum
+    };
+    let limit = field.limit_ut;
+    let add = |points: &mut [ohl_electrical::magnetic::FieldPoint]| {
+        let at: Vec<[f64; 3]> = points.iter().map(|q| [q.x, q.y, q.z]).collect();
+        for (q, (b, m)) in points.iter_mut().zip(block(&at)) {
+            q.b_ut += b;
+            q.major_ut += m;
+            q.margin_ut = limit.map(|l| l - q.b_ut);
+        }
+    };
+    for p in &mut field.profiles {
+        add(&mut p.points);
+        let (offset, max) =
+            p.points
+                .iter()
+                .map(|q| (q.offset, q.b_ut))
+                .fold(
+                    (0.0, f64::NEG_INFINITY),
+                    |a, b| if b.1 > a.1 { b } else { a },
+                );
+        p.max_ut = max;
+        p.max_offset = offset;
+        if let Some(l) = limit {
+            let above: Vec<f64> = p
+                .points
+                .iter()
+                .filter(|q| q.b_ut >= l)
+                .map(|q| q.offset)
+                .collect();
+            p.limit = match (above.first(), above.last()) {
+                (Some(&left), Some(&right)) => Some(ohl_electrical::magnetic::LimitExtent {
+                    left,
+                    right,
+                    beyond: p.points.first().is_some_and(|q| q.b_ut >= l)
+                        || p.points.last().is_some_and(|q| q.b_ut >= l),
+                }),
+                _ => None,
+            };
+        }
+    }
+    add(&mut field.points);
+    for c in &mut field.cuts {
+        let v = &c.values;
+        let plan: Vec<[f64; 2]> = v.offsets.iter().map(|o| v.cut.at(*o)).collect();
+        let at: Vec<[f64; 3]> = v
+            .elevations
+            .iter()
+            .flat_map(|z| plan.iter().map(move |p| [p[0], p[1], *z]))
+            .collect();
+        for (x, (b, _)) in c.values.values.iter_mut().zip(block(&at)) {
+            *x += b;
+        }
+    }
+}
+
 #[cfg(test)]
 thread_local! {
     /// Tests: an offline working set's file read as before 2026-11-23 (its
@@ -488,8 +731,10 @@ pub fn banner(ui: &mut eframe::egui::Ui, n: &Result<Neighbours, String>, lines: 
             "An offline working set's file holds the other lines near its working set as the \
              network's server exported them (within the export's reach). The rules to other lines \
              take their wires — each solved in every position checked with its own line's \
-             settings and wires. Structure loads, the fields and plugins do not add them here: \
-             they say which lines lie near, and NOT ALL CHECKED for them. The neighbours are \
+             settings and wires. Structure loads computes the towers shared with another line \
+             with that line's sections (its Shared towers view), the Magnetic field adds the \
+             other lines' field. The electric field and plugins do not add them: they say \
+             which lines lie near, and NOT ALL CHECKED for them. The neighbours are \
              those of the export's date: what changed on the network since is not in the file.",
         );
         guide = ui
