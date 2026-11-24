@@ -222,7 +222,12 @@ fn fnv(text: &str) -> u64 {
 /// items): 6 results of the variant with `single_angle_moments` changed —
 /// an angle's moments about its principal axes, dropped before, now taken
 /// (each larger: `every-profile.ohls` m-EA-2 and m-UA in cases A, B, C;
-/// the other 2 250 the same).
+/// the other 2 250 the same). Recorded again 2026-11-24: the not-safe
+/// marks' wording only (each says why and what takes it: "— its usage can
+/// be higher than shown; give what is missing, or check it by hand",
+/// "— turn it on / make it a frame to take them"); with those words taken
+/// out the lines hash to the value before (0xc0af_556a_a502_75d7), so every
+/// usage's bits are the same.
 #[test]
 fn the_examples_give_the_cores_numbers() {
     if !built() {
@@ -237,13 +242,16 @@ fn the_examples_give_the_cores_numbers() {
         lines(&repo().join(f), &sections, "sia263-2013", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0xc0af_556a_a502_75d7, "{out}");
+    assert_eq!(fnv(&out), 0x8723_ca32_ae0e_aa96, "{out}");
 }
 
 /// The same examples by ASCE 10-97 (the default), now its bundled plugin
 /// `asce10` (2026-11-18): the numbers the core's own ASCE 10-97 gave,
 /// recorded at commit 01cc57ec before the SIA 263 move (and unchanged by
-/// it) — the same hash, every usage's bits and what governs.
+/// it) — the same hash, every usage's bits and what governs. Recorded
+/// again 2026-11-24: the not-safe marks' wording only (as above); with
+/// those words taken out the lines hash to the value before
+/// (0xa2ac_8421_7e06_e804).
 #[test]
 fn the_examples_keep_the_cores_asce10_numbers() {
     if !built() {
@@ -258,7 +266,7 @@ fn the_examples_keep_the_cores_asce10_numbers() {
         lines(&repo().join(f), &sections, "asce10-97", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0xa2ac_8421_7e06_e804, "{out}");
+    assert_eq!(fnv(&out), 0xa495_6143_6051_f5fd, "{out}");
 }
 
 fn library() -> ohl_sections::SectionLibrary {

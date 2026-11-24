@@ -114,7 +114,7 @@ fn the_ruling_span_says_the_point_loads_it_leaves_out() {
         flags,
         [
             "NOT ON THE SAFE SIDE: point loads (P1: across 400 N) left out by the ruling-span \
-          method — use FE"
+          method — their weight and pull are missing, so the sag can be larger; use FE"
         ]
     );
     // A weight too (a marker ball), and a force along.

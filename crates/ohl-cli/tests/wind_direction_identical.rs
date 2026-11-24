@@ -183,10 +183,14 @@ fn the_example_line_gives_the_same_results_as_before() {
 /// the same (the CSVs compared column by column), only the usage CSV's
 /// notes now name the plugin's method ("… — method asce10-97 of the
 /// plugin asce10"): a new digest (before: 0x0e5e_5589_c259_806e).
+/// 2026-11-24: the wind bands' "NOT ON THE SAFE SIDE" label in the loads
+/// CSV says why and what makes it safe (its field now quoted: it holds a
+/// comma); with those words taken out the files hash to the digest before
+/// (0x99b0_4263_1f60_c370) — every number the same.
 #[test]
 fn the_typed_example_line_gives_the_same_results_as_before() {
     assert_eq!(
         digest("synthetic-line-typed.ohl.json", "typed"),
-        0x99b0_4263_1f60_c370
+        0x63eb_65a4_b38f_afc8
     );
 }
