@@ -1721,6 +1721,11 @@ Six stages, the questions per stage and per detail level:
   > with the share, until the friction branch (3) exists — it is the
   > frictionless slip that leaves such towers near-mechanisms; below it,
   > keep the result (the larger of the two keeps it on the safe side).
+  > **Built 2026-11-24** (built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-structure-analysis-a-case-refused-where-the-joint-options-are-taken-back-at-more-than-10--of-the-joints-o19-stage-44)):
+  > `FeError::TakenBack`, said with the joints, the share, the last
+  > failure and what to do; stops as soon as the share passes 10 %;
+  > tested on an invented beam (1 of 3 joints refused, 1 of 12 solved).
   > (6) The remaining failures (a joint held out of a face only by members
   > in that face, pinned by the releases): leave them refused (said where,
   > as now)? → yes; they are the tower data's near-mechanisms that the

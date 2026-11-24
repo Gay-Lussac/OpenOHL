@@ -8,6 +8,39 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (structure analysis: a case refused where the joint options are taken back at more than 10 % of the joints, O19 stage 4.4)
+
+**The owner's answer** to stage 4.4's question 5 of 2026-11-24 (approved
+the same day, "go ahead with recommendations"): where the taking back of
+the end releases and bolt slip reaches more than 10 % of a tower's joints,
+the case is refused instead of giving a model that is in large parts the
+one without the options, said with the share, until the friction branch
+exists; below it the result is kept (the larger of the two keeps it on
+the safe side). Built (core, `ohl-structures-fe`; built, in active
+development, not approved yet;
+[theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options)).
+
+- **Now**: `solve_with_options` counts the joints taken back after each
+  round; beyond `joint_stiffness::TAKE_BACK_LIMIT` (0.10) of the model's
+  joints it stops with `FeError::TakenBack` — "refused with the joint
+  options: the end releases and bolt slip had to be taken back at N of M
+  joints (x %, more than the limit of 10 %) where the solve with them found
+  mechanisms, buckling modes or implausible displacements — at J1, J2, …
+  (the last: …). The result would be in large parts the model without the
+  options, with members kept rigid beside slipping ones drawing their
+  force, so it would not show this tower with the options (frictionless
+  slip leaves it near a mechanism); solve this case without the joint
+  options until the bolt slip's friction branch exists". Where, why, what
+  to do, as the NOT ON THE SAFE SIDE rule asks. It stops as soon as the
+  share is passed (no rounds spent beyond it).
+- **Tests**: `taking_back_beyond_a_tenth_of_the_joints_refuses_the_case`
+  (an invented beam whose releases leave a joint free: 1 of 3 joints
+  refuses, 1 of 12 is solved and said).
+- On the private towers (2026-11-24 measurement of the take-back: the
+  towers solved only since that day took the slip back at 7 % to 43 % of
+  their joints) the towers above 10 % are now refused with the options;
+  those below keep their results.
+
 ## 2026-11-24 (bolt distances: ASCE 10-97's force per bolt without an analysis capped by its bearing, O44 L16 question 4)
 
 **The owner's answer** to O44 L16's question 4 (approved 2026-11-24, "go

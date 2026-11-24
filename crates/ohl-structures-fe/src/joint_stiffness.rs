@@ -735,6 +735,28 @@ pub(crate) fn any(model: &Model) -> bool {
 /// releases and slip back at (`solve_with_options`).
 pub const TAKE_BACK_RINGS: usize = 3;
 
+/// The largest share of a model's joints at which the end releases and
+/// the bolt slip may be taken back in one case (O19 stage 4.4, the owner's
+/// answer of 2026-11-24): beyond it the case is refused with the options
+/// ([`FeError::TakenBack`]) — the model would be in large parts the one
+/// without them, with members kept rigid beside slipping ones drawing their
+/// force — until the bolt slip has a friction branch. Up to it the result
+/// is kept (each member's usage the larger of with and without the
+/// options keeps it on the safe side).
+pub const TAKE_BACK_LIMIT: f64 = 0.10;
+
+/// The refusal when the joints `taken` are more than [`TAKE_BACK_LIMIT`]
+/// of `model`'s; `cause` the last failure of the solve with the options.
+fn beyond_limit(model: &Model, taken: &[String], cause: &FeError) -> Option<FeError> {
+    let joints = model.nodes.len().max(1);
+    (taken.len() as f64 > TAKE_BACK_LIMIT * joints as f64).then(|| FeError::TakenBack {
+        taken: taken.len(),
+        joints,
+        named: taken[..taken.len().min(crate::solve::MECHANISM_JOINTS)].to_vec(),
+        cause: cause.to_string(),
+    })
+}
+
 /// The joints `names` with every joint a member joins them to.
 fn neighbours(model: &Model, names: &[String]) -> Vec<String> {
     let mut out: Vec<String> = names.to_vec();
@@ -869,7 +891,8 @@ fn released_beyond_buckling(
 /// [`TAKE_BACK_ROUNDS`] times, each round's slip passes starting from the
 /// last round's secant shares; the joints are in the solution
 /// ([`Solution::taken_back`]) and said. An error with nothing left to take
-/// back stands.
+/// back stands; joints taken back beyond [`TAKE_BACK_LIMIT`] of the
+/// model's refuse the case ([`FeError::TakenBack`], 2026-11-24).
 pub(crate) fn solve_with_options(
     model: &Model,
     start: Option<&[bool]>,
@@ -926,6 +949,9 @@ pub(crate) fn solve_with_options(
                     taken.push(n);
                 }
             }
+            if let Some(refused) = beyond_limit(model, &taken, &e) {
+                return Err(refused);
+            }
             work = next;
             continue;
         }
@@ -961,6 +987,9 @@ pub(crate) fn solve_with_options(
             if !taken.contains(&n) {
                 taken.push(n);
             }
+        }
+        if let Some(refused) = beyond_limit(model, &taken, &e) {
+            return Err(refused);
         }
         work = next;
     }
