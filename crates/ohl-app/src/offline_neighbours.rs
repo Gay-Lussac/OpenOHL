@@ -594,20 +594,30 @@ impl MagneticNeighbours {
                 );
             }
             if !field.points.is_empty() {
-                out.push(format!(
-                    "NOT ON THE SAFE SIDE: the given points take the other lines within \
-                     {distance:.0} m of the spans computed — a point far from them may lie \
-                     nearer another line, left out"
-                ));
+                out.push(far_points_note(distance));
             }
         }
-        out.push(format!(
-            "NOT ON THE SAFE SIDE: the other lines' wires farther than {distance:.0} m from the \
-             spans computed are left out (the network's field distance): their field is not in \
-             the result"
+        out.push(ohl_scope::fields::beyond_words(
+            &format!(
+                "the other lines' wires farther than {distance:.0} m from the spans computed \
+                 (the network's)"
+            ),
+            "a larger field distance takes them in (the network's field check, or `ohl network \
+             check-offline --distance` on an export of that reach)",
         ));
         out
     }
+}
+
+/// The note on given points with other lines added (NOT ON THE SAFE
+/// SIDE): only the lines near the spans computed are taken in.
+fn far_points_note(distance: f64) -> String {
+    format!(
+        "NOT ON THE SAFE SIDE: the given points take the other lines within {distance:.0} m of \
+         the spans computed — a point far from them may lie nearer another line, left out, so \
+         the real field at that point can be higher; compute a span near the point too (the \
+         lines near it are then taken in), else check the point by hand"
+    )
 }
 
 /// The sections of `line` with a span among `spans` (structure pairs,
@@ -710,7 +720,8 @@ impl ElectricNeighbours {
                 out.push(format!(
                     "NOT ALL CHECKED: the export's other lines were not computed with this line \
                      ({e}): {} — this line's field alone; where they come near NOT ON THE SAFE \
-                     SIDE",
+                     SIDE (their field is missing, so the real field can be higher; run it again \
+                     once the cause named is put right)",
                     n.read_words()
                 ));
                 out.push(n.stale_words());
@@ -800,11 +811,7 @@ impl ElectricNeighbours {
                 );
             }
             if !field.points.is_empty() {
-                out.push(format!(
-                    "NOT ON THE SAFE SIDE: the given points take the other lines within \
-                     {distance:.0} m of the spans computed — a point far from them may lie \
-                     nearer another line, left out"
-                ));
+                out.push(far_points_note(distance));
             }
         }
         out.push(ohl_scope::electric::beyond_note(distance));

@@ -411,7 +411,9 @@ pub struct LayoutSettings {
     /// record's `layout_run::OWN_OUT` mark) and carried into the
     /// analysis by the estimated eccentricities (O45; an option, off by
     /// default: off, or at level 4, the analysis says NOT ON THE SAFE SIDE
-    /// for those ends). On by default; off: as before (a hand detail beyond
+    /// for those ends — their moments missing, so those members' usage can
+    /// be too low; a hand-written eccentricity takes their place). On by
+    /// default; off: as before (a hand detail beyond
     /// a plate's thickness).
     pub own_offset_analysed: bool,
     /// O44 L22 (L21's question 4): a plate's own holding bolts (L5o,

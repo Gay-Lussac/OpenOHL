@@ -120,13 +120,15 @@ each point.
 - **Not on the safe side (said in every result):** the wires farther than
   the field distance from the working set's wires — of this line and of
   others — are left out (owner, 2026-11-16: "fields pulling in lines
-  within 500 m"). Their field at the points is not in the result. On the
+  within 500 m"). Their field at the points is not in the result, so the
+  real field can be higher (the result says so, with the distance). On the
   synthetic country (lines of 50 to 380 kV, 500 A in every circuit) it
   leaves out at most 0.00019 µT where the largest field is 4.2 µT; a line with
   far larger currents just beyond the distance leaves more out. The
   distance is a setting of the check: larger, less is left out.
 - A circuit without a current (its system gives none and the check gives
-  none) takes 0 A, said.
+  none) takes 0 A, said: its field is then missing, so the real field can
+  be higher — give the check's current or the systems' operating currents.
 - **On an offline working set's file** (2026-11-24): OHL-Design's
   Magnetic field window takes the other lines by this same selection and
   computes them by the same code (`ohl_scope::fields::other_lines` on the
@@ -137,9 +139,7 @@ each point.
   as the window computes it (the working set and the read-only parts
   around it): more of this line than the network's sections within the
   field distance, never less. The volumes' surfaces stay this line's
-  field alone (NOT ALL CHECKED, said); a given point far from the spans
-  computed may lie nearer another line than the distance (NOT ON THE SAFE
-  SIDE, said).
+  field alone (NOT ALL CHECKED, said); a given point far from the spans computed may lie nearer another line than the distance (NOT ON THE SAFE SIDE, said: that line's field is missing there, so the real field at the point can be higher; compute a span near the point too, else check the point by hand).
 
 ## Electric field
 
@@ -169,12 +169,16 @@ bound for the electric field. The method, its derivation and its sources:
   (`taken_in`: this line's sections, each other line's).
 - **Not on the safe side (said in every result):** the wires farther than
   the field distance from the working set's wires, and in each profile's
-  system those farther than it from the profile's middle, are left out.
-  The electric field of a line falls off far faster than its magnetic
+  system those farther than it from the profile's middle, are left out:
+  their field is not in the result, so the real field can be higher; a
+  larger field distance (a setting of the check) takes them in. The
+  electric field of a line falls off far faster than its magnetic
   field (its charges and their images form dipoles with the earth).
 - Every line's phases at their systems' voltages — the highest operating
   voltage where the line gives one, else the nominal (NOT ON THE SAFE
-  SIDE, said with the circuits). DC poles left out (said).
+  SIDE, said with the circuits: the field falls with the voltage; give
+  the highest operating voltage with the system). DC poles left out
+  (said).
 - A profile whose system cannot be solved (a wire at or below the ground
   in it) is this line alone there and the result **not all checked**.
 - Measured on the synthetic country (300 pylons, lines of 50 to 380 kV,
@@ -189,8 +193,7 @@ bound for the electric field. The method, its derivation and its sources:
   wires of the sections whose spans it computes, at its own profile
   points and given points; its own value at each point stays where it is
   larger. The cuts and the volumes' surfaces stay this line's field alone
-  (NOT ALL CHECKED, said); a given point far from the spans computed may
-  lie nearer another line than the distance (NOT ON THE SAFE SIDE, said).
+  (NOT ALL CHECKED, said); a given point far from the spans computed may lie nearer another line than the distance (NOT ON THE SAFE SIDE, said: that line's field is missing there, so the real field at the point can be higher; compute a span near the point too, else check the point by hand).
 
 ## Loads on shared towers
 

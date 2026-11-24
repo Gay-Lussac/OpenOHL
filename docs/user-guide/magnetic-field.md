@@ -287,7 +287,8 @@ file (step 2 of the Offline working set window; tested).
 
 1. In the inputs, **Other lines' current** gives the current of the other
    lines' circuits that have no operating current of their own (empty:
-   0 A, said NOT ON THE SAFE SIDE for them).
+   0 A, said NOT ON THE SAFE SIDE for them: their field is then missing,
+   so the real field can be higher — give a current here).
 2. Tick the spans as usual. The other lines are taken within 500 m of
    the **sections** of the spans computed: spans of the read-only parts
    around your working set reach beyond what the export holds — said
@@ -307,10 +308,13 @@ After:
 ![The Magnetic field window's Results on an offline working set's file: the profiles table, then the notes — the circuits at 600 A, the line naming the export and the two other lines added within 500 m of the spans computed, the orange line saying they may be stale, the note that their fields are added by size, and NOT ON THE SAFE SIDE for the wires beyond 500 m](../images/user-guide/offline-neighbours-magnetic.png)
 
 **Conservative**: the other lines' fields are added by size (their phase
-angles to this line's are not known). **Not on the safe side** (said):
-the wires farther than 500 m from the spans computed are left out; a
-given point far from those spans may lie nearer another line; a circuit
-of another line without a current takes 0 A. **NOT ALL CHECKED** (red):
+angles to this line's are not known). **Not on the safe side** (said,
+each because a field is missing, so the real field can be higher): the
+wires farther than 500 m from the spans computed are left out (the
+network's field check takes a larger field distance); a given point far
+from those spans may lie nearer another line (compute a span near it too,
+else check it by hand); a circuit of another line without a current
+takes 0 A (give *Other lines' current*). **NOT ALL CHECKED** (red):
 the volumes' surfaces are this line's field alone (the other lines are
 added to the profiles, the given points and the cuts); a reach beyond
 the export; neighbours left out of the export; a neighbour that does not

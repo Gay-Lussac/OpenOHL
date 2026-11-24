@@ -55,7 +55,7 @@ brackets). "Time" is the effect on how long a run takes.
 | In the window | Default | Effect on the results | Effect on the time |
 |---|---|---|---|
 | **2 Scope** › weather case | the first case | the wires' places (sag, swing) as solved in it; for the NISV guide the case of the largest sag | a case not solved yet is solved first |
-| voltage between phases, per circuit (`--voltage C=KV`) | the system's highest operating voltage where the line gives one, else its nominal voltage, said as not on the safe side | the field in proportion; each phase at it over \\( \sqrt3 \\) to earth, at its system's phase angle; **0 kV**: the circuit voltage-free (its wires at earth potential, like the earth wires) | none |
+| voltage between phases, per circuit (`--voltage C=KV`) | the system's highest operating voltage where the line gives one, else its nominal voltage, said as not on the safe side (the nominal is lower, so is the field in proportion; give the highest) | the field in proportion; each phase at it over \\( \sqrt3 \\) to earth, at its system's phase angle; **0 kV**: the circuit voltage-free (its wires at earth potential, like the earth wires) | none |
 | Model: **3D** / 2D (`--two-d`) | 3D | 3D: the wires as solved (sag, line angles, the line's length), the jumpers, the ground under the line; 2D: infinite straight wires over level ground at the profile | 2D: a moment; 3D: seconds to minutes |
 | Jumpers: carry their phase's charge | on | near the structures; off: left out (**not conservative** there) | a few more pieces |
 | Ground: **tiled floor** / plane under each point (`--plane`) | tiled floor | the floor follows hollows and ridges; the plane read the largest field up to 8 % low on bumps (**not conservative**) and up to 24 % high in a hollow | the floor: about a second per profile; the plane: none |
@@ -139,7 +139,8 @@ each bundle as its equivalent wire):
   result at the nominal voltage is **NOT ON THE SAFE SIDE** wherever the
   line runs above it: the result says "NOT ON THE SAFE SIDE: nominal
   voltage used for … ; the highest operating voltage gives a higher
-  field", naming the circuits, and every result says which voltage each
+  field (give it with the system, or a voltage for this run)", naming
+  the circuits, and every result says which voltage each
   circuit was computed at and where it comes from ("voltages used,
   between phases: …"). An ordinance may ask the highest operating
   voltage (the NISV guide does). A circuit given 0 kV is voltage-free:
@@ -582,7 +583,9 @@ every wire within the field distance (500 m by default) in plan of the
 profile's middle; pieces are 4 m near the middle and grow with their
 distance \\( d \\) from it, \\( \min(\max(4, 0.15\,d), 60) \\) m — some 50
 pieces per wire and kilometre. The wires beyond are left out (**NOT ON
-THE SAFE SIDE**, said in every result with the distance). The jumpers are
+THE SAFE SIDE**: their field is not in the result, so the real field can
+be higher; a larger field distance takes them in — said in every result
+with the distance, in the same words as the magnetic field's). The jumpers are
 left out of the system; this line alone in its own model has them (below).
 
 **By parts.** The system is linear in the voltages, so the charges and
@@ -622,7 +625,9 @@ Each cross term is at most \\( |\langle\vec E_k,\vec E_l\rangle| \\), so
 
 **The voltages.** Every line's phases at their systems' voltages: the
 highest operating voltage where the line gives one, else the nominal
-(**NOT ON THE SAFE SIDE**, said with the line's circuits); the Electric
+(**NOT ON THE SAFE SIDE**: the nominal is the lower, and the field
+falls with it in proportion; give the highest operating voltage with the
+system — said with the line's circuits); the Electric
 field window's voltages for its own line's circuits where given. Earth
 wires at zero; DC poles left out (said).
 

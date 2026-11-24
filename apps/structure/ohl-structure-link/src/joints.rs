@@ -1986,7 +1986,8 @@ fn bend_plates(
                      it; each flat checked as a flat plate, the bolts holding the part as the \
                      joint's, the bend's own bending under the members' force crossing it by the \
                      joint checks (the code's plugin, 2026-11-19; where it has no such check: \
-                     not checked, NOT ON THE SAFE SIDE, said there)",
+                     not checked, NOT ON THE SAFE SIDE as a failure of the bend would not be \
+                     found, said there with what to give)",
                     detail.angle,
                     detail.inner_radius * 1000.0
                 ));

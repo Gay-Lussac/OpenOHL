@@ -103,7 +103,8 @@ Only one pair is joined at a joint (its base), and none where a member
 already runs on through it: a pair crossing the base (an X-brace's other
 diagonal) bolts onto it. Joining one part where the ends have bolts would
 leave a splice's bolts unchecked (NOT ON THE SAFE SIDE if a splice is
-there), so such a pair stays a bolted splice. A member joined as one part
+there: an overloaded bolt would not be found), so such a pair stays a
+bolted splice. A member joined as one part
 is never turned by the layout (its roll stays alike with its partner's).
 
 "Too many bolts", before the codes choose the bolts: the provisional bolts
@@ -297,8 +298,11 @@ gauge used is the end's own (given), else the leg's middle (the drawing's
 assumption, one gauge line). Commentary C3.7.4 asks for due consideration
 when the bolts' centroid lies outside the heel–centre-line band; a gauge
 given beyond the leg's centre line is kept as given and checked as
-before — **NOT ON THE SAFE SIDE** where that extra eccentricity is large;
-the layout never moves a gauge.
+before — **NOT ON THE SAFE SIDE** where that extra eccentricity is large
+(its moment is beyond what the code's curve for an angle bolted by one
+leg covers, so the member's usage can be too low; give a gauge within
+the band, else check that member by hand — the extra moment is not
+modelled yet); the layout never moves a gauge.
 
 ## Pulled back: the cut
 
@@ -430,9 +434,11 @@ millimetre at a time either way, the smallest move first, up to the
 **shift limit** (a setting). The move is written as the connection's
 `shift` (beyond the concentric place). The analysis takes it as a rigid
 end offset (an eccentricity the force line passes the work point by):
-the moments where a frame member meets the joint, and — where only bars
-meet it — left out and said per member and case, **NOT ON THE SAFE
-SIDE** there ([Eccentric member ends](structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
+the moments where a frame member meets the joint; where only bars meet
+it, the shifted member's own check takes the moment (since 2026-11-18),
+and a cable's is left out and said per member and case, **NOT ON THE SAFE
+SIDE** there (a cable cannot bend: the moment is missing, so the members
+round that joint can carry more than shown; check them by hand) ([Eccentric member ends](structures-fe.md#eccentric-member-ends-rigid-end-offsets)).
 The code's slenderness curves cover only the normal framing eccentricity
 (above), not this additional one. That is why a shift comes last and is
 limited: on the real towers measured the layout needed a shift for
@@ -451,7 +457,10 @@ at most the flange's width less the edge distance (the code's minimum
 from its plugin, else the structure's default minimum edge distance —
 1.5 bolt diameters to start with, `[default_bolt_minimums]`; a default
 minimum, assumed, not a code's: it takes no force, so it may be smaller
-than a code's would be, **NOT ON THE SAFE SIDE** in that sense) from it —
+than a code's would be, **NOT ON THE SAFE SIDE** in that sense: a bolt
+nearer the edge than the code allows, with a smaller bearing or
+tear-out capacity, would not be found; a code's plugin giving its
+minimum, or a larger default, makes it safe) from it —
 the ends bolt on directly. A provisional bolt's pitch and end distance
 not given are the default minimum spacing and end distance (3 and 1.5
 bolt diameters to start with), as the joints are drawn.
@@ -545,8 +554,10 @@ their planes meet — a plate bent there, made of two plates welded.
   plate, the moment of the other's member about a seam is not nil and the
   check says it **NOT ON THE SAFE SIDE** as for any weld bent about its
   seam (6.3.6.5: the data say the weld's length on both sides together,
-  not that it is two fillets — a field and a check change, not made:
-  a question to the owner). ASCE 10-97 has no weld rule: not checked,
+  not that it is two fillets — a fillet on one side only bent so can be
+  weaker than the check takes; a field and a check change, not made:
+  a question to the owner; meanwhile weld such a seam on both sides or
+  check it by hand). ASCE 10-97 has no weld rule: not checked,
   said.
 - **Its line of action.** The member lies on its plate, so farther out of
   the flange than on a flat plate: by the gap's and its leg's rise over
@@ -650,7 +661,8 @@ whose second leg points out of the tower.
   square to the flat on the leg; the **bend's own bending** under it is
   checked since 2026-11-19 by the code's plugin ([below](#the-bend-in-bending-2026-11-19));
   a plugin without that check: not checked, **NOT ON THE SAFE SIDE**, said
-  on the row. No weld.
+  on the row (a failure of the bend would not be found; a code's plugin
+  with `joint-check-bends` checks it). No weld.
 - **Its weight**: from the developed area — the two flats to the bend
   line less, per metre of bend, (r + t/2)(2 tan(θ/2) − θ): the straight
   lengths to that line against the arc, both at the middle of the
@@ -689,11 +701,13 @@ bend turned by the bend's angle and held at the farthest holding bolt,
 the largest moment that flat's cantilever can give, **taken at the
 bend** (where the flat bears on the leg's face, less); the normal and
 the shear stresses taken at one point of the section (the codes'
-checks below). **NOT ON THE SAFE SIDE** (by what it leaves out): the
-members' axial forces only — a frame member's end moments and shear at
-its bolts are not added at the bend (the flats' plate checks take them);
-the bend short across its section — no buckling across it (the flats'
-own strut checks take theirs).
+checks below). **NOT ON THE SAFE SIDE** (by what it leaves out, so the
+bend's stress can be higher than checked): the members' axial forces
+only — a frame member's end moments and shear at its bolts are not added
+at the bend (the flats' plate checks take them); the bend short across
+its section — no buckling across it (the flats' own strut checks take
+theirs). Not modelled yet: where frame members with large end moments
+meet a bent plate, check the bend by hand.
 
 The plugins apply their code to that section: **ASCE 10-97** Eq. 3.13-1
 (P/P_a + M/M_a, P_a = F_y A on the gross section by 3.10.1, the
@@ -855,7 +869,8 @@ pieces in line): *on the safe side*.
   Confirmed, their bolts are **not checked at that joint** (they are
   checked where the pieces are spliced): **NOT ON THE SAFE SIDE** where a
   splice of one section is really there (a leg longer than a stock
-  length) — the owner's rule; to mark such a splice, give it by hand at
+  length: its bolts then go unchecked, so an overloaded bolt would not be
+  found) — the owner's rule; to mark such a splice, give it by hand at
   the joint (it is then not proposed one part).
 - **Not proposed**, said why: a splice given at the joint naming either
   piece; a `kind`, `onto`, `face` or bolts given by hand at either end;
@@ -896,7 +911,10 @@ cover** bolts **through the cover** (`Arrival::through`):
   found), other codes do for thick ones; (2) the end lies the cover's
   thickness **farther out of the leg**: that offset is not in the analysis
   (as for an end on a gusset plate: O45 D) nor in the member's check
-  beyond the codes' rules for an angle bolted by one leg.
+  beyond the codes' rules for an angle bolted by one leg. Either can make
+  the real stress larger than checked (the bolt's bending, the offset's
+  moment); not modelled yet — keep covers thin or check such ends by
+  hand.
 
 In the layout such an end's plane is the cover's face: the cover is no
 obstacle to it, the splice's own bolts (their nuts on the cover) are — the
@@ -1065,8 +1083,8 @@ Now the plate is also tried:
 **NOT ON THE SAFE SIDE** as for every plate the layout makes: an end on a
 plate lies the plate's thickness farther out of the flange than bolted
 directly, an offset not in the analysis (the joint eccentricity of a
-gusset, usual for lattice towers, [above](#a-welded-plate-in-the-members-own-plane-step-4);
-O45 D); (b) makes more such ends (measured below).
+gusset, usual for lattice towers, [above](#a-welded-plate-in-the-members-own-plane-step-4)):
+its moment is missing, so the member's usage there can be too low; planned (roadmap O45 D: the seat offsets as rigid end offsets), meanwhile check such members by hand or keep a margin; (b) makes more such ends (measured below).
 
 ### Redundants and the body's diagonals bolted directly (c): tried, left out
 
@@ -1375,8 +1393,10 @@ by contact (*an assumption*, as before for the plate round the work point,
 whose free length reached farther). **NOT ON THE SAFE SIDE** in the same
 sense as every plate the layout makes: how the plate is fastened to the
 flange it lies on is not modelled (the members' bolts hold it; a flange
-running on through the joint has no bolts of its own there) — unchanged by
-the short outline.
+running on through the joint has no bolts of its own there), so the
+plate's free length, and with it its buckling, can be worse than checked
+— unchanged by the short outline; not modelled yet: check how such a
+plate in compression is held by hand.
 
 ### The bent plate's own bolts clear of the holes there (b)
 
@@ -1456,7 +1476,7 @@ brace lies flat on it.
   else not laid out so. The joint eccentricity of a gusset is not in the
   analysis (usual for lattice towers, not a standard's rule): the limit
   keeps the bent plate within it; **NOT ON THE SAFE SIDE** by that offset,
-  as for every plate the layout makes. The estimated eccentricities (O45)
+  as for every plate the layout makes (its moment is missing, so the member's usage there can be too low; planned (roadmap O45 D: the seat offsets as rigid end offsets), meanwhile check such members by hand or keep a margin). The estimated eccentricities (O45)
   take a bent plate's offset only where it is farther out (nearer: none,
   as a flat plate).
 - **The bend in bending.** A row of the joint checks as every bend
@@ -1601,8 +1621,9 @@ it is the end's `shift`, a rigid end offset at level 4 ([Eccentric member
 ends](structures-fe.md#eccentric-member-ends-rigid-end-offsets)), and at
 level 3 with *Estimated eccentricities* on (O45: a laid-out shift read as
 laid out). At level 3 without that option the move is, like every shift,
-not in the analysis — **NOT ON THE SAFE SIDE** there, as said for the
-shift ([above](#moved-sideways-the-shift)). Measured on every thirteenth
+not in the analysis — **NOT ON THE SAFE SIDE** there (its moment is
+missing, so the member's usage can be too low; turn *Estimated
+eccentricities* on), as said for the shift ([above](#moved-sideways-the-shift)). Measured on every thirteenth
 real tower: the new moves 1–8 mm (median 3); the extra elastic stress at
 the far toe of the angle from N·e, over the axial stress, e·A/W, median
 0.37, at most 0.92 — of the order of the plate's own offset's, which is
@@ -2031,7 +2052,7 @@ And after writing, a flat plate with nothing bolted on it belonged to no
 member: a clash of it was nobody's, and stayed written. Now it is its
 welded plates' members' (they are taken back for it, as for any clash).
 **Before, such clashes were written unsaid — NOT ON THE SAFE SIDE before
-L9**; fixed.
+L9** (a plate that does not fit was shown as fitting); fixed.
 
 *On the safe side*: the plan sees the plate as written; what the checks
 after writing would take back is not planned. Conservative: a plate cut
@@ -2136,7 +2157,10 @@ not. The move across the flange is a **seat**, as every end's on a face:
 the analysis takes the members' axes through the work point and leaves
 out every seat across a flange — the outer face's as the inner's, and a
 gusset plate's thickness (O45 D) —, **NOT ON THE SAFE SIDE in that sense,
-for every end, before as now**. Measured from the work point across the
+for every end, before as now** (the seat's moment is missing, so a
+member's usage can be too low; planned, roadmap O45 D: the seat offsets as
+rigid end offsets — meanwhile the codes' curves for angles bolted by one
+leg cover the usual framing eccentricity, not more). Measured from the work point across the
 flange, an end on the **inner** face lies **nearer** than on the outer
 one: the angle's centroid (on the work line) lies inside its heel by c
 (about 0.28 of an equal angle's leg), and the end's leg then lies at
@@ -2352,7 +2376,9 @@ owner's "horizontal shift and a pull back as well as a plate". The move is
 the end's `shift`, an eccentricity the analysis takes as every shift
 (level 4, and level 3 with the estimated eccentricities; where only bars
 meet the joint the member's own check takes the moment; a cable's left out,
-**NOT ON THE SAFE SIDE**, as before). Kept at a joint only where its plan
+**NOT ON THE SAFE SIDE**, as before: a cable cannot bend, so the moment
+is missing and the members there can carry more than shown — check
+them by hand). Kept at a joint only where its plan
 lays out more ends, or as many on fewer plates (planned with and without).
 **Off in a run of Lay out joints, tried per joint by Solve the clashes**:
 measured on six private towers it laid out fewer ends at 11 joints and
@@ -2724,7 +2750,8 @@ An end laid out onto a member that **ends** at the joint (this rule's
 names, and L1 d's before them) brings its force into that member near its
 end; that member's own end bolts (a member not a leg) then carry it too.
 Until L14 the joint checks checked them for that member's own force only
-(NOT ON THE SAFE SIDE, said). **Since 2026-11-22 (L14) the bolt groups
+(NOT ON THE SAFE SIDE, said: the forces brought in were missing, so
+those bolts' usage was too low). **Since 2026-11-22 (L14) the bolt groups
 follow the force through** ([joint groups](joint-groups.md#the-force-through-a-members-own-end-bolts-l14)):
 that member's end bolts carry its force and those of the ends laid onto it
 (each along its line, with their moment about the bolts' centroid, shared
@@ -2734,8 +2761,8 @@ plate and a group of its own end bolts (its bearing). Since the owner's
 answer of 2026-11-22 to L14's question 2 also that member's own steel at
 those bolts (its net section, its block shear) and, onto a plate, the
 plate's own checks under them, under the larger of its own force and the
-resultant (before: its own force only, NOT ON THE SAFE SIDE; what remains
-is said there).
+resultant (before: its own force only, NOT ON THE SAFE SIDE as the steel's
+usage was too low; what remains is said there, with its reason).
 
 ### Measured (L13's first step, 2026-11-22)
 
@@ -3588,7 +3615,8 @@ the joint (L14's path: its own end bolts carry their forces too, each
 bolt the larger of with and without them).
 
 **The force the plate passes between its holders** (L21, 2026-11-24;
-before, said NOT ON THE SAFE SIDE on the plate's holding rows): each
+before, said NOT ON THE SAFE SIDE on the plate's holding rows — the force
+passed was missing, so those bolts' usage could be too low): each
 holder's holding bolts, its own end bolts and its own steel there also
 take the other holder's force passed through the plate, each share from
 none to the whole and the other ends' forces whole or none, the larger
@@ -3598,7 +3626,8 @@ bolt by bolt — a statically safe bound
 **Not on the safe side.** The end on the plate
 lies a plate's thickness out of the holders' level legs, as on any plate
 (its framing eccentricity, gauge to centroid, as for any end bolted by one
-leg: the code's slenderness curve). No member's size or work point
+leg: the code's slenderness curve) — the plate's thickness beyond that is
+not in the analysis: its moment is missing, so the member's usage there can be too low; planned (roadmap O45 D: the seat offsets as rigid end offsets), meanwhile check such members by hand or keep a margin. No member's size or work point
 changes.
 
 
@@ -3634,7 +3663,9 @@ ends refused so on the 78 private towers, 5 065 of them within 40 mm.
   and plate its larger usage;
 - where the analysis does not take it — the option off, or the joint
   details taken (level 4: the connections' shifts only) — the run says
-  **NOT ON THE SAFE SIDE**: how many such plates and the largest offset;
+  **NOT ON THE SAFE SIDE**: how many such plates and the largest offset
+  (their moment is missing, so those members' usage can be too low; at
+  level 3 *Estimated eccentricities* takes them in);
 - an end still left off its flange is given the plate case's upper bound
   at the larger of its leg's thickness and 40 mm (O45 A1, on the safe
   side: such a plate may now put it that far);
@@ -3651,7 +3682,9 @@ ends refused so on the 78 private towers, 5 065 of them within 40 mm.
 
 **Not on the safe side.** Without the estimated eccentricities (their
 default) and at level 4 these offsets are not analysed: said on every run
-of such a structure. The welded plate itself is drawn, clash-checked and
+of such a structure — their moments are missing, so those members' usage
+can be too low; at level 3 turn *Estimated eccentricities* on; at level 4
+not modelled yet — check those members by hand. The welded plate itself is drawn, clash-checked and
 checked (its weld, its own sections) as before.
 
 
@@ -4350,7 +4383,7 @@ moves laid out 218 more joints whole, not 494, and 1.0 % fewer plates, not
   towards the flange (the packing's target) only 257 → 246, the rest the
   axis-limit group. Not built: the member a further plate's thickness out
   of the flange, an offset not in the analysis (NOT ON THE SAFE SIDE until
-  O45 D).
+  O45 D: its moment would be missing, so the member's usage too low).
 - **Time**: every thirteenth tower, six, laid out back to back twice at a quiet
   moment: the median per tower 19.6 s before, 24.8 s with L5 (both passes
   alike), the largest 21.3 s → 26.7 s — about a quarter more: each joint

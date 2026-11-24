@@ -34,6 +34,12 @@ always explain why it's written"*. Every NOT ON THE SAFE SIDE text says
   what was said then), code comments for developers, and the files
   another change was editing at the time (the joint layout and the
   electric field's neighbour files) — those follow when that work lands.
+- **Second pass, the same day**: those files done too — the joint
+  layout's theory and notes, the electric field's theory, its scoped and
+  offline notes and their guide pages. The "wires beyond the field
+  distance" note now has one wording for the magnetic and the electric
+  field (`ohl_scope::fields::beyond_words`: their field is missing, so
+  the real field can be higher; a larger field distance takes them in).
 
 ## 2026-11-24 (joint layout: a plate's own holding bolts placed clear of what the plan lays out, L22)
 

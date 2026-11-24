@@ -257,7 +257,10 @@ and [what is left out](../theory/electric-field.md#what-is-left-out):
 
 - **The nominal voltage** (when neither a voltage for the run nor the
   system's highest operating voltage is given): **NOT ON THE SAFE SIDE**,
-  said in the window and in the result with the circuits concerned. The
+  said in the window and in the result with the circuits concerned — the
+  field falls with the voltage, so it is too low wherever the line runs
+  above its nominal; give the highest operating voltage with the system
+  or for the run. The
   surface gradient the same.
 - **2D only**: infinite straight conductors over level ground; near a
   line angle, a structure or on sloping ground not valid (warned).
@@ -305,7 +308,8 @@ tested). How it is computed:
 2. The voltages: this line's circuits at the window's voltages (or their
    systems'), the other lines' at their systems' highest operating
    voltage, else the nominal (said NOT ON THE SAFE SIDE with the
-   circuits).
+   circuits: the nominal is the lower, and the field falls with it; give
+   the systems' highest operating voltage in their lines).
 3. **Run**. The results' notes start with the export, the lines solved
    together (their sections), the method (exact or a bound) and the
    seconds it took, that they **may be stale** (orange; red when the
@@ -325,11 +329,15 @@ After:
 
 **Conservative**: the worst over the lines' unknown phase angles (a
 bound for three or more parts); the larger of this line alone and the
-lines together at every point. **Not on the safe side** (said): the wires
+lines together at every point. **Not on the safe side** (said, each
+because the field computed can be lower than the real one): the wires
 farther than 500 m from the spans computed, and in each profile's system
-those farther than 500 m from its middle, are left out; a given point far
-from those spans may lie nearer another line; a line at its nominal
-voltage. **NOT ALL CHECKED** (red): the cuts and the volumes' surfaces
+those farther than 500 m from its middle, are left out — their field is
+missing (the network's field check takes a larger field distance); a
+given point far from those spans may lie nearer another line, missing
+too (compute a span near it, else check it by hand); a line at its
+nominal voltage — the field falls with the voltage (give its system's
+highest operating voltage). **NOT ALL CHECKED** (red): the cuts and the volumes' surfaces
 are this line's field alone (the other lines are computed with it at the
 profiles and the given points); a reach beyond the export; neighbours
 left out of the export; a neighbour that does not solve; a profile whose

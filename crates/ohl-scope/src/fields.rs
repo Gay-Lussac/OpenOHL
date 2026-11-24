@@ -17,8 +17,10 @@
 //!
 //! **NOT ON THE SAFE SIDE**: the wires farther than the field distance
 //! (of this line and of others) are left out — their field at the points
-//! is not in the result. Said in every result, with the distance; the
-//! tests measure what it leaves out on the synthetic country.
+//! is not in the result, so the real field can be higher; a larger field
+//! distance takes them in. Said in every result, with the distance
+//! ([`beyond_note`]); the tests measure what it leaves out on the
+//! synthetic country.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -396,8 +398,9 @@ pub fn other_lines(
                 }
                 if f.notes.iter().any(|n| n.contains("no current given")) {
                     out.notes.push(format!(
-                        "line {m}: a circuit without a current (0 A taken) — give the check's \
-                         current or the systems' operating currents"
+                        "line {m}: a circuit without a current (0 A taken: its field is missing, \
+                         so the real field can be higher) — give the check's current or the \
+                         systems' operating currents"
                     ));
                 }
                 for s in &secs {
@@ -427,12 +430,23 @@ pub const ADDED_BY_SIZE: &str = "the other lines' fields added by size at each p
                                  phase angles to this line's are not known: conservative)";
 
 /// The note said with every scoped field: the wires beyond the field
-/// distance left out (NOT ON THE SAFE SIDE).
+/// distance left out (NOT ON THE SAFE SIDE) — [`beyond_words`].
 pub fn beyond_note(distance: f64) -> String {
+    beyond_words(
+        &format!("the wires farther than {distance:.0} m from the working set's wires"),
+        "a larger field distance takes them in",
+    )
+}
+
+/// The words of every "wires beyond the field distance" note, magnetic
+/// and electric alike (owner 2026-11-24: every NOT ON THE SAFE SIDE says
+/// why): `left_out`, which wires are left out; why that is not on the
+/// safe side (their field is missing, so the real field can be higher);
+/// `way_out`, what takes them in.
+pub fn beyond_words(left_out: &str, way_out: &str) -> String {
     format!(
-        "NOT ON THE SAFE SIDE: the wires farther than {distance:.0} m from the working set's \
-         wires are left out (the field distance; owner 2026-11-16): their field is not in the \
-         result, so the real field can be higher; a larger field distance takes them in"
+        "NOT ON THE SAFE SIDE: {left_out} are left out (the field distance; owner 2026-11-16): \
+         their field is not in the result, so the real field can be higher; {way_out}"
     )
 }
 

@@ -23,8 +23,10 @@
 //! system), and neither is let to lower the other.
 //!
 //! **NOT ON THE SAFE SIDE**: the wires farther than the field distance
-//! from a profile's middle are left out of its system (their field is not
-//! in the result); said in every result, with the distance.
+//! from a profile's middle are left out of its system — their field is not
+//! in the result, so the real field can be higher; a larger field distance
+//! takes them in. Said in every result, with the distance ([`beyond_note`],
+//! the same words as the magnetic field's).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -189,7 +191,8 @@ impl JointLines {
 /// network's selection, [`near_sections`]), each solved in `case` with its
 /// own settings and wires, its phases at their systems' voltages (the
 /// highest operating voltage where the line gives one, else the nominal:
-/// said NOT ON THE SAFE SIDE), its earth wires earthed. `given`: voltages for
+/// said NOT ON THE SAFE SIDE, as the highest gives a higher field — give
+/// it with the system), its earth wires earthed. `given`: voltages for
 /// this line's circuits (OHL-Design's window; the network's check: none).
 pub fn joint_lines(
     net: &mut dyn Neighbourhood,
@@ -369,12 +372,16 @@ pub const SOLVED_TOGETHER: &str = "the lines solved together (charge simulation:
                                    and the lines together";
 
 /// The note said with every scoped electric field: the wires beyond the
-/// field distance left out (NOT ON THE SAFE SIDE).
+/// field distance left out (NOT ON THE SAFE SIDE: their field is missing,
+/// so the real field can be higher) — the magnetic field's words
+/// ([`crate::fields::beyond_words`]), with each profile's own system.
 pub fn beyond_note(distance: f64) -> String {
-    format!(
-        "NOT ON THE SAFE SIDE: the wires farther than {distance:.0} m from the working set's \
-         wires, and in each profile's system those farther than {distance:.0} m from its \
-         middle, are left out (the field distance): their field is not in the result"
+    crate::fields::beyond_words(
+        &format!(
+            "the wires farther than {distance:.0} m from the working set's wires, and in each \
+             profile's system those farther than {distance:.0} m from its middle,"
+        ),
+        "a larger field distance takes them in",
     )
 }
 
