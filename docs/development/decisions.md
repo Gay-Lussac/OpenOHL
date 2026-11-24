@@ -8,6 +8,36 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (joint layout: three steps measured, none kept, L23)
+
+**L22's questions 2 and 3, L21's item 3 and L19's question 7b tried and
+measured; none changes the program** (roadmap O44 L23; the owner busy:
+built on its own, reported;
+[theory](../theory/joint-layout.md#a-plates-own-holding-bolts-tested-by-the-clash-check-after-writing-tried-not-kept-l23)).
+
+- **A plate's own holding bolts tested by the clash check after writing**
+  (L22's question 2; testing each candidate inside the plan would cost a
+  joint's whole detail per candidate, so the run's own check after
+  writing was used, the plan told what it found and planned again first):
+  in four forms on four private towers no end more; the first changes no
+  joint at a much longer run, the others leave one joint kind an end short
+  on three towers. With the plate grown along its holder (L22's question
+  3) again 15 joints worse. **Not kept** (no joint worse is the rule).
+- **The members' turns weighed without the far-out welded plates** (L21's
+  item 3, the joints L20 item 2 left worse): the half and quarter turns
+  and L10's other faces chosen as if L20 item 2's plates did not exist
+  (as L16 does for the plates between): 24 joints better, 28 worse, 30
+  ends fewer — those plates gain mostly through turns. **Not kept**; next
+  (an owner question): each turn they change weighed over every joint its
+  member reaches, as L19 weighs the plane turns.
+- **The joggle** (L19's question 7b): **not built** — a straight leg tilted
+  over the flange lies a plate's thickness above it at its lowest point
+  and rises along its slope to its bolts whatever the plate under it does;
+  the welded plate is already within the seam's room of that bound (of 60
+  such ends at most 15° off on eight private towers, 5 could come within a
+  plate's thickness with no room at the seam at all).
+- **Measured** (private towers): in the roadmap block and the theory page.
+
 ## 2026-11-24 (every "not on the safe side" says why)
 
 **The owner's rule** (verbatim): *"with the 'not on the safe side' please

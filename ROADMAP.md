@@ -3687,6 +3687,13 @@ only where it helps):
   > three parts) or a half turn — the owner to choose; each weighed per
   > joint with the fabrication order direct → one plate → one bend →
   > several bends → welded (fewer parts, no weld to inspect, first).
+  > **Approved by the owner, 2026-11-24** (every recommendation; 7c
+  > answered: *"probably a half turn if possible then other options"*,
+  > and added the same day: *"maybe a 90 degrees turn might be better so
+  > you could also consider it"* — for an end whose outstanding leg points
+  > into the flange both a half turn and a quarter turn tried, weighed
+  > over every joint the member reaches, the better kept; a stand-off
+  > later, where neither works; L23's question 5).
 - [x] L20. **A level plate across two horizontals; the welded plate's axis
   offset carried into the analysis** (L19's questions 6 and 7a, and
   the owner's "go ahead to improve" of 2026-11-23 for plates with several
@@ -3751,6 +3758,7 @@ only where it helps):
   > level 4 too (the analysis's end offsets: a core change, asked first).
   > (6) 40 mm as the most such a plate may put the axis out → Recommended:
   > keep (measured; beyond, a hand detail as before).
+  > **Approved by the owner, 2026-11-24** (every recommendation).
 - [x] L21. **The force a level plate passes between its two holders; a
   plate's own holding bolts in the clash check** (L20's questions 2 and 3;
   the owner busy: built on its own, reported). **Built 2026-11-24, in
@@ -3819,6 +3827,7 @@ only where it helps):
   > that the guard rarely has to take ends back. (5) Clashes of those
   > bolts with members left for a hand detail stay said, not acted on (as
   > for every part) → Recommended: keep.
+  > **Approved by the owner, 2026-11-24** (every recommendation).
 - [x] L22. **A plate's own holding bolts placed clear of what the plan
   lays out** (L21's question 4; the owner busy: built on its own,
   reported). **Built 2026-11-24, in active development, not approved yet**
@@ -3873,6 +3882,81 @@ only where it helps):
   > again with (2). (4) Members in line with the holder not tested by the
   > plan's check (the check after writing tests their heads and nuts) →
   > Recommended: keep until (2) (testing them changed nothing measured).
+  > **Approved by the owner, 2026-11-24** (every recommendation; (2) and
+  > (3) tried in L23, measured, not kept).
+- [x] L23. **Three steps tried and measured, none kept; the joggle not
+  built; the joint layout and plugins planned** (L22's questions 2 and 3,
+  L21's item 3 and L19's question 7b, approved by the owner on
+  2026-11-24; the owner busy: built on its own, reported). **Measured
+  2026-11-25; no change to the program**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plates-own-holding-bolts-tested-by-the-clash-check-after-writing-tried-not-kept-l23),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-three-steps-measured-none-kept-l23)).
+  Measured on four of the eight private towers of L21 and L22 (3 111
+  joints; the same settings; L22 main as the base — main reproduced it
+  exactly):
+
+  | | joints whole | member ends | plates | a plate's own bolts in a clash after writing (joints) | plates' own holding ends | joints better / worse |
+  |---|---|---|---|---|---|---|
+  | L22 main | 2 093 | 7 103 | 3 756 | 78 (28) | 1 345 | — |
+  | 1: planned again where the check after writing finds a plate's own bolt in a clash | 2 093 | 7 103 | 3 756 | 78 (28) | 1 351 | 0 / 0 |
+  | 1 with the plate grown along its holder (L22's question 3) | 2 078 | 7 088 | 3 747 | 78 (28) | 1 321 | 12 / 15 |
+  | 1 not for clashes with members left as they were, only the bolts moving | 2 090 | 7 100 | 3 759 | 87 (31) | 1 357 | 0 / 3 |
+  | 2: the turns chosen without the far-out welded plates | 2 085 | 7 073 | 3 707 | 100 (34) | 1 354 | 24 / 28 |
+
+  **1. A plate's own holding bolts tested by the joint details' clash
+  check** (L22's question 2): testing each candidate inside the plan
+  would cost a joint's whole detail per candidate (the run's check after
+  writing costs about that per joint and round), so the run's own check
+  after writing tested the plan's bolts, and the plan was told the parts
+  they ran into (as drawn, the check's own pieces) and planned again first,
+  before the plate's members were pulled back. No form lays out an end
+  more; the first changes no joint (six more holding ends) at a run about
+  1.8 times as long (under varying load); the plate grown along its
+  holder again loses an end at L22's joint kind (15 worse); the stricter
+  forms leave one joint kind on three towers an end short and nine more
+  such clashes; the last form's time about +8 % against a run beside it.
+  The clashes left are where no place inside the plate is clear (a head
+  into another piece of the leg in line, a plate of a member left as it
+  was over the whole flange): moving the bolts only moves the clash. Not
+  kept. **2. The joints L20 item 2 left worse** (L21's item 3): the half
+  and quarter turns and L10's other faces chosen on plans without L20 item
+  2's welded plates (as without L15's plates between since L16), the
+  joints planned with them afterwards where the rolls let them: worse
+  (24 better, 28 worse, 30 ends and 49 plates fewer) — those plates gain
+  mostly through turns (a member turned onto a welded plate lets the
+  joint's other ends onto plates: one joint three ends with the turn,
+  none without). Not kept. **3. The joggle** (L19's question 7b): not
+  built — a straight leg tilted θ over the flange lies a plate's
+  thickness above it at its lowest point and rises along its slope to its
+  bolts, whatever the plate under it does; the welded plate already comes
+  within the seam's room of that bound. On the eight private towers, of
+  60 ends at most 15° off refused for their axis, 5 would come within a
+  plate's thickness with no room at the seam at all (20 if their bolts
+  also needed no edge distance from the bend — no plate allows that).
+  **4. After the code plugins' edge distances** (holding bolts with the
+  ASCE 10-97 edge distance, the bearing cap and the rolled toe): not
+  measured — the change had not reached main when L23 ended (the tools
+  and the before-runs are kept privately for it: level plates written,
+  "no place for 2" notes, plates held by their own bolts, joints whole).
+  **5. The joint layout and plugins**: the plan below (L24), approved by
+  the owner on 2026-11-24.
+  > **Owner:** (1) A plate's own bolts tested by the check after writing:
+  > no end gained in any form, one joint kind worse in the stricter ones →
+  > Recommended: drop it; where no place inside the plate is clear, next
+  > hold the plate by the member's own end bolts where they reach it (L14)
+  > or leave it for a hand detail, said as now. (2) The plate grown along
+  > its holder (measured worse twice, L22 and L23) → Recommended: drop it.
+  > (3) The joints L20 item 2 leaves worse (22 on four private towers in
+  > L20): the turns chosen without its plates lose more than they save → Recommended: next, each turn the welded plates change decided
+  > with and without them, the one with them kept only where every joint
+  > its member reaches is laid out no worse and one better (L19's rule;
+  > a layout run more per tower); until then keep L20 item 2 as it is.
+  > (4) The joggle → Recommended: drop it (it cannot bring the axis back);
+  > instead, as the fabrication order puts one bend before a weld, let a
+  > plate bent once carry its axis offset into the analysis up to 40 mm as
+  > the welded plate does (L20 item 2) — measured first. (5) The half or
+  > quarter turn for an outstanding leg into the flange (the owner's
+  > answer to 7c) → planned as L25, below.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

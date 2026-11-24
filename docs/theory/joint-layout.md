@@ -3826,6 +3826,108 @@ without. The run's results vary by some tens of joints with any change
 of the plans (the weighed turns follow every joint), so differences of
 that size are within that spread.
 
+## A plate's own holding bolts tested by the clash check after writing: tried, not kept (L23)
+
+(L22's questions 2 and 3, approved by the owner on 2026-11-24; roadmap
+O44 L23. Tried 2026-11-25, measured, not kept; no change to the program.)
+
+**Why.** L22's plan tests a plate's own holding bolts against what it
+lays out with its own geometry — close to, not the same as, what Joint
+details draws: a plate seated a few millimetres off the flange, its
+outline grown round every bolt on it, a member in line with the holder
+drawn with its own section. The clash check after writing (L21) then
+finds some of those bolts in a clash the plan had not seen, and the run
+takes the plate's members back.
+
+**Testing every candidate inside the plan** (the joint written, drawn and
+clash-checked for each candidate bolt place) would cost a joint's whole
+detail per candidate — the run's check after writing, which already draws
+the joint as written, costs about that per joint and round — for
+thousands of joints planned several times each. **Tried instead**: the
+candidates the plan chooses tested by that check, and the plan told what
+it found — where the check after writing finds a plate's own holding bolt
+(of a flat plate held by its own bolts, L5o) in a clash, the joint planned
+again first with that plate's bolts kept clear of the part they ran into
+as the joint details draw it (the clash check's own convex pieces), each
+part once per joint, before the plate's members are pulled back; taken
+only where the plan again lays out as many ends with as many plates held
+by their own bolts. Three forms, then the plate grown along its holder
+where no place inside is clear (L22's question 3, tried again with it):
+
+| four private towers (3 111 joints) | joints whole | member ends | plates | a plate's own bolts in a clash after writing (joints) | plates' own holding ends | joints better / worse than L22 | layout time |
+|---|---|---|---|---|---|---|---|
+| L22 main | 2 093 | 7 103 | 3 756 | 78 (28) | 1 345 | — | — |
+| the plan again where it lays out as many ends | 2 093 | 7 103 | 3 756 | 78 (28) | 1 351 | 0 / 0 | about 1.8 times¹ |
+| and the plate grown where no place inside is clear | 2 078 | 7 088 | 3 747 | 78 (28) | 1 321 | 12 / 15 | about 2.2 times¹ |
+| not for a clash with a member left as it was (said, not acted on) | 2 090 | 7 100 | 3 759 | 87 (31) | 1 357 | 0 / 3 | +8 %² |
+| and only where nothing but those bolts moves | 2 090 | 7 100 | 3 759 | 87 (31) | 1 357 | 0 / 3 | |
+
+¹ under a varying load of other work, not comparable; ² against a run
+beside it at the same time (one with the next section's change).
+
+No form lays out an end more; the first changes no joint (six more
+holding ends) at a much longer run; the plate grown along its holder
+again loses an end at the same kind of joint as in L22 (12 joints of one
+kind on three towers); the last two leave one joint kind on three towers
+an end short (the bolts moved, the next round's clash rounds then take
+another member back) and nine more such clashes. Traced: the clashes
+left are where no place inside the plate is clear — heads into another
+piece of the leg in line, often thicker, or a plate of a member left as
+it was over the whole flange; moving the bolts there only moves the
+clash. **Not kept** (the owner's rule: no joint worse). Next (an owner
+question): those plates need another holding — the member's own end
+bolts (L14) where they reach, or a hand detail, said as now.
+
+## The members' turns and the far-out welded plates: tried, not kept (L23)
+
+(L21's item 3: L20 item 2's joints left worse — the owner kept the offset
+step on, 2026-11-24. Tried 2026-11-25, measured, not kept; no change to
+the program.)
+
+**Why.** L20 item 2 lays an end out on a plate in its own plane welded to
+the flat plate even where that puts its axis up to 40 mm farther out (the
+offset recorded for the analysis), weighed joint by joint. But an angle
+has one roll along its whole length, and the run chooses some turns — the
+half and quarter turns (steps 2b, L3b) and L10's other faces — by counting
+the ends its plans lay out at all the member's joints. With the welded
+plates in those counts, a turn that laid one end of a member out could be
+refused because its other end, at another joint, now went onto a welded
+plate without it (L20 measured 22 joints worse on four private towers).
+
+**Tried**: those turns chosen on plans **without** the welded plates (as
+the plates between a built-up member's angles have been since L16), the
+joints then planned with them where the rolls let them — so that such a
+plate never changes a member's roll. **Measured worse** (four private
+towers, against L22 main): 24 joints better, 28 worse, 30 member ends and
+49 plates fewer. Traced: the welded plates gain mostly *through* turns —
+a member turned so that its end goes onto a welded plate lets the other
+ends of that joint onto plates too (one joint: three ends laid out with
+the turn, none without). Taking the welded plates out of the turns' counts
+loses those gains to save the few joints a turn costs. **Next** (an owner
+question): weigh each turn the welded plates change as L19 weighs the
+plane turns — the turn decided with and without them, and the one with
+them kept only where every joint its member reaches is laid out no worse
+and one better.
+
+## The joggle (L19's question 7b): measured, not built (L23)
+
+A joggle — a plate bent twice — was to bring back the axis of an end at
+most 15° off its flange that a plate in its own plane puts farther out
+than one plate's thickness. **It cannot, by geometry**: the member's leg
+is straight, so over the flange its lowest point must lie at least a plate
+thickness above the flange's face (the plate under it), and from there its
+leg rises at its angle θ to the flange along the slope to its bolts: the
+axis at the bolts lies at least (that distance) · sin θ farther out than
+on a flat plate, whatever the plate under it does between the flange and
+the leg. A plate in its own plane welded to the flat plate already comes
+within the seam's room (the gap, 10 mm, along the slope: about 1 mm at
+7°) of that bound; a single bend within the bend's curved part. On the
+eight private towers L21–L23 measure, of the 60 ends at most 15° off
+refused so, **5** would come within a plate's thickness with no room at
+the seam at all (and 20 if also their bolts' edge distance to the bend
+were nothing — which no plate allows). So nothing was built; an owner
+question instead (the roadmap's L23 block).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
