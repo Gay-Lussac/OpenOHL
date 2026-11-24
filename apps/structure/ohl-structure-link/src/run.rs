@@ -927,8 +927,11 @@ pub fn analyse_structure_with(
     let dir = input.dir.unwrap_or(Path::new("."));
     let pole = ohl_structures_fe::pole::structure_pole(t, dir, input.sections);
     let mut light_ratio = 1.0;
-    // The model without the joint options, for their effect.
+    // The model without the joint options, for their effect and the
+    // larger usage of with and without them; with the estimated
+    // eccentricities, also that model without them.
     let mut plain: Option<Model> = None;
+    let mut plain_estimated: Option<Model> = None;
     let model = if has_model(t) {
         let (m, notes) = model_on(input);
         run.notes.extend(notes);
@@ -1115,50 +1118,77 @@ pub fn analyse_structure_with(
         plans: plans.as_ref(),
         budget,
     };
+    // The cases on `m` — with the estimated eccentricities' model `with`
+    // too when they apply, each member the larger of the two solves.
+    let solve_on = |m: &Model,
+                    with: Option<&Model>,
+                    used: Option<&crate::eccentricities::EstimateUse>,
+                    notes: &mut Vec<String>|
+     -> Vec<Result<CaseResult, String>> {
+        let base = fe_results(&fe_in, m, notes);
+        match (with, used) {
+            (Some(with), Some(used)) => {
+                let with_r = fe_results(&fe_in, with, notes);
+                base.into_iter()
+                    .zip(with_r)
+                    .map(|(without, with)| {
+                        crate::eccentricities::envelope(with, without, &used.estimates)
+                    })
+                    .collect()
+            }
+            _ => base,
+        }
+    };
     let fes: Vec<Option<Result<CaseResult, String>>> = match &model {
         Some(m) => {
             let started = std::time::Instant::now();
-            let base = fe_results(&fe_in, m, &mut run.notes);
-            match estimated {
-                None => base.into_iter().map(Some).collect(),
+            let out = match estimated {
+                None => solve_on(m, None, None, &mut run.notes),
                 Some((with, mut used)) => {
-                    let with_r = fe_results(&fe_in, &with, &mut run.notes);
+                    let out = solve_on(m, Some(&with), Some(&used), &mut run.notes);
                     used.solve_seconds = started.elapsed().as_secs_f64();
-                    let out = base
-                        .into_iter()
-                        .zip(with_r)
-                        .map(|(without, with)| {
-                            Some(crate::eccentricities::envelope(
-                                with,
-                                without,
-                                &used.estimates,
-                            ))
-                        })
-                        .collect();
+                    // The joint options' second solve without them takes
+                    // the estimates too.
+                    if plain.is_some() {
+                        plain_estimated = Some(without_joint_options(with));
+                    }
                     run.estimates = Some(used);
                     out
                 }
-            }
+            };
+            out.into_iter().map(Some).collect()
         }
         None => names.iter().map(|_| None).collect(),
     };
-    // The joint options' effect: every case solved without them too.
+    // The joint options (stage 4.4): every case solved without them too —
+    // their effect said, and each member's and joint check's usage the
+    // larger of with and without them (2026-11-24, the owner's question 2
+    // of 2026-11-23): neither option can lower a usage.
     let fes = match &plain {
         Some(p) => {
-            let without = fe_results(&fe_in, p, &mut Vec::new());
+            let without = solve_on(
+                p,
+                plain_estimated.as_ref(),
+                run.estimates.as_ref(),
+                &mut Vec::new(),
+            );
             fes.into_iter()
                 .zip(without)
                 .map(|(with, without)| match (with, without) {
-                    (Some(Ok(mut w)), Ok(o)) => {
-                        let e = joint_option_effect(&w, &o);
-                        w.notes.push(e);
+                    (Some(Ok(w)), Ok(o)) => {
+                        let effect = joint_option_effect(&w, &o);
+                        let (mut w, _) = crate::joint_envelope::envelope(w, &o);
+                        w.notes.push(effect);
                         Some(Ok(w))
                     }
-                    (Some(Ok(mut w)), Err(e)) => {
-                        w.notes
-                            .push(format!("effect of the joint options: without them: {e}"));
-                        Some(Ok(w))
-                    }
+                    // Without the options the case does not solve: it
+                    // fails (the larger of the two is not known) — as it
+                    // fails without the options.
+                    (Some(Ok(_)), Err(e)) => Some(Err(format!(
+                        "{} (each member's usage is the larger of with and without the joint \
+                         options): {e}",
+                        crate::joint_envelope::WITHOUT
+                    ))),
                     (other, _) => other,
                 })
                 .collect()
@@ -1173,6 +1203,16 @@ pub fn analyse_structure_with(
             .map(|((name, fe), pole)| StructureCase { name, fe, pole }),
     );
     Ok(run)
+}
+
+/// `m` with the joint options turned off: their releases and slip taken
+/// off the members (`joint_stiffness::apply` with both off), all else —
+/// the estimated eccentricities' offsets — kept.
+fn without_joint_options(mut m: Model) -> Model {
+    m.analysis.end_releases = false;
+    m.analysis.bolt_slip = false;
+    ohl_structures_fe::joint_stiffness::apply(&mut m);
+    m
 }
 
 /// What every solve of a run shares (the model aside).

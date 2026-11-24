@@ -108,15 +108,16 @@ pub struct FeArgs {
     extension: Option<String>,
     /// End releases from the joints' bolts (an option, off by default): a
     /// frame end with one bolt pinned, one with one row of bolts in one leg
-    /// free out of that leg's plane. Each case is solved without it too
-    /// and its effect printed (forces shared differently: not on the safe
-    /// side for every member).
+    /// free out of that leg's plane. Each case is solved without it too,
+    /// its effect printed and each member's usage the larger of the two
+    /// (the forces are shared differently; neither solve lowers a usage).
     #[arg(long)]
     end_releases: bool,
     /// Bolt slip (an option, off by default): each bolted end slips by its
     /// hole clearance before its bolts bear (friction not counted). Each
-    /// case is solved without it too and its effect printed (larger
-    /// deflections; the forces shared differently).
+    /// case is solved without it too, its effect printed and each member's
+    /// usage the larger of the two (larger deflections; the forces shared
+    /// differently, the members it relieves checked as without it).
     #[arg(long)]
     bolt_slip: bool,
 }
@@ -543,6 +544,17 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
                 args.strength,
                 Some(&given),
             );
+            // The solve without the joint options by the same capacities.
+            if let (Some(p), Some(run)) = (&plain, solved_plain.get_mut(n)) {
+                let given = plugin_capacities(host, dir, method, args.strength, p, &run.0)
+                    .map_err(|e| format!("{case} (without the joint options): {e}"))?;
+                run.1 = ohl_structures_fe::check::member_usage_with(
+                    p,
+                    &run.0,
+                    args.strength,
+                    Some(&given),
+                );
+            }
         }
         let (worst_node, worst_d) = s
             .displacements
@@ -592,6 +604,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         if let Some(note) = ohl_structures_fe::joint_stiffness_note(&model) {
             println!("  {note}");
         }
+        // Each member's axial force as listed: that of the solve whose
+        // usage governs it.
+        let mut axial: Vec<f64> = s.members.iter().map(|m| m.axial).collect();
         if let Some((s0, u0, took0)) = solved_plain.get(n) {
             println!(
                 "  {}",
@@ -601,6 +616,24 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
                     (s0, u0, *took0)
                 )
                 .words()
+            );
+            // Each member's usage the larger of with and without the joint
+            // options (2026-11-24): neither option lowers a usage.
+            let mut without = 0;
+            for u in &mut usage {
+                if let Some(w) = u0.iter().find(|w| w.member == u.member)
+                    && ohl_structures_fe::joint_stiffness::governs_without(u.usage, w.usage)
+                {
+                    *u = w.clone();
+                    u.governs = format!("{} (without the joint options)", w.governs);
+                    axial[u.member] = s0.members[u.member].axial;
+                    without += 1;
+                }
+            }
+            println!(
+                "  joint options: each member's usage the larger of with and without them — {without} \
+                 member(s) from the solve without them (said in what governs; their axial force \
+                 in the CSV that solve's)"
             );
         }
         for note in &model.bolt_grade_notes {
@@ -664,7 +697,7 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
                 ohl_core::text::csv_field(&m.id),
                 m.kind.as_str(),
                 ohl_core::text::csv_field(&model.sections[m.section].id),
-                s.members[u.member].axial,
+                axial[u.member],
                 u.usage
                     .map_or(String::new(), |x| format!("{:.1}", x * 100.0)),
                 ohl_core::text::csv_field(&u.governs)

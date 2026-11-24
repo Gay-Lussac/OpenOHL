@@ -684,23 +684,22 @@ fn secant_passes(
 /// solves and whether they settled ([`Solution::slip_passes`],
 /// [`Solution::slip_settled`]).
 pub(crate) fn solve_slipping(
-    model: &Model,
+    work: &mut Model,
     start: Option<&[bool]>,
     nonlinear: bool,
     solve: &SolveFn<'_>,
 ) -> Result<Solution, FeError> {
-    let slipping: Vec<usize> = (0..model.members.len())
-        .filter(|&k| model.members[k].slip > 0.0)
+    let slipping: Vec<usize> = (0..work.members.len())
+        .filter(|&k| work.members[k].slip > 0.0)
         .collect();
     if slipping.is_empty() {
         // End releases alone: one solve as the run asks.
-        return solve(model, start, false);
+        return solve(work, start, false);
     }
-    let s = solve(model, start, true)?;
-    let mut work = model.clone();
+    let s = solve(work, start, true)?;
     let mut passes = 1;
     let (s, settled) = secant_passes(
-        &mut work,
+        work,
         &slipping,
         s,
         solve,
@@ -709,17 +708,9 @@ pub(crate) fn solve_slipping(
         &mut passes,
     )?;
     let (mut s, settled) = if nonlinear {
-        let s = solve(&work, start, false)?;
+        let s = solve(work, start, false)?;
         passes += 1;
-        secant_passes(
-            &mut work,
-            &slipping,
-            s,
-            solve,
-            false,
-            SLIP_PASSES,
-            &mut passes,
-        )?
+        secant_passes(work, &slipping, s, solve, false, SLIP_PASSES, &mut passes)?
     } else {
         (s, settled)
     };
@@ -791,6 +782,29 @@ fn take_back(model: &mut Model, names: &[String]) -> bool {
     changed
 }
 
+/// The releases and the slip of the members `ids` taken back in `model`
+/// (both ends of each): the joints at their ends, none when nothing was.
+fn take_back_members(model: &mut Model, ids: &[String]) -> Option<Vec<String>> {
+    let mut joints: Vec<String> = Vec::new();
+    for k in 0..model.members.len() {
+        let m = &mut model.members[k];
+        if !ids.contains(&m.id) || (m.slip <= 0.0 && m.releases.iter().all(|r| r.is_none())) {
+            continue;
+        }
+        m.releases = Default::default();
+        m.slip = 0.0;
+        m.axial_share = 1.0;
+        let ends = [m.i, m.j];
+        for n in ends {
+            let id = &model.nodes[n].id;
+            if !joints.contains(id) {
+                joints.push(id.clone());
+            }
+        }
+    }
+    (!joints.is_empty()).then_some(joints)
+}
+
 /// The releases taken back in `work` of the members that the model without
 /// the options (`model` with every release and slip taken out, solved in
 /// first order) compresses beyond nine tenths of their elastic buckling
@@ -847,25 +861,31 @@ fn released_beyond_buckling(
 /// moving implausibly far, the releases and slip of every member meeting
 /// the joints the error names are taken back (rigid, not slipping — the
 /// model as without the options there; nothing left there: the joints next
-/// to them, up to [`TAKE_BACK_RINGS`] rings) and it is solved again — at a
-/// first buckling mode, first the releases of every member compressed
-/// beyond its buckling load as released (`released_beyond_buckling`) —,
-/// at most
-/// [`TAKE_BACK_ROUNDS`] times; the joints are in the solution
-/// ([`Solution::taken_back`]) and said. An error at joints with nothing to
-/// take back stands.
+/// to them, up to [`TAKE_BACK_RINGS`] rings; nothing left there either, at
+/// a buckling mode: the members it strains most, `FeError::Unstable`'s
+/// `straining`, 2026-11-24) and it is solved again — at a first buckling
+/// mode, first the releases of every member compressed beyond its buckling
+/// load as released (`released_beyond_buckling`) —, at most
+/// [`TAKE_BACK_ROUNDS`] times, each round's slip passes starting from the
+/// last round's secant shares; the joints are in the solution
+/// ([`Solution::taken_back`]) and said. An error with nothing left to take
+/// back stands.
 pub(crate) fn solve_with_options(
     model: &Model,
     start: Option<&[bool]>,
     nonlinear: bool,
     solve: &SolveFn<'_>,
 ) -> Result<Solution, FeError> {
-    let mut work: Option<Model> = None;
+    // The model of each round: its slipping members' secant shares kept
+    // from the round before (2026-11-24: a round after taking back starts
+    // the passes where the last stopped — the same settled point, far
+    // fewer passes; the first round as before).
+    let mut work: Model = model.clone();
     let mut taken: Vec<String> = Vec::new();
     let mut round = 0;
     loop {
-        let m = work.as_ref().unwrap_or(model);
-        let names = match solve_slipping(m, start, nonlinear, solve) {
+        let mut straining: Vec<String> = Vec::new();
+        let names = match solve_slipping(&mut work, start, nonlinear, solve) {
             Ok(mut s) => {
                 s.taken_back = taken;
                 return Ok(s);
@@ -876,13 +896,20 @@ pub(crate) fn solve_with_options(
                     n.extend(joints.iter().cloned());
                     (n, e)
                 }
-                FeError::Unstable { joints, .. } | FeError::Implausible { joints, .. } => {
+                FeError::Unstable {
+                    joints,
+                    straining: s,
+                    ..
+                } => {
+                    straining.clone_from(s);
                     (joints.clone(), e)
                 }
+                FeError::Implausible { joints, .. } => (joints.clone(), e),
                 _ => return Err(e),
             },
         };
         let (names, e) = names;
+        let m = &work;
         let mut next = m.clone();
         // A buckling mode, the first time: the released members that the
         // model without the options compresses beyond their elastic
@@ -899,21 +926,33 @@ pub(crate) fn solve_with_options(
                     taken.push(n);
                 }
             }
-            work = Some(next);
+            work = next;
             continue;
         }
         if round >= TAKE_BACK_ROUNDS {
             return Err(e);
         }
         // Nothing left to take back at the joints named: the joints next
-        // to them too, ring by ring (at most [`TAKE_BACK_RINGS`]).
+        // to them too, ring by ring (at most [`TAKE_BACK_RINGS`]), then the
+        // members a buckling mode strains most.
         let mut names = names;
         let mut ring = 0;
         while !take_back(&mut next, &names) {
             ring += 1;
             let grown = neighbours(m, &names);
             if ring > TAKE_BACK_RINGS || grown.len() == names.len() {
-                return Err(e);
+                // Nothing left within the rings: at a buckling mode, the
+                // members it strains most (the soft part that lets it
+                // happen — a sway mode moves the top most, its cause lies
+                // lower down; 2026-11-24); none of them with releases or
+                // slip left: the error stands.
+                match take_back_members(&mut next, &straining) {
+                    Some(ends) => {
+                        names = ends;
+                        break;
+                    }
+                    None => return Err(e),
+                }
             }
             names = grown;
         }
@@ -923,7 +962,7 @@ pub(crate) fn solve_with_options(
                 taken.push(n);
             }
         }
-        work = Some(next);
+        work = next;
     }
 }
 
@@ -954,17 +993,17 @@ pub fn note(model: &Model) -> Option<String> {
             ));
         }
         t.push_str(
-            " — the forces shared differently: not on the safe side for every member (compare \
-             with the option off)",
+            " — the forces shared differently: each member's usage taken as the larger of with \
+             and without the option (on the safe side for the members)",
         );
         parts.push(t);
     }
     if sum.slip_on {
         parts.push(format!(
             "bolt slip (option): {} member(s) slip by their ends' hole clearances (at most {:.1} \
-             mm), friction not counted — larger deflections, the forces shared differently: not \
-             on the safe side for every member (compare with the option off); {} bolted end(s) \
-             without a known clearance (no slip)",
+             mm), friction not counted — larger deflections, the forces shared differently: each \
+             member's usage taken as the larger of with and without the option (on the safe side \
+             for the members); {} bolted end(s) without a known clearance (no slip)",
             sum.slipping,
             sum.largest_slip * 1e3,
             sum.no_clearance
@@ -999,11 +1038,17 @@ pub fn case_note(solution: &Solution) -> Option<String> {
     if !solution.taken_back.is_empty() {
         const NAMED: usize = 5;
         let t = &solution.taken_back;
+        // The share of the model's joints (2026-11-24): where it is large,
+        // the model is in large parts the one without the options, and a
+        // member kept rigid beside slipping ones draws force from them.
+        let all = solution.displacements.len().max(1);
         parts.push(format!(
-            "releases and slip taken back at the members meeting {} joint(s) where the solve \
-             with them found a mechanism, a buckling mode or implausible displacements (rigid, \
-             not slipping there): {}{}",
+            "releases and slip taken back at the members meeting {} joint(s) of {all} ({:.0} \
+             %) where the solve with them found a mechanism, a buckling mode or implausible \
+             displacements (rigid, not slipping there; a member kept rigid beside slipping ones \
+             draws force from them): {}{}",
             t.len(),
+            100.0 * t.len() as f64 / all as f64,
             t[..t.len().min(NAMED)].join(", "),
             if t.len() > NAMED { ", …" } else { "" }
         ));
@@ -1027,6 +1072,26 @@ pub struct Effect {
     pub up_down: (usize, usize),
     /// The solve times with and without, s.
     pub seconds: [f64; 2],
+    /// Members whose usage governs with the options and without them
+    /// ([`governs_without`]): each member's usage is the larger of the two
+    /// (stage 4.4 follow-up, 2026-11-24). Members with no usage in either:
+    /// in neither.
+    pub governed: (usize, usize),
+}
+
+/// Whether a member's usage `without` the joint options governs over its
+/// usage `with` them (stage 4.4 follow-up, 2026-11-24, the owner's
+/// question 2 of 2026-11-23): strictly larger ([`crate::check::usage_order`],
+/// NaN above any number), or a usage where with them there is none. Equal:
+/// the solve with the options governs. Each member's usage is the larger of
+/// the two, so neither option can lower a usage — as the foot movements
+/// ([`crate::feet::larger_usage`]).
+pub fn governs_without(with: Option<f64>, without: Option<f64>) -> bool {
+    match (without, with) {
+        (Some(a), Some(b)) => crate::check::usage_order(a, b).is_gt(),
+        (Some(_), None) => true,
+        _ => false,
+    }
 }
 
 /// A member of a solved case for [`Effect::of`]: its id, axial force (N)
@@ -1053,6 +1118,11 @@ impl Effect {
                 if (x.1 - y.1).abs() > 0.1 * y.1.abs() {
                     e.forces.1 += 1;
                 }
+            }
+            if governs_without(x.2, y.2) {
+                e.governed.1 += 1;
+            } else if x.2.is_some() {
+                e.governed.0 += 1;
             }
             if let (Some(p), Some(q)) = (x.2, y.2) {
                 if p > q + 0.01 {
@@ -1086,7 +1156,8 @@ impl Effect {
             "effect of the joint options: largest displacement {:.1} mm against {:.1} mm \
              without ({:+.0} %); {} of {} member forces over 1 kN changed by more than 10 %; \
              {usage}; {} member usage(s) up and {} down by more than 1 point; solved in {:.2} s \
-             against {:.2} s",
+             against {:.2} s; each member's usage the larger of the two: {} member(s) governed by \
+             the solve with the options, {} by the solve without them",
             a * 1e3,
             b * 1e3,
             if b > 0.0 { 100.0 * (a / b - 1.0) } else { 0.0 },
@@ -1095,7 +1166,9 @@ impl Effect {
             self.up_down.0,
             self.up_down.1,
             self.seconds[0],
-            self.seconds[1]
+            self.seconds[1],
+            self.governed.0,
+            self.governed.1
         )
     }
 }
