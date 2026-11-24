@@ -596,6 +596,19 @@ stays, the instantaneous centre not used).
 
 ## Validation
 
+**Validation cases** (2026-11-23, stage 5 of the joint details;
+`benchmarks/structures-fe/joint-capacities.toml`, `ohl validate`): invented
+bolt groups and plate parts sent to the bundled plugins as a run sends them
+(calculations `structures.joint_groups`, `structures.joint_parts`), each
+usage against a hand calculation written out in
+`benchmarks/structures-fe/reference_joint_capacities.py` — bolt shear in one
+and two planes (`joints-001`, `-002`), bearing on a thin ply (`-003`), the end
+distance along the bolt's force and the edge distance square to it not kept
+(`-004`, `-013`), a bolt in tension with prying with the flange's bending
+and with the bolt's tension governing (`-005`, `-006`), and SIA 263's bolt
+shear by (73) and, the grade not known, (74) (`-011`, `-012`); all at
+10⁻⁹.
+
 Unit tests on invented data, worked by hand:
 
 - `crates/ohl-structures-fe/src/bolt_groups.rs`

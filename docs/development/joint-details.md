@@ -210,6 +210,17 @@ values were worked out from the joints and which assumed.
    - **bolt slip** (a hole larger than its bolt) as a joint's stiffness
      up to the slip, which adds to the tower's deflection.
 
+   **Built 2026-11-23** (in active development, not approved yet): both as
+   options of the analysis, off by default and stored in no file — a frame
+   end with one bolt pinned, one with a single row of bolts in one leg free
+   out of that leg's plane; each bolted end slipping by its hole clearance
+   before its bolts bear (friction not counted); taken back where the solve
+   then finds a mechanism or a buckling mode; every run with them solving
+   each case without them too and saying the effect
+   ([theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options)).
+   Measured on real towers: the releases change little, the slip the
+   deflections about threefold.
+
    These matter for deflections and for the structure–line interaction
    at level 4 (O7), much less for the members' forces.
 5. **Checks of the joints themselves** (O4: "members first, then

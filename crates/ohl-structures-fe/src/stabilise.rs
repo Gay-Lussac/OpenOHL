@@ -182,7 +182,16 @@ pub(crate) fn find_with(model: &Model, inactive: &[bool], threshold: f64) -> Vec
             }
             continue;
         }
-        if members.iter().any(|&k| frame(k)) {
+        // A frame holds every translation of its joint — unless the
+        // end-release option freed its bending about one axis at both its
+        // ends (one bolt row in one leg at each end): then it holds the
+        // joint only along its axis and across in the plane it still bends
+        // in (crate::joint_stiffness).
+        let partly_free = |k: usize| {
+            let r = &model.members[k].releases;
+            (r[0].about_y && r[1].about_y) || (r[0].about_z && r[1].about_z)
+        };
+        if members.iter().any(|&k| frame(k) && !partly_free(k)) {
             continue;
         }
         let mut s = Matrix3::zeros();
@@ -190,6 +199,21 @@ pub(crate) fn find_with(model: &Model, inactive: &[bool], threshold: f64) -> Vec
         for &k in members {
             let e = unit(k);
             s += e * e.transpose();
+            if frame(k) {
+                let m = &model.members[k];
+                let r = crate::element::axes(model, m);
+                let bends = [
+                    // About z it bends across along y; about y along z.
+                    (!(m.releases[0].about_z && m.releases[1].about_z), 1),
+                    (!(m.releases[0].about_y && m.releases[1].about_y), 2),
+                ];
+                for (b, row) in bends {
+                    if b {
+                        let a = r.row(row).transpose();
+                        s += a * a.transpose();
+                    }
+                }
+            }
             let m = &model.members[k];
             let sec = &model.sections[m.section];
             stiffest = stiffest.max(sec.e * sec.area / model.length(m));

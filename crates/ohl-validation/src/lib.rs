@@ -31,6 +31,7 @@
 
 mod builtin;
 mod electrical;
+mod joints;
 mod textbook;
 mod wind_direction;
 
@@ -79,6 +80,7 @@ impl Registry {
         builtin::register(&mut registry);
         textbook::register(&mut registry);
         electrical::register(&mut registry);
+        joints::register(&mut registry);
         wind_direction::register(&mut registry);
         registry
     }

@@ -1,0 +1,226 @@
+# The joint options of the structure analysis (stage 4.4 of the joint
+# details, 2026-11-23; built, in active development, not approved yet):
+# end releases and bolt slip read from the members' bolts, on invented
+# models against closed forms. E = 210 GPa, first order. The reference
+# values are the formulas in the notes, evaluated to double precision.
+
+[[case]]
+id = "structfe-017"
+title = "End releases, one bolt: a frame bolted by one bolt at each end is pinned — its neighbour, a cantilever, carries the load alone"
+calculation = "structures.fe"
+reference = "Euler–Bernoulli beam theory: a two-hinged bar takes no transverse load; a cantilever's tip deflection PL³/3EI (one frame element is exact)"
+notes = "a (fixed) – b – c (fixed) along x, 2 m + 2 m, I = 200 cm4, P = 10 kN down at b; ab bolted by one bolt at each end (its design data), bc not bolted; different sections (in line with the same section ab would run on through b): ab pinned at a and b, bc a cantilever from c: u_b_z = -P L³/(3 E I) = -0.0634920634920635 m, c takes P and P L = 20 kN m, a nothing. Without the option the fixed–fixed beam's -P (2L)³/(192 E I) = -0.00793650793650794 m"
+max_seconds = 1.0
+inputs.end_releases = true
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+capacity = "simple"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s1"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[section]]
+id = "s2"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "b"
+point = ["2 m", "0 m", "0 m"]
+[[node]]
+id = "c"
+point = ["4 m", "0 m", "0 m"]
+support = "fixed"
+[[member]]
+id = "ab"
+nodes = ["a", "b"]
+section = "s1"
+kind = "frame"
+[member.design]
+bolts = { diameter = "16 mm", count = 1 }
+[[member]]
+id = "bc"
+nodes = ["b", "c"]
+section = "s2"
+kind = "frame"
+[[load]]
+node = "b"
+force = ["0 kN", "0 kN", "-10 kN"]
+'''
+expected.u_b_z = { value = -0.0634920634920635, rel_tol = 1e-9 }
+expected.r_c_z = { value = 10000.0, rel_tol = 1e-9 }
+expected.r_a_z = { value = 0.0, abs_tol = 1e-6 }
+expected.r_a_ry = { value = 0.0, abs_tol = 1e-6 }
+expected.r_c_ry = { value = 20000.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-018"
+title = "End releases, one row of bolts in one leg: free out of the leg's plane only — held in it"
+calculation = "structures.fe"
+reference = "Euler–Bernoulli beam theory: in the plane the row holds, the fixed–fixed beam P (2L)³/(192 E I); out of it, as structfe-017, P L³/(3 E I)"
+notes = "structfe-017's beam, ab bolted by one row of 3 bolts in its long leg at each end (holes in one cross-section 1; a section without a profile: the long leg along the section's y, here the structure's z — ab's reference). Loaded 10 kN down and 10 kN along -y at b. Down (bending in the leg's plane, about ab's local z): held, u_b_z = -P (2L)³/(192 E I) = -0.00793650793650794 m. Along y (out of the leg's plane, about ab's local y): released at both ends of ab, u_b_y = -P L³/(3 E I) = -0.0634920634920635 m"
+max_seconds = 1.0
+inputs.end_releases = true
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+capacity = "simple"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s1"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[section]]
+id = "s2"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "b"
+point = ["2 m", "0 m", "0 m"]
+[[node]]
+id = "c"
+point = ["4 m", "0 m", "0 m"]
+support = "fixed"
+[[member]]
+id = "ab"
+nodes = ["a", "b"]
+section = "s1"
+kind = "frame"
+[member.design]
+connected_leg = "long"
+bolts = { diameter = "16 mm", count = 3, holes = 1 }
+[[member]]
+id = "bc"
+nodes = ["b", "c"]
+section = "s2"
+kind = "frame"
+[[load]]
+node = "b"
+force = ["0 kN", "-10 kN", "-10 kN"]
+'''
+expected.u_b_z = { value = -0.00793650793650794, rel_tol = 1e-9 }
+expected.u_b_y = { value = -0.0634920634920635, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-019"
+title = "Bolt slip, a bar pulled alone: it lengthens by P L / EA plus the hole clearances of both its ends"
+calculation = "structures.fe"
+reference = "The slip–bearing law of a bolted joint without friction (Kitipornchai, Al-Bermani & Peyrot, J. Struct. Eng. 120 (8), 1994): the full clearance, then elastic; statics"
+notes = "bar a (pinned) – b (held across), 1 m, A = 1000 mm2, pulled by 20 kN at b; bolts 16 mm in 17.5 mm holes at both ends: 1.5 mm each, 3 mm in all. u_b_x = P L/(E A) + 0.003 = 0.00309523809523810 m; its force stays P (statically determinate)"
+max_seconds = 1.0
+inputs.bolt_slip = true
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+capacity = "simple"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "ab"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2 }
+[[load]]
+node = "b"
+force = ["20 kN", "0 kN", "0 kN"]
+'''
+expected.u_b_x = { value = 0.00309523809523810, rel_tol = 1e-9 }
+expected.n_ab = { value = 20000.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "structfe-020"
+title = "Bolt slip, two bars sharing a load: the slipping one sheds force to the other"
+calculation = "structures.fe"
+reference = "The slip–bearing law without friction (as structfe-019); equilibrium and compatibility at b: P = k (u − δ) + k u"
+notes = "a (pinned) – b (held across) – c (pinned) along x, 4 m + 4 m, A = 1000 mm2 (k = EA/L = 52.5 MN/m); ab bolted with 16 mm bolts in 16.5 mm holes at both ends (δ = 1 mm), bc not; P = 3 k δ = 157.5 kN along x at b. u = (P + k δ)/(2k) = 2δ = 0.002 m, ab carries k δ = 52.5 kN in tension, bc 2 k δ = 105 kN in compression (without slip each P/2 = 78.75 kN). Solved by secant passes to a change below 1e-4 between passes: compared to 1e-3"
+max_seconds = 1.0
+inputs.bolt_slip = true
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+capacity = "simple"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[section]]
+id = "t"
+material = "steel"
+area = "1000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["4 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[node]]
+id = "c"
+point = ["8 m", "0 m", "0 m"]
+support = "pinned"
+[[member]]
+id = "ab"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+bolts = { diameter = "16 mm", hole = "16.5 mm", count = 2 }
+[[member]]
+id = "bc"
+nodes = ["b", "c"]
+section = "t"
+[[load]]
+node = "b"
+force = ["157.5 kN", "0 kN", "0 kN"]
+'''
+expected.u_b_x = { value = 0.002, rel_tol = 1e-3 }
+expected.n_ab = { value = 52500.0, rel_tol = 1e-3 }
+expected.n_bc = { value = -105000.0, rel_tol = 1e-3 }

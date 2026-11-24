@@ -4966,6 +4966,7 @@ dependencies = [
  "ohl-line",
  "ohl-loads",
  "ohl-member-check",
+ "ohl-plugins",
  "ohl-sagtension",
  "ohl-sections",
  "ohl-spotting",

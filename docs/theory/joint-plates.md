@@ -409,6 +409,16 @@ usage over the cases and the governing case.
 
 ## Validation
 
+**Validation cases** (2026-11-23, stage 5 of the joint details;
+`benchmarks/structures-fe/joint-capacities.toml`, `ohl validate`, calculation
+`structures.joint_parts`, the hand calculations in
+`benchmarks/structures-fe/reference_joint_capacities.py`): block shear of a
+plate round a bolt line between two shear planes (`joints-007`) and torn out
+towards its side edge (`joints-014`), a gusset plate in compression as a
+strut of Whitmore's width (`joints-008`), a fillet weld with the moment of its
+force about its middle (`joints-009`) and bent about its seam (`joints-010`,
+over 100 %); all at 10⁻⁹.
+
 Unit tests in the plugins `plugins/codes/asce10` (`src/joints.rs`: ASCE
 10-97's, moved with the code) and `plugins/codes/sia263` (`src/tests.rs`:
 SIA 263's), by hand on invented data; before the ASCE 10-97 move its plate

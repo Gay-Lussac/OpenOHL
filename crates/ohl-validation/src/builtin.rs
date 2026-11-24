@@ -1194,15 +1194,22 @@ impl Calculation for StructureFe {
 
     fn description(&self) -> &'static str {
         "Structure model under its own loads (inputs: model = .ohlfe text, optional \
-         self_weight factor); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
+         self_weight factor, optional end_releases and bolt_slip = true: the joint options of \
+         the analysis); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
          r_<node>_<dof> (N, N m), usage_<member>, slack_<member> (cables and tension-only \
          members: 1 slack, 0 taut), bowed_<member> (tension-only members: 1 at their own \
          buckling load), iterations, passes (solves of the tension-only members' active-set \
-         iterations; 0: none)"
+         iterations; 0: none), slip_passes (solves of the bolt slip; 0: none)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
-        let model = ohl_structures_fe::Model::parse(string_input(inputs, "model")?)?;
+        let mut model = ohl_structures_fe::Model::parse(string_input(inputs, "model")?)?;
+        // The joint options of the analysis (stage 4.4, 2026-11-23): end
+        // releases and bolt slip from the members' bolts.
+        let flag = |name: &str| inputs.get(name).and_then(toml::Value::as_bool);
+        model.analysis.end_releases = flag("end_releases").unwrap_or(false);
+        model.analysis.bolt_slip = flag("bolt_slip").unwrap_or(false);
+        ohl_structures_fe::joint_stiffness::apply(&mut model);
         // A plugin's method (a code bundled as a plugin by its old name,
         // `sia263-2013`; 2026-11-18): found as a run finds it and called
         // once, so a code's benchmarks run through its plugin; not found:
@@ -1267,6 +1274,7 @@ impl Calculation for StructureFe {
         }
         out.insert("iterations".into(), s.iterations as f64);
         out.insert("passes".into(), f64::from(s.passes));
+        out.insert("slip_passes".into(), f64::from(s.slip_passes));
         Ok(out)
     }
 }

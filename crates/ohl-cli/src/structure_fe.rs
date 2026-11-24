@@ -106,6 +106,19 @@ pub struct FeArgs {
     /// their supports (a structure file only).
     #[arg(long)]
     extension: Option<String>,
+    /// End releases from the joints' bolts (an option, off by default): a
+    /// frame end with one bolt pinned, one with one row of bolts in one leg
+    /// free out of that leg's plane. Each case is solved without it too
+    /// and its effect printed (forces shared differently: not on the safe
+    /// side for every member).
+    #[arg(long)]
+    end_releases: bool,
+    /// Bolt slip (an option, off by default): each bolted end slips by its
+    /// hole clearance before its bolts bear (friction not counted). Each
+    /// case is solved without it too and its effect printed (larger
+    /// deflections; the forces shared differently).
+    #[arg(long)]
+    bolt_slip: bool,
 }
 
 /// Arguments of `ohl structures pole`.
@@ -276,6 +289,9 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     if args.redundant_force.is_some() || args.climbing_load.is_some() {
         model.check()?;
     }
+    model.analysis.end_releases = args.end_releases;
+    model.analysis.bolt_slip = args.bolt_slip;
+    ohl_structures_fe::joint_stiffness::apply(&mut model);
     if let Some(c) = &args.capacity
         && args.capacity_plugin.is_none()
     {
@@ -300,6 +316,15 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     // `Plugins/` beside the file, then in the user's plugin folder; not
     // found: refused, the plugin named.
     let model = ohl_member_check::find(model, args.model.parent())?;
+    // With end releases or bolt slip, the model without them, solved too
+    // for the options' effect.
+    let plain = model.joint_stiffness.is_some().then(|| {
+        let mut m = model.clone();
+        m.analysis.end_releases = false;
+        m.analysis.bolt_slip = false;
+        ohl_structures_fe::joint_stiffness::apply(&mut m);
+        m
+    });
     let plugin = match &args.capacity_plugin {
         None => None,
         Some(dir) => {
@@ -427,6 +452,11 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
     // Every case solved first: a plugin's member check is one call with
     // all of them.
     let mut solved = Vec::new();
+    let mut solved_plain: Vec<(
+        ohl_structures_fe::Solution,
+        Vec<ohl_structures_fe::MemberUsage>,
+        std::time::Duration,
+    )> = Vec::new();
     for (case, mut nodal) in runs {
         nodal.extend(wind.iter().copied());
         let started = std::time::Instant::now();
@@ -443,7 +473,42 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             &ohl_structures_fe::default_budget(),
         )
         .map_err(|e| format!("{case}: {}", ohl_structures_fe::refusal_text(&model, &e)))?;
-        solved.push((case, s, usage, started.elapsed()));
+        let took = started.elapsed();
+        if let Some(p) = &plain {
+            let started = std::time::Instant::now();
+            let without = ohl_structures_fe::analyse(
+                p,
+                &loads,
+                args.strength,
+                &ohl_structures_fe::default_budget(),
+            )
+            .map_err(|e| {
+                format!(
+                    "{case} (without the joint options): {}",
+                    ohl_structures_fe::refusal_text(p, &e)
+                )
+            })?;
+            solved_plain.push((without.0, without.1, started.elapsed()));
+        }
+        solved.push((case, s, usage, took));
+    }
+    if let Some(p) = &plain {
+        let cases: Vec<ohl_member_check::Solved> = solved
+            .iter()
+            .zip(&solved_plain)
+            .map(|((case, _, _, _), (s, _, _))| ohl_member_check::Solved {
+                name: case,
+                strength: args.strength,
+                self_weight: weight,
+                solution: s,
+                moved: None,
+            })
+            .collect();
+        if let Some(c) = ohl_member_check::check(p, &cases).transpose()? {
+            for (run, usage) in solved_plain.iter_mut().zip(c.usage) {
+                run.1 = usage;
+            }
+        }
     }
     // A `member-capacity` plugin's capacities replace the code's below:
     // the code's plugin is not asked for the usage then.
@@ -523,6 +588,20 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
         }
         if let Some(note) = model.joint_use.note() {
             println!("  {note}");
+        }
+        if let Some(note) = ohl_structures_fe::joint_stiffness_note(&model) {
+            println!("  {note}");
+        }
+        if let Some((s0, u0, took0)) = solved_plain.get(n) {
+            println!(
+                "  {}",
+                ohl_structures_fe::joint_stiffness::effect(
+                    &model,
+                    (&s, &usage, took),
+                    (s0, u0, *took0)
+                )
+                .words()
+            );
         }
         for note in &model.bolt_grade_notes {
             println!("  {note}");

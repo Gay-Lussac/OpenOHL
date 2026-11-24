@@ -26,9 +26,7 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 use ohl_core::budget::{Budget, CancelToken};
 use ohl_render::Scene;
-use ohl_structure_link::{
-    CaseResult, PoleResult, RunInput, StructureRun, analyse_structure, cases_to_run,
-};
+use ohl_structure_link::{CaseResult, PoleResult, RunInput, StructureRun, cases_to_run};
 use ohl_structure_loads::{LoadCaseRecipe, LoadTable};
 use ohl_structures::Detail;
 
@@ -73,6 +71,10 @@ pub struct ResultsTab {
     /// The run received, a number of its own in this process (the
     /// members' order kept for the results shown is of one run).
     pub generation: u64,
+    /// The end releases and bolt slip for the next run (options of the
+    /// analysis, off by default, kept for this session only — stored in no
+    /// file; stage 4.4 of the joint details).
+    pub joint_options: ohl_structure_link::JointOptions,
 }
 
 impl Default for ResultsTab {
@@ -90,6 +92,7 @@ impl Default for ResultsTab {
             reactions: true,
             running: None,
             generation: 0,
+            joint_options: Default::default(),
         }
     }
 }
@@ -317,6 +320,23 @@ const JOINT_DETAILS_TIP: &str = "Off (the default): every member is checked in i
 
 /// The option "estimated eccentricities" (O45, owner 2026-11-19): its
 /// effect, and its time measured on real towers (the theory page).
+const END_RELEASES_TIP: &str = "Off (the default): every frame member's ends rigid at their \
+     joints.\n\nOn: a frame end bolted with one bolt is pinned; one with a single row of bolts in \
+     one leg of an angle turns freely out of that leg's plane. Read from each end's connection, \
+     else from the member's bolts where it is not in line with a member of the same section. \
+     Where a joint would then be held by nothing, or the solve finds a mechanism or a buckling \
+     mode, the releases are taken back there (said).\n\nNot on the safe side for every member: \
+     the forces are shared differently — compare with the option off. Each case is also solved \
+     without it and the effect shown in its notes (displacement, forces, usages, time). Kept for \
+     this session only, not stored in the file.";
+
+const BOLT_SLIP_TIP: &str = "Off (the default): no slip.\n\nOn: each bolted end slips by its \
+     hole clearance (hole minus bolt diameter, from the bolts' data) before its bolts bear; \
+     friction not counted (the full slip). The tower deflects more and the forces are shared \
+     differently: not on the safe side for every member — compare with the option off. Solved by \
+     repeated solves (several times slower). Each case is also solved without it and the effect \
+     shown in its notes. Kept for this session only, not stored in the file.";
+
 const ESTIMATED_TIP: &str = "Off (the default): at level 3 the members run to the joints' work \
      points; a member end the joint layout would move sideways is not in the analysis.\n\nOn \
      (level 3, not with the joint details taken): before the cases are solved the joint \
@@ -391,8 +411,9 @@ impl StructureApp {
         let feet = self.loads.info.as_ref().and_then(|i| i.feet.clone());
         self.results.ran_with = (table.clone(), recipes.clone());
         let ext = extension.clone();
+        let joint_options = self.results.joint_options;
         self.results.start(ctx, key, extension, move |budget| {
-            analyse_structure(
+            ohl_structure_link::analyse_structure_with(
                 &RunInput {
                     structure: &structure,
                     text: &text,
@@ -406,6 +427,7 @@ impl StructureApp {
                     feet: feet.as_ref(),
                 },
                 budget,
+                joint_options,
             )
         });
         true
@@ -704,6 +726,26 @@ impl StructureApp {
                         ui.label(egui::RichText::new("run to see their effect and time").weak());
                     }
                     (false, _, _) => {}
+                }
+            });
+        }
+        // End releases and bolt slip (stage 4.4): options of the run, for
+        // this session only.
+        if t.model.is_none() && t.pole.is_none() && !t.members.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                let o = &mut self.results.joint_options;
+                ui.checkbox(&mut o.end_releases, "End releases from the bolts")
+                    .on_hover_text(END_RELEASES_TIP);
+                ui.checkbox(&mut o.bolt_slip, "Bolt slip")
+                    .on_hover_text(BOLT_SLIP_TIP);
+                if o.any() {
+                    ui.label(
+                        egui::RichText::new(
+                            "this session only; each case also solved without them, its effect \
+                             in its notes",
+                        )
+                        .weak(),
+                    );
                 }
             });
         }

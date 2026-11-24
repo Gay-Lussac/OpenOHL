@@ -69,7 +69,10 @@ from here. The owner's order of 2026-11-19:
    Offline working set window and schema 8 2026-11-21, in active
    development, not approved yet — the owner's questions under O17).
 7. **Lattice towers: end releases and bolt slip (queue C8), then the
-   validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5).
+   validation (C10)** ([O19](#o19-joint-details-of-towers-show-and-define-them), stages 4.4 and 5;
+   end releases and bolt slip built 2026-11-23 as options, off by default,
+   and the connection capacities' validation the same day, in active
+   development, not approved yet — the owner's questions under O19).
 
 The owner's answers of 2026-11-19 to the plans' open questions are in
 their items ("decided 2026-11-19") and, briefly, in the
@@ -1642,8 +1645,41 @@ Six stages, the questions per stage and per detail level:
   line or plane, the end is held only in that plane (the safer variant);
   the 20 % crossing rule kept also for given lengths. To build: the
   option for SIA 263 and the run ends held in one plane.
-- [ ] Stage 4.4, end releases and bolt slip as options of the FE model,
-  measured before any default (queue C8).
+- [x] Stage 4.4, end releases and bolt slip as options of the FE model,
+  measured before any default (queue C8) — *built 2026-11-23, in active
+  development, not approved yet*
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options),
+  [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-23-structure-analysis-end-releases-and-bolt-slip-as-options-o19-stage-44)):
+  both **off by default**, stored in no file (OHL-Structure's Results ticks
+  for the session, `ohl structures fe --end-releases --bolt-slip`). **End
+  releases**: a frame end with one bolt pinned, one with a single row of
+  bolts in one leg free out of that leg's plane (condensed out of the
+  element), read from the connections, else from the members' bolts where
+  the end does not run on in line; **bolt slip**: each bolted end slips by
+  its hole clearance before its bolts bear (friction not counted), secant
+  passes. Where a joint would be held by nothing or the solve finds a
+  mechanism or buckling mode, the options are taken back there, said. Every
+  run with an option solves each case without it too and says the effect.
+  Measured on 72 real towers (one case, kept privately) and two invented
+  ones: the releases change little (the top's displacement and a tower's
+  largest usage by about 0.1 % in the median, single members up to 2.4
+  times), the slip much (the top's displacement about 2.9 times, a tower's
+  largest usage +15 %, most bracing relieved and the legs loaded more, the
+  solve 16 times slower); runs fail with them on 3 (releases), 6 (slip)
+  and 10 (both) of 72 towers. Neither is on the safe side for every member
+  (said); the tower program's results match the model without them.
+  Validation `structfe-017` to `structfe-020`.
+  > **Owner:** (questions, 2026-11-23) (1) Keep both off by default? →
+  > yes: the releases change little for the time they cost and fail on a
+  > few towers; the slip is a different model of the tower, not a
+  > correction. (2) With the slip on, each member's usage the larger of
+  > with and without it (as the foot movements), so the slip never relieves
+  > a member? → yes, build it before the slip is used in design. (3) A
+  > friction branch (no slip below the bolts' slip resistance) from a
+  > measured source? → yes, later, with the source's numbers read from the
+  > paper (to be checked; not in the repository's documents). (4) Store the
+  > options per structure (a file field, version bump)? → only once (1)–(2)
+  > are decided.
 - [x] Stage 4.5, the joints' own checks: the plates', covers' and fillet
   welds' (2026-11-04, above); the safe-side items of 2026-11-18 — a weld's
   moments about its seam (SIA 263; no weld rule in ASCE 10-97, said), a
@@ -1729,9 +1765,35 @@ Six stages, the questions per stage and per detail level:
 - [x] Stage 5, exports — the bolts and gusset plates in IFC4 and IFC2x3
   (a joint assembly per joint), the members seated as the Joint view
   draws them (2026-11-02)
-- [ ] Stage 5, validation — connection capacities against hand
+- [x] Stage 5, validation — connection capacities against hand
   calculations and a tower program's results (on the real towers, kept
-  locally); the theory page (queue C10)
+  locally); the theory page (queue C10) — *built 2026-11-23, in active
+  development, not approved yet*: `benchmarks/structures-fe/joint-capacities.toml`
+  (`joints-001` to `joints-014`, `ohl validate`): invented bolt groups and
+  plate parts sent to the bundled plugins as a run sends them (calculations
+  `structures.joint_groups`, `structures.joint_parts`) — bolt shear in one
+  and two planes, bearing, end and edge distances, prying (the flange's
+  bending and the bolt's tension governing), block shear between two planes
+  and towards a plate's side edge, the Whitmore strut, fillet welds with
+  their moments about the middle and about the seam (SIA 263), SIA 263's bolt
+  shear (73) and (74) — against hand calculations written out in
+  `benchmarks/structures-fe/reference_joint_capacities.py`: all agree to
+  10⁻⁹, no discrepancy between the theory pages, the plugins and the hand
+  calculations. Against a tower program's capacities of the real line's
+  towers (163 690 members, kept privately): bolt shear and bearing agree
+  within 1 % on 99.3 % of the members it governs, the net section is 1.3 %
+  lower (the punched hole, on the safe side); 100 members are higher than the
+  program's (validation pages:
+  [textbook](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/validation/textbook.md#connection-capacities-benchmarksstructures-fejoint-capacitiestoml)).
+  > **Owner:** (questions, 2026-11-23) (1) 64 members whose design data
+  > gives no bolt or hole are checked on their gross section, where the
+  > tower program takes a net section 20 % lower: take a hole per leg until
+  > the bolts are known? → yes, on the safe side (said). (2) A built-up
+  > member's bearing at member level counts both its angles (2 × t), the
+  > program one (36 double angles, up to 1.8 times ours against it); the
+  > plate between them is checked only where the joint's plate is defined:
+  > take one ply's thickness at member level until the plate is known? →
+  > yes, on the safe side (a plugin change: both codes' plugins).
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition

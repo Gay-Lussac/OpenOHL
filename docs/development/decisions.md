@@ -145,6 +145,72 @@ built, in active development, not approved yet;
 > incomplete on such a file; a tick to leave them out (said NOT ALL
 > CHECKED) if they prove slow.
 
+## 2026-11-23 (joint checks: validation of the connection capacities, O19 stage 5)
+
+**The connection capacities validated against hand calculations** (roadmap
+O19 stage 5, queue item C10 of 2026-11-18; built, in active development, not
+approved yet): two validation calculations, `structures.joint_groups` and
+`structures.joint_parts` (`crates/ohl-validation/src/joints.rs`), send
+invented bolt groups and plate parts to a design code's plugin through the
+same interface a structure's run uses (`ohl_member_check::joints`); 14 cases
+(`benchmarks/structures-fe/joint-capacities.toml`) cover bolt shear in one
+and two planes, bearing, end and edge distances, prying (the T-stub), block
+shear between two planes and towards a side edge, the Whitmore strut, fillet
+welds with their moments (SIA 263) and SIA 263's bolt shear — each against a
+hand calculation written out in
+`benchmarks/structures-fe/reference_joint_capacities.py`, all to 10⁻⁹. The
+private comparison with a tower program's capacities on the real towers found
+two kinds of members ours rates higher (no holes given; a built-up member's
+bearing on both its angles) — owner questions in the roadmap; nothing
+changed in the plugins (they are independent of the core, and a change of
+what they check is the owner's).
+
+## 2026-11-23 (structure analysis: end releases and bolt slip as options, O19 stage 4.4)
+
+**End releases and bolt slip from the joints' bolts, options of the analysis
+measured before any default** (roadmap O19 stage 4.4, queue item C8 of
+2026-11-18; the owner's "Go ahead" on the queue, 2026-11-23 "go ahead … so
+the work goes through the night"; built, in active development, not
+approved yet; [theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options);
+no file format change):
+
+- **Both off by default, stored in no file**: OHL-Structure's Results ticks
+  (for the session), `ohl structures fe --end-releases --bolt-slip`, the
+  validation's `structures.fe` inputs. A file field (and its version) waits
+  for the owner's answer below — a version bump now would also have met
+  the joint layout's format work running at the same time.
+- **End releases**: one bolt → both bending rotations of the end released
+  (a member so at both ends is a bar); one row of bolts in one leg of an
+  angle → the rotation about that leg's direction released; two rows, both
+  legs, unknown → held. Read from each end's connection, else from the
+  member's design data where the end is not in line with a member of the
+  same section (taken as running on through the joint). Condensed out of
+  the element's tangent (elastic and geometric together).
+- **Bolt slip**: each bolted end slips by its hole clearance, no friction
+  counted (the full slip — conservative for the deflections), 1 % of EA/L
+  kept inside the clearance (without it the passes failed on 25 of 72 real
+  towers instead of 6), solved by secant passes (first order, then
+  P-Delta), tolerance 10⁻⁴.
+- **Taken back where the solve fails**: a mechanism, buckling mode or
+  implausible displacements with the options → the releases and slip of
+  the members meeting the joints named taken back (rings around them where
+  nothing is left there; first, at a buckling mode, every member compressed
+  beyond its buckling load as released), said per case. Without this the
+  releases failed on 12 of 72 real towers; with it on 3.
+- **The effect of every run with an option**: each case also solved without
+  it; the largest displacement, the forces changed, the largest usage, the
+  usages up and down and both times in the case's notes.
+- **Safe side**: neither option is on the safe side for every member (the
+  releases share the forces differently; the slip relieves the members it
+  lets slip and loads the legs) — said in the notes, never chosen silently.
+- **Measured** (one vertical case, 72 private real towers, kept privately;
+  two invented towers): releases — the top's displacement +0.1 %, a tower's
+  largest usage +0.1 % (median; 0.92 to 2.37), 8.5 % of the member forces
+  over 1 kN changed by more than 10 %, the solve 2.4 times slower; slip —
+  the top's displacement 2.85 times, a tower's largest usage +15 % (0.78 to
+  1.55), most bracing relieved, the solve 16 times slower (33 passes). The
+  tower program's results match the model without the options (0.1 %).
+
 ## 2026-11-23 (country server: a revision of main made by the server so any designer can export)
 
 **Main's unrecorded changes recorded by the network's server itself
