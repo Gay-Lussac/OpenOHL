@@ -403,7 +403,9 @@ pub fn clearances(
                     notes.push(format!(
                         "NOT ON THE SAFE SIDE: line {m}, {}: the wire lies outside its \
                          assumed bound (a wire at most {} times its ends' distance): a wire \
-                         farther away may have been left out",
+                         farther away may have been left out, so a distance can be \
+                         smaller than shown; widen the working set or check that line \
+                         in its own model",
                         id.describe(),
                         crate::bound::WIRE_LENGTH_FACTOR
                     ));

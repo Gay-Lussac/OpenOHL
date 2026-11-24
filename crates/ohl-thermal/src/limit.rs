@@ -519,7 +519,8 @@ impl<'s, 'a> Search<'s, 'a> {
         } else {
             vec![format!(
                 "NOT ON THE SAFE SIDE: wire-to-wire rules not in the limit (a section heated \
-                 next to colder wires comes nearer to them): {}",
+                 next to colder wires comes nearer to them, so the limit can be too high; check \
+                 these rules in the wire clearances at the limit's temperature): {}",
                 left.join(", ")
             )]
         };

@@ -91,17 +91,21 @@ pub fn past_knee_flag(span: usize, state: OuterState) -> Option<String> {
         OuterState::Tension => None,
         OuterState::Compression(stress) => Some(format!(
             "span {k}: {PAST_KNEE}in compression ({} MPa virtual): NOT ON THE SAFE SIDE for the \
-             tension — a bird cage gives the higher one",
+             tension — a bird cage gives the higher one, so the real tension can be higher; \
+             check the tension with the bird cage model too",
             megapascals(stress)
         )),
         OuterState::AtLimit(stress) => Some(format!(
             "span {k}: {PAST_KNEE}at their compression limit ({} MPa virtual): NOT ON THE SAFE \
              SIDE for the sag — compression without limit gives the larger one — nor for the \
-             tension — a bird cage gives the higher one",
+             tension — a bird cage gives the higher one; check the sag with the default model \
+             and the tension with the bird cage model",
             megapascals(stress)
         )),
         OuterState::Slack => Some(format!(
-            "span {k}: {PAST_KNEE}slack (bird cage): NOT ON THE SAFE SIDE for the sag"
+            "span {k}: {PAST_KNEE}slack (bird cage): NOT ON THE SAFE SIDE for the sag — \
+             compression without limit (the default model) gives the larger one; check the \
+             sag with it"
         )),
     }
 }
@@ -249,12 +253,12 @@ mod tests {
         assert_eq!(
             past_knee_flag(1, OuterState::Compression(3.2e6)).unwrap(),
             "span 2: outer strands in compression (3.2 MPa virtual): NOT ON THE SAFE SIDE for \
-             the tension — a bird cage gives the higher one"
+             the tension — a bird cage gives the higher one, so the real tension can be higher; \
+             check the tension with the bird cage model too"
         );
-        assert!(
-            past_knee_flag(0, OuterState::Slack)
-                .unwrap()
-                .ends_with("NOT ON THE SAFE SIDE for the sag")
-        );
+        assert!(past_knee_flag(0, OuterState::Slack).unwrap().ends_with(
+            "NOT ON THE SAFE SIDE for the sag — compression without limit (the \
+                            default model) gives the larger one; check the sag with it"
+        ));
     }
 }

@@ -63,7 +63,7 @@ use ohl_line::jumper::JumperShape;
 /// combination the window allows, never silent).
 pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: jumpers checked on their swing band \
      without a margin (jumper band margin 0 m): between its blowouts a jumper can lie outside its \
-     band (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises and falls, up to 0.13 m on the real line (0.62 m before 2026-11-17, 1.9 m before 2026-11-16)). Enter a jumper band \
+     band, so a clearance can be smaller than shown (measured with 10 Pa steps: up to 0.31 m on the example line, 2.1 m on a real line; with the default band levels 0.18 m on the example line and, solving the jumpers as the wind rises and falls, up to 0.13 m on the real line (0.62 m before 2026-11-17, 1.9 m before 2026-11-16)). Enter a jumper band \
      margin for your jumpers, or tick the wind steps (exact at the pressures they solve).";
 
 /// What the results say when the radial check measured to LiDAR points
@@ -71,7 +71,7 @@ pub const JUMPER_BAND_NOTE: &str = "NOT ON THE SAFE SIDE: jumpers checked on the
 /// holds, so whatever it missed is not checked.
 pub const RADIAL_POINTS_NOTE: &str = "NOT ON THE SAFE SIDE: the radial distance is measured only \
      to the points scanned; anything the scan missed (a wall, a roof edge, a thin object) is not \
-     checked.";
+     checked and can be closer than shown. Draw such objects, or check them on site.";
 
 /// Default half width of the vertical zone, m.
 pub const DEFAULT_WIDTH: f64 = ohl_line::Defaults::PROGRAM.clearance_zone_width;

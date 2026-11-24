@@ -62,14 +62,14 @@ wind_pressure = "300 Pa"
 
 [[case]]
 name = "0 °C + 20 N/m ice"
-description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, ice 20 N/m of wire, no wind; no ice density given: glaze ice (913 kg/m³), the smallest iced diameter for that weight — NOT ON THE SAFE SIDE for the clearances to the iced surface; give the density for lighter ice"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, ice 20 N/m of wire, no wind; no ice density given: glaze ice (913 kg/m³), the smallest iced diameter for that weight — NOT ON THE SAFE SIDE for the clearances to the iced surface (lighter ice of the same weight is thicker, so its surface comes nearer); give the density for lighter ice"
 tags = ["default", "loads", "clearance"]
 temperature = "0 °C"
 ice_load = "20 N/m"
 
 [[case]]
 name = "0 °C + 60 N/m ice"
-description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, ice 60 N/m of wire, no wind; no ice density given: glaze ice (913 kg/m³), the smallest iced diameter for that weight — NOT ON THE SAFE SIDE for the clearances to the iced surface; give the density for lighter ice"
+description = "default case, arbitrary values for checking (not from a design code): wire temperature 0 °C, ice 60 N/m of wire, no wind; no ice density given: glaze ice (913 kg/m³), the smallest iced diameter for that weight — NOT ON THE SAFE SIDE for the clearances to the iced surface (lighter ice of the same weight is thicker, so its surface comes nearer); give the density for lighter ice"
 tags = ["default", "loads", "clearance"]
 temperature = "0 °C"
 ice_load = "60 N/m"

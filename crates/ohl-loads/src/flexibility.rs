@@ -742,7 +742,9 @@ fn setup_with(
                         Some(Err(why)) => Err(rigid(
                             s,
                             format!(
-                                "{}; NOT ON THE SAFE SIDE — its foot movements not taken: {why}",
+                                "{}; NOT ON THE SAFE SIDE — its foot movements not taken: {why}; \
+                                 a settlement can lean it further than solved, so its \
+                                 clearances and loads can be worse; fix this to take them",
                                 Rigid::NoModel
                             ),
                         )),

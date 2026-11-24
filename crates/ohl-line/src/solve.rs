@@ -3053,7 +3053,7 @@ pub fn partial_break_flag(span: usize, broken: u32, bundle: u32) -> String {
         "span {}: {broken} of {bundle} subconductors broken — the static state after the break, \
          the broken ones gone from the span; NOT ON THE SAFE SIDE for the tension of the \
          subconductors left: with the broken ones hanging in the spacers it is higher (not \
-         checked)",
+         modelled yet: keep a margin on that tension)",
         span + 1
     )
 }

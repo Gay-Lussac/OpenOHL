@@ -402,7 +402,8 @@ pub fn hot_creep_of(
     let Some(law) = &cable.hot_creep else {
         state.notes.push(format!(
             "NOT ON THE SAFE SIDE: wire type {} gives no law of creep at elevated temperature — \
-             its creep during {} is not counted",
+             its creep during {} is not counted, so its sag after creep can be larger; give the \
+             wire type its law (the maker's coefficients)",
             cable.id,
             history.hot_text()
         ));
@@ -624,7 +625,8 @@ pub fn point_loads_left_out(section: &Section) -> Option<String> {
     }
     let more = loads.len().saturating_sub(6);
     Some(format!(
-        "NOT ON THE SAFE SIDE: point loads ({}{}) left out by the ruling-span method — use FE",
+        "NOT ON THE SAFE SIDE: point loads ({}{}) left out by the ruling-span method — their \
+         weight and pull are missing, so the sag can be larger; use FE",
         loads[..loads.len() - more].join("; "),
         if more > 0 {
             format!("; and {more} more")

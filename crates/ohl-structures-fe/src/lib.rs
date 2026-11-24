@@ -132,8 +132,8 @@ pub fn dead_load_note(model: &Model) -> Option<String> {
         && !model.members.is_empty())
     .then(|| {
         "NOT ON THE SAFE SIDE: no dead-load factor given — the self-weight is the members' \
-             steel only (bolts, gusset plates, galvanising left out); give [analysis] \
-             dead_load_factor"
+             steel only (bolts, gusset plates, galvanising left out), so the weight is too \
+             low; give [analysis] dead_load_factor"
             .to_owned()
     })
 }
@@ -482,8 +482,9 @@ pub fn local_displacement_note(model: &Model, solution: &Solution) -> Option<Str
     Some(format!(
         "WARNING, NOT ON THE SAFE SIDE until checked: {} joint(s) moved more than {:.0} % of \
          their members' mean length relative to their other ends (a local near-mechanism, \
-         e.g. a flat grillage sagging; large displacements in a small-displacement analysis): \
-         {}{}",
+         e.g. a flat grillage sagging; large displacements in a small-displacement analysis), \
+         so the forces there can be wrong and too low; check the model at those joints (a \
+         member or a hold missing): {}{}",
         moved.len(),
         LOCAL_MOVE_SHARE * 100.0,
         names.join(", "),

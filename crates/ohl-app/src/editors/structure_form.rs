@@ -1385,7 +1385,7 @@ fn post_support_ui(ui: &mut egui::Ui, f: &mut StructureForm) {
     ui.colored_label(
         ui.visuals().warn_fg_color,
         "NOT ON THE SAFE SIDE for its foundation: the pedestal itself carries no load of its \
-         own here (its weight, the wind on it) — only the post's and the wires'. A structure \
-         type for the pedestal gives them.",
+         own here (its weight, the wind on it) — only the post's and the wires', so the \
+         foundation loads are too low. A structure type for the pedestal gives them.",
     );
 }

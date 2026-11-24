@@ -2610,16 +2610,16 @@ pub fn band_levels_note(levels: &BandLevels, gap: f64) -> Option<String> {
         "NOT ON THE SAFE SIDE: the swing band without levels (still air and the full blowouts \
          alone): between them a wire can lie outside the band by more than its margin \
          (measured on a real line of 930 spans: up to 0.23 m at 500 Pa and 0.69 m at 1300 Pa \
-         across the line). Set a band level every 200 Pa (the default), or tick the wind \
-         steps."
+         across the line), so a clearance can be smaller than shown. Set a band level every \
+         200 Pa (the default), or tick the wind steps."
             .to_owned()
     } else {
         format!(
             "NOT ON THE SAFE SIDE: swing band levels up to {gap:.0} Pa apart, more than the \
              200 Pa measured within the band's margin (on a real line of 930 spans a wire lies \
              outside the band by about 0.3 mm per pascal between its solved pressures: 0.12 m \
-             at 325 Pa, 0.17 m at 433 Pa apart). Set a band level every 200 Pa (the default) \
-             or less, or tick the wind steps."
+             at 325 Pa, 0.17 m at 433 Pa apart), so a clearance can be smaller than shown. Set \
+             a band level every 200 Pa (the default) or less, or tick the wind steps."
         )
     })
 }
@@ -2645,7 +2645,8 @@ pub fn jumper_snap_note(case: &str, snaps: &[(String, f64)]) -> Option<String> {
         "NOT ON THE SAFE SIDE: case \"{case}\": {} jumper(s) went over to another stable shape \
          as the wind rose ({}): taken in the shape they reach as the wind rises from still air; \
          as it falls again they keep the new one, which these results do not hold below that \
-         pressure (check them with that wind from the other side, or their shape)",
+         pressure, so a clearance there can be smaller than shown (check them with that wind \
+         from the other side, or their shape)",
         snaps.len(),
         list.join(", ")
     ))

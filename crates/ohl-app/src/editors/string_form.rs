@@ -1561,7 +1561,7 @@ pub const HINGE_FRICTION_HELP: &str = "The moment its hinge holds before the pos
      Unticked: frictionless (the default) — the post turns freely about the line through its \
      base and its brace's until the wires (or a jumper) balance it, and the pylon takes no \
      longitudinal load from the hinge (NOT ON THE SAFE SIDE for the pylon if the real hinge \
-     sticks). Ticked: the hinge holds the post where it is given while the moment needed is at \
+     sticks: its longitudinal load is then larger; tick and give the friction to take it). Ticked: the hinge holds the post where it is given while the moment needed is at \
      most this (stick), else the post turns until that moment is reached (slip); the moment goes \
      into the structure at the post's base, so the pylon's longitudinal load includes the hinge's \
      friction up to this value. Each solve starts from the post as given.";

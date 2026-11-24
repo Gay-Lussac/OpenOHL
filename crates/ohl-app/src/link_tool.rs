@@ -615,7 +615,8 @@ pub fn unlink_command(model: &Model, id: &str, label: &str) -> Result<(String, C
     Ok((
         format!(
             "unlinked attachment point {label} of {id}: it stays where it is; NOT ON THE SAFE \
-             SIDE: its loads are left out of the structure check until it is linked again"
+             SIDE: its loads are left out of the structure check, so the members carry more \
+             than computed, until it is linked again"
         ),
         Command::UnlinkPoint {
             structure: id.to_owned(),
@@ -677,8 +678,9 @@ pub fn point_rows(
     if p.unlinked {
         rows.push((
             "joint".to_owned(),
-            "unlinked: its loads are left out of the structure check (not on the safe side) until \
-             it is linked again (Link or Move attachment point tool)"
+            "unlinked: its loads are left out of the structure check (not on the safe side: the \
+             members carry more than computed) until it is linked again (Link or Move attachment \
+             point tool)"
                 .to_owned(),
         ));
         return rows;

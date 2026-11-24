@@ -370,7 +370,7 @@ fn trees_without_a_base_are_listed_as_questionable() {
             .notes
             .iter()
             .any(|t| t.starts_with("NOT CHECKED, NOT ON THE SAFE SIDE: ")
-                && t.ends_with("every one listed as questionable")),
+                && t.contains("every one listed as questionable — ")),
         "{:?}",
         report.notes
     );

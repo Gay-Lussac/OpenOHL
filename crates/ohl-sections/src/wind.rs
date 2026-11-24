@@ -190,7 +190,8 @@ impl MemberLaw {
             other => Err(format!(
                 "member_law \"{other}\": inclination (default: the force normal to an inclined \
                  member times an inclination factor) or sin2 (the cross-flow law sin²θ, for \
-                 comparison only: not on the safe side)"
+                 comparison only: not on the safe side, it can give less wind on an inclined \
+                 member than the default; use the default for design)"
             )),
         }
     }
@@ -283,7 +284,10 @@ impl StructureWind {
             ));
         }
         if self.member_law == MemberLaw::Sin2 {
-            s.push_str(", the sin²θ law (comparison only, NOT ON THE SAFE SIDE)");
+            s.push_str(
+                ", the sin²θ law (comparison only, NOT ON THE SAFE SIDE: it can give less wind on \
+                 an inclined member than the default inclination law, which design should use)",
+            );
         }
         s
     }

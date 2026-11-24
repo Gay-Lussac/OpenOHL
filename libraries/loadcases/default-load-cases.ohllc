@@ -118,7 +118,7 @@ tags = ["default"]
 
 [[case]]
 name = "10 °C + 300 Pa wind ahead"
-description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C + 300 Pa wind\" blowing along the line from ahead (wind_direction 0°), on the wires and the structure bodies: each span the part of it normal to itself (nearly none on a straight line, its share at a line angle), the strings, jumpers and posts along it, a longitudinal load on the bodies; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line. One direction, not the across envelope. A factor 1.5 on the wind: transverse and longitudinal 1.5 on the wires' and strings' loads (on whole components: above a factor on the wind alone), wind_factor 1.5 on the bodies; vertical 1"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C + 300 Pa wind\" blowing along the line from ahead (wind_direction 0°), on the wires and the structure bodies: each span the part of it normal to itself (nearly none on a straight line, its share at a line angle), the strings, jumpers and posts along it, a longitudinal load on the bodies; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line (its wind is then too low; a structure model gives the wind per direction). One direction, not the across envelope. A factor 1.5 on the wind: transverse and longitudinal 1.5 on the wires' and strings' loads (on whole components: above a factor on the wind alone), wind_factor 1.5 on the bodies; vertical 1"
 weather = "10 °C + 300 Pa wind"
 condition = "initial"
 vertical = 1.0
@@ -133,7 +133,7 @@ wind_factor = 1.5
 
 [[case]]
 name = "10 °C + 300 Pa wind back"
-description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C + 300 Pa wind\" blowing along the line from behind (wind_direction 180°), on the wires and the structure bodies: each span the part of it normal to itself (nearly none on a straight line, its share at a line angle), the strings, jumpers and posts along it, a longitudinal load on the bodies; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line. One direction, not the across envelope. A factor 1.5 on the wind: transverse and longitudinal 1.5 on the wires' and strings' loads (on whole components: above a factor on the wind alone), wind_factor 1.5 on the bodies; vertical 1"
+description = "default case, arbitrary values for checking (not from a design code): weather case \"10 °C + 300 Pa wind\" blowing along the line from behind (wind_direction 180°), on the wires and the structure bodies: each span the part of it normal to itself (nearly none on a straight line, its share at a line angle), the strings, jumpers and posts along it, a longitudinal load on the bodies; the wind bands take their one area (the one across the line): NOT ON THE SAFE SIDE where a structure shows more along the line (its wind is then too low; a structure model gives the wind per direction). One direction, not the across envelope. A factor 1.5 on the wind: transverse and longitudinal 1.5 on the wires' and strings' loads (on whole components: above a factor on the wind alone), wind_factor 1.5 on the bodies; vertical 1"
 weather = "10 °C + 300 Pa wind"
 condition = "initial"
 vertical = 1.0

@@ -598,7 +598,8 @@ fn band_levels_ui(
             ui.visuals().warn_fg_color,
             egui::RichText::new(
                 "No levels: the band of still air and the blowouts alone misses the wire between \
-                 them by more than its margin on long and steep spans. Not on the safe side.",
+                 them by more than its margin on long and steep spans. Not on the safe side: a \
+                 clearance can be smaller than shown; set a level every 200 Pa.",
             )
             .small(),
         )
@@ -608,7 +609,8 @@ fn band_levels_ui(
             ui.visuals().warn_fg_color,
             egui::RichText::new(format!(
                 "Levels {:.0} Pa apart: more than the 200 Pa measured within the band margin \
-                 (about 0.3 mm outside the band per pascal between levels). Not on the safe side.",
+                 (about 0.3 mm outside the band per pascal between levels). Not on the safe side: \
+                 a clearance can be smaller than shown; set levels 200 Pa apart or less.",
                 levels.spacing
             ))
             .small(),

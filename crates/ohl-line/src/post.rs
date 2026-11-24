@@ -229,7 +229,8 @@ pub fn moment_with_estimate_note(line: &Line) -> Option<String> {
         format!(
             "NOT ON THE SAFE SIDE: the moment of jumpers held in a post's clamp is from their \
              bending while their forces there are estimated (half their weight, ice and wind) \
-             — not one state; choose the jumpers' own pull (calculation options) for both: {}",
+             — not one state, so the moment can be larger than computed; choose the jumpers' \
+             own pull (calculation options) for both: {}",
             ids.join(", ")
         )
     })
@@ -353,7 +354,8 @@ fn hinge_note(structure: &str, label: &str, friction: Option<f64>, what: &str) -
             "hinged post {label} at {structure} pivots: it turns freely about the line through \
              its base and its brace's (a frictionless hinge), held along it by {what}, and swings \
              until their pulls balance — NOT ON THE SAFE SIDE for {structure}'s longitudinal \
-             load: a hinge that sticks passes part of the pull difference into the structure"
+             load: a hinge that sticks passes part of the pull difference into the structure, \
+             so that load can be larger; give the hinge's friction moment to take it"
         ),
         Some(f) => format!(
             "hinged post {label} at {structure} pivots about the line through its base and its \
@@ -361,7 +363,8 @@ fn hinge_note(structure: &str, label: &str, friction: Option<f64>, what: &str) -
              stays where it is given while the moment needed is at most that (stick), else turns \
              until the moment is that (slip); {structure}'s longitudinal load includes the \
              hinge's moment up to {f:.0} N·m — NOT ON THE SAFE SIDE where the real hinge holds \
-             more"
+             more: the longitudinal load would then be larger; give the friction the real hinge \
+             has"
         ),
     }
 }
@@ -396,7 +399,8 @@ pub fn free_hinged_notes(line: &Line) -> Vec<String> {
             format!(
                 "hinged post {label} at {structure}: nothing holds it (free to pivot); its loads \
                  not computed — NOT ON THE SAFE SIDE: its own and its brace's weight and wind are \
-                 missing from {structure}'s loads"
+                 missing from {structure}'s loads, so they are too low; end a section or hang a \
+                 jumper at its top to hold it"
             )
         })
         .collect()

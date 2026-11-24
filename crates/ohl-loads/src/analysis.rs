@@ -527,7 +527,8 @@ impl Analyses {
                                 "model: attachment point {label}: the moment of the post \
                                  insulator on it ({:.2} kN m) left out — NOT ON THE SAFE \
                                  SIDE: no member that is always a frame meets its joint (trusses or tension-only \
-                                 members only; make it a frame joint)",
+                                 members only), so the members there can carry more than \
+                                 computed; make it a frame joint",
                                 extra.iter().map(|m| m * m).sum::<f64>().sqrt() / 1e3
                             )),
                         }
@@ -572,7 +573,9 @@ impl Analyses {
             Ok(f) => f,
             Err(e) => {
                 notes.push(format!(
-                    "model: NOT ON THE SAFE SIDE: foot movements not taken — {e}"
+                    "model: NOT ON THE SAFE SIDE: foot movements not taken — {e}; a settlement \
+                     adds forces in the members, so their usage can be too low; fix this to \
+                     take them"
                 ));
                 None
             }
@@ -752,7 +755,8 @@ impl Analyses {
                     const NAMED: usize = 10;
                     notes.push(format!(
                         "model: NOT ON THE SAFE SIDE: {} member(s) with part of their check not \
-                         done (their usage may be too low; what governs each says which): {}{}",
+                         done (their usage may be too low; what governs each says which part \
+                         and what to give for it): {}{}",
                         unsafe_members.len(),
                         unsafe_members[..unsafe_members.len().min(NAMED)].join(", "),
                         if unsafe_members.len() > NAMED {
@@ -774,7 +778,8 @@ impl Analyses {
                 if !unchecked.is_empty() {
                     const NAMED: usize = 10;
                     notes.push(format!(
-                        "model: {}: {} member(s) without a result of the member check{}: {}{}",
+                        "model: {}: {} member(s) without a result of the member check{}, so an \
+                         overload there would not be found (each member's line says why): {}{}",
                         ohl_member_check::NOT_CHECKED,
                         unchecked.len(),
                         model
@@ -803,7 +808,8 @@ impl Analyses {
                         method: Method::Fe,
                         usage: f64::INFINITY,
                         governs: format!(
-                            "model: {}: no member has a result of the member check",
+                            "model: {}: no member has a result of the member check, so no \
+                             overload would be found (each member's line says why)",
                             ohl_member_check::NOT_CHECKED
                         ),
                         incomplete: false,
@@ -886,7 +892,7 @@ impl Analyses {
                     weights.ice / 1000.0,
                     if weights.bare > 0 {
                         format!(
-                            " ({} member(s) without a profile from the cross-section library: no ice on them, not on the safe side)",
+                            " ({} member(s) without a profile from the cross-section library: no ice on them, not on the safe side — the ice load is too low there; give them a profile)",
                             weights.bare
                         )
                     } else {
@@ -1009,7 +1015,9 @@ impl Analyses {
             if extra.iter().any(|m| m.abs() > 1e-9) {
                 notes.push(format!(
                     "pole: point {label}: the moment of the post insulator on it ({:.2} kN m) \
-                     left out — NOT ON THE SAFE SIDE",
+                     left out — NOT ON THE SAFE SIDE: the pole model takes forces at points \
+                     only, so the moment in the pole can be larger than computed; not taken \
+                     yet: add it by hand to the pole's check",
                     extra.iter().map(|m| m * m).sum::<f64>().sqrt() / 1e3
                 ));
             }
@@ -1085,7 +1093,8 @@ impl Analyses {
                 .filter(|l| *l != [0.0; 2]),
             Err(e) => {
                 notes.push(format!(
-                    "pole: NOT ON THE SAFE SIDE: foot movements not taken — {e}"
+                    "pole: NOT ON THE SAFE SIDE: foot movements not taken — {e}; a lean adds \
+                     moment in the pole, so its usage can be too low; fix this to take them"
                 ));
                 None
             }

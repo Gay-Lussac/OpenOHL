@@ -1272,7 +1272,9 @@ fn spans_past_the_knee_point_are_flagged() {
         assert!(
             hot[0].starts_with("span 1: outer strands in compression (")
                 && hot[0].ends_with(
-                    "NOT ON THE SAFE SIDE for the tension — a bird cage gives the higher one"
+                    "NOT ON THE SAFE SIDE for the tension — a bird cage gives the higher one, so \
+                     the real tension can be higher; check the tension with the bird cage model \
+                     too"
                 ),
             "{calculation:?}: {}",
             hot[0]
@@ -1283,7 +1285,9 @@ fn spans_past_the_knee_point_are_flagged() {
         assert_eq!(caged.len(), spans, "{calculation:?}: {caged:?}");
         assert_eq!(
             caged[0],
-            "span 1: outer strands slack (bird cage): NOT ON THE SAFE SIDE for the sag"
+            "span 1: outer strands slack (bird cage): NOT ON THE SAFE SIDE for the sag — \
+             compression without limit (the default model) gives the larger one; check the sag \
+             with it"
         );
         cable.bimetallic_behavior = Some(ohl_cables::BimetallicBehavior::Compression);
         cable.max_virtual_compression = Some(Stress::from_megapascals(1.0));

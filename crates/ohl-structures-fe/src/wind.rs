@@ -998,7 +998,8 @@ impl<'a> MemberWindSetup<'a> {
                 "{NOT_SAFE_WIND}: {} member(s) take the drag factor 1 — no drag factor given for \
                  their shape ([wind] of the cross-section library), no [analysis] drag and no \
                  built-in coefficient for it (a general section); a code's drag factor for the \
-                 profile may be larger: {first}",
+                 profile may be larger, so their wind can be too low — give one in [analysis] \
+                 drag or the library's [wind]: {first}",
                 generic.len()
             )
         })
@@ -1010,7 +1011,8 @@ impl<'a> MemberWindSetup<'a> {
         let Some(plates) = &self.plates else {
             return format!(
                 "{NOT_SAFE_WIND}: gusset plates' own wind area not included (no joint \
-                 details here; OHL-Structure adds them from the joints)"
+                 details here), so the wind load is too low; OHL-Structure adds them from \
+                 the joints"
             );
         };
         let area: f64 = plates.iter().map(|p| p.area).sum();
@@ -1193,7 +1195,8 @@ impl<'a> LawTally<'a> {
             return format!(
                 "{NOT_SAFE_WIND}: member wind by the cross-flow law sin²θ ([wind] member_law = \
                  \"sin2\", for comparison): below {} Tab. 74 (p. 112) on every member inclined \
-                 to the wind",
+                 to the wind, so their wind is too low; use the default law (member_law = \
+                 \"inclination\") for design",
                 wind_law::SIA261
             );
         }

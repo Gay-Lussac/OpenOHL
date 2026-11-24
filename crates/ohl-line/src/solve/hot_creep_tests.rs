@@ -162,7 +162,8 @@ fn what_is_not_counted_is_said() {
         no_law.flags,
         [
             "NOT ON THE SAFE SIDE: wire type hand gives no law of creep at elevated temperature — \
-          its creep during 500 h at 100 °C, 100 h at 150 °C is not counted"
+          its creep during 500 h at 100 °C, 100 h at 150 °C is not counted, so its sag after \
+          creep can be larger; give the wire type its law (the maker's coefficients)"
         ]
     );
     // Without a history: nothing said, the law or not.

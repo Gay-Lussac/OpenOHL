@@ -645,7 +645,8 @@ pub fn level_three_notes(body: bool) -> Vec<String> {
             "NOT ON THE SAFE SIDE for clearances: the deflection already present at stringing, \
              {}rigid foundations in the models, linearisation stiffer than the case's state \
              where members would go slack — all make the points move less than the real \
-             structures",
+             structures, so a clearance can be smaller than shown; level 4 follows slack \
+             members, keep a margin for the rest (not modelled yet)",
             if body {
                 ""
             } else {
@@ -688,7 +689,8 @@ pub fn level_four_notes(body: bool) -> Vec<String> {
             "NOT ON THE SAFE SIDE for clearances: the deflection already present at stringing, \
              {}rigid foundations in the models, P-Delta on the drawn geometry (no large \
              displacements: a very flexible structure's large rotations are not followed) — the \
-             points may move less than the real structures",
+             points may move less than the real structures, so a clearance can be smaller than \
+             shown; keep a margin there (these parts are not modelled yet)",
             if body {
                 ""
             } else {

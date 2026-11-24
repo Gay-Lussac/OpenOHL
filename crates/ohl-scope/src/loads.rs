@@ -319,8 +319,9 @@ fn tower_loads(
         if part.solver.structures.level() != CalculationLevel::Rigid {
             notes.push(format!(
                 "NOT ON THE SAFE SIDE: line {m} is set to calculation level 3 or 4 — the \
-                 shared tower's loads are solved rigid (level 2) here; that line's own \
-                 loads add the structures' flexibility"
+                 shared tower's loads are solved rigid (level 2) here, so they leave out \
+                 the extra pull the structures' flexibility adds and can be too small; \
+                 check the tower with that line's own loads, at its own level"
             ));
         }
         if m != own_model || t != own_id {

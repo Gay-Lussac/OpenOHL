@@ -180,8 +180,9 @@ fn structure_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, id: String) {
             ui.visuals().warn_fg_color,
             format!(
                 "Unlinked attachment point(s) {}: drawn red; NOT ON THE SAFE SIDE: their \
-                         loads are left out of the structure check until they are linked again \
-                         (Link or Move attachment point tool, or Replace's Attachment points)",
+                         loads are left out of the structure check, so the members carry more \
+                         than computed, until they are linked again (Link or Move attachment \
+                         point tool, or Replace's Attachment points)",
                 lost.join(", ")
             ),
         );
@@ -535,7 +536,8 @@ fn point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, label:
                 .add_enabled(typed && p.is_linked(), egui::Button::new("Unlink"))
                 .on_hover_text(
                     "It stays where it is; its loads are left out of the structure check \
-                             (said, not on the safe side) until it is linked again",
+                             (said, not on the safe side: the members carry more than \
+                             computed) until it is linked again",
                 )
                 .clicked()
             {
@@ -570,7 +572,8 @@ fn point_ui(ui: &mut egui::Ui, cx: &mut Panel<'_, '_>, structure: String, label:
                         .button("Unlink")
                         .on_hover_text(
                             "It stays where it is; its loads are left out of the structure \
-                                     check (said, not on the safe side) until it is linked again",
+                                     check (said, not on the safe side: the members carry more \
+                                     than computed) until it is linked again",
                         )
                         .clicked()
                     && let Ok((what, command)) =

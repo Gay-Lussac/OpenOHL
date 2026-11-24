@@ -386,7 +386,8 @@ pub fn eccentricity_words(model: &Model, idx: usize, n: f64) -> Option<String> {
                 if m.kind == crate::MemberKind::Cable {
                     format!(
                         "{head}, {size:.2} kN m LEFT OUT (a cable cannot bend — NOT ON THE SAFE \
-                         SIDE)"
+                         SIDE: the moment is missing from the members there, so their usage can \
+                         be too low; give the offset's side, or make it a frame joint)"
                     )
                 } else {
                     format!(
@@ -415,7 +416,8 @@ fn signed_words(model: &Model, idx: usize, e: &EccentricEnd, n: f64) -> String {
     if !e.carried && m.kind == crate::MemberKind::Cable {
         format!(
             "{head}, {size:.2} kN m LEFT OUT (only bars meet {joint}: the force through the work \
-             point; a cable cannot bend — NOT ON THE SAFE SIDE)"
+             point; a cable cannot bend — NOT ON THE SAFE SIDE: the moment is missing from the \
+             members there, so their usage can be too low; make it a frame joint)"
         )
     } else if !e.carried {
         format!(
@@ -510,7 +512,8 @@ pub fn eccentricity_note(model: &Model, solution: &Solution) -> Option<String> {
     if !left_out.is_empty() {
         text.push_str(&format!(
             "; LEFT OUT at {} cable end(s) where only bars meet the joint (a cable cannot bend; \
-             NOT ON THE SAFE SIDE — make it a frame joint): {}",
+             NOT ON THE SAFE SIDE: the moment is missing, so the members' usage there can be too \
+             low — make it a frame joint): {}",
             left_out.len(),
             list(&left_out)
         ));
@@ -528,7 +531,8 @@ pub fn eccentricity_note(model: &Model, solution: &Solution) -> Option<String> {
     if !free_left.is_empty() {
         text.push_str(&format!(
             "; LEFT OUT at {} cable end(s) whose offset's sign is not known (a cable cannot \
-             bend; NOT ON THE SAFE SIDE): {}",
+             bend; NOT ON THE SAFE SIDE: the moment is missing, so the members' usage there can \
+             be too low — give the offset's side, or make it a frame joint): {}",
             free_left.len(),
             list(&free_left)
         ));

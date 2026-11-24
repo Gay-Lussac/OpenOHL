@@ -23,7 +23,8 @@
 /// Snow on a structure's members, in words, said not on the safe side with
 /// every snow on them (2026-11-08): on each member's own plan only.
 pub const SNOW_BRIDGING: &str = "snow bridging between members (plan bracing, a platform) and \
-     snow on gusset plates not counted — the snow on each member's own plan only";
+     snow on gusset plates not counted — the snow on each member's own plan only, so the real \
+     snow load can be larger (no input for it yet: keep a margin where snow can bridge)";
 
 pub mod bolts;
 pub mod connections;

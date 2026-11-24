@@ -279,7 +279,8 @@ impl Model {
                 format!(
                     "NOT ON THE SAFE SIDE: attachment point {label}: {what} ({:.2} kN m) left \
                      out at joint {}: no member that is always a frame meets it (trusses or tension-only \
-                     members only; make it a frame joint to carry it)",
+                     members only), so the members there can carry more than computed; make it \
+                     a frame joint to carry it",
                     kn_m(moment),
                     self.nodes[n].id
                 )

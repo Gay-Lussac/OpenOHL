@@ -684,8 +684,8 @@ pub const NOT_ATTACH: &str = "not an attach joint: set its kind to attach in OHL
 pub fn unlinked_words(labels: &[&str]) -> String {
     format!(
         "NOT ON THE SAFE SIDE: attachment point{} {} linked to no joint: the strings hanging \
-         from {} are not attached to the 3D structure (their loads do not reach the members) \
-         until {} linked",
+         from {} are not attached to the 3D structure (their loads do not reach the members, \
+         so the members' usage is too low) until {} linked",
         if labels.len() == 1 { "" } else { "s" },
         labels.join(", "),
         if labels.len() == 1 { "it" } else { "them" },

@@ -193,7 +193,8 @@ pub fn route_problem(
     if gaps > 0 {
         notes.push(format!(
             "NOT ON THE SAFE SIDE: {gaps} hole(s) in the terrain along the route bridged in a \
-             straight line (a hump in a hole is missed)"
+             straight line (a hump in a hole is missed, so the ground clearance can be smaller \
+             than shown; fill the terrain there)"
         ));
     }
     let covered = |s: f64| {

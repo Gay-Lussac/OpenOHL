@@ -889,8 +889,8 @@ pub(crate) fn profiles_method_ui(
 /// results.
 pub(crate) const TWO_D_ASSUMES: &str = "2D only assumes infinitely long, straight, parallel \
      conductors at the section's heights (no sag along the span, no line angle, no jumpers, no \
-     structures): NOT ON THE SAFE SIDE near a line angle, a structure or a crossing (warned per \
-     profile).";
+     structures): NOT ON THE SAFE SIDE near a line angle, a structure or a crossing, where the \
+     real field can be higher (warned per profile); use the 3D method there.";
 
 /// What the cuts' 2D-only method lacks: the engines compute cuts from the
 /// 3D model only (2026-11-12).

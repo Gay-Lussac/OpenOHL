@@ -92,7 +92,8 @@ pub const PER_PHASE_HELP: &str = "The circuit: one current everywhere, balanced 
      unbalanced circuit. Its phases' sum is a net current, whose field falls off as 1/d with \
      the distance, a balanced circuit's as 1/d²: far from the line the net current governs. \
      Balanced input has none and says so in its results (not on the safe side far from the \
-     line). No effect on the time.";
+     line, where a real unbalance would give a higher field: type the currents per phase to \
+     include it). No effect on the time.";
 
 /// The tick of an earth wire's typed current.
 pub const EARTH_TYPED_HELP: &str = "Ticked: this earth wire carries the current typed here \
@@ -1173,7 +1174,9 @@ impl MagneticFieldWindow {
                                         "Off: the wires where they cross the profile (at the \
                                          lowest point by default, the larger field). On: the \
                                          span's mean height, as the line parameters take it — \
-                                         less than under the lowest point (not on the safe side)",
+                                         less than under the lowest point (not on the safe \
+                                         side: the field can be too low; keep it off to check a \
+                                         limit)",
                                     );
                                 }
                             }
@@ -1246,7 +1249,8 @@ impl MagneticFieldWindow {
                      computed are solved in this weather case with their own settings and wires \
                      and their field added by size (the network's code). Their circuits without \
                      an operating current of their own take this current (rms per phase); empty: \
-                     0 A, said NOT ON THE SAFE SIDE in the results. The current changes the \
+                     0 A, said NOT ON THE SAFE SIDE in the results (their field is then missing \
+                     and the total can be higher). The current changes the \
                      other lines' share of the field, not the time. The other lines themselves \
                      cost a run more time: measured on a synthetic route of 144 spans (profiles \
                      every 1 m, two other lines near) 11 s alone, 17–20 s with them.",

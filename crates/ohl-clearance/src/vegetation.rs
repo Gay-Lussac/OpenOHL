@@ -613,7 +613,8 @@ impl VegetationCheck {
             beyond.push(
                 "NOT ON THE SAFE SIDE: fall-in with a straight trunk under each point and no \
                  crown — a leaning tree falls further one way and a crown reaches beyond its \
-                 trunk"
+                 trunk, so a tree can reach a wire where the check says it cannot; no input \
+                 for leaning trees or crowns yet: check them on site"
                     .to_owned(),
             );
         }
@@ -1392,8 +1393,9 @@ pub fn questionable_note(count: u64, listed: usize, p: &VegetationParams) -> Opt
     Some(format!(
         "NOT CHECKED, NOT ON THE SAFE SIDE: {count} vegetation point{} within {:.1} m of a span \
          in plan (the reach of the tallest tree checked) with no tree base — no ground below \
-         {} or no ground point within the search distance: their fall-in is not worked out; \
-         {all}",
+         {} or no ground point within the search distance: their fall-in is not worked out, \
+         so such a tree could reach a wire unseen; {all} — give the ground there (terrain) or \
+         check them on site",
         if count == 1 { "" } else { "s" },
         p.fall_reach(),
         if count == 1 { "it" } else { "them" },
@@ -2016,10 +2018,13 @@ mod tests {
             ),
             "{note}"
         );
-        assert!(note.ends_with("every one listed as questionable"), "{note}");
+        assert!(
+            note.contains("every one listed as questionable — give the ground there"),
+            "{note}"
+        );
         assert!(questionable_note(0, 0, &params).is_none());
         let some = questionable_note(25_000, QUESTIONABLE_KEPT, &params).unwrap();
-        assert!(some.ends_with("the 10000 nearest to the wires listed as questionable"));
+        assert!(some.contains("the 10000 nearest to the wires listed as questionable — "));
         let positions = Arc::clone(check.positions());
         let csv = questionable_csv(&positions, &list, &params);
         let rows: Vec<&str> = csv.lines().collect();

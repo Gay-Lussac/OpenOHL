@@ -1306,7 +1306,8 @@ pub fn condense_pole_full(
     c.notes.push(
         "NOT ON THE SAFE SIDE for clearances: the pole fixed at the ground line (its \
          embedment's rotation left out), its crossarms rigid, wood's creep left out — stiffer \
-         than the real pole"
+         than the real pole, so it moves less than in reality and a clearance can be smaller; \
+         not modelled yet: keep a margin"
             .to_owned(),
     );
     Ok(c)

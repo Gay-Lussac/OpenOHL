@@ -1030,7 +1030,8 @@ pub fn case_note(solution: &Solution) -> Option<String> {
         } else {
             format!(
                 "NOT ON THE SAFE SIDE: the bolt-slip passes did not settle in {} solves (the \
-                 last kept)",
+                 last kept): the forces may still change, so a usage can be too low; the pass \
+                 limit is not a setting yet, so review this case by hand",
                 solution.slip_passes
             )
         });

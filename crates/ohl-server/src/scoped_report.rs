@@ -335,7 +335,9 @@ pub(crate) fn report(
             if !v.names_hidden(&t) {
                 t
             } else if t.starts_with("NOT ON THE SAFE SIDE") {
-                "NOT ON THE SAFE SIDE: about a neighbour you may not see (not named)".into()
+                "NOT ON THE SAFE SIDE: something left out about a neighbour you may not see \
+                 (not named) can make this result too low; someone with rights to it sees why"
+                    .into()
             } else {
                 "a note about a neighbour you may not see (not named)".into()
             }

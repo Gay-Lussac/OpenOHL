@@ -127,7 +127,8 @@ fn a_redundant_member_takes_its_share_of_the_braced_compression() {
     assert!(supports[4].clone().unwrap().is_err());
     assert!(
         u[4].governs.contains(&format!(
-            "{NOT_SAFE} redundant force (2.5 %) not checked: the member it braces not found"
+            "{NOT_SAFE} redundant force (2.5 %) not checked: the member it braces not found — its \
+             usage can be higher"
         )),
         "{}",
         u[4].governs

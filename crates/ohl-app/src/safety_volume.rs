@@ -689,7 +689,8 @@ const RESULTS_HELP: (&str, &str) = (
 /// Under the wind when a windy case is taken at its full blowouts only.
 pub const NO_ARC_UNSAFE: &str = "NOT ON THE SAFE SIDE: without the swing arc or the wind steps a \
      windy case gives only its two full blowouts; the positions between still air and them are \
-     not in the volumes. The results say so.";
+     not in the volumes, so a wire can come closer than they show. The results say so. Tick the \
+     swing arc or the wind steps.";
 
 /// The Safety volumes window.
 pub struct SafetyVolumeWindow {

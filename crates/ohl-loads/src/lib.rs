@@ -626,7 +626,8 @@ impl BrokenWire {
                  broken ones gone from the span (of the two readings the one with the larger \
                  unbalance on the structures; smaller than the whole phase broken); NOT ON THE \
                  SAFE SIDE for the subconductors left: their tension with the broken ones \
-                 hanging in the spacers is higher and not checked",
+                 hanging in the spacers is higher and not checked (not modelled yet: keep a \
+                 margin on that tension)",
                 self.section
             )
         })
@@ -2406,7 +2407,9 @@ pub fn structure_loads_at(
                     if body.has_longitudinal() {
                         " — a wind along the line on the wires is not modelled: exact on a \
                          straight line, NOT ON THE SAFE SIDE at a line angle (the spans' share \
-                         of it, the strings' and jumpers' wind along the line left out)"
+                         of it, the strings' and jumpers' wind along the line left out, so \
+                         the load along the line can be larger; not modelled yet: keep a \
+                         margin at line angles)"
                     } else {
                         ""
                     }
@@ -3710,7 +3713,9 @@ pub fn add_structure_wind(
                     label: if body.has_longitudinal() {
                         format!(
                             "wind on the structure ({from}–{to} m; NOT ON THE SAFE SIDE: the \
-                             band's area across the line taken for a wind with a part along it)"
+                             band's area across the line taken for a wind with a part along it; \
+                             the area along the line can be larger, so this wind can be too \
+                             small; a structure model gives the wind per direction)"
                         )
                     } else {
                         format!("wind on the structure ({from}–{to} m)")

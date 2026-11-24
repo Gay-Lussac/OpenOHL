@@ -729,7 +729,8 @@ pub fn usages(
                         member: k,
                         usage: None,
                         governs: format!(
-                            "{NOT_CHECKED}: plugin {} (method {}) {why}",
+                            "{NOT_CHECKED}: plugin {} (method {}) {why} — an overload of this \
+                             member would not be found",
                             p.plugin, p.method
                         ),
                     };
@@ -913,7 +914,8 @@ fn check_in(
     };
     if bare > 0 {
         note.push_str(&format!(
-            "; {bare} member(s) {NOT_CHECKED}: the plugin returned nothing for them"
+            "; {bare} member(s) {NOT_CHECKED}: the plugin returned nothing for them, so an \
+             overload there would not be found (each member's line says what is missing)"
         ));
     }
     let notes = usage

@@ -157,10 +157,10 @@ pub fn not_safe_notes(line: &Line, library: &Library) -> Vec<String> {
     let mut notes = vec![
         "NOT ON THE SAFE SIDE: one uniform temperature in the conductor — at a high current \
          its core runs hotter than its surface and the sag is larger than at the temperature \
-         given"
+         given; not modelled yet: keep a margin on the hot sag"
             .to_owned(),
         "NOT ON THE SAFE SIDE: the same temperature along each section — a span sheltered from \
-         the wind runs hotter"
+         the wind runs hotter and sags more; give a weather case with less wind for such spans"
             .to_owned(),
     ];
     let steel: BTreeSet<&str> = live
@@ -182,7 +182,9 @@ pub fn not_safe_notes(line: &Line, library: &Library) -> Vec<String> {
         }
         notes.push(format!(
             "NOT ON THE SAFE SIDE: the steel core's magnetic heating beyond what the AC \
-             resistance holds not counted ({} section(s) of steel-cored conductors: {})",
+             resistance holds not counted, so the conductor can run hotter than computed ({} \
+             section(s) of steel-cored conductors: {}); give an AC resistance that holds it \
+             (the maker's data)",
             steel.len(),
             first.join(", ")
         ));
@@ -205,7 +207,7 @@ pub fn cable_notes(cable: &ohl_cables::Cable) -> Vec<String> {
     let mut notes = vec![
         "NOT ON THE SAFE SIDE: one uniform temperature in the conductor — at a high current \
          its core runs hotter than its surface and the sag is larger than at the temperature \
-         given"
+         given; not modelled yet: keep a margin on the hot sag"
             .to_owned(),
     ];
     if matches!(
@@ -214,7 +216,8 @@ pub fn cable_notes(cable: &ohl_cables::Cable) -> Vec<String> {
     ) {
         notes.push(
             "NOT ON THE SAFE SIDE: the steel core's magnetic heating beyond what the AC \
-             resistance holds not counted"
+             resistance holds not counted, so the conductor can run hotter than computed; give \
+             an AC resistance that holds it (the maker's data)"
                 .to_owned(),
         );
     }

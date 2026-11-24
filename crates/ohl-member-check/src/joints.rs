@@ -64,7 +64,10 @@ use ohl_structures_fe::plates::{BoltGroup, PlateSteel, WeldInput};
 /// Said for a joint part the plugin `p` names did not check: "NOT CHECKED
 /// by the plugin, NOT ON THE SAFE SIDE".
 pub fn not_checked_by(p: &PluginMethod) -> String {
-    format!("NOT CHECKED by {}, NOT ON THE SAFE SIDE", p.plugin)
+    format!(
+        "NOT CHECKED by {}, NOT ON THE SAFE SIDE (a failure there would not be found)",
+        p.plugin
+    )
 }
 
 type Found = HashMap<(String, String, usize), Result<PathBuf, String>>;

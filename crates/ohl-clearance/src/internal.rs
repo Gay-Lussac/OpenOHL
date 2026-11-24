@@ -361,7 +361,9 @@ fn no_rule_for_insulation(
         .map(|(circuit, level)| {
             format!(
                 "NOT CHECKED, NOT ON THE SAFE SIDE: no internal rule for {circuit} (insulation \
-                 {level}): the rules of its voltage are for the other insulation level only"
+                 {level}): the rules of its voltage are for the other insulation level only, so \
+                 a distance too small for it would not be found; add an internal rule for this \
+                 insulation level"
             )
         })
         .collect()
@@ -1234,7 +1236,8 @@ pub fn check(
             report.notes.push(format!(
                 "NOT ON THE SAFE SIDE: {structure}: {} string(s) without volumes — their \
                  fittings' size (clamps, horns, yokes) not counted, the conductor measured \
-                 from its clamp; give their insulator assemblies shapes: {}",
+                 from its clamp, so the real distances can be smaller; give their insulator \
+                 assemblies shapes: {}",
                 labels.len(),
                 first.join(", ")
             ));

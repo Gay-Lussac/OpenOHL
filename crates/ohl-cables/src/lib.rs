@@ -338,14 +338,18 @@ impl BimetallicUse {
                     "NOT ON THE SAFE SIDE: gap-type wire {wire}{of}: the outer strands taken as \
                      unloaded at each section's stringing state (the core tensioned alone), the \
                      core alone above its stringing temperature — a conductor installed otherwise \
-                     sags more when hot; its jumpers are taken as a bird cage"
+                     sags more when hot, so its clearances can be smaller than shown; its jumpers \
+                     are taken as a bird cage. Use the default model (outer strands in \
+                     compression) unless it is installed as a gap type"
                 );
             }
         };
         format!(
             "NOT ON THE SAFE SIDE: wire type {wire}{of} modelled {model}: above the knee point \
              its hot sag is smaller than with the outer strands in compression (0.12 m in 10.6 m \
-             on the 300 m benchmark span at 150 °C)"
+             on the 300 m benchmark span at 150 °C), so its clearances can be smaller than \
+             shown. Use the default model (outer strands in compression without limit) unless \
+             tests or the maker give the compression they take"
         )
     }
 }

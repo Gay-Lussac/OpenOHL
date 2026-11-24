@@ -37,7 +37,7 @@ pub const SIMPLE_NOT_CHECKED: &str =
 
 /// What the core says of a joint part of a design code's (a plugin's)
 /// when no plugin was run (the runners send them to its joint check).
-pub const NOT_RUN: &str = "NOT CHECKED, NOT ON THE SAFE SIDE: the joint check is the design code's plugin's, not run here";
+pub const NOT_RUN: &str = "NOT CHECKED, NOT ON THE SAFE SIDE: the joint check is the design code's plugin's, not run here, so an overloaded joint would not be found; run the check with the design code's plugin";
 
 /// What is said of a plate in compression.
 pub const BUCKLING_NOT_CHECKED: &str = "plate buckling not checked (neither ASCE 10-97 nor SIA \

@@ -136,7 +136,8 @@ pub fn marks_note(usage: &[MemberUsage]) -> String {
     if not_safe > 0 {
         text.push_str(&format!(
             "; {not_safe} member(s) NOT ON THE SAFE SIDE: part of their check not done \
-             (\"{NOT_SAFE} …]\" in what governs says which; their usage may be too low)"
+             (\"{NOT_SAFE} …]\" in what governs says which part and what to give for it; their \
+             usage may be too low)"
         ));
     }
     let joints = usage.iter().filter(|u| u.governs.contains(JOINTS)).count();
@@ -230,8 +231,8 @@ pub const NOT_CHECKED: &str = "not checked (modelling member)";
 /// Said for every checked member of a model whose file asks for a
 /// plugin's member check when no plugin was run (the core runs none;
 /// 2026-11-11).
-pub const PLUGIN_NOT_RUN: &str =
-    "NOT CHECKED, NOT ON THE SAFE SIDE: the member check is a plugin's, not run here";
+pub const PLUGIN_NOT_RUN: &str = "NOT CHECKED, NOT ON THE SAFE SIDE: the member check is a plugin's, not run here, so an \
+     overloaded member would not be found; run the check with the design code's plugin";
 
 /// The largest bending moments along a member, about its local y and z
 /// (N·m), between its joints (2026-11-08, owner: "stay on the safe
@@ -614,7 +615,8 @@ fn with_redundant_force(
     let s = match supported {
         Err(why) => {
             own.governs.push_str(&format!(
-                " {NOT_SAFE} redundant force ({pct} %) not checked: {why}]"
+                " {NOT_SAFE} redundant force ({pct} %) not checked: {why} — its usage can be \
+                 higher]"
             ));
             return own;
         }
@@ -856,12 +858,14 @@ pub fn climbing_note(model: &Model, climbing: &[Climbing]) -> Option<String> {
     }
     if unchecked > 0 {
         text.push_str(&format!(
-            "; NOT ON THE SAFE SIDE: {unchecked} not checked (no elastic modulus or yield strength)"
+            "; NOT ON THE SAFE SIDE: {unchecked} not checked (no elastic modulus or yield \
+             strength), so an overload there would not be found; give their material"
         ));
     }
     text.push_str(&format!(
         "; members steeper than {CLIMBING_INCLINATION_DEG:.0}° not checked (NOT ON THE SAFE SIDE \
-         for any a climber stands on)"
+         for any a climber stands on: a climber's weight could overload it; the climbing load \
+         is a planned step, check such members by hand until then)"
     ));
     Some(text)
 }
@@ -1141,9 +1145,9 @@ fn usage_of(
                         "bending not checked (axial check{}): it would add {:.0} % (My {:.2}, Mz \
                          {:.2} kN m along it)",
                         if m.is_frame() {
-                            ", single_angle_moments off"
+                            ", single_angle_moments off — turn it on to take them"
                         } else {
-                            ": a truss member"
+                            ": a truss member — make it a frame to take them"
                         },
                         add * 100.0,
                         kn(my),
@@ -1152,7 +1156,11 @@ fn usage_of(
                 }
             }
             if !not_safe_notes.is_empty() {
-                suffix.push_str(&format!(" {NOT_SAFE} {}]", not_safe_notes.join(", ")));
+                suffix.push_str(&format!(
+                    " {NOT_SAFE} {} — its usage can be higher than shown; give what is \
+                     missing, or check it by hand]",
+                    not_safe_notes.join(", ")
+                ));
             }
             let axial = axial.map(|(u, mut words)| {
                 words.push_str(&suffix);

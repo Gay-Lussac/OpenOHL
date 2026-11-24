@@ -283,7 +283,8 @@ pub fn zone_arcs_with(
                 format!(
                     "NOT ON THE SAFE SIDE: \"{}\": {lifted} spans whose wire the wind pulls to or \
                      above the line between its clamps: the swing band does not hold such a wire \
-                     between its levels. Tick the wind steps (every 10 Pa) for them.",
+                     between its levels, so a clearance there can be smaller than shown. Tick \
+                     the wind steps (every 10 Pa) for them.",
                     case.name
                 )
             });

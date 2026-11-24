@@ -667,7 +667,8 @@ pub fn fe(args: &FeArgs) -> Result<(), String> {
             .collect();
         if !unchecked.is_empty() {
             println!(
-                "  {}: {} member(s) without a result of the member check: {}{}",
+                "  {}: {} member(s) without a result of the member check, so an overload there \
+                 would not be found (each member's line says why): {}{}",
                 ohl_member_check::NOT_CHECKED,
                 unchecked.len(),
                 unchecked[..unchecked.len().min(10)].join(", "),

@@ -252,7 +252,8 @@ impl Shared {
                  added (each line's strings there counted again: more load, conservative). \
                  The worst per point and direction is the largest factored load by size, with \
                  the line and case giving it. Solved rigid (level 2): a line set to level 3 or \
-                 4 is said NOT ON THE SAFE SIDE.",
+                 4 is said NOT ON THE SAFE SIDE (its structures' flexibility can add load; \
+                 check that tower with that line's own loads).",
             );
         });
         if self.running.is_some() {

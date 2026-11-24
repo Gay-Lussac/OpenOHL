@@ -740,7 +740,9 @@ fn feet_moves(
         let mut notes = feet.notes;
         if !missing.is_empty() {
             notes.push(format!(
-                "NOT ON THE SAFE SIDE: point(s) {} on no joint of the model: as drawn",
+                "NOT ON THE SAFE SIDE: point(s) {} on no joint of the model: kept as drawn, \
+                 so the lean of the structure there is left out and the wire can come closer \
+                 than shown; link the point(s) to a joint",
                 missing.join(", ")
             ));
         }

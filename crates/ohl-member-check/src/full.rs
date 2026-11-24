@@ -403,7 +403,8 @@ pub(crate) fn usages(
                         member: k,
                         usage: None,
                         governs: format!(
-                            "{NOT_CHECKED}: plugin {} (method {}) {why}",
+                            "{NOT_CHECKED}: plugin {} (method {}) {why} — an overload of this \
+                             member would not be found",
                             p.plugin, p.method
                         ),
                     };

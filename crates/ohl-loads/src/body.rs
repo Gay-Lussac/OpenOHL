@@ -149,7 +149,8 @@ pub fn add_structure_loads(
             r.notes.push(format!(
                 "ice and snow on the structures not counted at {} (their type has no members \
                  with a profile from the cross-section library and no pole: no surface to put \
-                 them on — not on the safe side)",
+                 them on — not on the safe side: their weight and wind area are missing from \
+                 the loads; give the type a model with profiles or a pole)",
                 without.join(", ")
             ));
         }

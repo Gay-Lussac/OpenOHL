@@ -399,7 +399,7 @@ pub fn beyond_note(distance: f64) -> String {
     format!(
         "NOT ON THE SAFE SIDE: the wires farther than {distance:.0} m from the working set's \
          wires are left out (the field distance; owner 2026-11-16): their field is not in the \
-         result"
+         result, so the real field can be higher; a larger field distance takes them in"
     )
 }
 

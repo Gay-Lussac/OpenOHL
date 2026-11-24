@@ -290,13 +290,15 @@ impl CheckLevel {
             "NOT ON THE SAFE SIDE where a check takes the level-4 solve: the deflection already \
              present at stringing left out, rigid foundations in the models, P-Delta on the drawn \
              geometry (no large displacements) — the points may move less than the real \
-             structures"
+             structures, so a clearance can be smaller than shown; keep a margin there (these \
+             parts are not modelled yet)"
                 .to_owned()
         } else {
             "NOT ON THE SAFE SIDE where a check takes the level-3 solve: the deflection already \
              present at stringing left out, rigid foundations in the models, the linearisation \
              stiffer than the case's state where members would go slack — the points move less \
-             than the real structures"
+             than the real structures, so a clearance can be smaller than shown; level 4 \
+             follows slack members, keep a margin for the rest (not modelled yet)"
                 .to_owned()
         });
         out

@@ -2468,7 +2468,8 @@ impl PhaseDistanceWindow {
                          apart along each conductor (the other's closest point searched \
                          continuously). Smaller: the closest point found more exactly, more \
                          measurements — half the spacing, about twice the time. Between two \
-                         stations nothing is measured: not on the safe side. 0.1 m by default.",
+                         stations nothing is measured: not on the safe side (a closer approach \
+                         there can be missed; a smaller spacing finds it). 0.1 m by default.",
                     );
                     crate::style::field(
                         ui,

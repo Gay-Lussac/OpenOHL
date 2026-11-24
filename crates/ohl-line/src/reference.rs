@@ -484,7 +484,8 @@ impl Line {
                      flexible structure's attachment points moved as solved there; every other \
                      case keeps that lean, not its own — NOT ON THE SAFE SIDE where a case \
                      leans the structures further (heavier ice, stronger wind, colder: theory, \
-                     Structure flexibility › Reference state){rigid}",
+                     Structure flexibility › Reference state), so a clearance can be smaller \
+                     there; choose as reference the case that leans them furthest{rigid}",
                     state.case, state.level
                 )
             }
@@ -526,7 +527,9 @@ impl Line {
                         .map(|x| format!("{} ({})", x.structure, x.reason))
                         .collect();
                     format!(
-                        "; NOT ON THE SAFE SIDE — foot movements not taken: {}{}",
+                        "; NOT ON THE SAFE SIDE — foot movements not taken (their lean is \
+                         missing, so a clearance can be smaller; fix the reason to take them): \
+                         {}{}",
                         list.join("; "),
                         if state.rigid.len() > 10 { "; …" } else { "" }
                     )

@@ -38,8 +38,9 @@
 /// the wire solve (2026-11-08: said with the reports, not on the safe
 /// side): a structure giving under the wires' pull lowers their sags.
 pub const RIGID_STRUCTURES: &str = "NOT ON THE SAFE SIDE: the structures rigid in the wire \
-     solve — a structure giving under the wires' pull lowers the sags (the line–structure \
-     interaction is not built yet)";
+     solve — a structure giving under the wires' pull lets the wires hang lower, so a \
+     clearance below them can be smaller than shown; calculation levels 3 and 4 take the \
+     structures' flexibility (Calculation level), else keep a margin";
 
 pub mod blowout;
 pub mod calculation;
