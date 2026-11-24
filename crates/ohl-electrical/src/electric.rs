@@ -230,7 +230,7 @@ impl GroundPlane {
     }
 
     /// The mirror image of a vector.
-    fn reflect(&self, v: [f64; 3]) -> [f64; 3] {
+    pub(crate) fn reflect(&self, v: [f64; 3]) -> [f64; 3] {
         let n = self.normal;
         let h = v[0] * n[0] + v[1] * n[1] + v[2] * n[2];
         [

@@ -1374,4 +1374,198 @@ fn offline_files_neighbours_in_the_check_windows(
         "{notes:?}"
     );
     shot(h, "Magnetic field", "offline-neighbours-magnetic");
+
+    // The Electric field window (2026-11-24): the export's lines within
+    // 500 m of the spans computed solved together with this line, the
+    // worst over their phase angles — by the network's code; per span the
+    // network's check's highest value on the same file.
+    let server = ohl_server::offline_checks::check_offline(
+        ws,
+        &ohl_server::ScopedCheck::ElectricField {
+            case: "10 °C".into(),
+            distance: None,
+            limit_kv_m: None,
+        },
+    )
+    .unwrap();
+    assert!(
+        server
+            .notes
+            .iter()
+            .any(|n| n.starts_with("phase angles: solved together")),
+        "{:?}",
+        server.notes
+    );
+    let (own, with, words, took_own, took_with) = {
+        let r = h.state_mut().ready().unwrap();
+        r.magnetic_field.common.open = false;
+        let m = &r.model;
+        let case = m
+            .cases
+            .iter()
+            .find(|c| c.case.name == "10 °C")
+            .unwrap()
+            .case
+            .clone();
+        // This line's field as the network's check computes it: profiles
+        // across the working set's spans 1 m above the ground, ±50 m every
+        // 5 m, the ground plane under each point.
+        let t0 = std::time::Instant::now();
+        let solved = crate::model::Solved::as_shown(&m.line, &m.library, case.clone());
+        let ws_sections: std::collections::BTreeSet<String> = wanted.iter().cloned().collect();
+        let settings = ohl_electrical::electric::Settings {
+            height: 1.0,
+            width: 50.0,
+            step: 5.0,
+            profiles: true,
+            stations: ohl_scope::fields::stations_of(&m.line, &ws_sections),
+            ground_model: ohl_electrical::electric::GroundModel::Plane,
+            ..ohl_electrical::electric::Settings::default()
+        };
+        let src = ohl_electrical::Sources {
+            line: &m.line,
+            library: &m.library,
+            shapes: &solved.shapes,
+            temperature: case.temperature,
+            ground: None,
+            jumpers: &solved.jumpers,
+        };
+        let own = ohl_electrical::electric::run(&src, &settings, None).unwrap();
+        let took_own = t0.elapsed();
+        let nb = crate::offline_neighbours::ElectricNeighbours::of(m).unwrap();
+        let mut with = own.clone();
+        let t1 = std::time::Instant::now();
+        let words = nb.add(&m.line, &case, &[], &mut with);
+        (own, with, words, took_own, t1.elapsed())
+    };
+    eprintln!(
+        "electric field of the working set's spans: {took_own:.2?} alone, + {took_with:.2?} with \
+         the export's lines near solved together (the network's code); the network's check on \
+         the file {:.2} s",
+        server.seconds
+    );
+    assert!(
+        words[0].starts_with("Neighbours from the export of")
+            && words[0].contains("included")
+            && words[0].contains(&format!("line {}", twin.other_line))
+            && words[0].contains("solved together"),
+        "{words:?}"
+    );
+    assert!(
+        !words.iter().any(|w| w.starts_with("NOT ALL CHECKED")),
+        "{words:?}"
+    );
+    // Never below this line alone.
+    for (a, b) in own.profiles.iter().zip(&with.profiles) {
+        for (p, q) in a.points.iter().zip(&b.points) {
+            assert!(q.e_kv_m >= p.e_kv_m, "{p:?} {q:?}");
+        }
+    }
+    // Per span the network's highest value (the same selection, the same
+    // system at the same points; this line's own model on the file's line,
+    // which holds more of it far away than the network's sections near).
+    let on_server: std::collections::BTreeMap<String, f64> = server
+        .findings
+        .iter()
+        .filter(|f| f.what == "electric field")
+        .map(|f| (f.on.clone(), f.value))
+        .collect();
+    let here: std::collections::BTreeMap<String, f64> = with
+        .profiles
+        .iter()
+        .map(|p| (format!("span {}–{}", p.from, p.to), p.max_kv_m))
+        .collect();
+    assert!(!on_server.is_empty(), "{server:?}");
+    assert_eq!(
+        on_server.keys().collect::<Vec<_>>(),
+        here.keys().collect::<Vec<_>>()
+    );
+    let mut off: f64 = 0.0;
+    for (k, v) in &on_server {
+        off = off.max((v - here[k]).abs() / v.max(1e-12));
+    }
+    eprintln!("electric field: per span the network's highest value within {off:.2e}");
+    assert!(off <= 1e-6, "{on_server:?} {here:?}");
+
+    // The window itself, the working set's spans ticked: before (the
+    // neighbours not read: the window alone) and with them.
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.electric_field.tick_sections(&r.model, &wanted);
+        // The network's ground and step (the tiled floor every 1 m over
+        // the working set's spans takes minutes here).
+        r.electric_field.use_plane_ground();
+        r.electric_field.common.step = 5.0;
+        let case = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "10 °C")
+            .unwrap();
+        r.electric_field.common.show(case);
+    }
+    h.run_steps(3);
+    let run_electric = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .electric_field
+            .common
+            .job
+            .result = None;
+        h.get_by_label("Run").click();
+        let t0 = std::time::Instant::now();
+        loop {
+            let f = &h.state_mut().ready().unwrap().electric_field;
+            if f.common.job.result.is_some() && !f.common.job.running() {
+                break;
+            }
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(300),
+                "computed"
+            );
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(3);
+        t0.elapsed()
+    };
+    crate::offline_neighbours::IGNORED.with(|c| c.set(true));
+    h.run_steps(3);
+    let alone = run_electric(h);
+    shot(h, "Electric field", "offline-neighbours-electric-before");
+    crate::offline_neighbours::IGNORED.with(|c| c.set(false));
+    h.run_steps(3);
+    let together = run_electric(h);
+    eprintln!(
+        "the Electric field window: {alone:.2?} alone, {together:.2?} with the export's lines \
+         near solved together"
+    );
+    let notes = match &h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .electric_field
+        .common
+        .job
+        .result
+    {
+        Some(Ok(a)) => a.field.notes.clone(),
+        other => panic!("{:?}", other.as_ref().map(|r| r.as_ref().err())),
+    };
+    assert!(
+        notes[0].starts_with("Neighbours from the export of")
+            && notes[0].contains("included")
+            && notes[0].contains("solved together"),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|n| n.starts_with("NOT ALL CHECKED")),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|n| n.contains("no check adds them yet")),
+        "{notes:?}"
+    );
+    shot(h, "Electric field", "offline-neighbours-electric");
 }

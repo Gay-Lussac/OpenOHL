@@ -635,3 +635,70 @@ fn fields_with_the_lines_near() {
     );
     eprintln!("field: largest {largest:.3} µT, left out at most {worst_left_out:.6} µT");
 }
+
+/// The electric field with the lines near, solved together: every point
+/// at least this line alone, the method said, the field distance said NOT
+/// ON THE SAFE SIDE; measured.
+#[test]
+fn electric_field_with_the_lines_near() {
+    let (_, mut net) = country(300, 1, "electric");
+    let codes: Vec<String> = net.models.iter().map(|(c, _)| c.clone()).collect();
+    let spec = crate::electric::ElectricSpec {
+        width: 30.0,
+        step: 5.0,
+        ..Default::default()
+    };
+    let (mut together, mut sets) = (0, 0);
+    let mut largest_gain: f64 = 0.0;
+    for code in codes.iter().take(6) {
+        let mut ws = working_set(&net, code, 2);
+        if ws.structures.is_empty() {
+            continue;
+        }
+        ws.sections.truncate(4);
+        let case = case(&net, "40 °C");
+        net.whole = false;
+        let t = std::time::Instant::now();
+        let r = crate::electric::electric_field(&mut net, &ws, &case, &spec).expect("electric");
+        let secs = t.elapsed().as_secs_f64();
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.starts_with("NOT ON THE SAFE SIDE")),
+            "{:?}",
+            r.notes
+        );
+        assert!(r.not_all_checked.is_empty(), "{:?}", r.not_all_checked);
+        assert!(!r.profiles.is_empty());
+        assert!(r.max_kv_m > 0.0);
+        let with_others = r.taken_in.len() > 1;
+        if with_others {
+            together += 1;
+            assert!(r.method.starts_with("solved together"), "{}", r.method);
+            assert!(r.profiles.iter().all(|p| p.pieces > 0));
+        }
+        for p in &r.profiles {
+            for q in &p.points {
+                assert!(q.e_kv_m >= q.own_kv_m);
+                assert_eq!(q.joint_kv_m.is_some(), with_others);
+                if let Some(j) = q.joint_kv_m {
+                    assert!(j.is_finite() && j > 0.0);
+                    largest_gain = largest_gain.max(j - q.own_kv_m);
+                }
+            }
+        }
+        eprintln!(
+            "electric: line {code}, {} profile(s), {} line(s) in, {} pieces at most, largest \
+             {:.3} kV/m, {secs:.2} s ({})",
+            r.profiles.len(),
+            r.taken_in.len(),
+            r.profiles.iter().map(|p| p.pieces).max().unwrap_or(0),
+            r.max_kv_m,
+            r.method
+        );
+        sets += 1;
+    }
+    assert!(sets >= 2, "{sets}");
+    assert!(together >= 1, "{together}");
+    eprintln!("electric: largest rise over this line alone {largest_gain:.4} kV/m");
+}

@@ -140,7 +140,7 @@ fn settings(line: &Line, spec: &FieldSpec, stations: Vec<StationSpec>) -> magnet
 }
 
 /// A line's wires as the field's sources: solved in `case`.
-fn solved(
+pub(crate) fn solved(
     part: &Line,
     library: &ohl_cables::Library,
     case: &WeatherCase,
@@ -286,24 +286,34 @@ pub struct OtherLines {
     pub notes: Vec<String>,
 }
 
-/// The lines whose wires can come within `spec.distance` of the wires of
-/// working set `ws` in `case`, from `net`: this line's sections near, and
-/// every other line's sections near computed on its own as the field's
-/// sources (see the module's notes). The network's field check
-/// ([`fields`]) adds them by size to the working set's profiles;
-/// OHL-Design's Magnetic field window on an offline working set's file
-/// adds them to its own outputs (2026-11-24) — the same selection, the
-/// same sources.
-pub fn other_lines(
+/// The sections near a working set: whose spans can come within a
+/// distance of its wires ([`near_sections`]).
+#[derive(Debug, Clone, Default)]
+pub struct Near {
+    /// The working set's wires not solved (each makes it *not all
+    /// checked*).
+    pub wires_failed: Vec<String>,
+    /// This line's sections near.
+    pub own_near: BTreeSet<String>,
+    /// Every other line's sections near, by line.
+    pub others: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// The sections of every line whose spans can come within `distance` of
+/// the wires of working set `ws` solved in `case`, from `net`: the
+/// network's selection for its field checks (the magnetic field's
+/// [`other_lines`], the electric field's
+/// [`crate::electric::joint_lines`]).
+pub fn near_sections(
     net: &mut dyn Neighbourhood,
     ws: &WorkingSet,
     case: &WeatherCase,
-    spec: &FieldSpec,
-) -> Result<OtherLines, String> {
-    if !(spec.distance.is_finite() && spec.distance >= 0.0) {
-        return Err(format!("a field distance of {} m", spec.distance));
+    distance: f64,
+) -> Result<Near, String> {
+    if !(distance.is_finite() && distance >= 0.0) {
+        return Err(format!("a field distance of {distance} m"));
     }
-    let mut out = OtherLines::default();
+    let mut out = Near::default();
     let ws_sections: BTreeSet<String> = ws.sections.iter().cloned().collect();
     let library = net.library(&ws.model)?;
     // The working set's wires: where the distance is measured from.
@@ -320,25 +330,48 @@ pub fn other_lines(
         .bounds()
         .ok_or("the working set's wires have no place")?;
     let margin = net.max_margin();
-    let area = bounds.grown(spec.distance + 2.0 * margin);
+    let area = bounds.grown(distance + 2.0 * margin);
     let mut by_model: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (m, s) in net.sections_in(&area) {
         by_model.entry(m).or_default().push(s);
     }
-    let mut keep: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (m, secs) in &mut by_model {
         secs.sort();
         secs.dedup();
         for (s, cs) in net.chords(m, secs) {
             if cs.iter().any(|c| {
-                grid.nearest(c.mid(), c.mid(), spec.distance + c.margin)
+                grid.nearest(c.mid(), c.mid(), distance + c.margin)
                     .is_some()
             }) {
-                keep.entry(m.clone()).or_default().insert(s);
+                out.others.entry(m.clone()).or_default().insert(s);
             }
         }
     }
-    out.own_near = keep.remove(&ws.model).unwrap_or_default();
+    out.own_near = out.others.remove(&ws.model).unwrap_or_default();
+    Ok(out)
+}
+
+/// The lines whose wires can come within `spec.distance` of the wires of
+/// working set `ws` in `case`, from `net`: this line's sections near, and
+/// every other line's sections near computed on its own as the field's
+/// sources (see the module's notes). The network's field check
+/// ([`fields`]) adds them by size to the working set's profiles;
+/// OHL-Design's Magnetic field window on an offline working set's file
+/// adds them to its own outputs (2026-11-24) — the same selection, the
+/// same sources.
+pub fn other_lines(
+    net: &mut dyn Neighbourhood,
+    ws: &WorkingSet,
+    case: &WeatherCase,
+    spec: &FieldSpec,
+) -> Result<OtherLines, String> {
+    let near = near_sections(net, ws, case, spec.distance)?;
+    let mut out = OtherLines {
+        wires_failed: near.wires_failed,
+        ..OtherLines::default()
+    };
+    let keep = near.others;
+    out.own_near = near.own_near;
     // The other lines, each on its own.
     for (m, secs) in keep {
         let list: Vec<String> = secs.iter().cloned().collect();

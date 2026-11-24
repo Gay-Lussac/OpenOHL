@@ -12,6 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ohl_scope::clearance::{ClearanceResult, Outcome, WireId};
+use ohl_scope::electric::{ElectricResult, ElectricSpec};
 use ohl_scope::fields::{FieldResult, FieldSpec};
 use ohl_scope::loads::LoadsResult;
 use ohl_scope::{Neighbour, Neighbourhood, PulledIn, WorkingSet};
@@ -22,6 +23,7 @@ use crate::{Finding, PulledReport, ScopedCheck, ScopedReport};
 pub(crate) enum Raw {
     Clearances(Box<ClearanceResult>),
     Fields(Box<FieldResult>),
+    Electric(Box<ElectricResult>),
     Loads(Box<LoadsResult>),
 }
 
@@ -30,6 +32,7 @@ impl Raw {
         match self {
             Raw::Clearances(r) => &r.pulled,
             Raw::Fields(r) => &r.pulled,
+            Raw::Electric(r) => &r.pulled,
             Raw::Loads(r) => &r.pulled,
         }
     }
@@ -38,6 +41,7 @@ impl Raw {
         match self {
             Raw::Clearances(r) => r.reach,
             Raw::Fields(r) => r.reach,
+            Raw::Electric(r) => r.reach,
             Raw::Loads(r) => r.reach(),
         }
     }
@@ -86,6 +90,21 @@ pub(crate) fn run<N: Neighbourhood>(
                 ..FieldSpec::default()
             };
             Raw::Fields(Box::new(ohl_scope::fields::fields(net, ws, &case, &spec)?))
+        }
+        ScopedCheck::ElectricField {
+            case,
+            distance,
+            limit_kv_m,
+        } => {
+            let case = find_case(net, &model, case)?;
+            let spec = ElectricSpec {
+                distance: distance.unwrap_or(ohl_scope::reach::FIELD_DISTANCE),
+                limit_kv_m: *limit_kv_m,
+                ..ElectricSpec::default()
+            };
+            Raw::Electric(Box::new(ohl_scope::electric::electric_field(
+                net, ws, &case, &spec,
+            )?))
         }
         ScopedCheck::StructureLoads { structures } => {
             if structures.is_empty() {
@@ -239,6 +258,36 @@ pub(crate) fn report(
                         value: t.b_ut,
                         required: r.limit_ut,
                         violates: r.limit_ut.is_some_and(|l| t.b_ut >= l),
+                        at: Some(t.at),
+                        hidden: false,
+                    });
+                }
+            }
+            violations = r.above_limit;
+            if report.hidden > 0 {
+                notes.push(format!(
+                    "the field of {} object(s) you may not see is in the values (not named)",
+                    report.hidden
+                ));
+            }
+        }
+        Raw::Electric(r) => {
+            not_all.extend(r.not_all_checked.iter().cloned());
+            notes.extend(r.notes.iter().cloned());
+            notes.push(format!("phase angles: {}", r.method));
+            notes.extend(r.taken_in.iter().map(|t| format!("taken in: {t}")));
+            for p in &r.profiles {
+                results += p.points.len();
+                let top = p.points.iter().max_by(|a, b| a.e_kv_m.total_cmp(&b.e_kv_m));
+                if let Some(t) = top {
+                    findings.push(Finding {
+                        what: "electric field".into(),
+                        on: format!("span {}–{}", p.from, p.to),
+                        against: None,
+                        measure: "E (kV/m)".into(),
+                        value: t.e_kv_m,
+                        required: r.limit_kv_m,
+                        violates: r.limit_kv_m.is_some_and(|l| t.e_kv_m >= l),
                         at: Some(t.at),
                         hidden: false,
                     });

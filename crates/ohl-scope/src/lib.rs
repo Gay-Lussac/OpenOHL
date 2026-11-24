@@ -32,6 +32,7 @@
 
 pub mod bound;
 pub mod clearance;
+pub mod electric;
 pub mod fields;
 pub mod loads;
 pub mod reach;

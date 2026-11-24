@@ -272,11 +272,68 @@ and [what is left out](../theory/electric-field.md#what-is-left-out):
 - **DC systems** are left out (said).
 
 On an **offline working set's file**, the lines of its export within
-500 m are named in the results: their field is not added — NOT ALL
-CHECKED, not on the safe side where they come near
-([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
-The network's checks compute no electric field with other lines either;
-the magnetic field adds them (since 2026-11-24).
+500 m are **solved together** with this line (since 2026-11-24,
+[below](#other-lines-on-an-offline-working-sets-file)); elsewhere (a
+project of one line) other lines are not in the model.
+
+## Other lines on an offline working set's file
+
+*Built 2026-11-24, in active development, not approved yet.* On an
+**offline working set's file**, Run computes, after this line's own
+field, the export's **other lines whose wires come within 500 m** of the
+spans computed (the network's field distance) **together with this
+line**: one system of charges over every line's wires and earth wires,
+each line solved in the run's weather case with its own settings and
+wires — a neighbour's conductors change this line's charges and its
+earth wires screen, so the lines are not computed apart and added. The
+phase angles between the lines are not known: the **worst over them** is
+taken — exact for one other line, an upper bound for more (the notes say
+which). At every profile point and given point the result is **the
+larger** of this line's own value and the lines together. This is the
+network's own selection and system
+(`ohl_server::offline_checks::electric_neighbours`): on the working set's
+spans the same highest value per span as the network's electric field
+check on the same file (`ohl network check-offline --check electric`;
+tested). How it is computed:
+[theory](../theory/electric-field.md#other-lines-solved-together).
+
+1. Tick the spans as usual. The other lines are taken within 500 m of
+   the **sections** of the spans computed: spans of the read-only parts
+   around your working set reach beyond what the export holds — said
+   **NOT ALL CHECKED**; tick your working set's spans for a complete
+   result.
+2. The voltages: this line's circuits at the window's voltages (or their
+   systems'), the other lines' at their systems' highest operating
+   voltage, else the nominal (said NOT ON THE SAFE SIDE with the
+   circuits).
+3. **Run**. The results' notes start with the export, the lines solved
+   together (their sections), the method (exact or a bound) and the
+   seconds it took, that they **may be stale** (orange; red when the
+   export was stale already) and anything NOT ALL CHECKED (red). It
+   takes seconds more: measured on a synthetic country with two other
+   lines near (the plane ground, every 5 m), 8.8 s alone, 15.6 s with
+   them — a system of some 50 pieces per wire and kilometre per profile.
+
+Before (the same window without the export's lines, as on a working
+set's replica): NOT ALL CHECKED, the lines near not pulled in.
+
+![Before: the same Electric field window without the export's lines — the red NOT ALL CHECKED line saying the lines within 500 m are not pulled in](../images/user-guide/offline-neighbours-electric-before.png)
+
+After:
+
+![The Electric field window's Results on an offline working set's file: the profiles table, then the notes — the line naming the export and the two other lines solved together within 500 m of the spans computed, an upper bound over their unknown phase angles (three parts), the orange line saying they may be stale, the voltages used, and NOT ON THE SAFE SIDE (orange) for the nominal voltages and the wires beyond 500 m](../images/user-guide/offline-neighbours-electric.png)
+
+**Conservative**: the worst over the lines' unknown phase angles (a
+bound for three or more parts); the larger of this line alone and the
+lines together at every point. **Not on the safe side** (said): the wires
+farther than 500 m from the spans computed, and in each profile's system
+those farther than 500 m from its middle, are left out; a given point far
+from those spans may lie nearer another line; a line at its nominal
+voltage. **NOT ALL CHECKED** (red): the cuts and the volumes' surfaces
+are this line's field alone (the other lines are computed with it at the
+profiles and the given points); a reach beyond the export; neighbours
+left out of the export; a neighbour that does not solve; a profile whose
+system cannot be solved (a wire at or below the ground in it).
 
 ## Without the window
 

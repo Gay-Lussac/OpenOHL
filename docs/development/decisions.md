@@ -84,6 +84,85 @@ yet; [theory](../theory/joint-groups.md#the-force-a-level-plate-passes-between-i
   question.
 - **Measured** (private towers): in the roadmap block.
 
+## 2026-11-24 (country server: the electric field with other lines, solved together)
+
+**The electric field with other lines: the network's check and
+OHL-Design's Electric field window on an offline file** (ROADMAP O17,
+the second follow-up's "left" and its owner question 4, recommended
+"solved together … the worst over the relative angles found without
+sampling"; owner, 2026-11-23: "go ahead with the server too"; built, in
+active development, not approved yet;
+[theory](../theory/electric-field.md#other-lines-solved-together),
+[checks on a working set](../theory/scoped-checks.md#electric-field),
+[user guide](../user-guide/electric-field.md#other-lines-on-an-offline-working-sets-file)).
+
+- **Before**: the network computed no electric field with other lines;
+  the window named the export's lines within 500 m (NOT ALL CHECKED, NOT
+  ON THE SAFE SIDE where they come near).
+- **Why solved together**: a neighbour's conductors, held at their own
+  voltages, and its earth wires, held at zero, change this line's
+  charges; fields of lines computed apart and added by size are **not a
+  proven bound** for the electric field (unlike the magnetic field, whose
+  sources are the given currents). Not done.
+- **The system** (`ohl_electrical::joint`, new): charge simulation
+  (Singer, Steinbigler and Weiss 1974) — every line's wires and earth
+  wires (a bundle as its equivalent wire) cut into straight pieces of
+  uniform charge, graded with their distance from the profile's middle
+  (4 m, growing at 0.15 of the distance, at most 60 m; the wires within
+  the field distance of the middle), each piece's potential held at its
+  wire's voltage at a point on its surface; the images in the ground
+  plane fitted under each matching point and each field point (the
+  electric field's quick ground model); \\( Pq = V \\) by faer's LU on all
+  cores. The jumpers are left out of the system (this line alone keeps
+  them).
+- **The phase angles** (the owner question's recommendation): the system
+  is linear, so it is solved **by parts** (one line's phases of one
+  frequency, every other wire at zero; one LU, two right-hand sides per
+  part), and the worst over the parts' unknown angles is
+  \\( \sum_k|E_k|^2 + 2\sum_{k<l}|\langle E_k,E_l\rangle| \\) — **exact for two
+  parts** (this line and one other line: closed form, no sampling),
+  **an upper bound for three or more** (said "an upper bound" in every
+  result), never above the parts added by size (Cauchy–Schwarz).
+- **The result at a point**: the larger of this line alone in its own
+  model and the lines together (decided here: neither model may lower the
+  other; owner question 1).
+- **The network's check**: a new scoped check `electric_field` (`case`,
+  `distance`?, `limit_kv_m`?; the protocol's `check` message gains the
+  kind, no schema change) → `ohl_scope::electric::electric_field`; the
+  lines taken as the magnetic field takes them (the selection split out
+  as `ohl_scope::fields::near_sections`, `other_lines` on it unchanged in
+  what it computes); each result lists what the system took in and the
+  method; `ohl network check-offline --check electric [--limit-kv-m E]`.
+- **The window**: `ohl_app::offline_neighbours::ElectricNeighbours` →
+  `ohl_server::offline_checks::electric_neighbours` (the file read as the
+  server reads it, the working set's sections replaced by those of the
+  spans computed) → the same `joint_lines` and `joint_at` at the window's
+  profile points and given points (each given point its own system), with
+  the window's voltages for this line's circuits. NOT ALL CHECKED (red)
+  for the cuts and volumes (this line alone), a reach beyond the export,
+  neighbours left out, a line or profile not solved; NOT ON THE SAFE SIDE
+  for the wires beyond 500 m, a given point far from the spans, a line at
+  its nominal voltage. The 2026-11-23 note "no check adds them yet — NOT
+  ON THE SAFE SIDE" is gone where the lines are computed.
+- **Tested**: two long parallel wires over level ground against the
+  image method in 2D by hand (each part's field within 0.5 % at 21
+  points); the worst over the angle against 3 600 sampled angles (none
+  above, the best within a thousandth); three parts' bound above every
+  sampled pair of angles and below the parts added by size; an earthed
+  wire screening a phase (below 90 % of alone); on the synthetic country
+  (300 pylons) every point at least this line alone, the method said;
+  against a local network's server, the window's values per span the
+  network check's on the same file, to the bit (this line and two other
+  lines: three parts, the bound).
+- **Measured** (a heavily shared machine): the network's check on the
+  synthetic country 0.4–7.2 s per working set of four sections (one to
+  three profiles, 586–1 068 pieces per system); on the offline test's
+  country (300 pylons) the working set's spans 7.2–7.9 s for this line +
+  6.5–6.7 s for the other lines solved together, the network's check on
+  the file 13.4–14.9 s; the window (plane ground, every 5 m) 8.8 s alone,
+  15.6 s with them (with another test suite on the machine, load ~96:
+  47 s for the other lines, the window 89 s).
+
 ## 2026-11-24 (country server: the magnetic field with an offline file's lines near)
 
 **OHL-Design's Magnetic field window adds the field of an offline
