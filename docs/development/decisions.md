@@ -8,6 +8,45 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (clearance reports: the rigid-structures note by the line's calculation level)
+
+**The owner's answer** (2026-11-24) on the clearance reports' note
+"NOT ON THE SAFE SIDE: the structures rigid in the wire solve …": *at
+calculation level 3 yes, keep it; at level 4 no* — drop it at level 4
+only where that level really takes the structures' flexibility in the
+check; where a report at level 4 still leaves something rigid, keep a
+precise note. Built (`ohl-clearance`; built, in active development, not
+approved yet).
+
+- **Found**: no clearance check takes the calculation level yet — the
+  clearance zones, internal clearances, safety volumes and vegetation
+  solve the wires with the structures rigid at every level (the wire
+  tensions, string checks and structure loads take it; the internal
+  clearances say so, the others carry `ohl_line::rigid_check_note`). The
+  old note even said "calculation levels 3 and 4 take the structures'
+  flexibility", which is not so for these checks. So **at level 4 the note
+  is kept**, precise, as the answer asks where something stays rigid.
+- **Now** (`ohl_clearance::rigid_structures`, `rigid_structures_at`):
+  levels 1–2 the note as before, without the wrong claim ("the clearance
+  checks do not take the structures' flexibility at any calculation level
+  yet (levels 3 and 4 take it in the wire tensions, string checks and
+  structure loads), so keep a margin"); levels 3 and 4 a note naming the
+  level and what it would model ("this check solves the wires with the
+  structures rigid although the line asks for calculation level 4
+  (structures as their full non-linear models) — the clearance checks do
+  not take the calculation level yet, so the structures giving under the
+  wires' pull, which lets the wires hang lower, is left out and a clearance
+  below them can be smaller than shown; the wire tensions, string checks
+  and structure loads take level 4, this check not yet: keep a margin").
+  The vegetation check gets the level through `VegetationParams::structures`
+  (the application and `ohl lidar vegetation` set it from the line).
+- **Tests**: `the_rigid_structures_note_by_calculation_level` (levels 2, 3,
+  4; the safety volumes' notes on the example line at levels 2 and 4); the
+  existing zone, vegetation and safety-volume tests keep the level-2 note.
+- **Next** (roadmap): when a clearance check takes the flexible solve, its
+  note at that level goes (level 4: none; level 3: the non-linear part
+  left out).
+
 ## 2026-11-24 (structure analysis: a case refused where the joint options are taken back at more than 10 % of the joints, O19 stage 4.4)
 
 **The owner's answer** to stage 4.4's question 5 of 2026-11-24 (approved

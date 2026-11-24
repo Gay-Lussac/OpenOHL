@@ -936,7 +936,7 @@ pub fn safe_side_notes(
     wind: WindMode,
     steps: WindSteps,
 ) -> Vec<String> {
-    let mut out = vec![crate::RIGID_STRUCTURES.to_owned()];
+    let mut out = vec![crate::rigid_structures(line)];
     let windy = cases.iter().any(|c| c.wind_pressure.si() > 0.0);
     if windy && !wind.arc() && !wind.stepped() {
         out.push(WIND_NONE_NOTE.to_owned());

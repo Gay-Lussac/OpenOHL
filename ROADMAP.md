@@ -1963,7 +1963,14 @@ the code checks once on the converged state), its phases:
   line with the same digits (2026-11-17); 8 measured on a real line
   (kept privately, 2026-11-16 to 11-18).
 - [ ] 7 completing: the internal clearances with the deflected body; the
-  clearances taking the level (rigid today, said); OHL-Design updated
+  clearances taking the level (rigid today, said — since 2026-11-24 by the
+  line's level, the owner's answer of that day: "at level 3 yes, keep it;
+  at level 4 no", the note dropped at level 4 only where that level really
+  takes the flexibility; no clearance check takes the level yet, so at
+  levels 3 and 4 the note now names the level and that the check still
+  solves rigid — built, in active development, not approved yet;
+  [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-clearance-reports-the-rigid-structures-note-by-the-lines-calculation-level));
+  OHL-Design updated
   near moved structures only; a level per structure group and per check;
   springs per attachment point at level 2 (only if wanted); a fixed
   post's tilt; levels 3 and 4 linearised at or started from a current

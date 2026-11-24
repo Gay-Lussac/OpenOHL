@@ -1283,7 +1283,7 @@ pub fn check_zones(
     let begun = Instant::now();
     let mut report = ZoneReport {
         lowest: vec![None; rules.len()],
-        notes: vec![crate::RIGID_STRUCTURES.to_owned()],
+        notes: vec![crate::rigid_structures(line)],
         ..ZoneReport::default()
     };
     let wires: Vec<Vec<Wire>> = shapes

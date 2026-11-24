@@ -334,6 +334,7 @@ impl Settings {
             clearance_by_voltage: by(&self.clearance),
             allowance_by_voltage: by(&self.allowance),
             keep_all: true,
+            structures: ohl_line::StructuresInSolve::default(),
         }
     }
 
@@ -1046,7 +1047,8 @@ impl VegetationWindow {
         let library = model.library.clone();
         let ground = model.ground_for_checks();
         let settings = self.settings.clone();
-        let params = settings.params();
+        let mut params = settings.params();
+        params.structures = line.solver.structures;
         let options = PositionOptions {
             swing_arc: settings.arc,
             wind_steps: settings.steps.stepped.then_some(settings.steps),

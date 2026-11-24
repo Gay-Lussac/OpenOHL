@@ -1045,6 +1045,7 @@ pub fn vegetation(a: VegetationArgs) -> Result<(), String> {
             .unwrap_or(ohl_clearance::vegetation::DEFAULT_FALL_ALLOWANCE),
         max_tree_height: a.max_tree_height,
         max_base_ground_distance: Some(a.max_base_ground_distance).filter(|d| d.is_finite()),
+        structures: line.solver.structures,
         ..VegetationParams::default()
     };
     let band_levels = ohl_clearance::positions::BandLevels::from_options(
