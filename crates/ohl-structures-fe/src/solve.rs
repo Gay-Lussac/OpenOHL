@@ -195,6 +195,13 @@ pub enum FeError {
         /// id with their force, N (most compressed first, at most
         /// [`MECHANISM_JOINTS`]).
         compressed: Vec<(String, f64)>,
+        /// The members whose length changes most in the buckling mode for
+        /// their own length (their strain in it), most first: each at
+        /// least a tenth of the largest, at most twice
+        /// [`MECHANISM_JOINTS`] — the soft part that lets the mode happen,
+        /// where the joints moving most can lie far from it (a sway mode
+        /// moves the top most; 2026-11-24, the joint options' taking back).
+        straining: Vec<String>,
     },
     /// The tension-only members do not settle: the active-set iterations
     /// came back to a set they had solved before (a cycle), or took
@@ -279,6 +286,7 @@ impl fmt::Display for FeError {
                 modes,
                 joints,
                 compressed,
+                ..
             } => {
                 write!(
                     f,
@@ -585,7 +593,13 @@ pub(crate) fn solve_from_memo(
     if crate::joint_stiffness::any(model) {
         // End releases or bolt slip (options, stage 4.4): the slip's secant
         // passes, each a solve; releases or slip taken back where the solve
-        // finds a mechanism or an instability.
+        // finds a mechanism or an instability. Without the memo
+        // (2026-11-24): its failed first iterations are keyed by what the
+        // matrix is made of besides the model, and the passes and the
+        // taking back change the model (the slipping members' stiffness,
+        // the releases) under the same key — a failure kept from one would
+        // stand for the next.
+        let _ = memo;
         return crate::joint_stiffness::solve_with_options(
             model,
             start,
@@ -595,7 +609,7 @@ pub(crate) fn solve_from_memo(
                     nonlinear: options.nonlinear && !first_order,
                     ..*options
                 };
-                solve_from_memo_plain(m, loads, &o, budget, start, memo)
+                solve_from_memo_plain(m, loads, &o, budget, start, None)
             },
         );
     }
@@ -1855,7 +1869,9 @@ fn solve_with(
                 held,
                 &mut k,
             );
-            let joints = mode_joints(model, &dof_of, &k.mechanism());
+            let mode = k.mechanism();
+            let joints = mode_joints(model, &dof_of, &mode);
+            let straining = mode_members(model, &dof_of, &mode);
             let compressed = joints
                 .first()
                 .map(|j| compressed_at(model, j, &axial, &slack))
@@ -1865,6 +1881,7 @@ fn solve_with(
                 modes: negative,
                 joints,
                 compressed,
+                straining,
             };
             if let (Some(m), Some(key)) = (memo, failing) {
                 m.remember_failed(key, &e);
@@ -2344,6 +2361,46 @@ fn mode_joints(model: &Model, dof_of: &[(usize, usize)], v: &[f64]) -> Vec<Strin
         .into_iter()
         .take(MECHANISM_JOINTS)
         .map(|n| model.nodes[n].id.clone())
+        .collect()
+}
+
+/// The members whose length changes most in mode `v` for their own length
+/// (the translations of their joints along them over their length), most
+/// first: each at least a tenth of the largest, at most twice
+/// [`MECHANISM_JOINTS`].
+fn mode_members(model: &Model, dof_of: &[(usize, usize)], v: &[f64]) -> Vec<String> {
+    let mut at = vec![[0.0f64; 3]; model.nodes.len()];
+    for (q, &(n, d)) in dof_of.iter().enumerate() {
+        if d < 3 && v[q].is_finite() {
+            at[n][d] = v[q];
+        }
+    }
+    let strain: Vec<f64> = model
+        .members
+        .iter()
+        .map(|m| {
+            let (a, b) = (model.nodes[m.i].point, model.nodes[m.j].point);
+            let e = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+            let l = (e[0] * e[0] + e[1] * e[1] + e[2] * e[2]).sqrt();
+            if l <= 0.0 {
+                return 0.0;
+            }
+            let (ui, uj) = (at[m.i], at[m.j]);
+            ((0..3).map(|c| (uj[c] - ui[c]) * e[c]).sum::<f64>() / (l * l)).abs()
+        })
+        .collect();
+    let largest = strain.iter().copied().fold(0.0, f64::max);
+    if largest <= 0.0 {
+        return Vec::new();
+    }
+    let mut order: Vec<usize> = (0..strain.len())
+        .filter(|&k| strain[k] >= 0.1 * largest)
+        .collect();
+    order.sort_by(|&a, &b| strain[b].total_cmp(&strain[a]));
+    order
+        .into_iter()
+        .take(2 * MECHANISM_JOINTS)
+        .map(|k| model.members[k].id.clone())
         .collect()
 }
 
