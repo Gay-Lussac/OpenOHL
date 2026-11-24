@@ -177,7 +177,7 @@ pub fn scoped_check(
     structures: Vec<String>,
     distance: Option<f64>,
     amps: Option<f64>,
-    limit_ut: Option<f64>,
+    (limit_ut, limit_kv_m): (Option<f64>, Option<f64>),
 ) -> Result<ScopedCheck, String> {
     let case = || case.clone().ok_or("--case NAME: the weather case");
     Ok(match check {
@@ -195,10 +195,15 @@ pub fn scoped_check(
             amps,
             limit_ut,
         },
+        "electric" => ScopedCheck::ElectricField {
+            case: case()?,
+            distance,
+            limit_kv_m,
+        },
         "loads" => ScopedCheck::StructureLoads { structures },
         other => {
             return Err(format!(
-                "check {other}: clearances, fields or loads (structure loads)"
+                "check {other}: clearances, fields (magnetic), electric or loads (structure loads)"
             ));
         }
     })

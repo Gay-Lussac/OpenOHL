@@ -1088,6 +1088,19 @@ pub enum ScopedCheck {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit_ut: Option<f64>,
     },
+    /// The electric field with the lines within the field distance, solved
+    /// together (2026-11-24): the worst over their unknown phase angles,
+    /// exact for one other line, a bound for more (said).
+    ElectricField {
+        /// The weather case.
+        case: String,
+        /// The field distance, m (none: 500 m).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<f64>,
+        /// A limit, kV/m.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit_kv_m: Option<f64>,
+    },
     /// The loads on the working set's shared towers (every line's
     /// sections on them, under each line's cases, the worst kept).
     StructureLoads {
@@ -1104,6 +1117,7 @@ impl ScopedCheck {
         match self {
             ScopedCheck::Clearances { .. } => "clearances",
             ScopedCheck::Fields { .. } => "magnetic field",
+            ScopedCheck::ElectricField { .. } => "electric field",
             ScopedCheck::StructureLoads { .. } => "structure loads",
         }
     }
