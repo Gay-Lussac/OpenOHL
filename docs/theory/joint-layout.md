@@ -3597,6 +3597,49 @@ leg: the code's slenderness curve). No member's size or work point
 changes.
 
 
+## The welded plate's axis offset carried into the analysis (L20 item 2)
+
+(L19's question 7a and the owner's "go ahead to improve" of 2026-11-23;
+roadmap O44 L20, built on its own, reported. Built 2026-11-24, in active
+development, not approved yet. No format change: a mark in the layout's
+record.)
+
+**Why.** Step 4's plate in an end's own plane, welded to the flat plate
+on the flange, lifts the member so that its leg bolted lies on it: its
+axis then lies farther out of the flange than on a flat plate. Since
+2026-11-19 such an end was laid out only where that is at most a plate's
+thickness (about where a filler would put it): the analysis does not
+take a line of action farther off the work point. L19 counted 5 674 member
+ends refused so on the 78 private towers, 5 065 of them within 40 mm.
+
+**What changed** (`LayoutSettings::own_offset_analysed`, on by default):
+
+- the layout lays such an end out up to `joint_layout::OWN_OUT_MAX` =
+  **40 mm** farther out (**the program's value, not a standard's**:
+  measured, it takes about nine in ten of the ends refused before);
+  farther still, a hand detail as before, said ("… more than the 40 mm
+  the analysis takes for a plate in its own plane");
+- the plate's offset is recorded with it (the record's mark
+  `axis_out=<mm>`, `layout_run::OWN_OUT`; `LayoutRecord::own_out`);
+- the **estimated eccentricities** (O45, an option at level 3, off by
+  default; their rules unchanged) take it as that end's plate offset: an
+  end laid out keeps its shift as written and, now, that offset — **whole
+  and of either sign** in its member's own check (N·e, as O45's plate
+  offsets), the cases solved without and with the estimates, each member
+  and plate its larger usage;
+- where the analysis does not take it — the option off, or the joint
+  details taken (level 4: the connections' shifts only) — the run says
+  **NOT ON THE SAFE SIDE**: how many such plates and the largest offset;
+- an end still left off its flange is given the plate case's upper bound
+  at the larger of its leg's thickness and 40 mm (O45 A1, on the safe
+  side: such a plate may now put it that far).
+
+**Not on the safe side.** Without the estimated eccentricities (their
+default) and at level 4 these offsets are not analysed: said on every run
+of such a structure. The welded plate itself is drawn, clash-checked and
+checked (its weld, its own sections) as before.
+
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

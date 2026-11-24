@@ -275,3 +275,78 @@ fn with_the_joint_details_taken_the_estimates_are_not_used() {
         on.notes
     );
 }
+
+/// O44 L20 item 2: D1 turned 30° off the leg, laid out on a plate in its
+/// own plane welded to a flat plate that puts its axis more than a plate's
+/// thickness farther out of the flange (the offset recorded with the
+/// plate): without the option the analysis says NOT ON THE SAFE SIDE; with
+/// it, the estimates take that offset as D1's plate offset (laid out,
+/// either sign) and say nothing of it.
+#[test]
+fn a_welded_plate_far_out_is_carried_by_the_estimates_or_said() {
+    // The legs turned 30° (D1 then lies off their flange, no turn of its
+    // own laying it flat at both its ends: two horizontals at N4).
+    let text = tower("truss").replace(
+        "orientation = \"x+y+\"\n",
+        "orientation = \"x+y+\"\nroll = \"30 deg\"\n",
+    ) + "\n[[node]]\nid = \"N7\"\npoint = [\"5 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
+         \n[[member]]\nid = \"H0\"\nnodes = [\"N1\", \"N4\"]\nsection = \"EA-61x7\"\n\
+         design = { class = \"bracing\" }\n\
+         \n[[member]]\nid = \"H1\"\nnodes = [\"N4\", \"N7\"]\nsection = \"EA-61x7\"\n\
+         design = { class = \"bracing\" }\n";
+    assert!(text.contains("roll = \"30 deg\""));
+    let lib = library();
+    let bolts = ohl_structures::bolts::BoltLibrary::default();
+    let settings = ohl_structure_link::LayoutSettings {
+        bolt: Some(ohl_structure_link::BoltArea::picked(None, 0.016, None)),
+        ..Default::default()
+    };
+    let laid = ohl_structure_link::lay_out(
+        &text,
+        &ohl_structure_link::RunAsk {
+            library: &lib,
+            bolts: &bolts,
+            settings: &settings,
+            preset_fields: Default::default(),
+            joints: Some(["N2".to_owned()].into_iter().collect()),
+            replace_hand: false,
+        },
+    )
+    .unwrap();
+    let t = StructureType::parse(Path::new("k.ohls"), &laid.text).unwrap();
+    let rec = ohl_structure_link::LayoutRecord::of(&t);
+    let d1_plate = t
+        .connection("D1", "N2")
+        .and_then(|c| c.onto.clone())
+        .expect("D1 laid out onto a plate");
+    let d1_out = rec
+        .own_out(&d1_plate)
+        .unwrap_or_else(|| panic!("no offset recorded: {:?}", rec.made));
+    assert!(d1_out > 0.007 && d1_out <= 0.040, "{d1_out}");
+    let off = run(&laid.text);
+    assert!(
+        off.notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE")
+                && n.contains("plate(s) in their member's own plane")),
+        "{:?}",
+        off.notes
+    );
+    let on = run(&with_option(&laid.text));
+    let used = on.estimates.as_ref().expect("used");
+    let d1 = used
+        .estimates
+        .ends
+        .iter()
+        .find(|x| x.member == "D1" && x.joint == "N2")
+        .expect("D1 at N2");
+    assert_eq!(d1.source, Source::LaidOut, "{d1:?}");
+    assert!((d1.plate - d1_out).abs() < 1e-9, "{d1:?}");
+    assert!(
+        !on.notes
+            .iter()
+            .any(|n| n.contains("plate(s) in their member's own plane")),
+        "{:?}",
+        on.notes
+    );
+}

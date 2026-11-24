@@ -8,6 +8,29 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (joint layout: the welded plate's axis offset carried into the analysis, L20 item 2)
+
+**An end on a plate in its own plane whose axis that plate puts more than
+a plate's thickness out of the flange is laid out up to 40 mm, the offset
+recorded and carried into the analysis by the estimated eccentricities**
+(roadmap O44 L20, L19's question 7a; the owner busy: built on its own,
+reported; built, in active development, not approved yet;
+[theory](../theory/joint-layout.md#the-welded-plates-axis-offset-carried-into-the-analysis-l20-item-2)).
+
+- **Layout** (`LayoutSettings::own_offset_analysed`, on): up to
+  `OWN_OUT_MAX` = 40 mm (the program's value, measured: about nine in ten
+  of the ends L19 counted refused); beyond, a hand detail as before.
+- **Record** (no format change): the plate's mark `axis_out=<mm>`
+  (`layout_run::OWN_OUT`, `LayoutRecord::own_out`), written when the
+  offset exceeds the plate's thickness.
+- **Analysis**: O45's rules kept — the estimated eccentricities (an
+  option at level 3, off by default) take the recorded offset as the laid
+  out end's plate offset, whole and of either sign in its member's own
+  check; off, or at level 4, the run says NOT ON THE SAFE SIDE (count and
+  largest). Hand ends left off their flange: the plate case's upper bound
+  the larger of the leg's thickness and 40 mm.
+- **Measured**: in the roadmap block and on the theory page (L20 docs).
+
 ## 2026-11-24 (joint layout: a level plate across two horizontals, L20)
 
 **A level plan or hip end lying on no flange of what it bolts onto goes

@@ -340,13 +340,23 @@ pub fn estimate(text: &str, ask: &EstimateAsk<'_>) -> Result<Estimates, String> 
         if !laid && shift == 0.0 {
             return None;
         }
+        // (L20 item 2) Laid out on a plate in its own plane putting its axis
+        // more than a plate's thickness out: that offset (the record's).
+        let plate = c
+            .and_then(|c| c.onto.as_deref())
+            .and_then(|o| record.own_out(o))
+            .filter(|_| laid)
+            .unwrap_or(0.0);
+        if !laid && shift == 0.0 && plate == 0.0 {
+            return None;
+        }
         Some(EstimatedEnd {
             member: m.to_owned(),
             joint: j.to_owned(),
             source: if laid { Source::LaidOut } else { Source::Given },
             shift,
             towards: c.and_then(|c| c.onto.clone()).filter(|o| at_joint(o, j)),
-            plate: 0.0,
+            plate,
             why: None,
         })
     };

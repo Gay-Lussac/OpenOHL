@@ -76,6 +76,15 @@ pub const HOLD: &str = "leg_bolts";
 /// (L20, `[plate.also_bolts]`).
 pub const ALSO: &str = "also_bolts";
 
+/// The record's mark of a plate in its member's own plane welded to the
+/// flat plate (`made`, with [`OWN_PLANE`]; L20 item 2) that puts its
+/// member's axis more than the plate's thickness farther out of the flange
+/// than a flat plate would: "axis_out=23.4", that offset in millimetres —
+/// carried into the analysis by the estimated eccentricities
+/// ([`crate::eccentricities`]); without them the analysis says NOT ON THE
+/// SAFE SIDE for such ends.
+pub const OWN_OUT: &str = "axis_out=";
+
 /// The record's mark of a splice the layout made (`made`, with `cover`
 /// and the covers' thickness as written; step 1c, 2026-11-19).
 pub const SPLICE: &str = "splice";
@@ -300,6 +309,20 @@ impl RecordSettings {
 }
 
 impl LayoutRecord {
+    /// The offset a plate the layout made in its member's own plane puts
+    /// that member's axis farther out of the flange than a flat plate would
+    /// (its `OWN_OUT` mark), m — plate `id`; none: no such mark (within a
+    /// plate's thickness, or no such plate).
+    pub fn own_out(&self, id: &str) -> Option<f64> {
+        self.made.get(id).and_then(|(_, marks)| {
+            marks
+                .iter()
+                .find_map(|m| m.strip_prefix(OWN_OUT))
+                .and_then(|v| v.parse::<f64>().ok())
+                .map(|mm| mm / 1000.0)
+        })
+    }
+
     /// The record of structure `t` (empty: none).
     pub fn of(t: &StructureType) -> Self {
         t.generators
@@ -5175,6 +5198,12 @@ fn write_plan(
             welds.push(weld);
             x.insert("weld", Item::ArrayOfTables(welds));
             auto.extend(["outline".into(), OWN_PLANE.into()]);
+            // L20 item 2: its member's axis more than the plate's thickness
+            // farther out of the flange: the offset recorded for the
+            // analysis.
+            if o.out_more > pl.thickness + 1e-9 {
+                auto.insert(format!("{OWN_OUT}{:.1}", o.out_more * 1000.0));
+            }
         }
         // A bent plate's flat on the flange (J2b): its own bolts onto the
         // member it lies on (`[plate.leg_bolts]`, as

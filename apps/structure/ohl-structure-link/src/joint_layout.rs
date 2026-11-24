@@ -404,6 +404,16 @@ pub struct LayoutSettings {
     /// plate's `[plate.also_bolts]`, structure file version 26): one plate
     /// held by both. On by default; off: as before.
     pub level_plates: bool,
+    /// O44 L20 item 2 (L19's question 7a): an end on a plate in its own
+    /// plane welded to the flat plate (step 4) whose axis that plate puts
+    /// more than a plate's thickness farther out of the flange is laid out
+    /// up to `joint_layout::OWN_OUT_MAX` — the offset recorded with the plate (the
+    /// record's `layout_run::OWN_OUT` mark) and carried into the
+    /// analysis by the estimated eccentricities (O45; an option, off by
+    /// default: off, or at level 4, the analysis says NOT ON THE SAFE SIDE
+    /// for those ends). On by default; off: as before (a hand detail beyond
+    /// a plate's thickness).
+    pub own_offset_analysed: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -458,6 +468,7 @@ impl Default for LayoutSettings {
             planes_high_to_low: false,
             weigh_turns: true,
             level_plates: true,
+            own_offset_analysed: true,
         }
     }
 }
@@ -3230,8 +3241,8 @@ fn plan_once(
                     // work point about as a filler would put it; more is not
                     // in the analysis: a hand detail). L3, bent down: at
                     // most a plate's thickness nearer either.
-                    if !within(room, geo.out_more, x.own_t) {
-                        errs.push((room, farther_out(geo.out_more, x.own_t)));
+                    if !within(room, geo.out_more, x.own_t, s) {
+                        errs.push((room, farther_out(geo.out_more, x.own_t, room, s)));
                         continue;
                     }
                     if let Err(e) = own_fits(&strips, x, &geo, &flat_ends, &owns, j.position, s.gap)
@@ -3908,7 +3919,16 @@ fn plan_once(
             let a = find(m.as_str())?;
             a.flat.filter(|f| f.off > FLAT_OFF)?;
             let t = a.profile.as_ref()?.angle.as_ref()?.t;
-            Some((m.clone(), t))
+            // (L20 item 2: such a plate may put it up to the most the
+            // analysis takes farther out — the upper bound that far.)
+            Some((
+                m.clone(),
+                if s.own_offset_analysed {
+                    t.max(OWN_OUT_MAX)
+                } else {
+                    t
+                },
+            ))
         })
         .collect();
     plan.hand_hosts = plan
@@ -5639,14 +5659,14 @@ fn strip_of(
             let mut fit = false;
             for room in rooms_for(&t, s) {
                 match own_geometry(&t, 0.0, 0.0, t.face, t.out, g.t, s.gap, room) {
-                    Ok(geo) if within(room, geo.out_more, g.t) => {
+                    Ok(geo) if within(room, geo.out_more, g.t, s) => {
                         fit = true;
                         for c in &geo.outline {
                             lo = lo.min(l(*c));
                             hi = hi.max(l(*c));
                         }
                     }
-                    Ok(geo) => errs.push((room, farther_out(geo.out_more, g.t))),
+                    Ok(geo) => errs.push((room, farther_out(geo.out_more, g.t, room, s))),
                     Err(e) => errs.push((room, e)),
                 }
             }
@@ -5962,12 +5982,22 @@ fn rooms_words(errs: &[(Room, String)]) -> String {
 /// within the limit (`more` farther out of the flange than on a flat
 /// plate, m): at most a plate's thickness `t` farther out (step 4); bent
 /// (L3), at most that nearer either.
-fn within(room: Room, more: f64, t: f64) -> bool {
+fn within(room: Room, more: f64, t: f64, s: &LayoutSettings) -> bool {
     match room {
-        Room::Weld => more <= t + 1e-9,
+        Room::Weld => more <= t + 1e-9 || (s.own_offset_analysed && more <= OWN_OUT_MAX + 1e-9),
         Room::Bend { .. } => more.abs() <= t + 1e-9,
     }
 }
+
+/// The most a plate in an end's own plane welded to the flat plate (step
+/// 4) may put its axis farther out of the flange than a flat plate would,
+/// m, where that offset is carried into the analysis
+/// ([`LayoutSettings::own_offset_analysed`]; L20 item 2): **the program's
+/// value, not a standard's** — measured on the private real towers (L19:
+/// of the ends refused beyond a plate's thickness, 89 % lie within 40 mm).
+/// The analysis takes the offset whole and of either sign in the member's
+/// own check (O45's estimated eccentricities).
+pub const OWN_OUT_MAX: f64 = 0.040;
 
 /// The cut of end `t` along it (m, up to the millimetre) from its cut on
 /// the flange's plane `c`.
@@ -6336,7 +6366,15 @@ fn own_fits(
 /// Why a plate in a member's own plane is not laid out: its axis `more`
 /// farther out of the flange than on a flat plate, more than a plate of
 /// thickness `t` (its leg's), m.
-fn farther_out(more: f64, t: f64) -> String {
+fn farther_out(more: f64, t: f64, room: Room, s: &LayoutSettings) -> String {
+    if room == Room::Weld && s.own_offset_analysed && more > 0.0 {
+        return format!(
+            "its axis would lie {:.0} mm farther out of the flange than on a flat plate (more \
+             than the {:.0} mm the analysis takes for a plate in its own plane)",
+            more * 1000.0,
+            OWN_OUT_MAX * 1000.0
+        );
+    }
     format!(
         "its axis would lie {:.0} mm {} than on a flat plate (more than a plate's {:.0} mm: its \
          line of action that far off the work point is not in the analysis)",

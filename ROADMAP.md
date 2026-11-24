@@ -3579,13 +3579,15 @@ only where it helps):
   > three parts) or a half turn — the owner to choose; each weighed per
   > joint with the fabrication order direct → one plate → one bend →
   > several bends → welded (fewer parts, no weld to inspect, first).
-- [x] L20. **A level plate across two horizontals** (L19's question 6 and
+- [x] L20. **A level plate across two horizontals; the welded plate's axis
+  offset carried into the analysis** (L19's questions 6 and 7a, and
   the owner's "go ahead to improve" of 2026-11-23 for plates with several
   bends and welded assemblies; the owner busy: built on its own,
   reported). **Built 2026-11-24, in active development, not approved yet**
   ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-level-plate-across-two-horizontals-l20),
   [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#lay-out-joints),
-  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-joint-layout-a-level-plate-across-two-horizontals-l20);
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-joint-layout-a-level-plate-across-two-horizontals-l20),
+  [theory, item 2](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-welded-plates-axis-offset-carried-into-the-analysis-l20-item-2);
   structure file version 26: a plate's `[plate.also_bolts]`). **1. The
   level plate** (`LayoutSettings::level_plates`, on): a level plan or hip
   end lying on no flange of what it bolts onto, where two other level
@@ -3605,10 +3607,20 @@ only where it helps):
   (on the safe side), the ends riding on each holder's own end bolts
   (L14's path); NOT ON THE SAFE SIDE, said on the rows: a force the plate
   passes between its two holders. Measured: below (L20 docs).
-  **2. Not built** (time; item 1 first): the own-plane welded plate's axis
-  offset carried into the analysis (L19's question 7a) and the joggle for
-  ends at most 15° off (7b) — see the owner's questions. 7c (a stand-off
-  or a half turn) waits for the owner, as asked.
+  **2. The welded plate's axis offset into the analysis** (L19's question
+  7a; `LayoutSettings::own_offset_analysed`, on; no format change): an end
+  on a plate in its own plane welded to the flat plate whose axis that
+  plate puts more than a plate's thickness farther out of the flange is
+  laid out up to 40 mm (`OWN_OUT_MAX`, the program's value, measured), the
+  offset recorded with the plate (the record's `axis_out=<mm>` mark); the
+  estimated eccentricities (O45, an option at level 3, off by default,
+  their rules kept) take it as the end's plate offset, whole and of either
+  sign in its member's own check; without them, or at level 4, the run
+  says NOT ON THE SAFE SIDE (how many such plates, the largest offset); an
+  end still left off its flange takes the plate case's upper bound at the
+  larger of its leg's thickness and 40 mm. **3. Not built** (time): the
+  joggle for ends at most 15° off (L19's question 7b); 7c (a stand-off or
+  a half turn) waits for the owner, as asked.
   > **Owner:** (1) The level plate across two horizontals held by its own
   > bolts onto both (`[plate.also_bolts]`) → Recommended: keep (the usual
   > plan-bracing detail; nothing laid out before is changed where it does
@@ -3623,6 +3635,13 @@ only where it helps):
   > drawn (a step: the members' gauge lines through the work point move
   > them differently) take no level plate → Recommended: a filler under
   > the lower one is usual practice — the owner to decide (a new part).
+  > (5) The welded plate's axis offset (item 2) is analysed only with the
+  > estimated eccentricities, an option off by default, and not at level
+  > 4 (said NOT ON THE SAFE SIDE) → Recommended: turn the option on by
+  > default where the layout recorded such an offset; next, the offset at
+  > level 4 too (the analysis's end offsets: a core change, asked first).
+  > (6) 40 mm as the most such a plate may put the axis out → Recommended:
+  > keep (measured; beyond, a hand detail as before).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
