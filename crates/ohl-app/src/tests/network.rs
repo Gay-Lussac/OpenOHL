@@ -1157,4 +1157,221 @@ fn offline_files_neighbours_in_the_check_windows(
             .unwrap()
             .starts_with("NOT ALL CHECKED: the usage of the shared tower(s)")
     );
+
+    // The Magnetic field window (2026-11-24): the export's lines within
+    // 500 m of the spans computed, each solved in the case with its own
+    // settings and wires, their field added by size — by the network's
+    // code; the same field as the network's check on the same file.
+    let amps = 600.0;
+    let server = ohl_server::offline_checks::check_offline(
+        ws,
+        &ohl_server::ScopedCheck::Fields {
+            case: "10 °C".into(),
+            distance: None,
+            amps: Some(amps),
+            limit_ut: None,
+        },
+    )
+    .unwrap();
+    let (own, with, words, took_own, took_with) = {
+        let r = h.state_mut().ready().unwrap();
+        r.loads.open = false;
+        let m = &r.model;
+        let case = m
+            .cases
+            .iter()
+            .find(|c| c.case.name == "10 °C")
+            .expect("the default weather cases")
+            .case
+            .clone();
+        // This line's field as the network's check computes it: profiles
+        // across the working set's spans 1 m above the ground, ±50 m every
+        // 5 m, every circuit without a current of its own at `amps`.
+        let t0 = std::time::Instant::now();
+        let solved = crate::model::Solved::as_shown(&m.line, &m.library, case.clone());
+        let ws_sections: std::collections::BTreeSet<String> = wanted.iter().cloned().collect();
+        let settings = ohl_electrical::magnetic::Settings {
+            height: 1.0,
+            width: 50.0,
+            step: 5.0,
+            profiles: true,
+            stations: ohl_scope::fields::stations_of(&m.line, &ws_sections),
+            currents: ohl_electrical::magnetic::circuits(&m.line)
+                .into_iter()
+                .filter(|c| m.line.system_current(&c.system).is_none())
+                .map(|c| ohl_electrical::magnetic::CircuitCurrent {
+                    circuit: c.system.clone(),
+                    amps,
+                    reverse: false,
+                })
+                .collect(),
+            ..ohl_electrical::magnetic::Settings::default()
+        };
+        let src = ohl_electrical::Sources {
+            line: &m.line,
+            library: &m.library,
+            shapes: &solved.shapes,
+            temperature: case.temperature,
+            ground: None,
+            jumpers: &solved.jumpers,
+        };
+        let (own, _) = ohl_electrical::magnetic::run_keeping(&src, &settings, None).unwrap();
+        let took_own = t0.elapsed();
+        let nb = crate::offline_neighbours::MagneticNeighbours::of(m, Some(amps)).unwrap();
+        let mut with = own.clone();
+        let t1 = std::time::Instant::now();
+        let words = nb.add(&m.line, &case, &mut with);
+        (own, with, words, took_own, t1.elapsed())
+    };
+    eprintln!(
+        "magnetic field of the working set's spans: {took_own:.2?} alone, + {took_with:.2?} with \
+         the export's lines near (the network's code); the network's check on the file {:.2} s",
+        server.seconds
+    );
+    assert!(
+        words[0].starts_with("Neighbours from the export of")
+            && words[0].contains("included")
+            && words[0].contains(&format!("line {}", twin.other_line)),
+        "{words:?}"
+    );
+    assert!(
+        !words.iter().any(|w| w.starts_with("NOT ALL CHECKED")),
+        "{words:?}"
+    );
+    // The other lines added: more field everywhere, never less.
+    for (a, b) in own.profiles.iter().zip(&with.profiles) {
+        for (p, q) in a.points.iter().zip(&b.points) {
+            assert!(q.b_ut >= p.b_ut, "{p:?} {q:?}");
+        }
+    }
+    assert!(
+        own.profiles
+            .iter()
+            .zip(&with.profiles)
+            .any(|(a, b)| b.max_ut > a.max_ut + 1e-9)
+    );
+    // The same sums as the network's (`add_by_size` on the same field,
+    // the same sources): to the bit.
+    {
+        let r = h.state_mut().ready().unwrap();
+        let case = r
+            .model
+            .cases
+            .iter()
+            .find(|c| c.case.name == "10 °C")
+            .unwrap()
+            .case
+            .clone();
+        let f = ohl_server::offline_checks::field_neighbours(
+            ws,
+            &wanted,
+            &case,
+            &ohl_scope::fields::FieldSpec {
+                amps: Some(amps),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let refs: Vec<&ohl_electrical::magnetic::Wires3d> =
+            f.others.lines.iter().map(|l| &l.wires).collect();
+        let (sums, _, _) = ohl_scope::fields::add_by_size(&own, &refs, None);
+        for (a, b) in sums.iter().zip(&with.profiles) {
+            for (p, q) in a.points.iter().zip(&b.points) {
+                assert_eq!(p.b_ut, q.b_ut);
+            }
+        }
+    }
+    // Per span the network's highest value.
+    let on_server: std::collections::BTreeMap<String, f64> = server
+        .findings
+        .iter()
+        .filter(|f| f.what == "magnetic field")
+        .map(|f| (f.on.clone(), f.value))
+        .collect();
+    let here: std::collections::BTreeMap<String, f64> = with
+        .profiles
+        .iter()
+        .map(|p| (format!("span {}–{}", p.from, p.to), p.max_ut))
+        .collect();
+    // Per span the same highest value as the network's check, to the bit
+    // (this line's field there the same too: the file's line holds no
+    // more of it near than the network's sections within 500 m).
+    assert!(!on_server.is_empty(), "{server:?}");
+    assert_eq!(on_server, here);
+
+    // The window itself: this line's circuits and the other lines' at
+    // `amps`, the working set's spans ticked; before (the neighbours not
+    // read: the window alone) and with them.
+    {
+        let r = h.state_mut().ready().unwrap();
+        for c in ohl_electrical::magnetic::circuits(&r.model.line) {
+            r.magnetic_field.set_current(&c.label(), amps);
+        }
+        r.magnetic_field.others_amps = format!("{amps}");
+        r.magnetic_field.tick_sections(&r.model, &wanted);
+        let case = r
+            .model
+            .cases
+            .iter()
+            .position(|c| c.case.name == "10 °C")
+            .unwrap();
+        r.magnetic_field.show(case);
+    }
+    h.run_steps(3);
+    let run_field = |h: &mut Harness<'_, App>| {
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .magnetic_field
+            .common
+            .job
+            .result = None;
+        h.get_by_label("Run").click();
+        let t0 = std::time::Instant::now();
+        loop {
+            let f = &h.state_mut().ready().unwrap().magnetic_field;
+            if f.common.job.result.is_some() && !f.common.job.running() {
+                break;
+            }
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(300),
+                "computed"
+            );
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(3);
+        t0.elapsed()
+    };
+    crate::offline_neighbours::IGNORED.with(|c| c.set(true));
+    h.run_steps(3);
+    let alone = run_field(h);
+    shot(h, "Magnetic field", "offline-neighbours-magnetic-before");
+    crate::offline_neighbours::IGNORED.with(|c| c.set(false));
+    h.run_steps(3);
+    let together = run_field(h);
+    eprintln!(
+        "the Magnetic field window: {alone:.2?} alone, {together:.2?} with the export's lines near"
+    );
+    let notes = match &h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .magnetic_field
+        .common
+        .job
+        .result
+    {
+        Some(Ok(a)) => a.field.notes.clone(),
+        other => panic!("{:?}", other.as_ref().map(|r| r.as_ref().err())),
+    };
+    assert!(
+        notes[0].starts_with("Neighbours from the export of") && notes[0].contains("included"),
+        "{notes:?}"
+    );
+    assert!(
+        !notes.iter().any(|n| n.starts_with("NOT ALL CHECKED")),
+        "{notes:?}"
+    );
+    shot(h, "Magnetic field", "offline-neighbours-magnetic");
 }

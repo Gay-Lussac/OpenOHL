@@ -570,3 +570,47 @@ pub fn shared_tower_loads(path: &Path, structures: &[String]) -> Result<SharedTo
         seconds: started.elapsed().as_secs_f64(),
     })
 }
+
+/// The other lines near an offline working set for its magnetic field,
+/// as the network's field check selects and computes them
+/// ([`field_neighbours`]).
+#[derive(Debug, Clone)]
+pub struct FieldNeighbours {
+    /// The lines, each its wires as the field's sources.
+    pub others: ohl_scope::fields::OtherLines,
+    /// What the file could not give (each makes it NOT ALL CHECKED): the
+    /// other lines' own reasons and the export's.
+    pub not_all_checked: Vec<String>,
+    /// Seconds.
+    pub seconds: f64,
+}
+
+/// The other lines whose wires can come within `spec.distance` of the
+/// wires of `sections` (none: the working set's) of the offline working
+/// set in project file `path`, in weather case `case`, each computed on
+/// its own as the field's sources — **the network's field check's own
+/// selection and sources** ([`ohl_scope::fields::other_lines`] on the
+/// file), for OHL-Design's Magnetic field window (2026-11-24).
+pub fn field_neighbours(
+    path: &Path,
+    sections: &[String],
+    case: &ohl_weather::WeatherCase,
+    spec: &ohl_scope::fields::FieldSpec,
+) -> Result<FieldNeighbours, String> {
+    let started = Instant::now();
+    let (others, _, _, gaps) = on_file(path, |net, ws| {
+        if !sections.is_empty() {
+            ws.sections = sections.to_vec();
+        }
+        ohl_scope::fields::other_lines(net, ws, case, spec)
+    })?;
+    let mut not_all_checked = others.wires_failed.clone();
+    not_all_checked.extend(others.not_all_checked.iter().cloned());
+    not_all_checked.extend(gaps.reasons());
+    not_all_checked.dedup();
+    Ok(FieldNeighbours {
+        others,
+        not_all_checked,
+        seconds: started.elapsed().as_secs_f64(),
+    })
+}

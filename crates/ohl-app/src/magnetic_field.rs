@@ -134,6 +134,10 @@ pub struct MagneticFieldWindow {
     run_levels: Vec<f64>,
     /// The last run's wires (3D).
     wires: Option<Arc<magnetic::Wires3d>>,
+    /// On an offline working set's file (2026-11-24): the current of the
+    /// export's other lines' circuits without an operating current of
+    /// their own, A, as typed (empty: 0 A, said).
+    pub others_amps: String,
 }
 
 impl std::ops::Deref for MagneticFieldWindow {
@@ -177,6 +181,7 @@ impl Default for MagneticFieldWindow {
             above: Some(Above { step: 2.0 }),
             run_levels: Vec::new(),
             wires: None,
+            others_amps: String::new(),
         }
     }
 }
@@ -525,6 +530,29 @@ impl MagneticFieldWindow {
         })
     }
 
+    /// Ticks the spans of `sections` only (tests).
+    #[cfg(test)]
+    pub fn tick_sections(&mut self, model: &Model, sections: &[String]) {
+        let spans = self.common.spans(model);
+        let pairs: Vec<(String, String)> = model
+            .line
+            .sections
+            .iter()
+            .filter(|s| sections.contains(&s.id))
+            .flat_map(|s| {
+                s.points
+                    .windows(2)
+                    .map(|w| (w[0].structure.clone(), w[1].structure.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        self.common.span_pick.only_where(model, &spans, |ids| {
+            pairs
+                .iter()
+                .any(|(a, b)| (*a == ids.0 && *b == ids.1) || (*a == ids.1 && *b == ids.0))
+        });
+    }
+
     /// Ticks span `k` only (tests).
     #[cfg(test)]
     pub fn tick_only(&mut self, model: &Model, k: usize) {
@@ -788,9 +816,22 @@ impl MagneticFieldWindow {
         // A new run's outputs all drawn.
         self.common.hidden.clear();
         self.common.saving.stale = None;
-        // An offline working set's neighbours, a network's working set
-        // (2026-11-23): said first with the results.
-        let neighbour_notes = crate::offline_neighbours::field_notes(model, true);
+        // An offline working set's other lines (2026-11-24): their field
+        // added after this line's, by the network's code; a network's
+        // working set's neighbours not pulled in (2026-11-23): said first
+        // with the results.
+        let others_amps = self
+            .others_amps
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|a| a.is_finite() && *a > 0.0);
+        let neighbours = crate::offline_neighbours::MagneticNeighbours::of(model, others_amps);
+        let neighbour_notes = if neighbours.is_some() {
+            Vec::new()
+        } else {
+            crate::offline_neighbours::field_notes(model, true)
+        };
         self.common.job.start_at(ctx, model.revision(), move || {
             progress.plan_steps(field_common::steps_planned(
                 &steps
@@ -885,6 +926,14 @@ impl MagneticFieldWindow {
             );
             for n in neighbour_notes.into_iter().rev() {
                 field.notes.insert(0, n);
+            }
+            if let Some(nb) = &neighbours {
+                progress.set_stage("the export's other lines near".to_owned());
+                let words = nb.add(&line, &case, &mut field);
+                progress.set_stage(String::new());
+                for n in words.into_iter().rev() {
+                    field.notes.insert(0, n);
+                }
             }
             let meshes = views::take_meshes(&mut field.volumes);
             Ok(Answer {
@@ -1179,6 +1228,31 @@ impl MagneticFieldWindow {
     }
 
     fn inputs_ui(&mut self, ui: &mut egui::Ui, model: &Model) {
+        // An offline working set's file (2026-11-24): the export's other
+        // lines' field is added; their circuits without a current of
+        // their own take this one.
+        if model.offline_neighbours().is_some() {
+            ui.horizontal(|ui| {
+                ui.label("Other lines' current");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.others_amps)
+                        .desired_width(70.0)
+                        .hint_text("0"),
+                );
+                ui.label("A");
+                help::question(
+                    ui,
+                    "Offline working set: the export's other lines within 500 m of the spans \
+                     computed are solved in this weather case with their own settings and wires \
+                     and their field added by size (the network's code). Their circuits without \
+                     an operating current of their own take this current (rms per phase); empty: \
+                     0 A, said NOT ON THE SAFE SIDE in the results. The current changes the \
+                     other lines' share of the field, not the time. The other lines themselves \
+                     cost a run more time: measured on a synthetic route of 144 spans (profiles \
+                     every 1 m, two other lines near) 11 s alone, 17–20 s with them.",
+                );
+            });
+        }
         let circuits = magnetic::circuits(&model.line);
         if circuits.is_empty() {
             ui.label(

@@ -1167,11 +1167,13 @@ pub fn steps_planned(kinds: &[(usize, usize)], unsolved: bool, more: usize) -> u
 /// A note of a field run: what was not computed in the error colour,
 /// what is not on the safe side in the warning colour (both in full,
 /// never faint), the others small and faint (owner, 2026-11-14: a cut
-/// that failed is said, not lost among the notes).
+/// that failed is said, not lost among the notes). NOT ALL CHECKED and a
+/// stale export in the error colour, an export's "may be stale" in the
+/// warning colour (2026-11-24: they were faint).
 pub fn note_label(ui: &mut egui::Ui, n: &str) {
-    if n.starts_with("NOT COMPUTED") {
+    if n.starts_with("NOT COMPUTED") || n.starts_with("NOT ALL CHECKED") || n.contains("STALE") {
         ui.colored_label(ui.visuals().error_fg_color, n);
-    } else if n.starts_with("NOT ON THE SAFE SIDE") {
+    } else if n.starts_with("NOT ON THE SAFE SIDE") || n.starts_with("They may be stale") {
         ui.colored_label(ui.visuals().warn_fg_color, n);
     } else {
         ui.label(egui::RichText::new(n).small().weak());

@@ -384,6 +384,23 @@ impl SpanPick {
         (placed, why)
     }
 
+    /// Ticks the spans `keep` says only (tests).
+    #[cfg(test)]
+    pub fn only_where(
+        &mut self,
+        model: &crate::model::Model,
+        spans: &Spans,
+        keep: impl Fn(&SpanIds) -> bool,
+    ) {
+        let groups = self.groups(model, spans);
+        for g in groups.iter() {
+            let aligned = g.alignment.is_some();
+            for &j in &g.spans {
+                self.set(&spans[j], aligned, keep(&spans[j]));
+            }
+        }
+    }
+
     /// Ticks span `k` only (tests).
     #[cfg(test)]
     pub fn only(&mut self, model: &crate::model::Model, spans: &Spans, k: usize) {

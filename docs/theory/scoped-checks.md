@@ -125,6 +125,19 @@ each point.
   distance is a setting of the check: larger, less is left out.
 - A circuit without a current (its system gives none and the check gives
   none) takes 0 A, said.
+- **On an offline working set's file** (2026-11-24): OHL-Design's
+  Magnetic field window takes the other lines by this same selection and
+  computes them by the same code (`ohl_scope::fields::other_lines` on the
+  file, through `ohl_server::offline_checks::field_neighbours`), measured
+  from the wires of the sections whose spans it computes, and adds their
+  field by size at its own outputs — profiles, given points and cuts (the
+  same sums as here, to the bit, tested). Its own line is the file's line
+  as the window computes it (the working set and the read-only parts
+  around it): more of this line than the network's sections within the
+  field distance, never less. The volumes' surfaces stay this line's
+  field alone (NOT ALL CHECKED, said); a given point far from the spans
+  computed may lie nearer another line than the distance (NOT ON THE SAFE
+  SIDE, said).
 
 ## Loads on shared towers
 
