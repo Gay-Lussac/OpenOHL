@@ -8,6 +8,46 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (structure analysis: the joint options' taking back where it failed, O19 stage 4.4 follow-up)
+
+**The taking back of the end releases and the bolt slip reaches the cause of
+a buckling mode** (roadmap O19 stage 4.4; the towers where the runs with
+the options failed — 3, 6 and 10 of 72 private towers with releases, slip,
+both — traced; built, in active development, not approved yet;
+[theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options)):
+
+- **Traced**: with the slip, the buckling modes moved the top of the
+  tower most (a sway) while their cause — bracing slipping inside its
+  clearance — lay lower down; the taking back at the joints named and
+  three rings around them took back the top and stopped there.
+- **The members the mode strains most** (each member's change of length
+  in the mode over its length; a tenth of the largest or more, at most 24;
+  `FeError::Unstable`'s `straining`) are taken back where nothing is left
+  within the rings — only then, so every run that solved before solves as
+  before.
+- **Each round's slip passes start where the last round's stopped** (its
+  secant stiffnesses kept): the same settled point, fewer passes (one
+  tower's case from 285 s to 28 s); the towers solved before with both
+  options and taking back moved by up to 0.4 points.
+- **Runs with the options no longer use the solves' memo of failed first
+  iterations** (calculation level 4's speed-up): its key ignores the
+  members' slip and releases, which the passes and the taking back change —
+  a failure kept from one model would stand for the next. No run uses the
+  options with the memo today (a latent fault, closed).
+- **The share of the joints taken back is said** with the case ("N
+  joint(s) of M (P %)"): where it is large the model is in large parts the
+  one without the options, and a member kept rigid beside slipping ones
+  draws force from them (on the safe side for that member; the larger of
+  the two shows it).
+- **Measured** (the private towers, one case, results kept privately): the
+  slip solves on 70 of 72 towers (66 before), both on 68 (62), the
+  releases on 69 (unchanged); the newly solved take the slip back at 7 %
+  to 43 % of their joints, 11 s to 64 s a case; still failing: releases 3,
+  slip 2, both 4 (2 of them P-Delta not converging) — joints held out of a
+  face only by members in that face, which the model without the options
+  carries only through the joints' stabilisation. Owner questions (5) and
+  (6) in the roadmap.
+
 ## 2026-11-24 (structure analysis: the joint options never lower a usage, O19 stage 4.4 follow-up)
 
 **With the end releases or the bolt slip on, each member's and joint

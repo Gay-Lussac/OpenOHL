@@ -344,3 +344,86 @@ fn each_member_takes_the_larger_usage_of_with_and_without() {
         "1 member(s) governed by the solve with the options, 1 by the solve without them"
     ));
 }
+
+/// A buckling mode names the members it strains most (2026-11-24, the
+/// joint options' taking back): a 10 m bar mast pinned at its foot, its top
+/// held across (y) by a support and along x only by a 1 m bar of 1 mm² to a
+/// pinned support (k = EA/L = 210 kN/m). It sways at P = k × 10 m = 2.1 MN
+/// (the mast turning about its foot); under 3 MN (and 1 kN along x) the mode moves the top
+/// most, and strains the short bar (u / 1 m) far more than the mast (no
+/// length change as it turns): the bar comes first among the members
+/// strained.
+#[test]
+fn a_buckling_mode_names_the_members_it_strains_most() {
+    let m = Model::parse(
+        r#"
+[analysis]
+nonlinear = true
+self_weight = false
+capacity = "simple"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+[[section]]
+id = "mast"
+material = "steel"
+area = "10000 mm2"
+iy = "200 cm4"
+iz = "200 cm4"
+[[section]]
+id = "tie"
+material = "steel"
+area = "1 mm2"
+iy = "1 cm4"
+iz = "1 cm4"
+[[node]]
+id = "foot"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "top"
+point = ["0 m", "0 m", "10 m"]
+support = ["y"]
+[[node]]
+id = "anchor"
+point = ["1 m", "0 m", "10 m"]
+support = "pinned"
+[[member]]
+id = "mast"
+nodes = ["foot", "top"]
+section = "mast"
+kind = "truss"
+[[member]]
+id = "tie"
+nodes = ["top", "anchor"]
+section = "tie"
+kind = "truss"
+"#,
+    )
+    .unwrap();
+    let loads = Loads {
+        nodal: vec![load(1, [1e3, 0.0, -3e6])],
+        self_weight: 0.0,
+        ..Loads::default()
+    };
+    let e = solve(&m, &loads, &Options::default(), &default_budget()).unwrap_err();
+    let crate::solve::FeError::Unstable {
+        joints, straining, ..
+    } = &e
+    else {
+        panic!("{e}")
+    };
+    assert_eq!(joints.first().map(String::as_str), Some("top"), "{e}");
+    assert_eq!(
+        straining.first().map(String::as_str),
+        Some("tie"),
+        "{straining:?}"
+    );
+    // Below the sway load it solves.
+    let under = Loads {
+        nodal: vec![load(1, [1e3, 0.0, -1e6])],
+        self_weight: 0.0,
+        ..Loads::default()
+    };
+    assert!(solve(&m, &under, &Options::default(), &default_budget()).is_ok());
+}

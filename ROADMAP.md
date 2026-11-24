@@ -1685,7 +1685,23 @@ Six stages, the questions per stage and per detail level:
   releases 2 092 members raised by more than a point, the largest usage on
   14 of 69 towers (at most ×1.08). Still as before: a case failing with the
   options fails; the stiffness for the line at levels 3–4 without the slip.
-  The towers where the take-back fails: (5) below.
+  **The towers where the taking back failed** (2026-11-24, built, in active
+  development, not approved yet): traced on the private towers — the
+  slip's buckling modes moved the top most while their cause (bracing
+  inside its clearance) lay lower down, beyond the three rings; now, with
+  nothing left within the rings, the members the mode strains most are
+  taken back, and each round's slip passes start where the last stopped
+  (and runs with the options no longer use the solves' memo of failed first
+  iterations, whose key ignores the members' slip and releases). The slip
+  solves on 70 of 72 towers (66 before), both on 68 (62); the releases
+  still fail on 3, the slip on 2, both on 4 (2 of them P-Delta not
+  converging), at joints held out of a face only by members in it; the
+  towers solved before unchanged (with both, four within 0.4 points). The
+  newly solved take the slip back at 7 % to 43 % of their joints (said
+  with the share), 11 s to 64 s a case, and members kept rigid beside
+  slipping ones can draw much force (crossing members at 1.2 to 1.5
+  against 0.03; on the safe side, shown by the larger of the two). See
+  (5).
   > **Owner:** (questions, 2026-11-23) (1) Keep both off by default? →
   > yes: the releases change little for the time they cost and fail on a
   > few towers; the slip is a different model of the tower, not a
@@ -1697,6 +1713,19 @@ Six stages, the questions per stage and per detail level:
   > paper (to be checked; not in the repository's documents). (4) Store the
   > options per structure (a file field, version bump)? → only once (1)–(2)
   > are decided. **Built since:** (2), 2026-11-24 (above).
+  > (questions, 2026-11-24) (5) Where the taking back reaches a large share
+  > of a tower's joints (7 % to 43 % on the towers solved only since
+  > 2026-11-24), refuse the case instead of giving a model that is in large
+  > parts the one without the options (with rigid members beside slipping
+  > ones drawing force)? → yes above a limit of 10 % of the joints, said
+  > with the share, until the friction branch (3) exists — it is the
+  > frictionless slip that leaves such towers near-mechanisms; below it,
+  > keep the result (the larger of the two keeps it on the safe side).
+  > (6) The remaining failures (a joint held out of a face only by members
+  > in that face, pinned by the releases): leave them refused (said where,
+  > as now)? → yes; they are the tower data's near-mechanisms that the
+  > model without the options carries only through the joints'
+  > stabilisation.
 - [x] Stage 4.5, the joints' own checks: the plates', covers' and fillet
   welds' (2026-11-04, above); the safe-side items of 2026-11-18 — a weld's
   moments about its seam (SIA 263; no weld rule in ASCE 10-97, said), a
