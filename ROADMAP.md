@@ -3616,7 +3616,8 @@ only where it helps):
   estimated eccentricities (O45, an option at level 3, off by default,
   their rules kept) take it as the end's plate offset, whole and of either
   sign in its member's own check; without them, or at level 4, the run
-  says NOT ON THE SAFE SIDE (how many such plates, the largest offset); an
+  says NOT ON THE SAFE SIDE (how many such plates, the largest offset);
+  weighed per joint (with and without, the better kept, a tie without); an
   end still left off its flange takes the plate case's upper bound at the
   larger of its leg's thickness and 40 mm. **3. Not built** (time): the
   joggle for ends at most 15° off (L19's question 7b); 7c (a stand-off or

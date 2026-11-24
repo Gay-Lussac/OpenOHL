@@ -2498,6 +2498,30 @@ fn plan_joint_searched(
             direct = d1;
         }
     }
+    // L20 item 2: the plates in their members' own planes farther out than
+    // a plate's thickness kept only where the plan lays out more ends, or
+    // as many on fewer plates, than without them (only where an end lies
+    // off its flange); on a tie the plan without.
+    if s.own_offset_analysed
+        && j.arrivals
+            .iter()
+            .any(|a| a.flat.is_some_and(|f| f.off > FLAT_OFF))
+    {
+        let s1 = LayoutSettings {
+            own_offset_analysed: false,
+            ..s.clone()
+        };
+        let (p1, d1) = once(&s1);
+        if !better(&plan, &p1) {
+            plan = p1;
+            direct = d1;
+        }
+        // (An end still left off its flange: such a plate may put it as
+        // far out — the estimates' upper bound that far either way.)
+        for x in plan.off_flange.iter_mut() {
+            x.1 = x.1.max(OWN_OUT_MAX);
+        }
+    }
     if !s.more_plates || ctx.plain || plan.hand_members.is_empty() {
         return plan;
     }

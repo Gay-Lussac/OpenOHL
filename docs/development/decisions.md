@@ -29,6 +29,10 @@ reported; built, in active development, not approved yet;
   check; off, or at level 4, the run says NOT ON THE SAFE SIDE (count and
   largest). Hand ends left off their flange: the plate case's upper bound
   the larger of the leg's thickness and 40 mm.
+- **Weighed per joint** (where an end lies off its flange): the plan with
+  and without these plates, the one laying out more ends or as many on
+  fewer plates kept, on a tie the plan without (unweighed, two private
+  towers: 23 joints better, 12 worse — 10 as many ends on more plates).
 - **Measured**: in the roadmap block and on the theory page (L20 docs).
 
 ## 2026-11-24 (joint layout: a level plate across two horizontals, L20)

@@ -3632,7 +3632,13 @@ ends refused so on the 78 private towers, 5 065 of them within 40 mm.
   **NOT ON THE SAFE SIDE**: how many such plates and the largest offset;
 - an end still left off its flange is given the plate case's upper bound
   at the larger of its leg's thickness and 40 mm (O45 A1, on the safe
-  side: such a plate may now put it that far).
+  side: such a plate may now put it that far);
+- **weighed per joint**: at a joint with an end off its flange the plan
+  is made with and without these plates and the one laying out more ends,
+  or as many on fewer plates, kept — on a tie the plan without (measured
+  on two private towers before: an end left either way but tried on such a
+  plate moved its plane's other ends onto plates, 10 joints as many ends
+  on more plates).
 
 **Not on the safe side.** Without the estimated eccentricities (their
 default) and at level 4 these offsets are not analysed: said on every run
