@@ -644,7 +644,28 @@ struct EndCheck {
     limits: Vec<String>,
 }
 
-/// The connection's capacities at one end.
+/// The bolt taken for the holes of a member end whose data gives no bolts
+/// or holes when no end of the member gives one either (O19 stage 5, the
+/// owner's answer of 2026-11-23, built 2026-11-24): a 20 mm bolt, m — the
+/// program's default, not SIA 263's (a common lattice-tower bolt; a larger
+/// one is said not on the safe side with the member), its hole Table 17's.
+pub const DEFAULT_BOLT: f64 = 0.020;
+
+/// The legs of an angle section that each take a bolt hole where the data
+/// gives none: a single angle 2, two angles back to back or in a star 4,
+/// four in a cross 8; none for another shape (the gross section, said).
+pub fn leg_holes(shape: Option<&ohl_sections::Shape>) -> Option<u32> {
+    use ohl_sections::Shape;
+    match shape? {
+        Shape::EqualAngle { .. } | Shape::UnequalAngle { .. } => Some(2),
+        Shape::DoubleAngle { .. } | Shape::StarAngle { .. } => Some(4),
+        Shape::CrossAngle { .. } => Some(8),
+        _ => None,
+    }
+}
+
+/// The connection's capacities at one end. `typical`: the member's typical
+/// bolt (diameter, hole, m) for an end whose data gives no bolts or holes.
 #[allow(clippy::too_many_arguments)]
 fn end_check(
     d: &MemberDesign,
@@ -655,6 +676,7 @@ fn end_check(
     a: f64,
     angle: Option<(f64, f64)>,
     onto: Option<&crate::model::OntoLeg>,
+    typical: Option<(f64, Option<f64>)>,
 ) -> EndCheck {
     let mut notes: Vec<String> = Vec::new();
     let mut limits: Vec<String> = Vec::new();
@@ -662,13 +684,62 @@ fn end_check(
     let gross = (fy * a / gamma_m1(), "gross section (38)".to_owned());
     let bolts = crate::shared::end_bolts(d, end, &mut notes);
     let Some((b, shank, threads_in)) = bolts else {
+        // A bolted end (not continuous, welded or seated) whose data gives
+        // no bolts or holes: a bolt hole in each leg of an angle in the net
+        // section (39) until the bolts are known (O19 stage 5, the owner's
+        // answer of 2026-11-23: as a tower program takes it, on the safe
+        // side; before, the gross section) — the member's typical bolt's
+        // hole, else [`DEFAULT_BOLT`]'s of Table 17.
+        let unbolted =
+            end.is_some_and(|e| e.continuous || e.kind.as_deref().is_some_and(|k| k != "bolted"));
+        let mut tension = gross;
+        let legs = leg_holes(s.profile.as_ref().map(|p| &p.shape));
         if notes.is_empty() {
-            notes.push("no bolts given: connection not checked".into());
+            notes.push(if legs.is_some() {
+                "no bolts given: connection not checked (bolt shear, bearing and 6.2.4.4 left \
+                 out; the net section on an assumed hole in each leg, which larger or more \
+                 holes lower)"
+                    .into()
+            } else {
+                "no bolts given: connection not checked (bolt shear, bearing, 6.2.4.4 and the \
+                 net section left out: the tension on the gross section, which holes lower)"
+                    .into()
+            });
+        }
+        if let (false, Some(legs), Some(t)) = (unbolted, legs, thickness) {
+            let (hole, whose) = match typical {
+                Some((dia, hole)) => (
+                    hole.or_else(|| standard_hole(dia)).unwrap_or(dia + 0.003),
+                    format!("the member's other end's {:.0} mm bolt", dia * 1e3),
+                ),
+                None => (
+                    standard_hole(DEFAULT_BOLT).unwrap_or(DEFAULT_BOLT + 0.003),
+                    format!(
+                        "a {:.0} mm bolt, the program's default (not the code's), and its hole \
+                         (Table 17)",
+                        DEFAULT_BOLT * 1e3
+                    ),
+                ),
+            };
+            match s.ultimate {
+                Some(fu) => {
+                    notes.push(format!(
+                        "no bolts or holes given: a {:.1} mm hole in each leg ({legs} in the \
+                         section; {whose}) until the bolts are known",
+                        hole * 1e3
+                    ));
+                    let net = 0.9 * fu * (a - f64::from(legs) * hole * t).max(0.0) / gamma_m2();
+                    if net < tension.0 {
+                        tension = (net, "net section (39)".to_owned());
+                    }
+                }
+                None => notes.push("net section not checked (no ultimate strength)".into()),
+            }
         }
         return EndCheck {
             shear: None,
             bearing: None,
-            tension: gross,
+            tension,
             notes,
             limits,
         };
@@ -1123,6 +1194,12 @@ fn capacity_of(
         _ => None,
     };
     let thickness = d.thickness.or(leg_t);
+    // The member's typical bolt for an end without bolts or holes in its
+    // data: the first end whose connection gives bolts.
+    let typical = (0..2).find_map(|end| {
+        crate::shared::end_bolts(d, d.ends[end].as_ref(), &mut Vec::new())
+            .map(|(b, _, _)| (b.diameter, b.hole))
+    });
     let checks = [0, 1].map(|end| {
         let onto = &m.onto[end];
         end_check(
@@ -1134,6 +1211,7 @@ fn capacity_of(
             a,
             angle,
             onto.as_ref(),
+            typical,
         )
     });
     let at = |end: usize| m.joints[end].as_str();

@@ -73,8 +73,11 @@
 //! punched, one hole per section, the bolts' threads in the shear plane
 //! (0.62 f_ub on 0.6 of the gross area) when only their
 //! strength is given (with the threads given out of the plane but no
-//! capacity for it: as with them in). Without bolts, the connection is not checked and
-//! the tension is on the gross section (said so). Local buckling is
+//! capacity for it: as with them in). Without bolts, the connection is not checked (said
+//! not on the safe side) and the tension is on the net section with a bolt
+//! hole in each leg of an angle (2026-11-24, the owner's answer of
+//! 2026-11-23: the member's typical bolt's hole, else [`DEFAULT_BOLT`]'s
+//! standard hole; another shape: the gross section). Local buckling is
 //! checked on angles (and on sections given a `width_thickness`) only.
 
 use crate::lengths::{Worked, ends_of};
@@ -522,7 +525,16 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
         },
     );
     // The connection, at each end: the end's own data over the member's.
-    let thickness = d.thickness.or(legs.map(|l| l.1));
+    // A built-up member's thickness is its angles' (2026-11-24).
+    let thickness = d
+        .thickness
+        .or(legs.map(|l| l.1))
+        .or(leg_holes(s).map(|l| l.1));
+    // The member's typical bolt for an end without bolts or holes in its
+    // data: the first end whose connection gives bolts.
+    let typical = (0..2).find_map(|end| {
+        end_bolts(d, d.ends[end].as_ref(), &mut Vec::new()).map(|(b, _, _)| (b.diameter, b.hole))
+    });
     let checks = [0, 1].map(|end| {
         end_check(
             d,
@@ -532,6 +544,7 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
             fy,
             a,
             m.onto[end].as_ref(),
+            typical,
         )
     });
     // Ends alike (no connection data, or the same capacities at both): as
@@ -709,8 +722,32 @@ pub fn end_bolts(
     Some((b, own.shear_capacity_shank, own.threads_in_shear))
 }
 
+/// The bolt taken for the holes of a member end whose data gives no bolts
+/// or holes when no end of the member gives one either (O19 stage 5, the
+/// owner's answer of 2026-11-23, built 2026-11-24): a 20 mm bolt, m — the
+/// program's default, not ASCE 10-97's (a common lattice-tower bolt; a
+/// larger one is said not on the safe side with the member).
+pub const DEFAULT_BOLT: f64 = 0.020;
+
+/// The legs of an angle section that each take a bolt hole where the data
+/// gives none, and their thickness, m: a single angle 2, two angles back
+/// to back or in a star 4, four in a cross 8; none for another shape (no
+/// leg to put a hole in: the gross section, said).
+pub fn leg_holes(s: &Section) -> Option<(u32, f64)> {
+    use ohl_sections::Shape;
+    match s.profile.as_ref()?.shape {
+        Shape::EqualAngle { t, .. } | Shape::UnequalAngle { t, .. } => Some((2, t)),
+        Shape::DoubleAngle { t, .. } | Shape::StarAngle { t, .. } => Some((4, t)),
+        Shape::CrossAngle { t, .. } => Some((8, t)),
+        _ => None,
+    }
+}
+
 /// The connection's capacities at one end (`end`: its connection, none:
-/// the member's data only), as before for the member's data.
+/// the member's data only), as before for the member's data. `typical`:
+/// the member's typical bolt (diameter, hole, m) for an end whose data
+/// gives no bolts or holes.
+#[allow(clippy::too_many_arguments)]
 fn end_check(
     d: &MemberDesign,
     end: Option<&EndDesign>,
@@ -719,16 +756,72 @@ fn end_check(
     fy: f64,
     a: f64,
     onto: Option<&OntoLeg>,
+    typical: Option<(f64, Option<f64>)>,
 ) -> EndCheck {
     let plies = f64::from(d.plies.unwrap_or(1));
     let mut shear = None;
     let mut bearing = None;
     let mut conn: Vec<String> = Vec::new();
     let bolts = end_bolts(d, end, &mut conn);
+    // An end that is bolted (not continuous, welded or seated) whose data
+    // gives no bolts or holes: a bolt hole in each leg of an angle in the
+    // net section until the bolts are known (O19 stage 5, the owner's
+    // answer of 2026-11-23: as a tower program takes it, on the safe side;
+    // before, the gross section) — the hole the member's typical bolt's,
+    // else [`DEFAULT_BOLT`]'s standard hole (4.1).
+    let unbolted =
+        end.is_some_and(|e| e.continuous || e.kind.as_deref().is_some_and(|k| k != "bolted"));
+    let mut net_notes: Vec<String> = Vec::new();
+    let assumed = match (bolts, unbolted, leg_holes(s)) {
+        (None, false, Some((legs, _))) => {
+            let (diameter, hole, whose) = match typical {
+                Some((dia, hole)) => (
+                    dia,
+                    hole.unwrap_or(dia + STANDARD_HOLE),
+                    format!("the member's other end's {:.0} mm bolt", dia * 1e3),
+                ),
+                None => (
+                    DEFAULT_BOLT,
+                    DEFAULT_BOLT + STANDARD_HOLE,
+                    format!(
+                        "a {:.0} mm bolt, the program's default (not the code's), and its \
+                         standard hole (4.1)",
+                        DEFAULT_BOLT * 1e3
+                    ),
+                ),
+            };
+            net_notes.push(format!(
+                "no bolts or holes given: a {:.1} mm hole in each leg ({legs} in the section; {whose}) \
+                 until the bolts are known",
+                hole * 1e3
+            ));
+            Some(Bolts {
+                diameter,
+                hole: Some(hole),
+                count: 0,
+                shear_planes: 1,
+                shear_capacity: None,
+                ultimate: None,
+                holes: Some(legs),
+                grade: None,
+            })
+        }
+        _ => None,
+    };
     match bolts {
         None => {
             if conn.is_empty() {
-                conn.push("no bolts given: connection not checked".into());
+                conn.push(if assumed.is_some() {
+                    "no bolts given: connection not checked (bolt shear, bearing and block shear \
+                     left out; the net section on an assumed hole in each leg, which larger or \
+                     more holes lower)"
+                        .into()
+                } else {
+                    "no bolts given: connection not checked (bolt shear, bearing, block shear and \
+                     the net section left out: the tension on the gross section, which holes \
+                     lower)"
+                        .into()
+                });
             }
         }
         // Holes only (the bolts elsewhere): the net section, no bolt check.
@@ -801,7 +894,7 @@ fn end_check(
         }
     }
     let connected_leg = end.and_then(|e| e.leg).or(d.connected_leg);
-    let mut notes = Vec::new();
+    let mut notes = net_notes;
     // The angle's legs (long, short), m.
     let angle = s.profile.as_ref().and_then(|p| match p.shape {
         ohl_sections::Shape::EqualAngle { h, .. } => Some((h, h)),
@@ -809,7 +902,7 @@ fn end_check(
         _ => None,
     });
     let unequal = angle.is_some_and(|(l, s)| l > s);
-    let mut tension = match (bolts, thickness) {
+    let mut tension = match (bolts.or(assumed.map(|b| (b, None, None))), thickness) {
         (None, _) => (a * fy, "gross section, no holes".to_owned()),
         (Some((b, _, _)), Some(t)) => {
             // The hole: given, else a standard hole (4.1); taken as punched

@@ -395,9 +395,30 @@ mm (said: "holes punched (+ 1.6 mm)"). **Conservative** for drilled or
 reamed holes, which the standard lets count at their nominal diameter
 (the data do not say how a hole was made).
 
-Without bolts the tension is on the gross section, \\( A f_y \\) (said: "no
-bolts given: connection not checked"). With bolts counted 0 (the holes
-only, the connection elsewhere) only the net section is checked.
+**Without bolts or holes in the data** (2026-11-24, the owner's answer
+of 2026-11-23, O19 stage 5; built, in active development): the
+connection is not checked (said **not on the safe side**: "no bolts
+given: connection not checked (bolt shear, bearing and block shear left
+out; the net section on an assumed hole in each leg, which larger or
+more holes lower)"), and the tension is on the **net section with a bolt
+hole in each leg** of an angle — a single angle 2 holes in the section,
+two angles back to back or in a star 4, four in a cross 8 — until the
+bolts are known, as a tower program takes it (it took the gross section
+before, about 20 % higher on the members compared). The hole is the
+member's typical bolt's (an end whose `[[connection]]` gives bolts: their
+hole, else their standard hole), else a **20 mm bolt's standard hole,
+21.6 mm — the program's default, not the code's** (said: "no bolts or
+holes given: a 21.6 mm hole in each leg (2 in the section; a 20 mm bolt,
+the program's default (not the code's), and its standard hole (4.1))
+until the bolts are known"); punched (+ 1.6 mm) and one leg bolted
+(× 0.9; an unequal angle's short leg) as for any missing data. What it
+leaves out: the real bolts — a larger bolt or more holes in one section
+lower the net section further, and the bolts' shear, bearing and block
+shear can govern; give the member's `bolts` (or its ends' connections)
+to check them. A section that is not an angle (no leg to put a hole in)
+keeps the gross section, said the same way. An end that is continuous,
+welded or seated takes no hole. With bolts counted 0 (the holes only,
+the connection elsewhere) only the net section is checked.
 
 **Conservative:** with two gauge lines, or both legs bolted, all holes
 are taken in one cross-section; the standard's chain rule (3.10.1: deduct the holes of a
@@ -571,7 +592,7 @@ said in what governs (`[assumed: …]`):
 | holes per section | 1 |
 | bolt threads | in the shear plane |
 | twisting | free to warp (K_t 1); built-ups' warping left out |
-| bolts | connection not checked, gross section in tension — **not on the safe side** (no hole to assume without a bolt): the member is marked `[not on the safe side: no bolts given: connection not checked]` and never shown as passing (2026-11-08) |
+| bolts | connection not checked — **not on the safe side**: the member is marked `[not on the safe side: no bolts given: connection not checked (…)]` and never shown as passing (2026-11-08); the tension on the net section with a hole in each leg of an angle (the member's typical bolt's, else a 20 mm bolt's standard hole, the program's default), another section the gross section (2026-11-24) |
 
 ## Plates and welds
 

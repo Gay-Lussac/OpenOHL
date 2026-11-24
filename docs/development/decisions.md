@@ -8,6 +8,41 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (member checks: a bolt hole in each leg of a member without bolts in its data, O19 stage 5)
+
+**The owner's answer** to stage 5's question 1 of 2026-11-23 (approved
+2026-11-24, "go ahead with recommendations"): a member whose design data
+gives no bolts or holes takes a hole in each leg until the bolts are known
+— on the safe side, said. Built in both bundled code plugins (`asce10`,
+`sia263`; no core or interface change; built, in active development, not
+approved yet;
+[ASCE 10-97](../theory/asce10.md#tension),
+[SIA 263](../theory/sia263.md#tension)).
+
+- **Before**: such a member's tension was on its gross section; the tower
+  program compared takes a net section about 20 % lower (64 members rated
+  higher than the program's, kept privately).
+- **Now**: at an end that is bolted (not continuous, welded or seated)
+  with no bolts of known diameter, the tension is the net section with a
+  hole in **each leg of an angle** — a single angle 2 holes, two angles
+  back to back or in a star 4, four in a cross 8 — the hole the member's
+  typical bolt's (an end whose connection gives bolts), else a **20 mm
+  bolt's** (the program's default, not the code's: ASCE 10-97's standard
+  hole 21.6 mm, punched + 1.6 mm, × 0.9 for one leg bolted; SIA 263's
+  Table 17 hole 22 mm in (39)). Said with the member in the rule's three
+  parts: the connection not checked (bolt shear, bearing, block shear /
+  6.2.4.4 left out), the net section on an assumed hole (larger or more
+  holes lower it), give the bolts. A section that is not an angle keeps
+  the gross section, said. A built-up member's thickness for ASCE 10-97 is
+  now its angles' when its design data gives none (as SIA 263 took it).
+- **Validation**: `asce10-009`, `sia263-004` (an invented 60 × 6 angle by
+  hand); the plugins' tests `holes_in_each_leg_without_bolts`.
+- **Measured** (the private comparison of 2026-11-24): the 64 members are
+  no longer higher than the program's; 343 members' tension capacities
+  fell (median 0.66 of the program's: where the program took no hole, its
+  data giving none, or a fractional count; the 20 mm default is harsh on
+  small angles) — see the roadmap's question.
+
 ## 2026-11-24 (every "not on the safe side" says why)
 
 **The owner's rule** (verbatim): *"with the 'not on the safe side' please

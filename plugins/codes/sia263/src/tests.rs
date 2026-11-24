@@ -231,6 +231,30 @@ fn bearing_on_the_thinner_leg_bolted_onto_by_hand() {
     assert_eq!(what, "bearing at b");
 }
 
+/// A member whose data gives no bolts or holes (O19 stage 5, the owner's
+/// answer of 2026-11-23, built 2026-11-24): a bolt hole in each leg of an
+/// angle in the net section (39) until the bolts are known — the default
+/// 20 mm bolt's hole of Table 17, 22 mm: L 60×6 (no root radius), A = 6
+/// (120 − 6) = 684 mm², net 684 − 2 × 22 × 6 = 420 mm², 0.9 × 510 MPa ×
+/// 420 mm² / 1.25 = 154.224 kN (the gross (38) 355 × 684 / 1.05 = 231.257
+/// kN).
+#[test]
+fn holes_in_each_leg_without_bolts() {
+    let (mut m, q) = angle(0.060, 0.006, 355e6, 2.0);
+    assert!((q.area - 684e-6).abs() < 1e-12);
+    m.design.bolts = None;
+    let (c, _) = sia263::capacity(&m, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 0.9 * 510e6 * 420e-6 / GAMMA_M2).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section (39)");
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("22.0 mm hole in each leg (2 in the section; a 20 mm bolt")),
+        "{c:?}"
+    );
+}
+
 /// χ_K at the curves' printed values; λ_E, ε, η, ω, ρ at their tables'.
 #[test]
 fn buckling_curves_by_hand() {

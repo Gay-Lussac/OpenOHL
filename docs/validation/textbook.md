@@ -499,6 +499,7 @@ notes give L/r, KL/r, \\( F_{cr} \\) and the capacity. Tolerance
 | asce10-006 | compression of a short bolted bar: bolt shear below the column |
 | asce10-007 | compression without design data: the assumptions on the safe side (curve 3) |
 | asce10-008 | tension without design data: the gross section |
+| asce10-009 | tension of an angle without bolts or holes in its data: a bolt hole in each leg (the default 20 mm bolt's standard hole, punched) until the bolts are known (2026-11-24) |
 
 The cases are not published worked examples; the
 method was also compared, privately, with a tower design program's

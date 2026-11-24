@@ -1834,7 +1834,17 @@ Six stages, the questions per stage and per detail level:
   > **Owner:** (questions, 2026-11-23) (1) 64 members whose design data
   > gives no bolt or hole are checked on their gross section, where the
   > tower program takes a net section 20 % lower: take a hole per leg until
-  > the bolts are known? → yes, on the safe side (said). (2) A built-up
+  > the bolts are known? → yes, on the safe side (said). **Built
+  > 2026-11-24** (approved that day; built, in active development, not
+  > approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-member-checks-a-bolt-hole-in-each-leg-of-a-member-without-bolts-in-its-data-o19-stage-5)):
+  > both code plugins, a hole in each leg of an angle (2, 4 for two angles,
+  > 8 for four), the member's typical bolt's or a 20 mm bolt's (the
+  > program's default, not the code's), said not on the safe side with
+  > what it leaves out; another section keeps the gross section, said;
+  > validation `asce10-009`, `sia263-004`. On the private towers the 64
+  > members are no longer above the program's; 343 members fell below it
+  > (median 0.66; the program took no hole where its data give none). (2) A built-up
   > member's bearing at member level counts both its angles (2 × t), the
   > program one (36 double angles, up to 1.8 times ours against it); the
   > plate between them is checked only where the joint's plate is defined:

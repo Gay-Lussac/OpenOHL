@@ -369,3 +369,48 @@ node = "b"
 force = ["60 kN", "0 kN", "0 kN"]
 '''
 expected.usage_m = { value = 0.16901408450704225, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-009"
+title = "Tension of an angle without bolts or holes in its data: a bolt hole in each leg (net section) until the bolts are known"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), 3.10.1, 3.10.2 and 4.1 as the asce10 plugin takes them, evaluated by hand; the hole per leg and the 20 mm bolt are the program's assumption until the bolts are known (owner, 2026-11-23), not the code's"
+notes = "Invented equal angle 60 x 6 mm, no root radius: A = 6 x (120 - 6) = 684 mm2, fy 355 MPa. No bolts given: the default 20 mm bolt, standard hole 20 + 1.6 = 21.6 mm, punched +1.6 = 23.2 mm, one hole in each leg: A_net = 684 - 2 x 23.2 x 6 = 405.6 mm2; one leg bolted (assumed): 0.9 x 405.6 mm2 x 355 MPa = 129.5892 kN (the gross section 242.82 kN before); 50 kN -> 0.38583462"
+max_seconds = 30.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "L60"
+shape = "equal_angle"
+material = "steel"
+h = "60 mm"
+t = "6 mm"
+r = "0 mm"
+'''
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "L60"
+[[load]]
+node = "b"
+force = ["50 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.3858346220209708, rel_tol = 1e-9 }

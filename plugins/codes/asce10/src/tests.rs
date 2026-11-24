@@ -407,6 +407,65 @@ fn connection_rules_by_hand() {
     );
 }
 
+/// A member whose data gives no bolts or holes (O19 stage 5, the owner's
+/// answer of 2026-11-23, built 2026-11-24): a bolt hole in each leg of an
+/// angle until the bolts are known — the default 20 mm bolt's standard
+/// hole 21.6 mm, punched 23.2 mm; an unequal angle as bolted by its short
+/// leg (its long leg counted as the short one), 0.9 for one leg bolted:
+/// L100 × 60 × 8 with no root radius, A = 8 (100 + 60 − 8) = 1216 mm²,
+/// counted 1216 − 40 × 8 = 896 mm², net 896 − 2 × 23.2 × 8 = 524.8 mm²,
+/// × 355 MPa × 0.9 = 167.6736 kN. Another end's bolt (M16, 17.5 mm hole):
+/// its hole, 896 − 2 × 19.1 × 8 = 590.4 mm², 188.6328 kN. A section that
+/// is not an angle: the gross section, said.
+#[test]
+fn holes_in_each_leg_without_bolts() {
+    let (s, q) = profiled(ohl_sections::Shape::UnequalAngle {
+        h: 0.1,
+        b: 0.06,
+        t: 0.008,
+        r: 0.0,
+    });
+    assert!((q.area - 1216e-6).abs() < 1e-12);
+    let mut b = member("b", s, 2.0, MemberDesign::default(), None);
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 524.8e-6 * 355e6 * 0.9).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section");
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("21.6 mm hole in each leg (2 in the section; a 20 mm bolt")),
+        "{c:?}"
+    );
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.starts_with("no bolts given: connection not checked")),
+        "{c:?}"
+    );
+    // The other end's connection gives its bolts: their hole at this end.
+    b.design.ends[1] = Some(crate::model::EndDesign {
+        bolts: Some(crate::model::EndBolts {
+            count: 2,
+            diameter: Some(0.016),
+            hole: Some(0.0175),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 590.4e-6 * 355e6 * 0.9).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section at a", "{c:?}");
+    // Not an angle: the gross section, as before.
+    let mut s = elastic(10e-4, 50e-8);
+    s.yield_strength = Some(355e6);
+    let c = capacity(&member("g", s, 2.0, MemberDesign::default(), None), None);
+    let (t, what) = c.tension.unwrap();
+    assert!((t - 355e3).abs() < 1e-6);
+    assert_eq!(what, "gross section, no holes");
+}
+
 /// The six curves at L/r 100 and 150 (hand values).
 #[test]
 fn effective_slenderness_curves() {
