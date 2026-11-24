@@ -535,8 +535,8 @@ fn a_plugin_without_a_joint_check_leaves_the_joints_not_checked() {
         }
         assert!(
             row.governs.starts_with(
-                "NOT CHECKED by member-check-only, NOT ON THE SAFE SIDE: the plugin \
-                 member-check-only has no joint check"
+                "NOT CHECKED by member-check-only, NOT ON THE SAFE SIDE (a failure there would \
+                 not be found): the plugin member-check-only has no joint check"
             ),
             "{row:?}"
         );
