@@ -278,8 +278,9 @@ Not on the safe side, and said in the results each time it applies:
 - **Band levels 0** (with the swing arc, without the wind steps): the
   band of still air and the blowouts alone; between them the wire can lie
   outside the band by more than its margin (up to 0.69 m at 1300 Pa on a
-  real line). The results say *NOT ON THE SAFE SIDE: the swing band
-  without levels …*.
+  real line), so a clearance can be smaller than shown. The results say
+  *NOT ON THE SAFE SIDE: the swing band without levels …*; set a level
+  every 200 Pa (the default) or tick the wind steps.
 - **Spans the wind pulls to or above the line between their clamps** (a wind
   along an inclined span at a high pressure; with the swing arc, without
   the wind steps): the band does not hold such a wire between its
@@ -310,7 +311,10 @@ Not on the safe side, and said in the results each time it applies:
   misses a wire passing beside a tall object below its top; the results
   say so per rule
   ([theory](../theory/clearances.md#down-to-the-ground-a-wire-beside-a-tall-object)).
-- **The structures rigid** in the wire solve: said in every result.
+- **The structures rigid** in the wire solve: a structure that gives under
+  the wires' pull lets them hang lower, so a clearance below them can be
+  smaller than shown; calculation levels 3 and 4 take the structures'
+  flexibility. Said in every result.
 - The swing arc is a rigid swing about the attachments (a
   simplification; the band and its margin cover it on the example lines:
   [theory](../theory/clearances.md#wind-positions)).

@@ -595,7 +595,8 @@ Unsafe where one of them governs; the standard's clause is the reference.
 
 **Said where it applies** (2026-11-08, `check::uncovered_clauses`): a
 member to which one of these applies is marked `[not on the safe side:
-…]` with the clause, and never shown as passing:
+… — its usage can be higher than shown; give what is missing, or check it
+by hand]` with the clause, and never shown as passing:
 
 - a compressed tube, channel or I section (or two channels): *effective
   widths of its elements not applied (ASCE 10-97 3.9.3)*;

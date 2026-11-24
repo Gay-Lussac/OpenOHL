@@ -45,7 +45,7 @@ Where a calculation does not follow the physics exactly, the theory pages say so
 Some pages use these other words for the same:
 
 - **Conservative assumption**, **on the safe side**: as **Conservative**.
-- **Not on the safe side**, **Limitation (not on the safe side)**: as **Simplification**, the error known to be on the unsafe side.
+- **Not on the safe side**, **Limitation (not on the safe side)**: as **Simplification**, the error known to be on the unsafe side. Each such mark — here and in the program's results — says what is left out or assumed, which quantity can therefore be larger in reality (or the capacity smaller), and what makes it safe: an input, a setting, or the planned step (owner, 2026-11-24).
 - **Assumption** (the electrical pages): a modelling choice, said with which way it errs where that is known; the electrical results are not design checks in themselves.
 
 "Safe side" always refers to a named result (a clearance, a usage, a tension); an assumption can be conservative for one result and not for another, and the label then says which. Results must be verified by a qualified engineer either way.

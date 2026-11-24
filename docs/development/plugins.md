@@ -1024,7 +1024,7 @@ a plugin's: the plates', covers', welds' and bolt groups' rows come from
 its `joint-check` (`ohl_structure_link::plate_usage_cases`, one call per
 run); a plugin without that export, or one that fails, or a part or load
 case it returns nothing for: the row reads **"NOT CHECKED by <plugin>,
-NOT ON THE SAFE SIDE: …"** without a usage, the run's notes say it and
+NOT ON THE SAFE SIDE (a failure there would not be found): …"** without a usage, the run's notes say it and
 the *plates* check lists the cases as not run — no silent ASCE 10-97.
 The bolt tools (Joint details, the bolt layout, the Detail view's tools)
 take their minimum distances from `bolt-distances`
@@ -1214,7 +1214,7 @@ further optional export carries them:
   per case. Called by `ohl_structure_link` (`bends::bend_rows`, through
   `ohl_member_check::joints::check_bends`, one call with every bend and
   case); a plugin without it: the bend's row reads "NOT CHECKED by <plugin>,
-  NOT ON THE SAFE SIDE: the bend's own bending — … has no check of a bent
+  NOT ON THE SAFE SIDE (a failure there would not be found): the bend's own bending — … has no check of a bent
   plate's bend", as before. Both bundled plugins have it.
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's

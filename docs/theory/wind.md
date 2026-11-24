@@ -220,7 +220,8 @@ left out.
   their area as given, along \\( \hat w \\) of their span.
   **Simplification:** a cylinder's or box's area is the one given (across
   its span); a body showing more area to a wind along the span takes too
-  little (not on the safe side), one showing less too much.
+  little (not on the safe side: its wind load is then too low; give its
+  shape as `areas` per direction), one showing less too much.
 - **Spacers between sections:** their wind area along \\( \hat w \\) at
   the span's middle, full pressure.
 - **Jumpers:** each piece takes the one wind by the law, its own 3D

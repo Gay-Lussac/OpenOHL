@@ -92,7 +92,9 @@ offset, exactly as a connection's `shift` at level 4:
   one running through the joint), else the joint's leg — p the plate's
   offset, n out of the face (u × the member's direction). An end with no
   direction to measure in (nothing at the joint, or in line) is left out:
-  **NOT ON THE SAFE SIDE**, said with the ends.
+  **NOT ON THE SAFE SIDE** (its moment is missing, so that member's usage
+  can be too low; a hand-written eccentricity takes its place), said with
+  the ends.
 - An offset whose sign is known (laid out, given, estimated: s · u) is
   the member's rigid end offset: in the solve the end is tied rigidly to
   the joint; where a frame meets the joint the frames carry the moment,

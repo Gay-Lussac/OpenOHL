@@ -57,7 +57,9 @@ labelled "A1 (post, 1.60 m)"), and its moment summed per point with the
 factored forces. The structure analysis puts the moment at the base
 point's joint where a frame member meets it. **NOT ON THE SAFE SIDE
 where it cannot**: at a joint only trusses meet, and in the pole check
-(forces at points only), the moment is left out and the result says so.
+(forces at points only), the moment is left out and the result says so —
+the members near the joint, or the pole, then carry more than computed;
+a frame joint there takes it (the pole: add it by hand).
 
 **Its own weight and wind**, at its middle (lever \\( \mathbf r / 2 \\)):
 its weight, and the wind on its wind area — the line's, across the line,
@@ -300,7 +302,9 @@ the circle of its length, along the line. With two braces off that line
 - **Nothing**: free. No load path — no stiffness is made up for it; its
   loads (its own and its brace's weight and wind) are not computed, and
   every load case says so (*hinged post P at T: nothing holds it (free to
-  pivot); its loads not computed — NOT ON THE SAFE SIDE*), as do the
+  pivot); its loads not computed — NOT ON THE SAFE SIDE: its own and its
+  brace's weight and wind are missing from the structure's loads, so they
+  are too low; end a section or hang a jumper at its top to hold it*), as do the
   string checks (not checked).
 
 **The hinge is frictionless by default** — the owner's choice (2026-11-15:

@@ -240,8 +240,10 @@ as `[assumed: …]`. What it **could not check** — a connection without
 bolts, bolt shear without a capacity, bearing or the net section without
 a thickness or an ultimate strength, block shear without its data, a
 general profile's torsional buckling, a single angle's end moments left
-out — is listed apart as `[not on the safe side: …]`: the usage may then
-be too low. Such a member is **never shown as passing**: OHL-Structure
+out — is listed apart as `[not on the safe side: … — its usage can be
+higher than shown; give what is missing, or check it by hand]` (the why
+and the way out in the mark since 2026-11-24): the usage may then be too
+low. Such a member is **never shown as passing**: OHL-Structure
 colours it violet ("not all checked") unless it is over 100 %, its
 report class is "notsafe", and in OHL-Design a structure with any such
 member is "not all checked (not safe side)", not a pass. The notes count
