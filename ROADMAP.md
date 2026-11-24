@@ -3770,13 +3770,13 @@ only where it helps):
   the level plate's rows are gone; assumed (said in the theory): a holder
   passes at most its whole force through the plate, a force circulating
   round the joint from its own deformation not counted. Measured (kept
-  privately; one vertical case, the bundled plugin): the one level plate
-  L20 laid out on 16 private towers — its two holding groups' largest bolt
+  privately; one vertical case, the bundled plugin): the only level plate
+  on 40 private towers laid out by L20 main — its two holding groups' largest bolt
   force 1.2 → 12.8 kN and 2.1 → 9.2 kN (usage 3 % → 27 %, 4 % → 20 %; the
   holders' bearing under them 2 % → 21 %, 4 % → 15 %; both holders run on
   through the joint as one part: each piece's force taken), every other
-  row unchanged (that tower's 3 160 rows; 27 other private towers laid out
-  by L20 main, 91 687 rows, identical).
+  row unchanged (that tower's 3 160 rows; 27 other towers, 91 687 rows,
+  identical).
   **2. A plate's own holding bolts in the clash check** (L20's question 3;
   [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plates-own-holding-bolts-in-the-clash-check-l21-item-2)):
   `[plate.leg_bolts]` and `[plate.also_bolts]` heads, shanks and nuts are
