@@ -135,8 +135,9 @@ pub enum NetworkCommand {
     CheckOffline {
         /// The offline working set.
         file: PathBuf,
-        /// clearances, fields or loads (structure loads on towers shared
-        /// with other lines).
+        /// clearances, fields (the magnetic field), electric (the electric
+        /// field, the lines solved together) or loads (structure loads on
+        /// towers shared with other lines).
         #[arg(long)]
         check: String,
         /// The weather case (clearances, fields).
@@ -157,6 +158,9 @@ pub enum NetworkCommand {
         /// The field's limit, µT.
         #[arg(long)]
         limit_ut: Option<f64>,
+        /// The electric field's limit, kV/m.
+        #[arg(long)]
+        limit_kv_m: Option<f64>,
     },
     /// Measure phase 12 on the network: a whole route's offline working
     /// set exported (size and time), bundles of 20 and of 500 changes made
@@ -687,9 +691,16 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             distance,
             amps,
             limit_ut,
+            limit_kv_m,
         } => {
             let c = crate::network_offline_run::scoped_check(
-                &check, case, rules, structures, distance, amps, limit_ut,
+                &check,
+                case,
+                rules,
+                structures,
+                distance,
+                amps,
+                (limit_ut, limit_kv_m),
             )?;
             let r = ohl_server::offline_checks::check_offline(&file, &c)?;
             println!(

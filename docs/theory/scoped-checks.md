@@ -37,6 +37,7 @@ shared by two routes twins, as a network holds them; `crates/ohl-scope`,
 | Clearances between wires (other lines, this line), two weather cases (still air, wind), three working sets of the lines with shared towers | the same results to the bit: 22 239 pairs and wires, 2 499 of them below the rules' distances, 1 022 other lines' objects used |
 | Loads on shared towers, nine towers, every load case | the same loads to the bit; against the country as one project (a different model: a tower of two routes is solved there with one route's alignment), within 1.7 % of each point's load |
 | Magnetic field, lines within 500 m | what the field distance leaves out: at most 0.00019 µT where the largest field is 4.2 µT (NOT ON THE SAFE SIDE, below) |
+| Electric field, lines within 500 m solved together (2026-11-24) | every point at least this line alone; the method said (exact for one other line); the wires beyond the field distance NOT ON THE SAFE SIDE (below) |
 
 ## The reach of each check
 
@@ -46,6 +47,7 @@ shared by two routes twins, as a network holds them; `crates/ohl-scope`,
 | Clearances to the ground and to points | the working set's own wires; the ground and the points are not served by a network yet: not checked there, said |
 | Distance between conductors (in the span, under unequal wind) | what the working set holds: its sections and every section on its structures |
 | Magnetic field | every line with wires within the field distance (500 m, owner 2026-11-16; a setting of the check) |
+| Electric field | the same lines as the magnetic field; each profile's system: their wires within the field distance of its middle |
 | Structure loads | other lines' sections on the working set's structures: their twins |
 | A plugin's check | as its manifest declares (`[reach]`, [Writing plugins](../development/plugins.md#a-checks-reach)); none declared: the working set's whole line and every line within 2 km |
 
@@ -138,6 +140,57 @@ each point.
   field alone (NOT ALL CHECKED, said); a given point far from the spans
   computed may lie nearer another line than the distance (NOT ON THE SAFE
   SIDE, said).
+
+## Electric field
+
+*Built 2026-11-24, in active development, not approved yet* (ROADMAP
+O17; `ohl_scope::electric`, the check `electric` of `ohl network
+check-offline` and the server's `electric_field` check).
+
+The lines are taken as for the magnetic field (every section, of this
+line or another, whose spans can come within the field distance of the
+working set's wires; `ohl_scope::fields::near_sections`, the same
+selection). Unlike the magnetic field they are **solved together**: one
+system of charges over every line's wires and earth wires — a
+neighbour's conductors change this line's charges and its earth wires
+screen, so fields computed apart and added by size are not a proven
+bound for the electric field. The method, its derivation and its sources:
+[Electric field › Other lines: solved together](electric-field.md#other-lines-solved-together).
+
+- This line's own field at profiles across the working set's spans (1 m
+  above the ground, ±50 m every 5 m by default), in its own model with
+  the ground plane under each point; then, when another line is near, the
+  lines together at the same points. At every point **the larger** of the
+  two (conservative against either model alone).
+- **The unknown phase angles** between the lines: the worst over them —
+  **exact for one other line** (two parts: in closed form), **an upper
+  bound for more** (each pair's cross term at its largest: conservative).
+  Every result says which (`method`) and what the system took in
+  (`taken_in`: this line's sections, each other line's).
+- **Not on the safe side (said in every result):** the wires farther than
+  the field distance from the working set's wires, and in each profile's
+  system those farther than it from the profile's middle, are left out.
+  The electric field of a line falls off far faster than its magnetic
+  field (its charges and their images form dipoles with the earth).
+- Every line's phases at their systems' voltages — the highest operating
+  voltage where the line gives one, else the nominal (NOT ON THE SAFE
+  SIDE, said with the circuits). DC poles left out (said).
+- A profile whose system cannot be solved (a wire at or below the ground
+  in it) is this line alone there and the result **not all checked**.
+- Measured on the synthetic country (300 pylons, lines of 50 to 380 kV,
+  a working set of four sections with one other line near, a heavily
+  shared machine): 0.4–7.2 s for one to three profiles, 586–1 068 pieces
+  per system.
+- **On an offline working set's file** (2026-11-24): OHL-Design's
+  Electric field window takes the other lines by this same selection and
+  solves them by the same code (`ohl_scope::electric::joint_lines` and
+  `joint_at` on the file, through
+  `ohl_server::offline_checks::electric_neighbours`), measured from the
+  wires of the sections whose spans it computes, at its own profile
+  points and given points; its own value at each point stays where it is
+  larger. The cuts and the volumes' surfaces stay this line's field alone
+  (NOT ALL CHECKED, said); a given point far from the spans computed may
+  lie nearer another line than the distance (NOT ON THE SAFE SIDE, said).
 
 ## Loads on shared towers
 

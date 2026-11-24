@@ -52,6 +52,7 @@ pub mod electric;
 pub mod field_plan;
 pub mod field_results;
 pub mod field_views;
+pub mod joint;
 pub mod lightning;
 pub mod magnetic;
 pub mod matrices;

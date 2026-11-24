@@ -153,6 +153,22 @@ pub(crate) fn check_parameters(check: &ScopedCheck) -> Result<(), String> {
                 return Err("the field's current and limit: finite, not negative".into());
             }
         }
+        ScopedCheck::ElectricField {
+            case,
+            distance,
+            limit_kv_m,
+        } => {
+            if let Some(d) = distance
+                && !(d.is_finite() && *d > 0.0 && *d <= MAX_FIELD_DISTANCE)
+            {
+                return Err(format!(
+                    "the field distance: more than 0 m and at most {MAX_FIELD_DISTANCE} m"
+                ));
+            }
+            if limit_kv_m.is_some_and(|l| !(l.is_finite() && l >= 0.0)) || case.len() > 256 {
+                return Err("the field's limit: finite, not negative".into());
+            }
+        }
         ScopedCheck::StructureLoads { structures } => {
             if structures.len() > MAX_CHECK_STRUCTURES {
                 return Err(format!(
