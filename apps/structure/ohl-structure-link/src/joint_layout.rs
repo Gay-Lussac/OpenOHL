@@ -414,6 +414,15 @@ pub struct LayoutSettings {
     /// for those ends). On by default; off: as before (a hand detail beyond
     /// a plate's thickness).
     pub own_offset_analysed: bool,
+    /// O44 L22 (L21's question 4): a plate's own holding bolts (L5o,
+    /// `[plate.leg_bolts]`) placed clear of what the plan lays out at the
+    /// joint after that plate — the other plates and ends, their bolts'
+    /// heads and nuts (those on the other flange of the member it lies on,
+    /// in its corner, among them) and the other plates' own holding bolts:
+    /// where they would meet such a piece, the joint is planned again with
+    /// them kept clear of it, kept only where fewer meet something and
+    /// nothing else is laid out worse. On by default; off: as before.
+    pub holds_clear: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -469,6 +478,7 @@ impl Default for LayoutSettings {
             weigh_turns: true,
             level_plates: true,
             own_offset_analysed: true,
+            holds_clear: true,
         }
     }
 }
@@ -1556,6 +1566,10 @@ struct HoldRoom<'a> {
     /// member's angles: that member and those in line with it), not in
     /// their way.
     through: BTreeSet<String>,
+    /// (L22) The footprints (in the flange's plane, within the slab its
+    /// bolts fill: [`hold_slab`]) of what [`HoldAt::avoid`] asks them to
+    /// keep clear of.
+    avoid: Vec<Vec<[f64; 2]>>,
 }
 
 /// L5o (2026-11-20, the owner's decision of that day): the places of a
@@ -1674,6 +1688,7 @@ fn plate_holds(
                 .filter(|(m, _)| !room.through.contains(m))
                 .all(|(_, p)| off_poly(q, p, head))
             && x0.fixed_far.iter().all(|(_, p)| off_poly(q, p, head))
+            && room.avoid.iter().all(|p| off_poly(q, p, head))
     };
     let (x_lo, x_hi) = poly
         .iter()
@@ -1750,6 +1765,11 @@ struct HoldAt<'a> {
     /// (the code's for the member it lies on, in the plate's thickness;
     /// none: not known).
     host_keep: Option<(f64, f64)>,
+    /// (L22) What the plan laid out at this joint after this plate (or
+    /// beside it) that its bolts' heads, shanks and nuts are kept clear of
+    /// (3D corners from the work point; [`hold_conflicts`] found them in
+    /// the way of the places chosen without them); empty: none asked.
+    avoid: &'a [Vec<[f64; 3]>],
 }
 
 /// L5o (2026-11-20): flat plate `flat` of the ends `placed` given its own
@@ -1767,14 +1787,13 @@ fn hold_flat(
     j: &JointDetail,
     s: &LayoutSettings,
     at: HoldAt<'_>,
-) {
+) -> Option<(usize, Vec<[f64; 2]>)> {
     let flats: Vec<&Placed> = placed
         .iter()
         .filter(|p| strips[p.k].tilted.is_none())
         .collect();
-    let Some(x0) = flats.first().map(|p| &strips[p.k]) else {
-        return;
-    };
+    let k0 = flats.first().map(|p| p.k)?;
+    let x0 = &strips[k0];
     let legs: Vec<&str> = crate::welds::joint_legs(j)
         .iter()
         .map(|a| a.member.as_str())
@@ -1785,7 +1804,7 @@ fn hold_flat(
             .iter()
             .any(|m| legs.contains(&m.as_str()) || *m == x0.host)
     {
-        return;
+        return None;
     }
     // A plate stopping short of the work point (L2's follow-up a): drawn
     // round its members' legs from the flange's toe, cut straight short of
@@ -1801,7 +1820,7 @@ fn hold_flat(
              hand)",
             x0.host, x0.host
         ));
-        return;
+        return None;
     }
     // (J6) A built-up member: its plate's own bolts onto one of its angles
     // are not read yet (`[plate.leg_bolts]` names a single angle's leg) —
@@ -1819,7 +1838,7 @@ fn hold_flat(
              its angles not given yet); how it is held not checked (lay them out by hand)",
             x0.host
         ));
-        return;
+        return None;
     }
     let round;
     let poly = match at.poly {
@@ -1928,7 +1947,15 @@ fn hold_flat(
         } else {
             BTreeSet::new()
         },
+        avoid: {
+            let slab = hold_slab(x0, flat.thickness);
+            at.avoid
+                .iter()
+                .filter_map(|p| footprint_in(x0, p, slab))
+                .collect()
+        },
     };
+    let mut room = room;
     let from = x0
         .host_ends
         .then(|| at.laid_cut.get(&x0.host).copied().unwrap_or(x0.host_cut));
@@ -1949,7 +1976,31 @@ fn hold_flat(
     } else {
         0.0
     };
-    let pts = match plate_holds(strips, x0, &room, s, from, n, ring_min) {
+    // (L22) Clear of what the plan laid out after it at this joint where
+    // asked; where no place is, as before (said; the check after writing
+    // tests them).
+    let mut clear_words = String::new();
+    let first = if room.avoid.is_empty() {
+        None
+    } else {
+        match plate_holds(strips, x0, &room, s, from, n, ring_min) {
+            Ok(p) => {
+                clear_words = "; placed clear of the plates, ends and bolts laid out after it \
+                               at this joint"
+                    .to_owned();
+                Some(Ok(p))
+            }
+            Err(e) => {
+                clear_words = format!(
+                    "; not clear of the plates, ends and bolts laid out after it at this joint \
+                     ({e}), placed as before — the check after writing tests them"
+                );
+                room.avoid.clear();
+                None
+            }
+        }
+    };
+    let pts = match first.unwrap_or_else(|| plate_holds(strips, x0, &room, s, from, n, ring_min)) {
         Ok(p) => p,
         Err(e) => {
             notes.push(format!(
@@ -1957,7 +2008,7 @@ fn hold_flat(
                  not checked (lay them out by hand)",
                 x0.host, x0.host
             ));
-            return;
+            return None;
         }
     };
     // (L15) Between the angles, grown along the member round them: its
@@ -1988,7 +2039,7 @@ fn hold_flat(
                  run into {by}); how it is held not checked (lay them out by hand)",
                 x0.host
             ));
-            return;
+            return None;
         }
     }
     // (L9) A plate stopping short of the work point: its outline as
@@ -2014,7 +2065,7 @@ fn hold_flat(
                  checked (lay them out by hand)",
                 x0.host, x0.host
             ));
-            return;
+            return None;
         }
         // Each of them inside that outline, cut, by its distances too.
         let keep = ring_min.max(
@@ -2052,7 +2103,7 @@ fn hold_flat(
                  held not checked (lay them out by hand)",
                 x0.host, x0.host
             ));
-            return;
+            return None;
         }
     }
     let host = j.arrivals.iter().find(|a| a.member == x0.host);
@@ -2089,7 +2140,7 @@ fn hold_flat(
     };
     let from_words = format!("{m} bolt(s) of {:.0} mm", d * 1000.0);
     notes.push(format!(
-        "{}: {m} provisional bolt(s) holding a plate on it ({from_words}{})",
+        "{}: {m} provisional bolt(s) holding a plate on it ({from_words}{}{clear_words})",
         x0.host,
         if m < n {
             format!("; {n} asked by its members' bolts, fewer fit — the joint checks check them")
@@ -2115,6 +2166,7 @@ fn hold_flat(
             })
             .collect(),
     });
+    Some((k0, pts))
 }
 
 /// (L9) The outline (in `x0`'s plane) a flat plate stopping short of the
@@ -2543,6 +2595,14 @@ fn plan_joint_searched(
 /// One plan of joint `j` (see [`plan_joint_with`]), the faces of `force`
 /// onto a plate even where their bolts land on the flange; with the faces
 /// bolted directly, in the order planned.
+///
+/// L22 ([`LayoutSettings::holds_clear`]): where a plate's own holding bolts
+/// (L5o) as placed would meet what the plan lays out after that plate at
+/// the joint ([`hold_conflicts`]), the joint is planned again with those
+/// bolts kept clear of it (at most [`HOLD_TRIES`] times, what was found in
+/// the way gathered); the plan again kept only where fewer of those bolts
+/// meet something, with as many ends, no more members left and as many
+/// plates held by their own bolts — else the first, as before.
 #[allow(clippy::too_many_arguments)]
 fn plan_once(
     j: &JointDetail,
@@ -2554,6 +2614,256 @@ fn plan_once(
     ctx: &PlanCtx,
     force: &BTreeSet<PlaneKey>,
 ) -> (JointPlan, Vec<PlaneKey>) {
+    let none = HoldAvoid::new();
+    let (mut plan, mut direct, found, mut count) =
+        plan_avoiding(j, s, edge, except, floors, limit, ctx, force, &none);
+    if !s.holds_clear || ctx.plain || count == 0 {
+        return (plan, direct);
+    }
+    let held = |p: &JointPlan| p.plates.iter().filter(|q| q.hold.is_some()).count();
+    let mut asked = found;
+    for _ in 0..HOLD_TRIES {
+        let (p2, d2, found2, n2) =
+            plan_avoiding(j, s, edge, except, floors, limit, ctx, force, &asked);
+        if n2 < count
+            && p2.ends.len() >= plan.ends.len()
+            && p2.hand_members.len() <= plan.hand_members.len()
+            && held(&p2) >= held(&plan)
+        {
+            plan = p2;
+            direct = d2;
+            count = n2;
+        }
+        if n2 == 0 {
+            break;
+        }
+        let mut more = false;
+        for (k, v) in found2 {
+            let e = asked.entry(k).or_default();
+            for q in v {
+                if !e.contains(&q) {
+                    e.push(q);
+                    more = true;
+                }
+            }
+        }
+        if !more {
+            break;
+        }
+    }
+    (plan, direct)
+}
+
+/// The most times [`plan_once`] plans a joint again with its plates' own
+/// holding bolts kept clear of what was found in their way (L22): **the
+/// program's value**, a bound on the time only.
+pub const HOLD_TRIES: usize = 2;
+
+/// (L22) Per plate holding itself ([`hold_key`]): what its own bolts keep
+/// clear of (3D corners from the work point).
+type HoldAvoid = BTreeMap<String, Vec<Vec<[f64; 3]>>>;
+
+/// (L22) A plate's own holding bolts as [`hold_flat`] placed them: the
+/// plate ([`hold_key`]), the strip of the flange it lies on, the bolts'
+/// places in that flange's plane, the plate's thickness, and the steel the
+/// plan laid out with that plate (`laid3`'s entries: its own, not in the
+/// way).
+struct HoldRec {
+    key: String,
+    k: usize,
+    pts: Vec<[f64; 2]>,
+    tp: f64,
+    own: std::ops::Range<usize>,
+}
+
+/// (L22) A plate holding itself by name, the same in each plan of a joint:
+/// the member it lies on and its members.
+fn hold_key(flat: &PlatePlan, x0: Option<&Strip>) -> Option<String> {
+    let x0 = x0?;
+    let mut m: Vec<&str> = flat.members.iter().map(String::as_str).collect();
+    m.sort_unstable();
+    Some(format!("{}|{}", x0.host, m.join(",")))
+}
+
+/// (L22) The slab a plate's own holding bolt fills across the flange it
+/// lies on (heights over that flange's face), as the joint details draw
+/// it ([`BOLT_DRAWN`]; L21): behind the flange its head, over the plate
+/// its nut and the shank beyond it.
+fn hold_slab(x: &Strip, tp: f64) -> (f64, f64) {
+    (
+        -(x.t + BOLT_DRAWN[1] * x.d),
+        tp + (BOLT_DRAWN[2] + BOLT_DRAWN[3]) * x.d,
+    )
+}
+
+/// (L22) The boxes a plate's own holding bolts fill (3D corners from the
+/// work point): each bolt's nut's corner circle's square through the slab
+/// of [`hold_slab`].
+fn hold_solids(x: &Strip, pts: &[[f64; 2]], tp: f64) -> Vec<Vec<[f64; 3]>> {
+    let off = dot(sub(x.face3, x.heel3), x.n3);
+    let (lo, hi) = hold_slab(x, tp);
+    let r = x.nut;
+    pts.iter()
+        .map(|q| {
+            let mut c = Vec::with_capacity(8);
+            for a in [q[0] - r, q[0] + r] {
+                for b in [q[1] - r, q[1] + r] {
+                    for z in [lo, hi] {
+                        c.push(add(
+                            add(add(x.heel3, scale(x.x3, a)), scale(x.y3, b)),
+                            scale(x.n3, off + z),
+                        ));
+                    }
+                }
+            }
+            c
+        })
+        .collect()
+}
+
+/// (L22) The plates' own holding bolts (L5o) of a plan that meet what the
+/// plan laid out at the joint — the plates and ends of the other planes
+/// and of the same face, their bolts' heads and nuts (among them those on
+/// the other flange of the member the plate lies on, in its corner), and
+/// the other plates' own holding bolts: each bolt's nut's corner circle's
+/// square through the slab it fills ([`hold_slab`]) overlapping such a
+/// piece's footprint there by more than the clash check's tolerance. Not
+/// in the way: the plate's own steel and its ends (placed clear by
+/// [`plate_holds`]), the member it lies on (its bolts are), and the bolts
+/// of ends bolted onto that member (as the clash check excuses them). Per plate
+/// with one such bolt: everything of the joint in its slab (to keep clear
+/// of when planned again); and how many bolts meet something. Only the
+/// plates still holding themselves at the end of the plan.
+fn hold_conflicts(
+    strips: &[Strip],
+    recs: &[HoldRec],
+    laid3: &[Laid3],
+    pieces: &[(crate::ClashPart, Vec<[f64; 3]>)],
+    fixed: &BTreeSet<String>,
+    j: &JointDetail,
+    plan: &JointPlan,
+) -> (HoldAvoid, usize) {
+    use crate::ClashPart;
+    let mut out = HoldAvoid::new();
+    let mut count = 0;
+    let find = |m: &str| j.arrivals.iter().find(|a| a.member == m);
+    let kept: Vec<bool> = recs
+        .iter()
+        .map(|r| {
+            plan.plates.iter().any(|p| {
+                p.hold
+                    .as_ref()
+                    .is_some_and(|h| h.points.len() == r.pts.len())
+                    && hold_key(p, Some(&strips[r.k])).as_deref() == Some(r.key.as_str())
+            })
+        })
+        .collect();
+    for (i, r) in recs.iter().enumerate() {
+        if !kept[i] {
+            continue;
+        }
+        let x = &strips[r.k];
+        let host = find(&x.host);
+        let host_run = |m: &str| {
+            m == x.host
+                || host
+                    .zip(find(m))
+                    .is_some_and(|(h, b)| angle_deg(h.direction, b.direction) > 160.0)
+        };
+        let slab = hold_slab(x, r.tp);
+        let mut pieces_in: Vec<Vec<[f64; 3]>> = laid3
+            .iter()
+            .enumerate()
+            .filter(|(n, (m, bolt, _))| {
+                !r.own.contains(n)
+                    && if *bolt {
+                        // (As the clash check: an end's bolt onto the
+                        // member the plate is held onto may be the same.)
+                        find(m)
+                            .and_then(|a| a.onto.value.as_deref())
+                            .is_none_or(|o| !host_run(o))
+                    } else {
+                        !host_run(m)
+                    }
+            })
+            .map(|(_, (_, _, p))| p.clone())
+            .collect();
+        // What the plan does not lay out (as drawn): the members not laid
+        // out and their bolts (the shank of one through the member the
+        // plate is held onto excused, as the clash check does), plates and
+        // covers given by hand.
+        let onto_host = |m: &str| {
+            find(m)
+                .and_then(|a| a.onto.value.as_deref())
+                .is_some_and(host_run)
+        };
+        for (part, pts) in pieces {
+            let keep = match part {
+                ClashPart::Member(m) => fixed.contains(m) && !host_run(m),
+                ClashPart::Bolt {
+                    member: m, piece, ..
+                } => {
+                    fixed.contains(m)
+                        && !onto_host(m)
+                        && !(*piece == crate::clash::BoltPiece::Shank && host_run(m))
+                }
+                ClashPart::Plate(_) | ClashPart::Cover(..) => true,
+                ClashPart::PlateBolt { .. } => false,
+            };
+            if keep {
+                pieces_in.push(pts.clone());
+            }
+        }
+        for (i2, r2) in recs.iter().enumerate() {
+            if i2 != i && kept[i2] {
+                pieces_in.extend(hold_solids(&strips[r2.k], &r2.pts, r2.tp));
+            }
+        }
+        let feet: Vec<(usize, Vec<[f64; 2]>)> = pieces_in
+            .iter()
+            .enumerate()
+            .filter_map(|(n, p)| footprint_in(x, p, slab).map(|f| (n, f)))
+            .collect();
+        let rr = x.nut;
+        let hits = r
+            .pts
+            .iter()
+            .filter(|q| {
+                let sq = [
+                    [q[0] - rr, q[1] - rr],
+                    [q[0] + rr, q[1] - rr],
+                    [q[0] + rr, q[1] + rr],
+                    [q[0] - rr, q[1] + rr],
+                ];
+                feet.iter()
+                    .any(|(_, f)| sat2(&sq, f) > crate::clash::CLASH_TOLERANCE)
+            })
+            .count();
+        if hits > 0 {
+            count += hits;
+            out.insert(
+                r.key.clone(),
+                feet.iter().map(|(n, _)| pieces_in[*n].clone()).collect(),
+            );
+        }
+    }
+    (out, count)
+}
+
+/// [`plan_once`] with the plates' own holding bolts kept clear of
+/// `avoid` (L22); also what [`hold_conflicts`] finds in the plan.
+#[allow(clippy::too_many_arguments)]
+fn plan_avoiding(
+    j: &JointDetail,
+    s: &LayoutSettings,
+    edge: EdgeRule<'_>,
+    except: &BTreeMap<String, String>,
+    floors: &BTreeMap<String, (f64, String)>,
+    limit: usize,
+    ctx: &PlanCtx,
+    force: &BTreeSet<PlaneKey>,
+    avoid: &HoldAvoid,
+) -> (JointPlan, Vec<PlaneKey>, HoldAvoid, usize) {
     let mut direct_planes: Vec<PlaneKey> = Vec::new();
     let mut plan = JointPlan {
         joint: j.id.clone(),
@@ -2715,6 +3025,9 @@ fn plan_once(
         .collect();
     // The steel laid out in the planes before (3D corners, by member).
     let mut laid3: Vec<Laid3> = Vec::new();
+    // (L22) The plates' own holding bolts placed (L5o), for the check at
+    // the end of the plan.
+    let mut hold_recs: Vec<HoldRec> = Vec::new();
     // By plane, the planes on the biggest members first (what bolts onto
     // a member laid out on a leg keeps clear of it as laid out), each in
     // the owner's order.
@@ -3726,7 +4039,8 @@ fn plan_once(
                     let x0 = x0?;
                     plate_hits(x0, &on, j, &pieces, &fixed, &excused, &laid3, poly, tp).map(|h| h.0)
                 };
-                hold_flat(
+                let key = hold_key(&flat, x0);
+                let rec = hold_flat(
                     &mut flat,
                     &mut plan.notes,
                     &strips,
@@ -3742,9 +4056,23 @@ fn plan_once(
                         host_keep: x0
                             .and_then(|x| j.arrivals.iter().find(|a| a.member == x.host))
                             .and_then(|h| edge(h, tp)),
+                        avoid: key
+                            .as_ref()
+                            .and_then(|k| avoid.get(k))
+                            .map_or(&[][..], Vec::as_slice),
                     },
                 );
+                if let (Some(key), Some((k, pts))) = (key, rec) {
+                    hold_recs.push(HoldRec {
+                        key,
+                        k,
+                        pts,
+                        tp,
+                        own: laid3.len()..laid3.len(),
+                    });
+                }
             }
+            let own_from = laid3.len();
             plan.plates.push(flat);
             for p in &placed {
                 if strips[p.k].tilted.is_none() {
@@ -3762,6 +4090,11 @@ fn plan_once(
                 s,
                 short_poly.as_deref(),
             ));
+            if let Some(r) = hold_recs.last_mut()
+                && r.own.start == own_from
+            {
+                r.own = own_from..laid3.len();
+            }
             for p in &placed {
                 laid_cut.insert(strips[p.k].member.clone(), cut_of(&strips[p.k], p));
             }
@@ -3971,7 +4304,12 @@ fn plan_once(
             Some((m.clone(), host.member.clone()))
         })
         .collect();
-    (plan, direct_planes)
+    let (found, count) = if s.holds_clear && !hold_recs.is_empty() {
+        hold_conflicts(&strips, &hold_recs, &laid3, &pieces, &fixed, j, &plan)
+    } else {
+        (HoldAvoid::new(), 0)
+    };
+    (plan, direct_planes, found, count)
 }
 
 /// What a plan laid out, for a pass after its planes ([`level_holds`]).
@@ -4223,6 +4561,10 @@ fn level_holds(
             seams: Vec::new(),
             poly: &poly_b,
             through: BTreeSet::new(),
+            // (L22: the bolts onto the second holder not yet kept clear of
+            // what the plan lays out after the plate — the check after
+            // writing tests them.)
+            avoid: Vec::new(),
         };
         let n = hold.points.len().max(2);
         let got = match plate_holds(&sb, &xb, &room, s, from, n, 0.0) {
@@ -8118,5 +8460,152 @@ mod narrow_tests {
         let (mut lo2, mut hi2) = (0.0, 1.0);
         narrow(&mut lo2, &mut hi2, 0.2, 0.0, 0.03, 0.08);
         assert!(lo2 > hi2);
+    }
+}
+
+#[cfg(test)]
+mod hold_clear_tests {
+    use super::*;
+    use crate::joints_tests::library;
+
+    /// The invented K-brace with its leg L1 running on into L2 (one part):
+    /// the gusset on the leg is held by its own bolts (L5o).
+    fn joint_n2() -> JointDetail {
+        let text = format!(
+            "{}\n[[connection]]\nmember = \"L1\"\njoint = \"N2\"\nkind = \"continuous\"\nonto = \"L2\"\n",
+            crate::joint_layout_tests::K.replace(
+                "design = { class = \"bracing\" }",
+                "design = { class = \"bracing\", bolts = { diameter = \"16 mm\", count = 4 } }",
+            )
+        );
+        let d = crate::joints::joint_details(&text, &library(), &Default::default()).unwrap();
+        d.joint("N2").unwrap().clone()
+    }
+
+    fn settings() -> LayoutSettings {
+        LayoutSettings {
+            bolt: Some(BoltArea::picked(None, 0.016, None)),
+            ..Default::default()
+        }
+    }
+
+    fn plan(j: &JointDetail, avoid: &HoldAvoid) -> (JointPlan, HoldAvoid, usize) {
+        let (p, _, found, n) = plan_avoiding(
+            j,
+            &settings(),
+            &|_, _| None,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            NODE_LIMIT,
+            &PlanCtx::default(),
+            &BTreeSet::new(),
+            avoid,
+        );
+        (p, found, n)
+    }
+
+    /// A thin box square to `dir` at `c` (from the work point), reaching
+    /// 0.5 m every other way.
+    fn wall(c: [f64; 3], dir: [f64; 3], half: f64) -> Vec<[f64; 3]> {
+        let any = if dir[2].abs() < 0.9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let e1 = unit(cross(dir, any)).unwrap();
+        let e2 = cross(dir, e1);
+        let mut out = Vec::new();
+        for a in [-half, half] {
+            for b in [-0.5, 0.5] {
+                for k in [-0.5, 0.5] {
+                    out.push(add(add(c, scale(dir, a)), add(scale(e1, b), scale(e2, k))));
+                }
+            }
+        }
+        out
+    }
+
+    /// L22: the gusset's own bolts as placed meet nothing the plan lays
+    /// out (none found); asked to keep clear of a wall across the leg
+    /// through the first of them, they move along the leg clear of it by
+    /// the nut and half the gap (said), the same each time; asked to keep
+    /// clear of everything round the joint, no place is clear — placed as
+    /// before, said.
+    #[test]
+    fn a_plates_own_bolts_keep_clear_of_what_they_are_asked_to() {
+        let j = joint_n2();
+        let (p0, found, n) = plan(&j, &HoldAvoid::new());
+        assert_eq!(n, 0, "{found:?}");
+        assert!(found.is_empty());
+        let flat = p0.plates.iter().find(|q| q.hold.is_some()).expect("held");
+        let h0 = flat.hold.clone().unwrap();
+        let mut m: Vec<&str> = flat.members.iter().map(String::as_str).collect();
+        m.sort_unstable();
+        let key = format!("{}|{}", h0.member, m.join(","));
+        let host = j.arrivals.iter().find(|a| a.member == h0.member).unwrap();
+        let a0 = h0.points[0][0];
+        // Either way along the leg (whichever way the points run).
+        let half = 0.002;
+        let walls: Vec<Vec<[f64; 3]>> = [a0, -a0]
+            .iter()
+            .map(|a| wall(scale(host.direction, *a), host.direction, half))
+            .collect();
+        let avoid: HoldAvoid = [(key.clone(), walls)].into();
+        let (p1, _, _) = plan(&j, &avoid);
+        let h1 = p1
+            .plates
+            .iter()
+            .find_map(|q| q.hold.clone())
+            .expect("still held");
+        // (Fewer where no more fit clear, at least two: the joint checks
+        // check them.)
+        assert!(h1.points.len() >= 2, "{h1:?}");
+        assert_ne!(h1.points, h0.points);
+        let s = settings();
+        let nut = BOLT_DRAWN[0] * 0.016 / 3f64.sqrt();
+        for q in &h1.points {
+            assert!(
+                (q[0].abs() - a0.abs()).abs() >= half + nut + s.gap / 2.0 - 2e-4,
+                "{q:?} {a0}"
+            );
+        }
+        assert!(
+            p1.notes
+                .iter()
+                .any(|w| w.contains("placed clear of the plates")),
+            "{:?}",
+            p1.notes
+        );
+        assert_eq!(plan(&j, &avoid).0, p1);
+        // Everything round the joint: as before, said.
+        let all: HoldAvoid = [(key, vec![wall([0.0; 3], host.direction, 1.0)])].into();
+        let (p2, _, _) = plan(&j, &all);
+        let h2 = p2.plates.iter().find_map(|q| q.hold.clone()).unwrap();
+        assert_eq!(h2.points, h0.points);
+        assert!(
+            p2.notes
+                .iter()
+                .any(|w| w.contains("not clear of the plates")),
+            "{:?}",
+            p2.notes
+        );
+    }
+
+    /// L22: off, the plan is the first as before; on, a joint whose
+    /// plates' own bolts meet nothing is planned once, the same.
+    #[test]
+    fn a_joint_whose_holding_bolts_meet_nothing_is_planned_as_before() {
+        let j = joint_n2();
+        let on = plan_joint(&j, &settings(), &|_, _| None);
+        let off = plan_joint(
+            &j,
+            &LayoutSettings {
+                holds_clear: false,
+                ..settings()
+            },
+            &|_, _| None,
+        );
+        assert_eq!(on, off);
+        assert!(on.plates.iter().any(|q| q.hold.is_some()));
     }
 }

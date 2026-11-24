@@ -402,6 +402,9 @@ impl LayoutWindow {
             // putting its axis up to 40 mm out, the offset recorded for the
             // analysis.
             own_offset_analysed: true,
+            // L22 (2026-11-24): a plate's own holding bolts placed clear of
+            // what the plan lays out after that plate at the joint.
+            holds_clear: true,
         }
     }
 
