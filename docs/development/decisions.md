@@ -8,6 +8,35 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (joint checks: the force a level plate passes between its two holders, L21)
+
+**Each holder of a level plate takes the force the plate may pass from
+the other holder** (roadmap O44 L21, L20's question 2; the owner busy:
+built on its own, reported; built, in active development, not approved
+yet; [theory](../theory/joint-groups.md#the-force-a-level-plate-passes-between-its-two-holders-l21)).
+
+- **Before** (L20): each holder's holding bolts carried the other ends'
+  forces on the plate whole, neither holder's own force taken; said NOT ON
+  THE SAFE SIDE on the rows: a force the plate passes between its two
+  holders.
+- **Now** (no format change, no plugin interface changed): a statically
+  safe bound, no load path worked out — each holder's holding group takes
+  the other ends' forces whole or none, each with and without the other
+  holder's force (and those of the ends laid onto that holder near its
+  end), each bolt the larger over every such corner (a bolt's force is
+  linear in each share: its largest lies at a corner); each holder's own
+  end bolts (L14's group, the bearing group of what they bolt onto), its
+  own steel there, a plate's checks under them and a weld they reach take
+  the other holder's force the same way (`joint_groups::passed`). The NOT
+  ON THE SAFE SIDE words on those rows are gone.
+- **Assumed, said in the theory**: a holder passes at most its whole
+  force through the plate; a force circulating round the joint from its
+  own deformation is not counted (the joint one point in the analysis;
+  the lower-bound theorem, the bolts' deformation capacity taken as
+  enough, as everywhere a group's force is shared elastically) — an owner
+  question.
+- **Measured** (private towers): in the roadmap block.
+
 ## 2026-11-24 (country server: the magnetic field with an offline file's lines near)
 
 **OHL-Design's Magnetic field window adds the field of an offline

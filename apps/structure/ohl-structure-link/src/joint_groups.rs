@@ -178,6 +178,11 @@ struct Source {
     /// reach these bolts too (L14, [`riders`]): each along its line
     /// through its own bolts' centroid, the same case.
     riders: Vec<Source>,
+    /// The other holder of a level plate this member (or one of its
+    /// riders) holds, and the ends laid onto that holder (L21, [`passed`]):
+    /// the force the plate may pass between its two holders — each taken
+    /// from none to the whole of its force, the larger bolt by bolt.
+    passed: Vec<Source>,
 }
 
 /// One group, planned once per structure.
@@ -208,6 +213,11 @@ pub(crate) struct GroupPlan {
     /// [`end_bolt_groups`]): those ends in words; the group's `part` is
     /// the member.
     ends_of: Option<String>,
+    /// A level plate's holding group (L21): the plate's other holder and
+    /// the ends laid onto it — the force the plate may pass to these bolts,
+    /// each from none to whole (with the other ends' forces whole or none),
+    /// the larger bolt by bolt.
+    passed: Vec<Source>,
 }
 
 /// A member's own steel at its end bolts with the ends laid onto it near
@@ -224,6 +234,10 @@ pub(crate) struct EndSteel {
     /// The ends laid onto it (and onto those in turn): each and its
     /// direction from the joint.
     pub(crate) riders: Vec<(String, V3)>,
+    /// The force a level plate may pass to it from the plate's other
+    /// holder (L21, [`passed`]): each member and its direction, each from
+    /// none to whole.
+    pub(crate) passed: Vec<(String, V3)>,
     /// Its tension capacity (N) and what governs it, the plugin's words.
     pub(crate) capacity: f64,
     pub(crate) governs: String,
@@ -232,14 +246,29 @@ pub(crate) struct EndSteel {
 impl EndSteel {
     /// The force at its end bolts in a case (`axial`, tension positive): the
     /// larger of its own force alone and the resultant of its own and the
-    /// riders' forces (each along its line), N (a size).
+    /// riders' forces (each along its line), N (a size); (L21) each of
+    /// these also with every choice of the forces a level plate may pass to
+    /// it (`passed`, each none or whole), the largest.
     pub(crate) fn force(&self, axial: &BTreeMap<String, f64>) -> f64 {
         let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
-        let mut r = scale(self.direction, n(&self.member));
+        let own = scale(self.direction, n(&self.member));
+        let mut r = own;
         for (m, d) in &self.riders {
             r = add(r, scale(*d, n(m)));
         }
-        n(&self.member).abs().max(norm(r))
+        let k = self.passed.len().min(PASSED_EACH);
+        let pass: Vec<(V3, V3)> = self.passed[..k]
+            .iter()
+            .map(|(m, d)| (scale(*d, n(m)), [0.0; 3]))
+            .collect();
+        // Beyond PASSED_EACH: each one's size added (a size of a sum is at
+        // most the sum of the sizes: on the safe side).
+        let rest: f64 = self.passed[k..].iter().map(|(m, _)| n(m).abs()).sum();
+        with_passed(vec![(own, [0.0; 3]), (r, [0.0; 3])], &pass)
+            .into_iter()
+            .map(|(f, _)| norm(f))
+            .fold(0.0, f64::max)
+            + rest
     }
 }
 
@@ -886,8 +915,106 @@ fn rider_sources(j: &JointDetail, host: &str) -> Vec<Source> {
             centroid: centroid3(&e.bolt_points, j.position),
             bolts: Vec::new(),
             riders: Vec::new(),
+            passed: Vec::new(),
         })
         .collect()
+}
+
+/// The ends whose forces a level plate may pass to `host`'s bolts at joint
+/// `j` (L21, L20's question 2): where `host` or an end laid onto it
+/// ([`riders`]) holds a level plate (`[plate.also_bolts]`), the plate's
+/// other holder — its holding end on the plate, its bolts there — and the
+/// ends laid onto that holder (not the ends on the plate itself: they are
+/// `host`'s riders already, or the holding group's sources). The plate
+/// joins its two holders: how a holder's force splits between its own end
+/// bolts and the plate is not known, so each is taken from none to the
+/// whole of it ([`with_passed`]; a statically safe bound, no load path
+/// counted on). Empty for every other member.
+pub(crate) fn passed<'a>(j: &'a JointDetail, host: &str) -> Vec<&'a Arrival> {
+    let rid = riders(j, host);
+    let mut chain: Vec<&str> = vec![host];
+    chain.extend(rid.iter().map(|r| r.member.as_str()));
+    passed_beyond(j, &chain)
+}
+
+/// [`passed`] for the members `chain` (a group's members or its holders):
+/// the other holders of the level plates any of them holds, and the ends
+/// laid onto those holders, none of `chain` and none bolted onto the plate.
+fn passed_beyond<'a>(j: &'a JointDetail, chain: &[&str]) -> Vec<&'a Arrival> {
+    let mut out: Vec<&Arrival> = Vec::new();
+    let has =
+        |out: &Vec<&Arrival>, m: &str| chain.contains(&m) || out.iter().any(|a| a.member == m);
+    for p in j.plates.iter().filter(|p| p.also_bolts.is_some()) {
+        if !p.holding_ends().any(|h| chain.contains(&h.member.as_str())) {
+            continue;
+        }
+        let on_plate = |m: &str| {
+            j.arrivals
+                .iter()
+                .any(|e| e.member == m && e.onto.value.as_deref() == Some(p.id.as_str()))
+        };
+        for h in p.holding_ends() {
+            if has(&out, &h.member) {
+                continue;
+            }
+            out.push(h);
+            for r in riders(j, &h.member) {
+                if !has(&out, &r.member) && !on_plate(&r.member) {
+                    out.push(r);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// [`passed`] of `host` as sources: each along its line through its bolts'
+/// centroid (the joint where its bolts are not placed).
+fn passed_sources(j: &JointDetail, host: &str) -> Vec<Source> {
+    passed(j, host)
+        .into_iter()
+        .map(|e| plain_source(e, j.position))
+        .collect()
+}
+
+/// An end as a source with nothing laid onto it.
+fn plain_source(e: &Arrival, position: V3) -> Source {
+    Source {
+        member: e.member.clone(),
+        end: e.end,
+        direction: e.direction,
+        centroid: centroid3(&e.bolt_points, position),
+        bolts: Vec::new(),
+        riders: Vec::new(),
+        passed: Vec::new(),
+    }
+}
+
+/// At most this many forces a level plate may pass are each taken from
+/// none to whole one by one ([`with_passed`]); any more together (said).
+/// The program's value: a level plate has two holders, the ends laid onto
+/// the other one are few.
+const PASSED_EACH: usize = 6;
+
+/// The loadings whose larger, bolt by bolt, a group takes (L21): each of
+/// `base` alone and with every choice of the forces `passed` (each added
+/// or not — from none to the whole of it: a bolt's force is linear in each
+/// share, so its largest over every share lies at one of these corners).
+/// Beyond [`PASSED_EACH`] the rest are added together as one.
+fn with_passed(base: Vec<(V3, V3)>, passed: &[(V3, V3)]) -> Vec<(V3, V3)> {
+    let mut each: Vec<(V3, V3)> = passed.iter().take(PASSED_EACH).copied().collect();
+    if passed.len() > PASSED_EACH {
+        let rest = passed[PASSED_EACH..]
+            .iter()
+            .fold(([0.0; 3], [0.0; 3]), |s, x| (add(s.0, x.0), add(s.1, x.1)));
+        each.push(rest);
+    }
+    let mut v = base;
+    for p in each {
+        let more: Vec<(V3, V3)> = v.iter().map(|x| (add(x.0, p.0), add(x.1, p.1))).collect();
+        v.extend(more);
+    }
+    v
 }
 
 /// The note of a group whose sources carry ends laid onto them (L14).
@@ -915,6 +1042,44 @@ fn riders_note(sources: &[Source], part: &str) -> Option<String> {
              bolt taken under the larger of that and the member's own force alone (another's \
              force relieving it not counted on: on the safe side; L14)",
             with.join("; ")
+        )
+    })
+}
+
+/// The note of a group whose sources may take a force a level plate passes
+/// between its two holders (L21, [`passed`]).
+fn passed_note(sources: &[Source], part: &str) -> Option<String> {
+    let with: Vec<String> = sources
+        .iter()
+        .filter(|s| !s.passed.is_empty())
+        .map(|s| {
+            format!(
+                "{} from {}",
+                s.member,
+                s.passed
+                    .iter()
+                    .map(|r| r.member.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+        .collect();
+    (!with.is_empty()).then(|| {
+        format!(
+            "on {part}, a level plate joins a member's end to another member ({}): the force the \
+             plate may pass to that member's bolts taken from none to the whole of each such \
+             force (along its line through its bolts' centroid, the same case) — each bolt under \
+             the larger, bolt by bolt, of every choice (how the plate's forces split between its \
+             holders is not known: a statically safe bound, no load path counted on; L21){}",
+            with.join("; "),
+            if sources.iter().any(|s| s.passed.len() > PASSED_EACH) {
+                format!(
+                    "; NOT ON THE SAFE SIDE: more than {PASSED_EACH} such forces — the rest taken \
+                     together (none or all)"
+                )
+            } else {
+                String::new()
+            }
         )
     })
 }
@@ -1184,6 +1349,18 @@ fn end_bolt_groups(
                 "in its own group"
             }
         ));
+        let own = Source {
+            member: h.member.clone(),
+            end: h.end,
+            direction: h.direction,
+            centroid: centroid3(&h.bolt_points, j.position),
+            bolts: mine,
+            riders: rider_sources(j, &h.member),
+            passed: passed_sources(j, &h.member),
+        };
+        if let Some(w) = passed_note(std::slice::from_ref(&own), &h.member) {
+            notes.push(w);
+        }
         notes.extend(grade_notes(&bolts));
         out.groups.push(GroupPlan {
             joint: j.id.clone(),
@@ -1194,19 +1371,13 @@ fn end_bolt_groups(
             plane,
             bolts,
             plies,
-            sources: vec![Source {
-                member: h.member.clone(),
-                end: h.end,
-                direction: h.direction,
-                centroid: centroid3(&h.bolt_points, j.position),
-                bolts: mine,
-                riders: rider_sources(j, &h.member),
-            }],
+            sources: vec![own],
             from: Vec::new(),
             notes,
             misfits,
             misfit_given,
             ends_of: Some(words.clone()),
+            passed: Vec::new(),
         });
         // (L14's question 2, the owner 2026-11-22) The member's own steel
         // at those bolts under the force followed through: its tension
@@ -1220,6 +1391,10 @@ fn end_bolt_groups(
                 member: h.member.clone(),
                 direction: h.direction,
                 riders: rid
+                    .iter()
+                    .map(|r| (r.member.clone(), r.direction))
+                    .collect(),
+                passed: passed(j, &h.member)
                     .iter()
                     .map(|r| (r.member.clone(), r.direction))
                     .collect(),
@@ -1505,10 +1680,14 @@ fn holding_groups(
                             centroid: centroid3(&a.bolt_points, j.position),
                             bolts: Vec::new(),
                             riders: rider_sources(j, &a.member),
+                            passed: passed_sources(j, &a.member),
                         }
                     })
                     .collect();
                 if let Some(w) = riders_note(&sources, &format!("plate {words}")) {
+                    notes.push(w);
+                }
+                if let Some(w) = passed_note(&sources, &format!("plate {words}")) {
                     notes.push(w);
                 }
                 notes.extend(steel_note);
@@ -1562,6 +1741,22 @@ fn holding_groups(
                         l.member
                     ));
                 }
+                // (L21) The force a level plate may pass to these bolts
+                // from its other holder: that holder and the ends laid onto
+                // it, none of this run's, the sources' or their riders'.
+                let passed_here: Vec<Source> = if level {
+                    let mut chain: Vec<&str> = run.iter().map(String::as_str).collect();
+                    for s in &sources {
+                        chain.push(&s.member);
+                        chain.extend(s.riders.iter().map(|r| r.member.as_str()));
+                    }
+                    passed_beyond(j, &chain)
+                        .into_iter()
+                        .map(|e| plain_source(e, j.position))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 if let Some(l) = pd.also_bolts.as_deref() {
                     let other: Vec<&str> = pd
                         .holding_ends()
@@ -1575,21 +1770,34 @@ fn holding_groups(
                             l.member
                         ));
                     }
+                    let words_passed: Vec<&str> =
+                        passed_here.iter().map(|x| x.member.as_str()).collect();
                     notes.push(format!(
-                        "plate {q} is a level plate held by two members ({}): these bolts \
-                         taken carrying the force of every other end on it alone (on the safe \
-                         side), the other holder's force not taken as a force on it; NOT ON THE \
-                         SAFE SIDE: a force the plate passes between its two holders (they are \
-                         joined by it) is not counted ({} its other holder)",
+                        "plate {q} is a level plate held by two members ({}): these bolts taken \
+                         under the larger, bolt by bolt, of every other end's force on it whole \
+                         and none, each with and without the force the plate may pass to them \
+                         from {} — each from none to its whole force (how the plate's forces \
+                         split between its holders is not known: a statically safe bound, no \
+                         load path counted on; L21)",
                         pd.holding_ends()
                             .map(|x| x.member.as_str())
                             .collect::<Vec<_>>()
                             .join(", "),
-                        if other.is_empty() {
-                            "none".to_owned()
+                        if words_passed.is_empty() {
+                            if other.is_empty() {
+                                "none".to_owned()
+                            } else {
+                                other.join(", ")
+                            }
                         } else {
-                            other.join(", ")
+                            words_passed.join(", ")
                         }
+                    ));
+                }
+                if passed_here.len() > PASSED_EACH {
+                    notes.push(format!(
+                        "NOT ON THE SAFE SIDE: more than {PASSED_EACH} forces the plate may pass \
+                         to these bolts: the rest taken together (none or all)"
                     ));
                 }
                 if plates.len() > 1 {
@@ -1633,6 +1841,7 @@ fn holding_groups(
                     misfits,
                     misfit_given,
                     ends_of: None,
+                    passed: passed_here,
                 });
             }
         }
@@ -1875,6 +2084,7 @@ fn bearing_groups(
                             centroid: centroid3(&e.a.bolt_points, j.position),
                             bolts: mine,
                             riders: rider_sources(j, &e.a.member),
+                            passed: passed_sources(j, &e.a.member),
                         });
                     }
                 }
@@ -1935,6 +2145,9 @@ fn bearing_groups(
                  (ASCE 10-97 4.1; a frame member's end moment elastically), summed bolt by bolt"
             ));
             if let Some(w) = riders_note(&sources, &part) {
+                notes.push(w);
+            }
+            if let Some(w) = passed_note(&sources, &part) {
                 notes.push(w);
             }
             let unsaid: Vec<String> =
@@ -2014,6 +2227,7 @@ fn bearing_groups(
                 misfits,
                 misfit_given,
                 ends_of: None,
+                passed: Vec::new(),
             });
         }
     }
@@ -2192,6 +2406,25 @@ fn case_forces(
                 m3 = add(m3, mr);
             }
             let ridden = g.sources.iter().any(|s| !s.riders.is_empty());
+            // (L21) A level plate's holding bolts: the other ends' forces
+            // whole or none, each with every choice of the forces the
+            // plate may pass from its other holder.
+            let mut base = vec![(f3, m3)];
+            if ridden {
+                base.push((f3_own, m3_own));
+            }
+            if !g.passed.is_empty() {
+                base.push(([0.0; 3], [0.0; 3]));
+            }
+            let pass: Vec<(V3, V3)> = g
+                .passed
+                .iter()
+                .map(|s| {
+                    let (f, m) = source_load(s, &g.plane, g.position, axial, ends);
+                    (f, add(m, cross(in_plane(&g.plane, s.centroid, c3), f)))
+                })
+                .collect();
+            let loads = with_passed(base, &pass);
             let f2 = g.plane.vector(f3);
             let mn = dot(m3, g.plane.n);
             let e = bg::elastic(
@@ -2203,16 +2436,16 @@ fn case_forces(
                 },
             );
             c.forces = e.forces.clone();
-            if ridden {
-                let own = bg::elastic(
+            for (f, m) in loads.iter().skip(1) {
+                let other = bg::elastic(
                     &pts,
                     &PlaneLoad {
-                        force: g.plane.vector(f3_own),
+                        force: g.plane.vector(*f),
                         at: bg::centroid(&pts),
-                        moment: dot(m3_own, g.plane.n),
+                        moment: dot(*m, g.plane.n),
                     },
                 );
-                larger(&mut c.forces, &own.forces);
+                larger(&mut c.forces, &other.forces);
             }
             let l = lever(&pts, d);
             let size = f2[0].hypot(f2[1]);
@@ -2225,14 +2458,24 @@ fn case_forces(
             }
             let (t, left) = pull(&g.plane, &pts, f3, m3);
             c.tension = t;
-            if ridden {
-                let (t_own, _) = pull(&g.plane, &pts, f3_own, m3_own);
-                for (x, y) in c.tension.iter_mut().zip(t_own) {
+            for (f, m) in loads.iter().skip(1) {
+                let (t_other, _) = pull(&g.plane, &pts, *f, *m);
+                for (x, y) in c.tension.iter_mut().zip(t_other) {
                     *x = x.max(y);
                 }
             }
-            let normal = dot(f3, g.plane.n).abs();
-            let out_m = norm(sub(m3, scale(g.plane.n, mn)));
+            // The words: the loading with every force (and, with the
+            // forces a level plate may pass, the most of any loading).
+            let worded = if g.passed.is_empty() { 1 } else { loads.len() };
+            let (normal, out_m) = loads[..worded]
+                .iter()
+                .map(|(f, m)| {
+                    (
+                        dot(*f, g.plane.n).abs(),
+                        norm(sub(*m, scale(g.plane.n, dot(*m, g.plane.n)))),
+                    )
+                })
+                .fold((0.0, 0.0), |a: (f64, f64), b| (a.0.max(b.0), a.1.max(b.1)));
             if normal + out_m / l >= 0.01 * size.max(1e-9) && normal + out_m > 1e-6 {
                 c.pulled = Some(format!(
                     "the members' forces square to the plate ({:.1} kN) and their moment bending \
@@ -2271,18 +2514,36 @@ fn case_forces(
                     },
                 );
                 let (mut t, left) = pull(&g.plane, &pts, f, m);
+                // Without the riders, and (L21) with every choice of the
+                // forces a level plate may pass to it: the larger, bolt by
+                // bolt.
+                let mut base = vec![(f, m)];
                 if !s.riders.is_empty() {
-                    let own = bg::elastic(
+                    base.push((f_own, m_own));
+                }
+                let pass: Vec<(V3, V3)> = s
+                    .passed
+                    .iter()
+                    .map(|p| {
+                        let (fp, mp) = source_load(p, &g.plane, g.position, axial, ends);
+                        (
+                            fp,
+                            add(mp, cross(in_plane(&g.plane, p.centroid, s.centroid), fp)),
+                        )
+                    })
+                    .collect();
+                for (fo, mo) in with_passed(base, &pass).iter().skip(1) {
+                    let other = bg::elastic(
                         &pts,
                         &PlaneLoad {
-                            force: g.plane.vector(f_own),
+                            force: g.plane.vector(*fo),
                             at: bg::centroid(&pts),
-                            moment: dot(m_own, g.plane.n),
+                            moment: dot(*mo, g.plane.n),
                         },
                     );
-                    larger(&mut e.forces, &own.forces);
-                    let (t_own, _) = pull(&g.plane, &pts, f_own, m_own);
-                    for (x, y) in t.iter_mut().zip(t_own) {
+                    larger(&mut e.forces, &other.forces);
+                    let (t_other, _) = pull(&g.plane, &pts, *fo, *mo);
+                    for (x, y) in t.iter_mut().zip(t_other) {
                         *x = x.max(y);
                     }
                 }
@@ -2830,6 +3091,7 @@ mod tests {
             centroid,
             bolts,
             riders: Vec::new(),
+            passed: Vec::new(),
         }
     }
 
@@ -2861,6 +3123,7 @@ mod tests {
             misfits: Vec::new(),
             misfit_given: false,
             ends_of: None,
+            passed: Vec::new(),
         }
     }
 
@@ -3288,5 +3551,247 @@ mod tests {
         // assumed.
         assert!(overlaps("L1", &[h(0.0, true), h(0.01, false)])[0].1);
         assert!(!overlaps("L1", &[h(0.0, false), h(0.01, false)])[0].1);
+    }
+
+    /// L21: a level plate's holding bolts take the force the plate may pass
+    /// from its other holder (invented, by hand). G pulls 10 kN along +x
+    /// through the holding bolts' centroid (0, 0); the other holder H2
+    /// pulls 10 kN along +y through it too; two holding bolts at (0, ±50)
+    /// mm, no moment. G alone: (5, 0) kN each; with H2's whole force:
+    /// (5, 5) kN, 7.071 kN each (H2's alone: (0, 5)). The larger bolt by
+    /// bolt: 7.071 kN (5 kN before L21, H2's force not counted).
+    #[test]
+    fn a_level_plates_holding_bolts_take_the_other_holders_force() {
+        let mut g = group(
+            true,
+            vec![
+                m16([0.0, -0.05, 0.0], &["plate G1"]),
+                m16([0.0, 0.05, 0.0], &["plate G1"]),
+            ],
+            vec![source("G", [1.0, 0.0, 0.0], [0.0; 3], Vec::new())],
+            Edges::Outline(Vec::new()),
+        );
+        let axial = forces(&[("G", 10e3), ("H2", 10e3)]);
+        let run = |g: &GroupPlan| {
+            let plans = GroupPlans {
+                groups: vec![g.clone()],
+                not_checked: Vec::new(),
+                end_steel: Vec::new(),
+            };
+            case_forces(&plans, &axial, None)
+        };
+        for v in &run(&g)[0].forces {
+            assert!((v[0].hypot(v[1]) - 5e3).abs() < 1e-6, "{v:?}");
+        }
+        g.passed = vec![source("H2", [0.0, 1.0, 0.0], [0.0; 3], Vec::new())];
+        for v in &run(&g)[0].forces {
+            assert!(
+                (v[0] - 5e3).abs() < 1e-6 && (v[1] - 5e3).abs() < 1e-6,
+                "{v:?}"
+            );
+            assert!((v[0].hypot(v[1]) - 7071.07).abs() < 0.1);
+        }
+    }
+
+    /// L21: the other holder's force alone governs where the plate's other
+    /// ends oppose it (invented, by hand): G pulls 10 kN along +x, H2
+    /// pushes 20 kN along +x (−20 kN), both through the centroid. G alone:
+    /// 5 kN each; G with H2: −10 kN, 5 kN each; H2 alone (G's force taken
+    /// by H2's own bolts, the plate passing H2's whole force): 10 kN each —
+    /// the larger, 10 kN.
+    #[test]
+    fn the_other_holders_force_alone_where_it_governs() {
+        let mut g = group(
+            true,
+            vec![
+                m16([0.0, -0.05, 0.0], &["plate G1"]),
+                m16([0.0, 0.05, 0.0], &["plate G1"]),
+            ],
+            vec![source("G", [1.0, 0.0, 0.0], [0.0; 3], Vec::new())],
+            Edges::Outline(Vec::new()),
+        );
+        g.passed = vec![source("H2", [1.0, 0.0, 0.0], [0.0; 3], Vec::new())];
+        let plans = GroupPlans {
+            groups: vec![g],
+            not_checked: Vec::new(),
+            end_steel: Vec::new(),
+        };
+        let f = case_forces(&plans, &forces(&[("G", 10e3), ("H2", -20e3)]), None);
+        for v in &f[0].forces {
+            assert!((v[0].hypot(v[1]) - 10e3).abs() < 1e-6, "{v:?}");
+        }
+    }
+
+    /// L21: a holder's own end bolts take the force a level plate may pass
+    /// to it from the other holder (invented, by hand): H1 pulls 30 kN
+    /// along +x through its two bolts at x = 50 and 100 mm (centroid 75
+    /// mm); H2's 20 kN along +y passes through that centroid. H1 alone: (15,
+    /// 0) kN each; with H2's: (15, 10) kN, 18.03 kN each.
+    #[test]
+    fn a_holders_end_bolts_take_the_force_the_plate_passes() {
+        let mut h1 = source(
+            "H1",
+            [1.0, 0.0, 0.0],
+            [0.075, 0.0, 0.0],
+            vec![(0, [0.05, 0.0, 0.0]), (1, [0.10, 0.0, 0.0])],
+        );
+        h1.passed = vec![source("H2", [0.0, 1.0, 0.0], [0.075, 0.0, 0.0], Vec::new())];
+        let g = group(
+            false,
+            vec![
+                m16([0.05, 0.0, 0.0], &["H1"]),
+                m16([0.10, 0.0, 0.0], &["H1"]),
+            ],
+            vec![h1],
+            Edges::Flange {
+                dir: [1.0, 0.0, 0.0],
+                origin: [0.0; 3],
+                end: None,
+            },
+        );
+        let plans = GroupPlans {
+            groups: vec![g],
+            not_checked: Vec::new(),
+            end_steel: Vec::new(),
+        };
+        let f = case_forces(&plans, &forces(&[("H1", 30e3), ("H2", 20e3)]), None);
+        for v in &f[0].forces {
+            assert!(
+                (v[0] - 15e3).abs() < 1e-6 && (v[1] - 10e3).abs() < 1e-6,
+                "{v:?}"
+            );
+        }
+        // H2 pushing: (15, −10), the same size; H2 nil: H1's own 15 kN.
+        let f = case_forces(&plans, &forces(&[("H1", 30e3), ("H2", -20e3)]), None);
+        for v in &f[0].forces {
+            assert!((v[0].hypot(v[1]) - 18027.76).abs() < 0.1, "{v:?}");
+        }
+        let f = case_forces(&plans, &forces(&[("H1", 30e3)]), None);
+        for v in &f[0].forces {
+            assert!((v[0].hypot(v[1]) - 15e3).abs() < 1e-6, "{v:?}");
+        }
+    }
+
+    /// L21: a holder's own steel at its end bolts (invented, by hand): H1
+    /// 10 kN along +x, G laid onto it (through the level plate) 10 kN along
+    /// +y, H2's 10 kN along +y that the plate may pass. Without H2: the
+    /// larger of 10 and |(10, 10)| = 14.14 kN; with: |(10, 20)| = 22.36 kN
+    /// (10√5) the largest; H2 pushing 10 kN: |(10, 10)|, |(10, −10)|, |(10,
+    /// 0)|: 14.14 kN.
+    #[test]
+    fn a_holders_own_steel_takes_the_force_the_plate_passes() {
+        let mut e = EndSteel {
+            joint: "N2".into(),
+            member: "H1".into(),
+            direction: [1.0, 0.0, 0.0],
+            riders: vec![("G".into(), [0.0, 1.0, 0.0])],
+            passed: Vec::new(),
+            capacity: 100e3,
+            governs: "net section".into(),
+        };
+        let axial = forces(&[("H1", 10e3), ("G", 10e3), ("H2", 10e3)]);
+        assert!((e.force(&axial) - 14142.14).abs() < 0.1);
+        e.passed = vec![("H2".into(), [0.0, 1.0, 0.0])];
+        assert!((e.force(&axial) - 22360.68).abs() < 0.1);
+        let axial = forces(&[("H1", 10e3), ("G", 10e3), ("H2", -10e3)]);
+        assert!((e.force(&axial) - 14142.14).abs() < 0.1);
+    }
+
+    /// L21: the corners of the shares — each passed force added or not.
+    #[test]
+    fn every_choice_of_the_passed_forces_is_taken() {
+        let f = |x: f64| ([x, 0.0, 0.0], [0.0; 3]);
+        let v = with_passed(vec![f(1.0)], &[f(10.0), f(100.0)]);
+        let mut xs: Vec<f64> = v.iter().map(|x| x.0[0]).collect();
+        xs.sort_by(f64::total_cmp);
+        assert_eq!(xs, [1.0, 11.0, 101.0, 111.0]);
+        // Beyond PASSED_EACH the rest together: 2^(PASSED_EACH + 1).
+        let many: Vec<(V3, V3)> = (0..PASSED_EACH + 3).map(|_| f(1.0)).collect();
+        assert_eq!(
+            with_passed(vec![f(0.0)], &many).len(),
+            1 << (PASSED_EACH + 1)
+        );
+    }
+
+    /// L21 on L20's invented corner, laid out: the level plate's two
+    /// holding groups each take the other holder's force the plate may
+    /// pass (not the diagonal's twice), said without NOT ON THE SAFE SIDE;
+    /// no bolt's force less than without it, some more.
+    #[test]
+    fn the_level_plates_holders_take_each_others_force() {
+        use crate::level_plate_tests::{CORNER, ask, settings};
+        let lib = crate::joints_tests::library();
+        let bolts = Default::default();
+        let s = settings(true);
+        let r = crate::layout_run::lay_out(CORNER, &ask(&lib, &bolts, &s)).unwrap();
+        let d = crate::joints::joint_details(&r.text, &lib, &bolts).unwrap();
+        let p = d.joint("P").unwrap();
+        let pd = p
+            .plates
+            .iter()
+            .find(|q| q.also_bolts.is_some())
+            .expect("a level plate");
+        let holders: Vec<&str> = pd.holding_ends().map(|a| a.member.as_str()).collect();
+        assert_eq!(holders.len(), 2, "{holders:?}");
+        for (k, h) in holders.iter().enumerate() {
+            let pass = passed(p, h);
+            assert!(
+                pass.iter().any(|a| a.member == holders[1 - k]),
+                "{h}: {:?}",
+                pass.iter().map(|a| &a.member).collect::<Vec<_>>()
+            );
+            assert!(!pass.iter().any(|a| a.member == "G"));
+        }
+        assert!(passed(p, "G").is_empty());
+        let model = ohl_structures_fe::model::Model::from_structure_type_with_joint_details(
+            &r.text, &lib, &bolts, None,
+        )
+        .unwrap();
+        let plans = group_plans(&d, &model, &lib, &bolts);
+        let held: Vec<&GroupPlan> = plans
+            .groups
+            .iter()
+            .filter(|g| g.holding && g.part == pd.id)
+            .collect();
+        assert_eq!(held.len(), 2, "{:?}", plans.not_checked);
+        let axial = forces(&[("G", 10e3), ("H1", 10e3), ("H2", 10e3)]);
+        let mut more = false;
+        for g in &held {
+            assert_eq!(g.passed.len(), 1, "{:?}", g.passed);
+            assert!(holders.contains(&g.passed[0].member.as_str()));
+            assert!(!g.holders.contains(&g.passed[0].member));
+            assert!(
+                g.notes.iter().any(|n| n.contains("may pass")),
+                "{:?}",
+                g.notes
+            );
+            assert!(
+                !g.notes.iter().any(|n| n.contains("NOT ON THE SAFE SIDE")),
+                "{:?}",
+                g.notes
+            );
+            let run = |g: GroupPlan| {
+                case_forces(
+                    &GroupPlans {
+                        groups: vec![g],
+                        ..GroupPlans::default()
+                    },
+                    &axial,
+                    None,
+                )
+                .remove(0)
+                .forces
+            };
+            let with = run((*g).clone());
+            let mut before = (*g).clone();
+            before.passed.clear();
+            let without = run(before);
+            for (a, b) in with.iter().zip(&without) {
+                let (a, b) = (a[0].hypot(a[1]), b[0].hypot(b[1]));
+                assert!(a >= b - 1e-6, "{a} < {b}");
+                more |= a > b + 1.0;
+            }
+        }
+        assert!(more);
     }
 }

@@ -245,6 +245,63 @@ the force through:
   SIDE: …'s own steel at its end bolts …"; the plate's sections under a
   resultant turned more than 15° (above).
 
+### The force a level plate passes between its two holders (L21)
+
+A **level plate** (the joint layout's L20, `[plate.also_bolts]`) lies on
+the level legs of two members ending at the joint and is held by its own
+bolts onto both. It joins them: how a holder's force splits between its
+own end bolts and the plate, and how the forces of the ends on the plate
+split between the two holders, depends on the joint's stiffnesses, which
+are not known. Since L21 (2026-11-24, the roadmap's L20 question 2;
+before, said NOT ON THE SAFE SIDE on the rows) the checks take **every
+split** — a statically safe bound, no load path counted on:
+
+- **Each holder's holding group** takes the forces of every other end on
+  the plate **whole or none** (\\( \gamma = 1 \\) or \\( 0 \\)), each with
+  **the other holder's force** \\( \mathbf F_B \\) (along its line through
+  its bolts' centroid on the plate) **added or not** (\\( \alpha = 1 \\)
+  or \\( 0 \\)), and the same for the ends laid onto that other holder
+  near its end (each its own \\( \alpha \\)):
+
+  \\[ \mathbf F(\gamma, \alpha) = \gamma \sum_i \mathbf F_i + \alpha\, \mathbf F_B,\qquad
+  \gamma, \alpha \in [0, 1] \\]
+
+  with the moments about the holding bolts' centroid as above. A bolt's
+  force under the elastic sharing is **linear** in each share, its size a
+  convex function of them, so its largest over every share lies at a
+  corner: each bolt is taken under **the larger, bolt by bolt, of every
+  corner** (with the L14 riders' with/without as before). Its pull out of
+  the plies' plane likewise.
+- **Each holder's own end bolts** (L14's group "its end bolts with … laid
+  onto it", the bearing group of what they bolt onto) and **its own steel
+  at them** (L14's question 2) take the other holder's force passed
+  through the plate the same way: the member's own force, with and
+  without the ends laid onto it (L14), each with and without the other
+  holder's force (and the ends laid onto that holder), the largest; a
+  plate's own checks under those bolts and a weld of a welded plate they
+  bolt onto, alike (`plate_checks`).
+- **Assumed** (said here and on the rows' words "each from none to its
+  whole force"): a holder passes at most its whole force through the plate
+  — the plate's share of it between none and all. A force circulating
+  round the joint (through the plate, both holders and what their own end
+  bolts bolt onto) from the joint's own deformation is not counted: the
+  analysis takes the joint as one point, and such a self-equilibrated
+  force arises only from the parts' different stiffness; it does not take
+  away from a joint whose parts can yield (the lower-bound theorem of
+  plasticity) — the bolts' own deformation capacity is taken as enough
+  for it, as everywhere a group's force is shared elastically.
+- Beyond six such forces at one place (`PASSED_EACH`, the program's
+  value; two holders and a few ends laid onto the other: never met) a bolt
+  group or a plate's row takes the rest together, said NOT ON THE SAFE
+  SIDE on the row; a member's own steel and a weld add each one's size
+  (a sum's size is at most the sum of the sizes: on the safe side).
+
+Hand-checked on invented joints (`joint_groups` tests): a holding group
+under a 10 kN end and the other holder's 10 kN square to it, 5 kN per
+bolt before, 7.07 kN now; the other holder's force alone governing where
+the end opposes it (10 kN per bolt, not 5); a holder's end bolts 15 →
+18.03 kN; its own steel 14.14 → 22.36 kN.
+
 ### Elastic sharing (Kulak, Fisher & Struik)
 
 The part the bolts hold is rigid and the bolts equally stiff, so the

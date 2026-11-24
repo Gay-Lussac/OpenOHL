@@ -3705,6 +3705,29 @@ only where it helps):
   > level 4 too (the analysis's end offsets: a core change, asked first).
   > (6) 40 mm as the most such a plate may put the axis out → Recommended:
   > keep (measured; beyond, a hand detail as before).
+- [x] L21. **The force a level plate passes between its two holders; a
+  plate's own holding bolts in the clash check** (L20's questions 2 and 3;
+  the owner busy: built on its own, reported). **Built 2026-11-24, in
+  active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-groups.md#the-force-a-level-plate-passes-between-its-two-holders-l21),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-joint-checks-the-force-a-level-plate-passes-between-its-two-holders-l21);
+  no format change, no plugin interface changed). **1. The force passed
+  between the holders** (L20's question 2): each holder's holding bolts
+  take the other ends' forces on the plate whole or none, each with and
+  without the other holder's force (and the ends laid onto that holder),
+  each bolt the larger over every such corner — a statically safe bound,
+  no load path worked out (a bolt's force is linear in each share: its
+  largest lies at a corner); each holder's own end bolts (L14), its own
+  steel there, a plate's checks under them and a weld they reach take the
+  other holder's force the same way. The NOT ON THE SAFE SIDE words on
+  the level plate's rows are gone; assumed (said in the theory): a holder
+  passes at most its whole force through the plate, a force circulating
+  round the joint from its own deformation not counted. Measured (kept
+  privately; one vertical case, the bundled plugin): the one level plate
+  L20 laid out on 16 private towers — its two holding groups' largest bolt
+  force 1.2 → 12.8 kN and 2.1 → 7.1 kN (usage 3 % → 27 %, 4 % → 15 %; the
+  holders' bearing under them 2 % → 21 %, 4 % → 12 %), every other row of
+  that tower unchanged (3 160 rows).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

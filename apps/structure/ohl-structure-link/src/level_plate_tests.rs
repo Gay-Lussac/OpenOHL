@@ -20,7 +20,7 @@ use crate::layout_run::{RunAsk, lay_out};
 /// H1 (along x) and H2 (along y) ending at P, their level legs in one
 /// plane, and a plan diagonal G (level, 45° in plan, a smaller class)
 /// between them.
-const CORNER: &str = r#"format = "ohl-structure"
+pub(crate) const CORNER: &str = r#"format = "ohl-structure"
 version = 18
 id = "C"
 name = "c"
@@ -95,7 +95,7 @@ roll = "180 deg"
 design = { class = "redundant" }
 "#;
 
-fn settings(level: bool) -> LayoutSettings {
+pub(crate) fn settings(level: bool) -> LayoutSettings {
     LayoutSettings {
         bolt: Some(BoltArea {
             count: 3,
@@ -106,7 +106,7 @@ fn settings(level: bool) -> LayoutSettings {
     }
 }
 
-fn ask<'a>(
+pub(crate) fn ask<'a>(
     lib: &'a crate::SectionLibrary,
     bolts: &'a ohl_structures::bolts::BoltLibrary,
     s: &'a LayoutSettings,

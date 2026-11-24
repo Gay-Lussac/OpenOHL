@@ -164,6 +164,9 @@ enum Plan {
         /// checked under the larger of its own force and the resultant
         /// through its bolts ([`bolted_force`]).
         riding: Vec<SideMember>,
+        /// The forces a level plate may pass to the member (L21,
+        /// [`crate::joint_groups::passed`]): each from none to whole.
+        passed: Vec<SideMember>,
     },
     Weld {
         with: String,
@@ -175,6 +178,9 @@ enum Plan {
         /// (L14): the weld taken under the larger of its loads with and
         /// without them.
         riding: [Vec<SideMember>; 2],
+        /// The forces a level plate may pass to those members, per side
+        /// (L21): each from none to whole.
+        passed: [Vec<SideMember>; 2],
         ring: bool,
         /// Where the weld is.
         at: WeldPlace,
@@ -437,6 +443,33 @@ pub fn plate_plans_in(
                 } else {
                     Vec::new()
                 };
+                let passed: Vec<SideMember> = if a.onto.value.as_deref() == Some(p.id.as_str()) {
+                    crate::joint_groups::passed(j, &a.member)
+                        .into_iter()
+                        .map(|r| (r.member.clone(), r.direction, j.position))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                if !passed.is_empty() {
+                    let words: Vec<&str> = passed.iter().map(|r| r.0.as_str()).collect();
+                    notes.push(format!(
+                        "{m} holds a level plate with {w}: the force that plate may pass \
+                         through {m}'s bolts taken from none to the whole of each (along its \
+                         line, the same case) — the plate checked under the largest resultant \
+                         of every choice (a statically safe bound, no load path counted on; \
+                         L21)",
+                        m = a.member,
+                        w = words.join(", ")
+                    ));
+                }
+                if passed.len() > PASSED_EACH {
+                    notes.push(format!(
+                        "NOT ON THE SAFE SIDE: more than {PASSED_EACH} forces a level plate may \
+                         pass to {}: the rest taken together (none or all)",
+                        a.member
+                    ));
+                }
                 if !riding.is_empty() {
                     let words: Vec<&str> = riding.iter().map(|r| r.0.as_str()).collect();
                     notes.push(format!(
@@ -460,6 +493,7 @@ pub fn plate_plans_in(
                         free,
                         at: BoltPlace::of(a, j),
                         riding,
+                        passed,
                     },
                     notes,
                 });
@@ -494,7 +528,7 @@ pub fn plate_plans_in(
                     (Some(a), Some(b)) => Some(a.min(b)),
                     _ => None,
                 };
-                let (sides, riding, ring) = weld_sides(j, &p.id, &q.id);
+                let (sides, riding, passed, ring) = weld_sides(j, &p.id, &q.id);
                 let mut notes = Vec::new();
                 notes.push(if ring {
                     "the welds close a ring: the weld taken carrying every member's force on \
@@ -514,6 +548,16 @@ pub fn plate_plans_in(
                          taken under the larger of its loads with and without them (on the safe \
                          side; L14)",
                         rid.join(", ")
+                    ));
+                }
+                let pas: Vec<&str> = passed.iter().flatten().map(|r| r.0.as_str()).collect();
+                if !pas.is_empty() {
+                    notes.push(format!(
+                        "a member on the welded plate holds a level plate with another ({}): the \
+                         force that plate may pass to it taken from none to the whole of each — \
+                         the weld under the largest of its loads over every choice (a \
+                         statically safe bound; L21)",
+                        pas.join(", ")
                     ));
                 }
                 if w.length.is_some_and(|l| l < w.seam_length() - 1e-6) {
@@ -548,6 +592,7 @@ pub fn plate_plans_in(
                         },
                         sides,
                         riding,
+                        passed,
                         ring,
                         at,
                     },
@@ -643,6 +688,7 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                         free,
                         at: BoltPlace::of(a, j),
                         riding: Vec::new(),
+                        passed: Vec::new(),
                     },
                     notes,
                 });
@@ -704,6 +750,7 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                         free,
                         at: BoltPlace::of(a, j),
                         riding: Vec::new(),
+                        passed: Vec::new(),
                     },
                     notes,
                 });
@@ -971,7 +1018,12 @@ fn weld_sides(
     j: &JointDetail,
     a: &str,
     b: &str,
-) -> ([Vec<SideMember>; 2], [Vec<SideMember>; 2], bool) {
+) -> (
+    [Vec<SideMember>; 2],
+    [Vec<SideMember>; 2],
+    [Vec<SideMember>; 2],
+    bool,
+) {
     let linked = |x: &str, y: &str| {
         j.plates
             .iter()
@@ -1028,13 +1080,31 @@ fn weld_sides(
         }
         v
     };
+    // L21: the forces a level plate may pass to those members.
+    let passed = |plates: &[String]| -> Vec<SideMember> {
+        let mut v: Vec<SideMember> = Vec::new();
+        for x in on(plates) {
+            for r in crate::joint_groups::passed(j, &x.member) {
+                if !v.iter().any(|y| y.0 == r.member) {
+                    v.push(side(r));
+                }
+            }
+        }
+        v
+    };
     let (sa, sb) = (reach(a), reach(b));
     if sa.iter().any(|x| x == b) {
-        return ([members(&sa), Vec::new()], [riding(&sa), Vec::new()], true);
+        return (
+            [members(&sa), Vec::new()],
+            [riding(&sa), Vec::new()],
+            [passed(&sa), Vec::new()],
+            true,
+        );
     }
     (
         [members(&sa), members(&sb)],
         [riding(&sa), riding(&sb)],
+        [passed(&sa), passed(&sb)],
         false,
     )
 }
@@ -1057,10 +1127,11 @@ pub fn plate_usage(
                     steel,
                     share,
                     riding,
+                    passed,
                     at,
                     ..
                 } => {
-                    let n = bolted_force(member, *share, riding, at.along, axial);
+                    let n = bolted_force(member, *share, riding, passed, at.along, axial);
                     (
                         PlatePart::Member(member.clone()),
                         n,
@@ -1082,10 +1153,11 @@ pub fn plate_usage(
                     input,
                     sides,
                     riding,
+                    passed,
                     ring,
                     ..
                 } => {
-                    let f = weld_force_riding(sides, riding, *ring, axial);
+                    let f = weld_force_riding(sides, riding, passed, *ring, axial);
                     (
                         PlatePart::Weld(with.clone()),
                         f,
@@ -1184,17 +1256,19 @@ pub fn plate_usage_cases_with(
             member,
             share,
             riding,
+            passed,
             at,
             ..
-        } => bolted_force(member, *share, riding, at.along, axial),
+        } => bolted_force(member, *share, riding, passed, at.along, axial),
         Plan::Unplaced { member } => axial.get(member).copied().unwrap_or(0.0),
         Plan::NoSeam { .. } => 0.0,
         Plan::Weld {
             sides,
             riding,
+            passed,
             ring,
             ..
-        } => weld_force_riding(sides, riding, *ring, axial),
+        } => weld_force_riding(sides, riding, passed, *ring, axial),
     };
     // What acts on a part beside its force, per case (2026-11-18): a
     // weld's moments about it.
@@ -1203,6 +1277,7 @@ pub fn plate_usage_cases_with(
             Plan::Weld {
                 sides,
                 riding,
+                passed,
                 ring,
                 at,
                 ..
@@ -1210,7 +1285,7 @@ pub fn plate_usage_cases_with(
                 moments: cases
                     .iter()
                     .map(|c| {
-                        let l = weld_loads_riding(sides, riding, *ring, at, c.2);
+                        let l = weld_loads_riding(sides, riding, passed, *ring, at, c.2);
                         [0.0, l[1], l[2], 0.0]
                     })
                     .collect(),
@@ -1434,20 +1509,18 @@ fn turned_words(plan: &Plan, axial: &BTreeMap<String, f64>) -> Option<String> {
         member,
         share,
         riding,
+        passed,
         at,
         ..
     } = plan
     else {
         return None;
     };
-    if riding.is_empty() {
+    if riding.is_empty() && passed.is_empty() {
         return None;
     }
     let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
-    let mut r = scale(at.along, n(member));
-    for (m, d, _) in riding {
-        r = add(r, scale(*d, n(m)));
-    }
+    let r = bolted_resultant(member, riding, passed, at.along, axial);
     let size = norm(r);
     if size * share <= (n(member) * share).abs() || size <= 0.0 {
         return None;
@@ -1475,18 +1548,16 @@ fn bolted_force(
     member: &str,
     share: f64,
     riding: &[SideMember],
+    passed: &[SideMember],
     along: [f64; 3],
     axial: &BTreeMap<String, f64>,
 ) -> f64 {
     let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
     let own = n(member) * share;
-    if riding.is_empty() {
+    if riding.is_empty() && passed.is_empty() {
         return own;
     }
-    let mut r = scale(along, n(member));
-    for (m, d, _) in riding {
-        r = add(r, scale(*d, n(m)));
-    }
+    let r = bolted_resultant(member, riding, passed, along, axial);
     let size = norm(r) * share;
     if size <= own.abs() {
         return own;
@@ -1502,6 +1573,64 @@ fn bolted_force(
     sense * size
 }
 
+/// The largest resultant through a member's bolts (L14's question 2, L21):
+/// its own force along `along` with the forces of the ends `riding` (each
+/// along its line) or without them, each with every choice of the forces
+/// a level plate may pass to it (`passed`, each none or whole) — the
+/// largest (the first of equal ones).
+fn bolted_resultant(
+    member: &str,
+    riding: &[SideMember],
+    passed: &[SideMember],
+    along: [f64; 3],
+    axial: &BTreeMap<String, f64>,
+) -> [f64; 3] {
+    let n = |m: &str| axial.get(m).copied().unwrap_or(0.0);
+    let own = scale(along, n(member));
+    let mut with = own;
+    for (m, d, _) in riding {
+        with = add(with, scale(*d, n(m)));
+    }
+    let mut base = vec![with];
+    if !passed.is_empty() {
+        base.push(own);
+    }
+    let pass: Vec<[f64; 3]> = passed.iter().map(|(m, d, _)| scale(*d, n(m))).collect();
+    let mut best = with;
+    for v in corners(base, &pass) {
+        if norm(v) > norm(best) + 1e-9 {
+            best = v;
+        }
+    }
+    best
+}
+
+/// Each of `base` alone and with every choice of `passed` (each added or
+/// not; L21): the corners whose largest is the largest over every share.
+/// Beyond [`PASSED_EACH`] the rest are added together as one.
+fn corners(base: Vec<[f64; 3]>, passed: &[[f64; 3]]) -> Vec<[f64; 3]> {
+    let mut each: Vec<[f64; 3]> = passed.iter().take(PASSED_EACH).copied().collect();
+    if passed.len() > PASSED_EACH {
+        each.push(
+            passed[PASSED_EACH..]
+                .iter()
+                .fold([0.0; 3], |a, b| add(a, *b)),
+        );
+    }
+    let mut v = base;
+    for p in each {
+        let more: Vec<[f64; 3]> = v.iter().map(|x| add(*x, p)).collect();
+        v.extend(more);
+    }
+    v
+}
+
+/// At most this many forces a level plate may pass are each taken from
+/// none to whole one by one ([`corners`]); any more together. The program's
+/// value: a level plate has two holders, the ends laid onto the other one
+/// are few.
+const PASSED_EACH: usize = 6;
+
 /// `sides` with the ends `riding` on their members added (L14).
 fn with_riding(
     sides: &[Vec<SideMember>; 2],
@@ -1514,40 +1643,104 @@ fn with_riding(
     out
 }
 
+/// The member lists a weld is taken under (L14, L21): `sides` with and
+/// without the ends `riding`, each with every choice of the forces a level
+/// plate may pass (`passed`, each member added or not).
+fn weld_choices(
+    sides: &[Vec<SideMember>; 2],
+    riding: &[Vec<SideMember>; 2],
+    passed: &[Vec<SideMember>; 2],
+) -> Vec<[Vec<SideMember>; 2]> {
+    let mut v = vec![sides.clone()];
+    if riding.iter().any(|r| !r.is_empty()) {
+        v.push(with_riding(sides, riding));
+    }
+    // Each member (and its side) one choice, the first PASSED_EACH (the
+    // rest: [`weld_rest`]).
+    for (k, x) in passed_list(passed).into_iter().take(PASSED_EACH) {
+        let more: Vec<[Vec<SideMember>; 2]> = v
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                c[k].push(x.clone());
+                c
+            })
+            .collect();
+        v.extend(more);
+    }
+    v
+}
+
+/// The forces a level plate may pass to a weld's members, each with its
+/// side.
+fn passed_list(passed: &[Vec<SideMember>; 2]) -> Vec<(usize, &SideMember)> {
+    passed
+        .iter()
+        .enumerate()
+        .flat_map(|(k, l)| l.iter().map(move |x| (k, x)))
+        .collect()
+}
+
+/// Beyond [`PASSED_EACH`] forces a level plate may pass to a weld's
+/// members, each one's own loads alone on its side, added to the largest
+/// (a size of a sum is at most the sum of the sizes: on the safe side).
+fn weld_rest(
+    passed: &[Vec<SideMember>; 2],
+    f: impl Fn(&[Vec<SideMember>; 2]) -> [f64; 3],
+) -> [f64; 3] {
+    let mut out = [0.0f64; 3];
+    for (k, x) in passed_list(passed).into_iter().skip(PASSED_EACH) {
+        let mut alone: [Vec<SideMember>; 2] = [Vec::new(), Vec::new()];
+        alone[k].push(x.clone());
+        for (o, y) in out.iter_mut().zip(f(&alone)) {
+            *o += y;
+        }
+    }
+    out
+}
+
 /// [`weld_force`] with and without the ends laid onto the members on the
-/// welded plate near their ends (L14): the larger.
+/// welded plate near their ends (L14), and (L21) with every choice of the
+/// forces a level plate may pass to them: the largest.
 fn weld_force_riding(
     sides: &[Vec<SideMember>; 2],
     riding: &[Vec<SideMember>; 2],
+    passed: &[Vec<SideMember>; 2],
     ring: bool,
     axial: &BTreeMap<String, f64>,
 ) -> f64 {
-    let own = weld_force(sides, ring, axial);
-    if riding.iter().all(Vec::is_empty) {
-        return own;
-    }
-    own.max(weld_force(&with_riding(sides, riding), ring, axial))
+    weld_choices(sides, riding, passed)
+        .iter()
+        .map(|c| weld_force(c, ring, axial))
+        .fold(0.0, f64::max)
+        + weld_rest(passed, |c| [weld_force(c, ring, axial), 0.0, 0.0])[0]
 }
 
 /// [`weld_loads`] with and without the ends laid onto the members on the
-/// welded plate near their ends (L14): each the larger.
+/// welded plate near their ends (L14), and (L21) with every choice of the
+/// forces a level plate may pass to them: each the largest.
 fn weld_loads_riding(
     sides: &[Vec<SideMember>; 2],
     riding: &[Vec<SideMember>; 2],
+    passed: &[Vec<SideMember>; 2],
     ring: bool,
     at: &WeldPlace,
     axial: &BTreeMap<String, f64>,
 ) -> [f64; 3] {
-    let own = weld_loads(sides, ring, at, axial);
-    if riding.iter().all(Vec::is_empty) {
-        return own;
+    let mut out = [0.0f64; 3];
+    for c in weld_choices(sides, riding, passed) {
+        let l = weld_loads(&c, ring, at, axial);
+        for (o, x) in out.iter_mut().zip(l) {
+            *o = o.max(x);
+        }
     }
-    let with = weld_loads(&with_riding(sides, riding), ring, at, axial);
-    [
-        own[0].max(with[0]),
-        own[1].max(with[1]),
-        own[2].max(with[2]),
-    ]
+    for (o, x) in out
+        .iter_mut()
+        .zip(weld_rest(passed, |c| weld_loads(c, ring, at, axial)))
+    {
+        *o += x;
+    }
+    out
 }
 
 /// The force a weld carries: the larger resultant of the member forces on

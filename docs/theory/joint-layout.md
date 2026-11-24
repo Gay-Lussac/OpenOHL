@@ -3582,15 +3582,20 @@ take both as the plate's holding bolts (`joint_groups`): each holder's
 group carries the forces of every other end on the plate (each along its
 line through its bolts' centroid, the resultant's moment about these
 bolts' centroid, shared elastically) **whole** — *on the safe side*: how
-the two share them is not counted on —, neither holder's own force taken
-as a force on the plate; each holder's flange in bearing under its bolts;
-and the ends on the plate ride on each holder ending at the joint (L14's
-path: its own end bolts carry their forces too, each bolt the larger of
-with and without them).
+the two share them is not counted on —; each holder's flange in bearing
+under its bolts; and the ends on the plate ride on each holder ending at
+the joint (L14's path: its own end bolts carry their forces too, each
+bolt the larger of with and without them).
 
-**Not on the safe side.** The plate joins its two holders: a force it
-passes between them (their ends deform differently) is not counted — said
-**NOT ON THE SAFE SIDE** on the plate's holding rows. The end on the plate
+**The force the plate passes between its holders** (L21, 2026-11-24;
+before, said NOT ON THE SAFE SIDE on the plate's holding rows): each
+holder's holding bolts, its own end bolts and its own steel there also
+take the other holder's force passed through the plate, each share from
+none to the whole and the other ends' forces whole or none, the larger
+bolt by bolt — a statically safe bound
+([joint checks](joint-groups.md#the-force-a-level-plate-passes-between-its-two-holders-l21)).
+
+**Not on the safe side.** The end on the plate
 lies a plate's thickness out of the holders' level legs, as on any plate
 (its framing eccentricity, gauge to centroid, as for any end bolted by one
 leg: the code's slenderness curve). No member's size or work point
