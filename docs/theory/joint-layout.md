@@ -3710,6 +3710,89 @@ members left as they were — their clashes are said, not acted on, as for
 every part — or where the clash rounds ran out). A run again identical (one
 tower).
 
+## A plate's own holding bolts placed clear of what the plan lays out (L22)
+
+(L21's question 4; roadmap O44 L22, built on its own, reported. Built
+2026-11-24, in active development, not approved yet. No format change;
+`LayoutSettings::holds_clear`, on by default; off: as before.)
+
+**Before.** The plan placed a plate's own holding bolts (L5o,
+`[plate.leg_bolts]`) clear of what is fixed at the joint and of what the
+planes planned before that plate laid out — but not of what the plan lays
+out **after** it: a second plate on the same face over the first one's
+bolts, the ends and plates of later planes, their bolts' heads and nuts
+on the holder's other flange in the angle's corner, the other plates' own
+holding bolts. L21's clash check found those after writing, and the run
+then took the plate's members back.
+
+**Now**, at the end of each plan of a joint, each plate's own holding
+bolts as placed are tested against everything the plan laid out there
+and what it leaves as drawn (the members not laid out and their bolts,
+plates and covers given by hand): each bolt as the joint details draw it
+(L21) — its head behind the flange (0.65 bolt diameters high), its shank
+through flange and plate, its nut and the shank beyond it over the plate
+(0.8 + 0.3 diameters; the drawing's proportions, not a standard's) —, as
+the square round the head's and nut's corner circle (*on the safe side*:
+the square holds the hexagon whichever way it is turned) through that
+slab, against each piece's footprint in it; an overlap of more than the
+clash check's tolerance (1 mm) is a meeting. Excused as in the clash
+check: its own plate and the ends on it (placed clear by the plan's own
+rules), the member it holds the plate onto, the bolts of ends bolted onto
+that member; not tested either, unlike the clash check, a member running
+on in line with that member (another piece of the leg, perhaps thicker:
+its head and nut against it are left to the check after writing — tried,
+see below). Where one meets
+something, the joint is **planned again** with that plate's bolts kept
+clear of everything of the joint in their slab (by the nut's corner
+radius and half the gap, as L5o keeps them clear of fixed steel) — along
+the holder, across its flange, fewer where no more fit (at least two; the
+joint checks check them, as before), inside the plate's outline by the
+edge and end distances the plan already keeps —, at most twice
+(`HOLD_TRIES`, the program's bound on the time; what was found in the way
+gathered). The plan again is kept only where fewer of those bolts meet
+something **and** it lays out as many ends, leaves no more members for a
+hand detail and has as many plates held by their own bolts; else the
+first plan, as before. Where no place inside the plate is clear the
+bolts are placed as before and the plan's note says so ("not clear of the
+plates, ends and bolts laid out after it at this joint …, placed as
+before — the check after writing tests them"). Deterministic: the same
+joint gives the same plan.
+
+Not yet kept clear (the check after writing tests them, as since L21): a
+level plate's bolts onto its second holder (`[plate.also_bolts]`, L20), a
+bent plate's flat's own bolts (J2b), and the plates L11 puts on both
+faces of one plate after the plan.
+
+**Measured** (kept privately; the same eight private towers as L21, the
+same settings):
+
+| | L20 main | L21 main | L22 |
+|---|---|---|---|
+| joints laid out whole (of 6 852) | 4 304 | 4 278 | 4 283 |
+| member ends laid out | 15 337 | 15 233 | 15 240 |
+| plates | 8 527 | 8 382 | 8 406 |
+| plates' own holding ends written | 2 658 | 2 552 | 2 599 |
+| a plate's own bolts in a clash after writing (joints) | 583 (234) | 170 (71) | 164 (69) |
+| joints better / worse than L21 main | | | 18 / 15 |
+
+A small step: the plan finds such meetings and moves the bolts at some
+joints (more plates keep their own bolts, a few more ends), but most of
+what L21's guard took back stays taken back. Traced, the clashes left lie
+where no place inside the plate is clear — heads into another piece of
+the leg running on in line (often thicker), a plate of a member left as
+it was over the whole flange — or the plan's joint is not the one the
+run finally writes (the run plans a joint several times: with members
+left, pulled back, without L11's steps). **Tried, measured, not kept**:
+the plate grown along the holder round its bolts where no place inside
+is clear (as L15's and L20's plates): 12 joints of one kind laid out
+with an end fewer after writing (8 towers: whole 4 273, ends 15 234);
+the octagon round the corner circle, the members in line with the holder
+against head and nut, and the plate drawn round its own bolts for the
+planes planned after it: on the first four towers the same counts as
+without. The run's results vary by some tens of joints with any change
+of the plans (the weighed turns follow every joint), so differences of
+that size are within that spread.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

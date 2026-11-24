@@ -8,6 +8,37 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (joint layout: a plate's own holding bolts placed clear of what the plan lays out, L22)
+
+**The plan places a plate's own holding bolts clear of the plates, ends
+and bolts it lays out at the joint after that plate** (roadmap O44 L22,
+L21's question 4; the owner busy: built on its own, reported; built, in
+active development, not approved yet;
+[theory](../theory/joint-layout.md#a-plates-own-holding-bolts-placed-clear-of-what-the-plan-lays-out-l22)).
+
+- **Before**: L5o's bolts (`[plate.leg_bolts]`) were placed clear of what
+  is fixed and of what the planes before laid out; L21's clash check then
+  found them under a second plate on the same face, against bolts on the
+  holder's other flange in the angle's corner, and the run took the
+  plate's members back after writing.
+- **Now** (no format change, `LayoutSettings::holds_clear`, on): at the
+  end of each plan the plates' own bolts are tested against everything
+  the plan laid out at the joint, drawn as the joint details draw them
+  and excused as the clash check excuses them; where one meets something
+  the joint is planned again (at most twice) with that plate's bolts kept
+  clear of everything in their slab (inside the plate), kept only where
+  fewer meet something with as many ends, no more members left and as
+  many plates held by their own bolts; else as before. No place clear:
+  placed as before, said.
+- **Tried, measured, not kept** (the same eight private towers): the plate
+  grown along the holder where no place inside is clear (12 joints of one
+  kind laid out with an end fewer after writing), and a tighter octagon
+  for the bolt, the members in line with the holder against head and nut
+  and the plate drawn round its own bolts for the planes after (no change
+  on the first four towers).
+- **Measured** (private towers): in the roadmap block and the theory
+  page.
+
 ## 2026-11-24 (joint layout: a plate's own holding bolts in the clash check, L21 item 2)
 
 **A plate's own bolts onto the member holding it are pieces of the clash

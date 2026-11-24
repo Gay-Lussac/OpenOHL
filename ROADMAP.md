@@ -3819,6 +3819,60 @@ only where it helps):
   > that the guard rarely has to take ends back. (5) Clashes of those
   > bolts with members left for a hand detail stay said, not acted on (as
   > for every part) → Recommended: keep.
+- [x] L22. **A plate's own holding bolts placed clear of what the plan
+  lays out** (L21's question 4; the owner busy: built on its own,
+  reported). **Built 2026-11-24, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plates-own-holding-bolts-placed-clear-of-what-the-plan-lays-out-l22),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-joint-layout-a-plates-own-holding-bolts-placed-clear-of-what-the-plan-lays-out-l22);
+  no format change; `LayoutSettings::holds_clear`, on). At the end of
+  each plan of a joint each plate's own holding bolts (L5o,
+  `[plate.leg_bolts]`) are tested against everything the plan laid out
+  there and what it leaves as drawn — the other plates and ends, their
+  bolts' heads and nuts (on the holder's other flange in the angle's
+  corner too), the other plates' own holding bolts —, drawn as the joint
+  details draw them (the head behind the flange, the nut and the shank
+  beyond over the plate; the square round the corner circle, on the safe
+  side) and excused as the clash check excuses them; where one meets
+  something the joint is planned again (at most twice, `HOLD_TRIES`) with
+  that plate's bolts kept clear of everything in their slab (by the nut's
+  corner radius and half the gap): along the holder, across its flange,
+  fewer where no more fit (at least two), inside the plate within the
+  edge and end distances the plan already keeps. The plan again kept only
+  where fewer of those bolts meet something with as many ends, no more
+  members left and as many plates held by their own bolts, else the first
+  (as before). No place clear: placed as before, said in the plan's
+  notes. Deterministic. Not yet kept clear (the check after writing tests
+  them, as since L21): a level plate's bolts onto its second holder, a
+  bent plate's flat's bolts, the plates L11 lays on both faces after the
+  plan.
+  Measured (kept privately; the eight private towers of L21, the same
+  settings, L21 main as the base): joints whole 4 278 → 4 283, member
+  ends 15 233 → 15 240, plates 8 382 → 8 406, plates' own holding ends
+  written 2 552 → 2 599, a plate's own bolts in a clash after writing 170
+  at 71 joints → 164 at 69; 18 joints better, 15 worse (within the run's
+  spread of some tens of joints: the weighed turns follow every plan). A
+  small step: the clashes left lie where no place inside the plate is
+  clear (heads into another piece of the leg in line, often thicker; a
+  plate of a member left as it was over the whole flange) or at plans the
+  run does not finally write. Tried, measured, not kept: the plate grown
+  along the holder round its bolts (12 joints of one kind with an end
+  fewer after writing); a tighter octagon, the members in line against
+  head and nut, the plate drawn round its own bolts for the planes after
+  (no change on four towers).
+  > **Owner:** (1) The plan's check of a plate's own holding bolts and the
+  > joint planned again with them kept clear (`holds_clear`, on) →
+  > Recommended: keep (never a plan with fewer ends, more members left or
+  > fewer plates held; measured a little better, 47 more plates holding
+  > themselves). (2) The clashes left (heads into another piece of the leg
+  > in line, plates over the whole flange) → Recommended: next, the plan
+  > tests its candidate bolts with the joint details' own clash check of
+  > the joint as it would be written (the plan's geometry is close to, not
+  > the same as, the drawing: plates seated off the flange, outlines grown
+  > round bolts) — its time measured first. (3) The plate grown along its
+  > holder round its own bolts → Recommended: not now (measured worse);
+  > again with (2). (4) Members in line with the holder not tested by the
+  > plan's check (the check after writing tests their heads and nuts) →
+  > Recommended: keep until (2) (testing them changed nothing measured).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
