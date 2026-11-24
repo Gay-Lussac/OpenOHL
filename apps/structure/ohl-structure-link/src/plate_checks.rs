@@ -449,7 +449,7 @@ pub fn plate_plans_in(
                 let passed: Vec<SideMember> = if a.onto.value.as_deref() == Some(p.id.as_str()) {
                     crate::joint_groups::passed(j, &a.member)
                         .into_iter()
-                        .map(|r| (r.member.clone(), r.direction, j.position))
+                        .map(|(r, at)| (r.member.clone(), r.direction, at))
                         .collect()
                 } else {
                     Vec::new()
@@ -1078,9 +1078,9 @@ fn weld_sides(j: &JointDetail, a: &str, b: &str) -> (Sides, Sides, Sides, bool) 
     let passed = |plates: &[String]| -> Vec<SideMember> {
         let mut v: Vec<SideMember> = Vec::new();
         for x in on(plates) {
-            for r in crate::joint_groups::passed(j, &x.member) {
+            for (r, at) in crate::joint_groups::passed(j, &x.member) {
                 if !v.iter().any(|y| y.0 == r.member) {
-                    v.push(side(r));
+                    v.push((r.member.clone(), r.direction, at));
                 }
             }
         }

@@ -3714,8 +3714,9 @@ only where it helps):
   no format change, no plugin interface changed). **1. The force passed
   between the holders** (L20's question 2): each holder's holding bolts
   take the other ends' forces on the plate whole or none, each with and
-  without the other holder's force (and the ends laid onto that holder),
-  each bolt the larger over every such corner — a statically safe bound,
+  without the other holder's force (and the ends laid onto that holder;
+  a holder running on as one part: each of its pieces), each bolt the
+  larger over every such corner — a statically safe bound,
   no load path worked out (a bolt's force is linear in each share: its
   largest lies at a corner); each holder's own end bolts (L14), its own
   steel there, a plate's checks under them and a weld they reach take the
@@ -3725,9 +3726,11 @@ only where it helps):
   round the joint from its own deformation not counted. Measured (kept
   privately; one vertical case, the bundled plugin): the one level plate
   L20 laid out on 16 private towers — its two holding groups' largest bolt
-  force 1.2 → 12.8 kN and 2.1 → 7.1 kN (usage 3 % → 27 %, 4 % → 15 %; the
-  holders' bearing under them 2 % → 21 %, 4 % → 12 %), every other row of
-  that tower unchanged (3 160 rows).
+  force 1.2 → 12.8 kN and 2.1 → 9.2 kN (usage 3 % → 27 %, 4 % → 20 %; the
+  holders' bearing under them 2 % → 21 %, 4 % → 15 %; both holders run on
+  through the joint as one part: each piece's force taken), every other
+  row unchanged (that tower's 3 160 rows; 27 other private towers laid out
+  by L20 main, 91 687 rows, identical).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

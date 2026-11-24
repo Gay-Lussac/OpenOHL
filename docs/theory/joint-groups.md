@@ -261,7 +261,9 @@ split** — a statically safe bound, no load path counted on:
   **the other holder's force** \\( \mathbf F_B \\) (along its line through
   its bolts' centroid on the plate) **added or not** (\\( \alpha = 1 \\)
   or \\( 0 \\)), and the same for the ends laid onto that other holder
-  near its end (each its own \\( \alpha \\)):
+  near its end and — where that holder runs on through the joint as one
+  part — for each of its pieces (what the run gives off at the joint is
+  the sum of its pieces' forces there; each its own \\( \alpha \\)):
 
   \\[ \mathbf F(\gamma, \alpha) = \gamma \sum_i \mathbf F_i + \alpha\, \mathbf F_B,\qquad
   \gamma, \alpha \in [0, 1] \\]
