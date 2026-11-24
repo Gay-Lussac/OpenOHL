@@ -1769,7 +1769,7 @@ struct HoldAt<'a> {
     /// beside it) that its bolts' heads, shanks and nuts are kept clear of
     /// (3D corners from the work point; [`hold_conflicts`] found them in
     /// the way of the places chosen without them); empty: none asked.
-    avoid: &'a [Vec<[f64; 3]>],
+    avoid: &'a [HoldPiece],
 }
 
 /// L5o (2026-11-20): flat plate `flat` of the ends `placed` given its own
@@ -1876,7 +1876,9 @@ fn hold_flat(
                 })
             });
     let grows = flat.between || level;
-    let poly = if grows && poly.len() >= 3 {
+    // (L22: also where the plate's own bolts find no place clear of what
+    // the plan lays out after it inside its outline — below.)
+    let poly = if (grows || !at.avoid.is_empty()) && !flat.short && poly.len() >= 3 {
         let [_, spacing, _] = s.defaults.of(x0.d);
         let reach = 4.0 * spacing + 2.0 * keep_ring;
         let (lo, hi) = poly
@@ -1895,6 +1897,7 @@ fn hold_flat(
     } else {
         poly
     };
+    let (grown_poly, poly) = if grows { (poly, poly) } else { (poly, planned) };
     let to2 = |q: [f64; 3]| {
         let d = sub(q, x0.heel3);
         [dot(d, x0.x3), dot(d, x0.y3)]
@@ -1947,13 +1950,11 @@ fn hold_flat(
         } else {
             BTreeSet::new()
         },
-        avoid: {
-            let slab = hold_slab(x0, flat.thickness);
-            at.avoid
-                .iter()
-                .filter_map(|p| footprint_in(x0, p, slab))
-                .collect()
-        },
+        avoid: at
+            .avoid
+            .iter()
+            .flat_map(|p| hold_feet(x0, flat.thickness, p))
+            .collect(),
     };
     let mut room = room;
     let from = x0
@@ -1980,14 +1981,55 @@ fn hold_flat(
     // asked; where no place is, as before (said; the check after writing
     // tests them).
     let mut clear_words = String::new();
+    // The plate's outline grown round its holding bolts (each with its
+    // distances in it), as the joint details draw it.
+    let grown_round = |pts: &[[f64; 2]]| {
+        const N: usize = 16;
+        let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
+        let mut all = planned.to_vec();
+        for q in pts {
+            for i in 0..N {
+                let a = i as f64 * std::f64::consts::TAU / N as f64;
+                all.push([
+                    q[0] + keep_ring * grow * a.cos(),
+                    q[1] + keep_ring * grow * a.sin(),
+                ]);
+            }
+        }
+        crate::joint_sheet::hull(all)
+    };
     let first = if room.avoid.is_empty() {
         None
     } else {
-        match plate_holds(strips, x0, &room, s, from, n, ring_min) {
-            Ok(p) => {
-                clear_words = "; placed clear of the plates, ends and bolts laid out after it \
-                               at this joint"
-                    .to_owned();
+        // Inside its outline; where none is clear, the plate grown along
+        // the member round them (as a plate between L15 and a level plate
+        // L20 are), its outline so grown clear of what it could run into.
+        let inside = plate_holds(strips, x0, &room, s, from, n, ring_min);
+        let got = match inside {
+            Ok(p) => Ok((p, false)),
+            Err(e) if !grows && !std::ptr::eq(grown_poly, planned) => {
+                room.poly = grown_poly;
+                let out = plate_holds(strips, x0, &room, s, from, n, ring_min)
+                    .ok()
+                    .filter(|p| (at.clear)(&grown_round(p)).is_none())
+                    .map(|p| (p, true))
+                    .ok_or(e);
+                room.poly = planned;
+                out
+            }
+            Err(e) => Err(e),
+        };
+        match got {
+            Ok((p, grew)) => {
+                clear_words = format!(
+                    "; placed clear of the plates, ends and bolts laid out after it at this \
+                     joint{}",
+                    if grew {
+                        format!(" (the plate grown along {} round them)", x0.host)
+                    } else {
+                        String::new()
+                    }
+                );
                 Some(Ok(p))
             }
             Err(e) => {
@@ -2015,19 +2057,7 @@ fn hold_flat(
     // outline (each bolt with its distances in it) clear of what it could
     // run into; else none (as before), said. (L20: a level plate alike.)
     if grows {
-        const N: usize = 16;
-        let grow = 1.0 / (std::f64::consts::PI / N as f64).cos();
-        let mut all = planned.to_vec();
-        for q in &pts {
-            for i in 0..N {
-                let a = i as f64 * std::f64::consts::TAU / N as f64;
-                all.push([
-                    q[0] + keep_ring * grow * a.cos(),
-                    q[1] + keep_ring * grow * a.sin(),
-                ]);
-            }
-        }
-        let grown = crate::joint_sheet::hull(all);
+        let grown = grown_round(&pts);
         if let Some(by) = (at.clear)(&grown) {
             let what = if flat.between {
                 format!("a plate between {}'s angles", x0.host)
@@ -2661,7 +2691,28 @@ pub const HOLD_TRIES: usize = 2;
 
 /// (L22) Per plate holding itself ([`hold_key`]): what its own bolts keep
 /// clear of (3D corners from the work point).
-type HoldAvoid = BTreeMap<String, Vec<Vec<[f64; 3]>>>;
+type HoldAvoid = BTreeMap<String, Vec<HoldPiece>>;
+
+/// (L22) A piece a plate's own holding bolts keep clear of (3D corners
+/// from the work point), and whether only their heads and nuts are (a
+/// member running on in line with the one they hold the plate onto: their
+/// shank passes through it, as the clash check excuses).
+type HoldPiece = (bool, Vec<[f64; 3]>);
+
+/// (L22) The footprints of piece `p` in the slab a plate's own holding
+/// bolts fill on `x`'s flange ([`hold_slab`]; only its head's and nut's
+/// parts where `ends` is set).
+fn hold_feet(x: &Strip, tp: f64, (ends, p): &HoldPiece) -> Vec<Vec<[f64; 2]>> {
+    let (lo, hi) = hold_slab(x, tp);
+    if *ends {
+        [(lo, -x.t - FACE_TOUCH), (tp + FACE_TOUCH, hi)]
+            .into_iter()
+            .filter_map(|slab| footprint_in(x, p, slab))
+            .collect()
+    } else {
+        footprint_in(x, p, (lo, hi)).into_iter().collect()
+    }
+}
 
 /// (L22) A plate's own holding bolts as [`hold_flat`] placed them: the
 /// plate ([`hold_key`]), the strip of the flange it lies on, the bolts'
@@ -2696,24 +2747,21 @@ fn hold_slab(x: &Strip, tp: f64) -> (f64, f64) {
     )
 }
 
-/// (L22) The boxes a plate's own holding bolts fill (3D corners from the
-/// work point): each bolt's nut's corner circle's square through the slab
-/// of [`hold_slab`].
+/// (L22) The prisms a plate's own holding bolts fill (3D corners from the
+/// work point): each bolt's octagon round its nut's corner circle
+/// ([`hold_octagon`]) through the slab of [`hold_slab`].
 fn hold_solids(x: &Strip, pts: &[[f64; 2]], tp: f64) -> Vec<Vec<[f64; 3]>> {
     let off = dot(sub(x.face3, x.heel3), x.n3);
     let (lo, hi) = hold_slab(x, tp);
-    let r = x.nut;
     pts.iter()
         .map(|q| {
-            let mut c = Vec::with_capacity(8);
-            for a in [q[0] - r, q[0] + r] {
-                for b in [q[1] - r, q[1] + r] {
-                    for z in [lo, hi] {
-                        c.push(add(
-                            add(add(x.heel3, scale(x.x3, a)), scale(x.y3, b)),
-                            scale(x.n3, off + z),
-                        ));
-                    }
+            let mut c = Vec::with_capacity(16);
+            for p in hold_octagon(*q, x.nut) {
+                for z in [lo, hi] {
+                    c.push(add(
+                        add(add(x.heel3, scale(x.x3, p[0])), scale(x.y3, p[1])),
+                        scale(x.n3, off + z),
+                    ));
                 }
             }
             c
@@ -2721,12 +2769,26 @@ fn hold_solids(x: &Strip, pts: &[[f64; 2]], tp: f64) -> Vec<Vec<[f64; 3]>> {
         .collect()
 }
 
+/// (L22) The regular octagon round a circle of radius `r` at `q` (its
+/// sides touching the circle): it holds the head's or nut's hexagon whose
+/// corners lie on that circle, whichever way it is turned (*on the safe
+/// side*, as tight as the drawn hexagon to within 8 % of its corner
+/// radius).
+fn hold_octagon(q: [f64; 2], r: f64) -> [[f64; 2]; 8] {
+    let rc = r / (std::f64::consts::PI / 8.0).cos();
+    std::array::from_fn(|i| {
+        let a = (i as f64 + 0.5) * std::f64::consts::FRAC_PI_4;
+        [q[0] + rc * a.cos(), q[1] + rc * a.sin()]
+    })
+}
+
 /// (L22) The plates' own holding bolts (L5o) of a plan that meet what the
 /// plan laid out at the joint — the plates and ends of the other planes
 /// and of the same face, their bolts' heads and nuts (among them those on
 /// the other flange of the member the plate lies on, in its corner), and
-/// the other plates' own holding bolts: each bolt's nut's corner circle's
-/// square through the slab it fills ([`hold_slab`]) overlapping such a
+/// the other plates' own holding bolts: each bolt's octagon round its
+/// nut's corner circle ([`hold_octagon`]) through the slab it fills
+/// ([`hold_slab`]) overlapping such a
 /// piece's footprint there by more than the clash check's tolerance. Not
 /// in the way: the plate's own steel and its ends (placed clear by
 /// [`plate_holds`]), the member it lies on (its bolts are), and the bolts
@@ -2770,23 +2832,32 @@ fn hold_conflicts(
                     .zip(find(m))
                     .is_some_and(|(h, b)| angle_deg(h.direction, b.direction) > 160.0)
         };
-        let slab = hold_slab(x, r.tp);
-        let mut pieces_in: Vec<Vec<[f64; 3]>> = laid3
+        // (A member in line with the holder: its head and nut tested, as
+        // the clash check does; a built-up holder: not at all.)
+        let built = host.is_some_and(|h| h.profile.as_ref().is_some_and(|q| !q.parts.is_empty()));
+        let run_on = |m: &str| (m != x.host && host_run(m) && !built).then_some(true);
+        let mut pieces_in: Vec<HoldPiece> = laid3
             .iter()
             .enumerate()
-            .filter(|(n, (m, bolt, _))| {
-                !r.own.contains(n)
-                    && if *bolt {
-                        // (As the clash check: an end's bolt onto the
-                        // member the plate is held onto may be the same.)
-                        find(m)
-                            .and_then(|a| a.onto.value.as_deref())
-                            .is_none_or(|o| !host_run(o))
-                    } else {
-                        !host_run(m)
+            .filter(|(n, _)| !r.own.contains(n))
+            .filter_map(|(_, (m, bolt, p))| {
+                let ends = if *bolt {
+                    // (As the clash check: an end's bolt onto the member
+                    // the plate is held onto may be the same.)
+                    if find(m)
+                        .and_then(|a| a.onto.value.as_deref())
+                        .is_some_and(host_run)
+                    {
+                        return None;
                     }
+                    false
+                } else if host_run(m) {
+                    run_on(m)?
+                } else {
+                    false
+                };
+                Some((ends, p.clone()))
             })
-            .map(|(_, (_, _, p))| p.clone())
             .collect();
         // What the plan does not lay out (as drawn): the members not laid
         // out and their bolts (the shank of one through the member the
@@ -2799,52 +2870,52 @@ fn hold_conflicts(
         };
         for (part, pts) in pieces {
             let keep = match part {
-                ClashPart::Member(m) => fixed.contains(m) && !host_run(m),
+                ClashPart::Member(m) if !fixed.contains(m) => None,
+                ClashPart::Member(m) if host_run(m) => run_on(m),
+                ClashPart::Member(_) => Some(false),
                 ClashPart::Bolt {
                     member: m, piece, ..
-                } => {
-                    fixed.contains(m)
-                        && !onto_host(m)
-                        && !(*piece == crate::clash::BoltPiece::Shank && host_run(m))
-                }
-                ClashPart::Plate(_) | ClashPart::Cover(..) => true,
-                ClashPart::PlateBolt { .. } => false,
+                } => (fixed.contains(m)
+                    && !onto_host(m)
+                    && !(*piece == crate::clash::BoltPiece::Shank && host_run(m)))
+                .then_some(false),
+                ClashPart::Plate(_) | ClashPart::Cover(..) => Some(false),
+                ClashPart::PlateBolt { .. } => None,
             };
-            if keep {
-                pieces_in.push(pts.clone());
+            if let Some(ends) = keep {
+                pieces_in.push((ends, pts.clone()));
             }
         }
         for (i2, r2) in recs.iter().enumerate() {
             if i2 != i && kept[i2] {
-                pieces_in.extend(hold_solids(&strips[r2.k], &r2.pts, r2.tp));
+                pieces_in.extend(
+                    hold_solids(&strips[r2.k], &r2.pts, r2.tp)
+                        .into_iter()
+                        .map(|p| (false, p)),
+                );
             }
         }
         let feet: Vec<(usize, Vec<[f64; 2]>)> = pieces_in
             .iter()
             .enumerate()
-            .filter_map(|(n, p)| footprint_in(x, p, slab).map(|f| (n, f)))
+            .flat_map(|(n, p)| hold_feet(x, r.tp, p).into_iter().map(move |f| (n, f)))
             .collect();
-        let rr = x.nut;
         let hits = r
             .pts
             .iter()
             .filter(|q| {
-                let sq = [
-                    [q[0] - rr, q[1] - rr],
-                    [q[0] + rr, q[1] - rr],
-                    [q[0] + rr, q[1] + rr],
-                    [q[0] - rr, q[1] + rr],
-                ];
+                let oct = hold_octagon(**q, x.nut);
                 feet.iter()
-                    .any(|(_, f)| sat2(&sq, f) > crate::clash::CLASH_TOLERANCE)
+                    .any(|(_, f)| sat2(&oct, f) > crate::clash::CLASH_TOLERANCE)
             })
             .count();
         if hits > 0 {
             count += hits;
-            out.insert(
-                r.key.clone(),
-                feet.iter().map(|(n, _)| pieces_in[*n].clone()).collect(),
-            );
+            out.insert(r.key.clone(), {
+                let mut seen: Vec<usize> = feet.iter().map(|(n, _)| *n).collect();
+                seen.dedup();
+                seen.into_iter().map(|n| pieces_in[n].clone()).collect()
+            });
         }
     }
     (out, count)
@@ -8546,9 +8617,9 @@ mod hold_clear_tests {
         let a0 = h0.points[0][0];
         // Either way along the leg (whichever way the points run).
         let half = 0.002;
-        let walls: Vec<Vec<[f64; 3]>> = [a0, -a0]
+        let walls: Vec<HoldPiece> = [a0, -a0]
             .iter()
-            .map(|a| wall(scale(host.direction, *a), host.direction, half))
+            .map(|a| (false, wall(scale(host.direction, *a), host.direction, half)))
             .collect();
         let avoid: HoldAvoid = [(key.clone(), walls)].into();
         let (p1, _, _) = plan(&j, &avoid);
@@ -8578,7 +8649,7 @@ mod hold_clear_tests {
         );
         assert_eq!(plan(&j, &avoid).0, p1);
         // Everything round the joint: as before, said.
-        let all: HoldAvoid = [(key, vec![wall([0.0; 3], host.direction, 1.0)])].into();
+        let all: HoldAvoid = [(key, vec![(false, wall([0.0; 3], host.direction, 1.0))])].into();
         let (p2, _, _) = plan(&j, &all);
         let h2 = p2.plates.iter().find_map(|q| q.hold.clone()).unwrap();
         assert_eq!(h2.points, h0.points);
@@ -8589,6 +8660,50 @@ mod hold_clear_tests {
             "{:?}",
             p2.notes
         );
+    }
+
+    /// L22: asked to keep clear of everything along the leg as far as its
+    /// bolts reach inside the gusset, the gusset is grown along the leg
+    /// and its bolts placed beyond (said), clear of what was asked.
+    #[test]
+    fn a_plate_grows_along_its_holder_where_no_place_inside_is_clear() {
+        let j = joint_n2();
+        let (p0, _, _) = plan(&j, &HoldAvoid::new());
+        let flat = p0.plates.iter().find(|q| q.hold.is_some()).unwrap();
+        let h0 = flat.hold.clone().unwrap();
+        let mut m: Vec<&str> = flat.members.iter().map(String::as_str).collect();
+        m.sort_unstable();
+        let key = format!("{}|{}", h0.member, m.join(","));
+        let host = j.arrivals.iter().find(|a| a.member == h0.member).unwrap();
+        // The wall widened until no place inside the gusset is clear.
+        let start = h0.points.iter().map(|q| q[0].abs()).fold(0.0, f64::max) + 0.01;
+        let nut = BOLT_DRAWN[0] * 0.016 / 3f64.sqrt();
+        let mut grown = false;
+        for k in 0..30 {
+            let far = start + 0.02 * f64::from(k);
+            let avoid: HoldAvoid = [(
+                key.clone(),
+                vec![(false, wall([0.0; 3], host.direction, far))],
+            )]
+            .into();
+            let (p1, _, _) = plan(&j, &avoid);
+            let h1 = p1.plates.iter().find_map(|q| q.hold.clone()).unwrap();
+            if p1
+                .notes
+                .iter()
+                .any(|w| w.contains("not clear of the plates"))
+            {
+                break;
+            }
+            for q in &h1.points {
+                assert!(q[0].abs() >= far + nut - 2e-4, "{q:?} {far}");
+            }
+            if p1.notes.iter().any(|w| w.contains("the plate grown along")) {
+                grown = true;
+                break;
+            }
+        }
+        assert!(grown);
     }
 
     /// L22: off, the plan is the first as before; on, a joint whose
