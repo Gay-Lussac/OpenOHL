@@ -148,7 +148,8 @@ own check stops with the error and says it.)
 **An extra case naming a case that is not sent** (a weather case sent on
 its own before 2026-11-15, or a library case the structure's groups do
 not take): its line-force rows have no value and are left out of the run
-— **NOT ON THE SAFE SIDE** — and OHL-Structure's status block says so in
+— **NOT ON THE SAFE SIDE**, as those loads are then missing — and
+OHL-Structure's status block says so in
 the warning colour, naming the case and the cases that are sent. Pick
 one of the library cases in its *1. line forces*.
 

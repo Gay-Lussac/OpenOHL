@@ -70,6 +70,17 @@ engineering use yet. The most valuable contributions right now are:
 - **Honest about approximations.** Every simplification, conservative
   assumption or unsafe-side choice is marked as such in the theory page
   and, where a user meets it, in the app's notes.
+- **"Not on the safe side" always says why** (owner, 2026-11-24). Every
+  text that marks a result NOT ON THE SAFE SIDE — a note, a report line,
+  a table cell, the command line, a hover or (?) help, a theory or guide
+  page — says three things in plain words: **what** is left out or
+  assumed; **why** that can make the result unsafe (which quantity can
+  be larger in reality, or the capacity smaller: "so the members' usage
+  is too low", "so a clearance can be smaller than shown"); and **what
+  makes it safe** (an input to give, a setting to turn on, or the
+  planned step, named — "not modelled yet: keep a margin" where there is
+  none). A message built from parts carries the *why* in its generated
+  text; a mark shared by many places gets it in the one helper.
 - **Style.** `cargo fmt`; `cargo clippy -- -D warnings`; code that reads
   like the code around it (comment density, naming, idiom). Comments say
   *why*. Docs in British English, plain words.

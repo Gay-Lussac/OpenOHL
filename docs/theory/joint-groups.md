@@ -317,7 +317,8 @@ The **elastic** analysis is the simpler and the more conservative of the
 guide's two (its ultimate-strength analysis lets ductile bolts share
 more): **on the safe side** for bolts that bear. One bolt (or bolts all
 at their centroid) cannot carry a moment: said **NOT ON THE SAFE SIDE**
-("a pin, the moment not carried") when the moment over the group's
+("a pin, the moment not carried": the joint must then carry it some other
+way, which is not checked; a second bolt gives the group a lever) when the moment over the group's
 largest radius (three bolt diameters for one bolt) is 1 % or more of the
 force.
 
@@ -326,8 +327,10 @@ plane, a welded plate's other plates, a frame member's moment bending the
 part out of its plane) pull on the bolts: checked since 2026-11-19
 ([bolts in tension, with prying](#bolts-in-tension-with-prying)). A code
 plugin without the `joint-check-groups-tension` export: **bolts in tension
-not checked**, said **NOT ON THE SAFE SIDE** when their force, the moment
-over the lever above added, is 1 % or more of the force in the plane.
+not checked**, said **NOT ON THE SAFE SIDE** (a bolt pulled too hard
+would not be found; a plugin with that export checks them) when their
+force, the moment over the lever above added, is 1 % or more of the force
+in the plane.
 
 ### One physical bolt
 
@@ -363,7 +366,8 @@ presses the plies together would be carried by their contact). Several
 parts' pulls on one physical bolt are added. A moment about a line every
 bolt lies on (one bolt, one row about the row) cannot be carried by them in
 tension: said **NOT ON THE SAFE SIDE** ("… is not carried by them in
-tension") when it is 1 % or more of the force over the group's lever.
+tension": the joint must then carry it some other way, which is not
+checked) when it is 1 % or more of the force over the group's lever.
 
 **Prying.** Both codes ask for it — ASCE 10-97 4.3.3 ("any tensile stress
 resulting from prying action"), SIA 263 6.2.2.4 with its Figure 26 — and
@@ -564,7 +568,8 @@ angle) — each code then takes its conservative case (below), said.
   taken **along the bolt's force** to the ply's edge.
 - **Not known** where the member's steel stops: the end distance is not
   checked — said **NOT ON THE SAFE SIDE** (the standard's bearing takes no
-  distance).
+  distance, so a bolt too near the end would not be found; give where the
+  member's steel stops).
 - No bolt strength given (neither a shear capacity nor F_u): the bolt's
   shear not checked, said NOT ON THE SAFE SIDE; the bearing then on the
   ply's F_u alone (said).
@@ -611,7 +616,8 @@ parameter file for the plugin may change it).
   the one found and Table 17's minimum (the ply may end as near the bolt
   as the code allows — **on the safe side**, said; as the member check
   does for the leg a member bolts onto, [laps](joint-laps-splices.md)); a
-  bolt Table 17 has no row for: said NOT ON THE SAFE SIDE.
+  bolt Table 17 has no row for: said NOT ON THE SAFE SIDE (its distances are
+  then not checked against a minimum).
 
 ## What is not checked, said
 

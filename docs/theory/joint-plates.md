@@ -159,7 +159,8 @@ Exact: the split from a model of the joint, or given.
   \\( e_2 \\) the outer lines' distance to the nearer side edge; the
   weaker governs. Unit test: the plate below, towards a 30 mm side edge,
   \\( A_v = A_t = 606 \\) mm², 400.6 kN. A side edge not reached: that
-  path not checked, said (not on the safe side).
+  path not checked, said (not on the safe side: a tear along it would not
+  be found; give the plate's outline).
 - **Net section**: 3.10.1 is the rule for tension members; the plate's
   section across the bolt group is checked by it in tension only.
 - **Edge**: the plate's edges taken as sheared or flame-cut (Eq. 4.5-7,
@@ -305,7 +306,9 @@ middle may be up to \\( (L_\text{seam} - L)/2 \\) from the seam's, so
 \\( M \\) is taken at its largest there, \\( M + \tfrac{L_\text{seam} - L}{2}\,|\mathbf e \times \mathbf R| \\)
 (**on the safe side**). A plugin without `joint-check-moments` gets the
 force alone (`joint-check-full`): the weld's result then says the moments
-were not sent, **NOT ON THE SAFE SIDE**. **ASCE 10-97** has no weld rule,
+were not sent, **NOT ON THE SAFE SIDE** (the weld's most loaded end then
+carries more than checked; a plugin with `joint-check-moments` takes them).
+**ASCE 10-97** has no weld rule,
 with or without moments (5.2.5): the weld stays not checked, said.
 
 ## A frame member's end shear and moments
@@ -345,7 +348,9 @@ the triangle inequality, never less than the true resultant):
   of it), **in tension and in compression both** when a moment bends the
   plate by 1 % or more of \\( |N| + V \\) (an edge in each), the strut too;
 - \\( V_n \\) and \\( M_o \\) pull on the bolts: **bolts in tension are not
-  checked** — said NOT ON THE SAFE SIDE on the part where they add 1 % or
+  checked** (a bolt pulled too hard would not be found; bolts with
+  strengths, Design › Bolt grade…, are checked in the joint's bolt groups) —
+  said NOT ON THE SAFE SIDE on the part where they add 1 % or
   more (\\( V_n + 6M_o/t \ge 0.01\,(|N| + V) \\); below, as for members'
   moments, not said).
 
@@ -372,14 +377,16 @@ result names it so.
   the code's minimum edge distance each side, or the plate's own width:
   **on the safe side**, the narrower). One row of one gauge line (one
   bolt) has no Whitmore width: **not checked**, said NOT ON THE SAFE SIDE
-  (never a pass).
+  (its buckling would not be found; never a pass — more bolts in line give
+  it a width).
 - **Free length** \\( L \\): from the bolts nearest the joint, along the member
   towards the joint, to the nearest bolt of one of the joint's legs bolted
   onto the same plate within the bolt group's spread (what holds the plate
   there), else to the plate's edge that way. **On the safe side**: no
   other member's bolts are taken as holding it; where no leg's bolt is in
   the way, the plate's whole length to its edge. Not known (the edge not
-  reached): not checked, said NOT ON THE SAFE SIDE.
+  reached): not checked, said NOT ON THE SAFE SIDE (its buckling would not
+  be found; give the plate's outline).
 - **Effective length factor** \\( K = 2 \\): the column fixed at one end and
   free to sway at the other, the largest of the classic cases (Timoshenko
   & Gere, *Theory of Elastic Stability*, 2nd ed., 1961, §2.1). Practice

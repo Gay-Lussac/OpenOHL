@@ -220,7 +220,8 @@ linear between the angles, beyond the last angle its factor tapered with
 the projected area (× cos β / cos β_last); a
 shape without a curve takes the built-in one (SIA 261:2014 Tableau 74).
 `member_law = "sin2"` puts back the cross-flow law sin²θ for comparison —
-not on the safe side, said in every result.
+not on the safe side (it gives inclined members less wind than the
+default), said in every result.
 Values between the table's points are interpolated linearly (bilinear with
 `spacing`); **outside the table's range nothing is taken**: a face's
 solidity outside `face_drag` falls back to the shape's drag, a member

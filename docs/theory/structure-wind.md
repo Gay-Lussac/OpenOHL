@@ -563,7 +563,9 @@ normal exposure), \\( C_T = 1.0 \\) (5.2.5); each may be given.
   and on each of OHL-Structure's snow rows (*NOT ON THE SAFE SIDE: snow
   bridging between members … not counted*).
 - **Pole:** none (no horizontal surface but its top; said).
-- **Wind bands only:** none (no plan area; said, not on the safe side).
+- **Wind bands only:** none (no plan area; said, not on the safe side: the
+  snow's weight on the body is missing; a model with profiles or a pole
+  gives it).
 
 ### Where these loads go
 

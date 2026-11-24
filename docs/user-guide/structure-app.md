@@ -548,7 +548,8 @@ strings › Strings**, its **post** column:
 2. **fixed**: a post on a fixed base, a cantilever. Its moment goes to
    the structure with its force ([Load cases](#load-cases)): at the joint
    carrying its point where a frame member meets it, else left out and
-   said **NOT ON THE SAFE SIDE**. A fixed post holds its wire point alone:
+   said **NOT ON THE SAFE SIDE** (the members there then carry more than
+   computed; make the joint a frame joint). A fixed post holds its wire point alone:
    a second string there is refused.
 3. **hinged**: a post on a hinged base (a braced line post): it only
    pushes or pulls and another string to its wire point, its **brace**,
@@ -1045,7 +1046,8 @@ out. Each change is one undo step.
   colours each joint by it and the structure report lists it per joint
   (*Joints — usage per joint*). A plate the joint's leg does not bolt
   onto reads NOT CHECKED, NOT ON THE SAFE SIDE (how it is held is not
-  given). How the forces are gathered and each code's rules:
+  given, so a failure of the bolts holding it would not be found; give its
+  own bolts onto the leg, `[plate.leg_bolts]`). How the forces are gathered and each code's rules:
   [Joint bolt groups and the leg's bearing](../theory/joint-groups.md).
 - **Since 2026-11-22** (in active development, not approved yet): where
   an end is bolted onto a member that **ends** at the joint (the joint
@@ -1059,7 +1061,9 @@ out. Each change is one undo step.
   capacity by the design code's plugin against the larger of its own force
   and the resultant with the others'), and a plate's own checks under
   those bolts take that force too — a resultant turned more than 15° off
-  the member's line said NOT ON THE SAFE SIDE on the plate's row. How:
+  the member's line said NOT ON THE SAFE SIDE on the plate's row (the plate
+  checks take the force along the member, so a plate loaded across can
+  fail sooner than shown; not covered yet). How:
   [the force through a member's own end bolts](../theory/joint-groups.md#the-force-through-a-members-own-end-bolts-l14).
 - **Since 2026-11-19** (in active development, not approved yet):
   - **Bolts in tension** are checked with their prying: where a member's
@@ -1071,10 +1075,12 @@ out. Each change is one undo step.
     plate's own prying and bending are worked out too (the owner's
     decision of 2026-11-19: the plate a flange without a web, "bending of
     plate G1 under the bolt's pull …"); only where its outline or the
-    members' bolts on it are not known is it said NOT ON THE SAFE SIDE.
+    members' bolts on it are not known is it said NOT ON THE SAFE SIDE
+    (its bending is then not worked out; give the outline or place the
+    bolts).
   - **Bolts without strengths** (an import's bolts often have only a
     diameter and a shear capacity): their tension is not checked, said
-    NOT ON THE SAFE SIDE. **Design › Bolt grade…** gives the bolts of the
+    NOT ON THE SAFE SIDE (a bolt pulled too hard would not be found). **Design › Bolt grade…** gives the bolts of the
     members picked, a group's or the whole tower a grade (SIA 263:2013
     Table 2's strengths, recorded as set by command): [Bolt
     grade](bolt-grade.md).
@@ -1495,10 +1501,12 @@ second on a real tower of 1 000 joints).
      below 1), the lesser of the light count and the members × the factor.
      The counted mass can only raise a load.
    - **Dead-load factor only**: as before; a run says NOT ON THE SAFE SIDE
-     where the counted mass is above it.
+     where the counted mass is above it (the self-weight taken is then too
+     low).
    - **Counted mass only**: the counted mass alone — NOT ON THE SAFE SIDE
      until the counting is validated (galvanising, fillers and fittings
-     are not in it).
+     are not in it, so the weight can be too low where it loads the tower;
+     the default bounds both sides).
 
    The line under it says what a run takes now; the run's notes say which
    value governed.
@@ -1567,7 +1575,8 @@ case on the right:
   spans' solved horizontal pull the case takes: 100 as solved, 0 none;
   the vertical load and the wind across the spans stay; a load
   assumption, not an equilibrium state (the rows and the results say
-  "NOT ON THE SAFE SIDE"); no extra solve time ([Structure load
+  "NOT ON THE SAFE SIDE": the real one-sided pull can be larger; the exact
+  way is a line result solved with the one-sided condition); no extra solve time ([Structure load
   cases](structure-load-cases.md#a-share-of-the-spans-pull-back-ahead))
   —, **Points (n off)** — a tick per
   attachment point (its label, sets and phases) turning its line forces
@@ -1575,7 +1584,8 @@ case on the right:
   Without line cases a line says where they come from (the placed
   structure's library cases: OHL-Design › Structures › Load cases per
   group). A case naming a line case the line does not send is said in
-  the status block (NOT ON THE SAFE SIDE: its rows have no value).
+  the status block (NOT ON THE SAFE SIDE: its rows have no value, so those
+  loads are missing; pick a case the line sends).
 - **2. Loads on the structure itself** (collapsible): **Self weight**
   (its factor), **Wind on the body** (from ▾ — left, right, ahead,
   behind and the four between —, its own pressure or the pressure of a
@@ -1746,7 +1756,8 @@ pressure becomes member forces still differs: the line's member wind
 takes the cross-section library's drag and shielding factors, the surface
 loads here the projected area without drag or shielding,
 [theory](../theory/structures-fe.md#the-structures-wind-of-a-load-case):
-**NOT ON THE SAFE SIDE** for a lattice body, said in the status block.)
+**NOT ON THE SAFE SIDE** for a lattice body — without drag its wind is too
+low; take the wind on the body instead — said in the status block.)
 Recipes take it with `what = "structure_wind_factored"` (or
 `structure_wind`, unfactored) on `members`; **Take the line's load
 cases** adds that load to a case taken from a line case with wind, and

@@ -10,6 +10,14 @@ the structure, the span: "not on the safe side" and why), and the theory
 page explains why and what the exact treatment would be. A part that is
 not checked is never shown as passing.
 
+**Every mark says why** (owner, 2026-11-24: *"with the 'not on the safe
+side' please always explain why it's written"*): each NOT ON THE SAFE SIDE
+text names what is left out or assumed, which quantity can therefore be
+larger in reality (or the capacity smaller), and what makes it safe — an
+input, a setting, or the planned step. The rule is in
+`CONTRIBUTING.md` (Ground rules); the texts were audited
+against it on 2026-11-24 ([decision log](decisions.md)).
+
 This page lists every place the theory pages called a treatment *not on
 the safe side* (an audit of 2026-11-08) and what is done about it. Each
 change is also in the [decision log](decisions.md) and marked in its
@@ -59,7 +67,7 @@ theory page. Status: **done** (with the date), **open**.
 | [Jumpers](../theory/jumpers.md) | The jumper's bending stiffness (clamp pull) | With the pull option, every load case's notes name the jumpers whose stiffness is estimated | done 2026-11-08 |
 | [Sag-tension](../theory/sagtension.md#bimetallic-wires-above-the-knee-point) | The compression a bimetallic wire's outer strands really take above the knee point (tests or the maker) | A wire type as a bird cage or with a compression limit: "NOT ON THE SAFE SIDE: wire type X (sections …) modelled …" on every result of the line (its hot sag is not the largest); each weather case flags the spans past the knee point — the default's for the tension (the lowest of the models, about 1 %), a bird cage's or a limit's for the sag | done 2026-11-11 (in active development) |
 
-| [Sag-tension](../theory/sagtension.md#creep-at-elevated-temperature) | A wire type's law of creep at elevated temperature (its coefficients: the maker's or a published predictor equation's — none is built in; the sources are missing) | A line with a time at high temperature and a wire type without a law: "NOT ON THE SAFE SIDE: wire type X gives no law of creep at elevated temperature — its creep during … is not counted" on every result of its sections after creep; with a law, every such result names its source (the user's coefficients) | done 2026-11-11 (mechanism only, in active development) |
+| [Sag-tension](../theory/sagtension.md#creep-at-elevated-temperature) | A wire type's law of creep at elevated temperature (its coefficients: the maker's or a published predictor equation's — none is built in; the sources are missing) | A line with a time at high temperature and a wire type without a law: "NOT ON THE SAFE SIDE: wire type X gives no law of creep at elevated temperature — its creep during … is not counted, so its sag after creep can be larger; give the wire type its law (the maker's coefficients)" on every result of its sections after creep; with a law, every such result names its source (the user's coefficients) | done 2026-11-11 (mechanism only, in active development) |
 
 | [Sag-tension](../theory/sagtension.md#gap-type-conductors) | Whether a conductor given as a gap type is installed as one (strung by its core, the outer strands unloaded): the wire file's statement | "NOT ON THE SAFE SIDE: gap-type wire X (sections …): the outer strands taken as unloaded at each section's stringing state … a conductor installed otherwise sags more when hot" on every result of the line (0.79 m less sag at 60 °C than the same wire as an ordinary conductor on the benchmark span) | done 2026-11-11 (mechanism, in active development; its source is missing) |
 
@@ -81,7 +89,7 @@ theory page. Status: **done** (with the date), **open**.
 | [Wind on structures](../theory/structure-wind.md) | Allowable loads taken to include the body's ice and snow: said on the allowable-loads check of a structure without a model or pole, in a case with ice or snow on the structures | done 2026-11-08 |
 | [Wire FE](../theory/wirefe.md) | Structures rigid in the wire solve (sags low for clearances): said with the clearance-zone, internal-clearance and LiDAR reports (the interaction itself is open point O7) | done 2026-11-08 |
 | [Structures](../theory/structures-fe.md#a-share-of-the-spans-pull-a-load-assumption) | A structure load case taking a share of the back / ahead spans' solved pull (`back`, `ahead`, percent; owner 2026-11-10): a load assumption, not an equilibrium state — the real one-sided pull with swinging strings can be smaller or larger | Said where it applies: on every load-table row of such line forces ("NOT ON THE SAFE SIDE: …"), in the case's sentence, the solved case's notes, the report and the exports' notes; the exact treatment (a line result solved with the one-sided condition) is built and named there. No count of not-safe load rows exists (the counts are the members' checks) | said where it applies, 2026-11-10 |
-| [Wire FE](../theory/wirefe.md#a-constant-force-across-or-along-the-line), [Sag-tension](../theory/sagtension.md#point-and-distributed-loads) | The ruling-span method leaves point loads out (marker balls' weight, a point's constant force): smaller sags, no pull across or along | Said on the section in every weather case it is solved in by that method, the loads named ("NOT ON THE SAFE SIDE: point loads (…) left out by the ruling-span method — use FE"); before 2026-11-11 only in the user guide | done 2026-11-11 (in active development) |
+| [Wire FE](../theory/wirefe.md#a-constant-force-across-or-along-the-line), [Sag-tension](../theory/sagtension.md#point-and-distributed-loads) | The ruling-span method leaves point loads out (marker balls' weight, a point's constant force): smaller sags, no pull across or along | Said on the section in every weather case it is solved in by that method, the loads named ("NOT ON THE SAFE SIDE: point loads (…) left out by the ruling-span method — their weight and pull are missing, so the sag can be larger; use FE"); before 2026-11-11 only in the user guide | done 2026-11-11 (in active development) |
 | [Spotting](../theory/spotting.md) | One catenary for every span (the ruling-span idea); holes in the terrain bridged: said in every spotted route's notes | done 2026-11-08 |
 | [LiDAR](../theory/lidar-analysis.md) | Leaning trees and crowns: said whenever fall-in is checked | done 2026-11-08 |
 | [Thermal](../theory/thermal.md) | Uniform radial temperature; one weather case per section: said above every thermal result | done 2026-11-08 |

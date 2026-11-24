@@ -417,7 +417,9 @@ string](tools-general.md#edit-on-a-string)) with the post's own fields:
   attached it is free, and the loads say so instead of computing any. A
   second brace (one ahead, one back of the post's base) locks it. The
   hinge is frictionless by default: every load case says the structure's
-  longitudinal load is NOT ON THE SAFE SIDE there ([Structure
+  longitudinal load is NOT ON THE SAFE SIDE there (a hinge that sticks
+  passes more of the pull into the structure; give the hinge friction
+  below to take it) ([Structure
   library](structure-library.md#post-insulators-on-a-type), [theory](../theory/post-insulators.md#a-pivoting-post-held-by-what-is-attached-to-it)).
 - **Hinge friction** (a hinged post's, ticked to give it, N·m): the moment
   its hinge holds before the post turns. The post stays where it is given

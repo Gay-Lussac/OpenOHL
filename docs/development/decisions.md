@@ -8,6 +8,33 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (every "not on the safe side" says why)
+
+**The owner's rule** (verbatim): *"with the 'not on the safe side' please
+always explain why it's written"*. Every NOT ON THE SAFE SIDE text says
+**what** is left out or assumed, **why** that can make the result unsafe
+(which quantity can be larger in reality, or the capacity smaller) and
+**what makes it safe** (an input, a setting, or the planned step, named;
+"not modelled yet: keep a margin" where there is none). The rule is in
+`CONTRIBUTING.md` (Ground rules) and
+[Staying on the safe side](safe-side.md).
+
+- **Text only**: nothing computed changed; no mark was removed or
+  weakened. The texts that lacked a part were rewritten — the results'
+  notes, report lines, table cells, command-line lines, hover and (?)
+  helps, the default weather and load case descriptions, and the theory
+  and guide pages that quote them.
+- **Helpers carry the why** where one mark is used in many places: the
+  member's `[not on the safe side: …]` (the core's check and both code
+  plugins' end it with "its usage can be higher than shown; give what is
+  missing, or check it by hand"), "NOT CHECKED by <plugin>, NOT ON THE
+  SAFE SIDE (a failure there would not be found)", the members without a
+  plugin result, the rigid-structures note of the clearance checks.
+- **Left as they were**: the decision log's older entries (a record of
+  what was said then), code comments for developers, and the files
+  another change was editing at the time (the joint layout and the
+  electric field's neighbour files) — those follow when that work lands.
+
 ## 2026-11-24 (joint layout: a plate's own holding bolts in the clash check, L21 item 2)
 
 **A plate's own bolts onto the member holding it are pieces of the clash

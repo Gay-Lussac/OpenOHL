@@ -119,7 +119,7 @@ One table per line case taken:
 
 | Field | Default | Notes |
 |---|---|---|
-| `result` | | The line case, by its name (a library case of the placed structure, as the line sent it: its **unfactored** forces). A name the line does not send gets no value — said in OHL-Structure's status block, NOT ON THE SAFE SIDE. |
+| `result` | | The line case, by its name (a library case of the placed structure, as the line sent it: its **unfactored** forces). A name the line does not send gets no value — said in OHL-Structure's status block, NOT ON THE SAFE SIDE (those loads are then missing). |
 | `vertical`, `transverse`, `longitudinal` | 1 | The factor on each axis (vertical down, transverse right of the line, longitudinal ahead). |
 | `sets` | every point | Only the points carrying these sets. With `back` / `ahead`: at a point holding several sets, only these sets' pulls are scaled ([below](#some-sets-of-a-shared-point)). |
 | `off` | none | Points (labels) whose line forces are left out — works on the line with a conductor removed. |

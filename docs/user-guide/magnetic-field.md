@@ -193,7 +193,7 @@ that follow each other make one volume (no seam at the structures).
 | **Volume** column of the span table | none ticked | the spans a volume covers | in proportion to the spans |
 | **Volume size ± [m]**, **every [m]** | ±100 m every 2 m | wider: a low level's surface inside the box; a finer step places the surfaces closer to their levels (2 m: 1 µT within 0.05 %, 100 µT within 15 %; 1 m: 0.01 % and 4 %) | said beside it; halving the step takes 4 to 8 times as long |
 | **Earth wires** (4 Model) | off | *carry the currents the phases induce*: may raise or lower the field; *through the structures' earthing* (on): each structure's earthing resistance (Structures table, else the line's, else 10 Ω, said) | a network solve |
-| **Jumpers** (4 Model) | on | off: left out (not on the safe side near the structures) | none |
+| **Jumpers** (4 Model) | on | off: left out (not on the safe side near the structures: their field is missing there; keep them on) | none |
 | **Wire pieces** (4 Model) | as solved (64 per span) | *at most [m]*: shorter pieces placed on the curve; the field changes by about the wire's offset over the distance to it (a few hundredths of a per cent at 10 m) | in proportion to the pieces; said beside it |
 | **Modelled: wires within [m]** (4 Model) | 2 000 m | larger: closer to the whole line's field (longer than the line: every wire); each run says what the wires left out change | in proportion to the wires taken |
 | **Levels drawn [µT]** (5) | 1 and 10 µT drawn, 100 µT not | the surfaces drawn; display only, none is a limit. **+ level**, **+ the limit** | more levels, more surfaces |
@@ -228,7 +228,7 @@ results.
 | Scope | see [Scope](#scope-every-page) | | |
 | **Points from CSV…** | none | the field at your places: a CSV with a header naming `x`, `y` and `z` (elevation) or `height` (above the ground), optionally `name` | a point each |
 | **Method** | from the 3D model | see the comparison above | see above |
-| **wires at the span's mean height** (2D only) | off | on: the line parameters' mean height, a lower field than under the lowest point (not on the safe side) | none |
+| **wires at the span's mean height** (2D only) | off | on: the line parameters' mean height, a lower field than under the lowest point (not on the safe side: the field can be too low; keep it off to check a limit) | none |
 | **Profile** column of the span table | the spans of the alignments | the spans profiled | one profile each |
 | **Profiles** | at each ticked span's lowest point | *beside its structures* (10 m into the span from each), or *one span* at its lowest point or a place 0–1 along it | one profile each |
 | **Across ± [m]**, **every [m]**, **at [m] above the ground** | ±100 m every 1 m at 1 m | wider: the low levels' reach inside the profile; a finer step: more points; higher: nearer the wires, a higher field | in proportion to the points |
@@ -327,7 +327,8 @@ and [what is left out](../theory/magnetic-field.md#what-is-left-out):
 - **2D only** at the wires' place under the lowest point is on the safe
   side against 3D on sagging spans; at the span's mean height it is not;
   near a line angle, a crossing or a structure it is not valid (warned).
-- **Jumpers off**: not on the safe side near the structures.
+- **Jumpers off**: not on the safe side near the structures — their field
+  is missing there; keep them on.
 - **Earth wire currents** may raise or lower the field: run with and
   without them when it matters. Through the structures' earthing, the
   line's ends are not on the safe side (no substation earthing).

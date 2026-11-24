@@ -189,7 +189,8 @@ view, **Shared towers**:
 At a point holding several lines' sections their loads are added, each
 line's strings there counted again (more load: conservative, said);
 solved rigid (calculation level 2) — a line set to level 3 or 4 is said
-**NOT ON THE SAFE SIDE** with the tower. **NOT ALL CHECKED** (red, also
+**NOT ON THE SAFE SIDE** with the tower (its flexibility can add load;
+check that tower with that line's own loads). **NOT ALL CHECKED** (red, also
 named above the views): a shared tower outside your working set
 (read-only in the file — the network computes it for a working set
 holding it), a line's sections or cases not read or not solved, a check

@@ -176,7 +176,7 @@ each over the ground within its reach.
 | Scope | see [Scope](#scope-every-page) | | |
 | **Volume** column of the span table | none ticked | the spans a volume covers | in proportion to the spans |
 | **Volume size ± [m]**, **every [m]** | ±50 m every 2 m | wider: a low level's surface inside the box; a finer step places the surfaces closer to their levels; beside it the floor: its tiles, its memory, its time, how many parts, in red when it would not fit | said beside it |
-| **Jumpers** (4 Model) | on | off: left out (not on the safe side near the structures) | none |
+| **Jumpers** (4 Model) | on | off: left out (not on the safe side near the structures: their field is missing there; keep them on) | none |
 | **Stretches per span** (4 Model) | 24 | fewer: the charge follows the sag less closely (measured beside it and in the [theory](../theory/electric-field.md#the-charges)) | hardly changes |
 | **Ground** (4 Model) | tiled floor | *plane under each point*, fitted over **± [m]** (10 m): quick, up to 8 % low on bumps (not on the safe side) and 24 % high in a hollow on a real line | the tiled floor: some seconds per floor, said beside it |
 | **tiles: volumes [m]**, **reaching [m]** (4 Model) | 8 m, 100 m | finer tiles: a closer floor (8 m some 3 % off on even ground, 4 m 0.5 %); the reach of the floor beyond the volume | 4 m some 20 times as long as 8 m; the tile cannot be set below what fits the memory |
@@ -265,7 +265,8 @@ and [what is left out](../theory/electric-field.md#what-is-left-out):
   side); the tiled floor follows the terrain.
 - **The structures' steel off** (the default): on the safe side beside a
   structure, not at the steel.
-- **Jumpers off**: not on the safe side near the structures.
+- **Jumpers off**: not on the safe side near the structures — their field
+  is missing there; keep them on.
 - **Trees, buildings and people** are not modelled: on the safe side away
   from them, not at their tops.
 - **DC systems** are left out (said).

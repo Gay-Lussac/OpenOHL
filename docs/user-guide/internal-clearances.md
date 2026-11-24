@@ -77,7 +77,8 @@ Earth wires have no voltage: they are never checked.
 Every part is measured against **every member** of the body: to the
 member's **surface** where its section's profile is known (the member as
 drawn, a pole's outline), else to its **centre line** — then the
-member's size is left out, which is **not on the safe side**: the
+member's size is left out, which is **not on the safe side** (the real
+distance to its surface is smaller; give its section a profile): the
 results say so per structure and on every row (*To: centre line*). Every
 part is also measured against the **grounded** shapes of every string at
 the structure. The insulator itself is never a target: its length is

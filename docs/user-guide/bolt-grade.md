@@ -7,7 +7,8 @@ development, not approved yet.) **What it is for:** the bolts of a tower
 imported from a tower program's export often carry only a diameter and a
 shear capacity — no grade, no ultimate strength. Their tension, and with
 it the prying of bolts pulled out of their plies, cannot be checked: the
-results say so, **NOT ON THE SAFE SIDE**. **Design › Bolt grade…** gives
+results say so, **NOT ON THE SAFE SIDE** (a bolt pulled too hard would not
+be found). **Design › Bolt grade…** gives
 the bolts of the members picked, a member group's or the whole tower a
 grade, its strengths from **SIA 263:2013, 3.4.2, Table 2**, and records it
 in the structure file as **set by command**, so that every result says

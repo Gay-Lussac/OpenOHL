@@ -862,7 +862,9 @@ that moves it as far) to 10⁻⁶.
 
 **Left out or approximated (said where it applies):** a foot that is not
 a support joint of the model, or single feet on a structure without a
-model (not taken: **NOT ON THE SAFE SIDE**, said with the structure); a
+model (not taken: **NOT ON THE SAFE SIDE** — the lean or the settlement's
+forces are missing, so a clearance or a usage can be worse than shown;
+give the movement at a support joint — said with the structure); a
 movement in a direction the support does not hold (left out: the
 structure follows freely there); a tilt at a pinned foot (it turns
 freely); a twist about the vertical (not given). The wires' forces on

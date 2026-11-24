@@ -92,7 +92,8 @@ The notes of every result solved at level 3 or 4 begin with:
   deflection already present at stringing is left out, the models'
   foundations are rigid, the linearisation is stiffer than the case's
   state where members would go slack — the points move less than the
-  real structures.
+  real structures, so a clearance can be smaller than shown (level 4
+  follows slack members; keep a margin for the rest, not modelled yet).
 
 At level 4 they also say: the structures solved in full from level 3's
 solution; the line solves at each level and the full solves; the largest
@@ -104,7 +105,9 @@ a full model (taken linear in every case); a case whose Newton step had
 to give way to staggered passes; and **NOT ON THE SAFE SIDE**: P-Delta on
 the drawn geometry (no large displacements: a very flexible structure's
 large rotations are not followed), rigid foundations, the stringing
-state's deflection left out.
+state's deflection left out — the points may move less than the real
+structures, so a clearance can be smaller than shown (not modelled yet:
+keep a margin).
 
 A rule that solves the wires by another method than the line (a rule's
 ruling span on sections of finite elements, or the other way round) is
@@ -264,7 +267,9 @@ support joint of the model (its movements are not taken, said with the
 structure), single feet on a structure without a model (only **all**
 can be taken there), a movement in a direction the support does not hold
 (left out: the structure follows freely there), a tilt at a pinned foot
-(it turns freely). The structure loads (the wires' forces) stay as drawn,
+(it turns freely) — each leaves out a lean or a settlement's forces, so a
+clearance or a usage can be worse than shown; give the movement at a
+support joint to take it. The structure loads (the wires' forces) stay as drawn,
 rigid (on the safe side, owner 2026-11-16).
 
 ## On the command line

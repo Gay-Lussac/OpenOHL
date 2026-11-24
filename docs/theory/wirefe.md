@@ -389,7 +389,7 @@ Hand checks: a force across at the middle of a level span moves the wire by abou
 
 - The force is **as given**: the user's value, on the safe side or not as that value is. It reaches the structures through the solved pulls; a structure load case's factors act on those attachment loads as a whole, so on its part of them too.
 - A section in the blocks shares its length between the spans without the point loads ([above](#sections-sagging-and-clamping)), the constant forces as the weights: the **Simplification** said there.
-- **NOT ON THE SAFE SIDE with the ruling-span method:** that method leaves point loads out — weights and constant forces alike. A section solved by it says so in every weather case, naming them ("point loads (P1: across 400 N) left out by the ruling-span method — use FE").
+- **NOT ON THE SAFE SIDE with the ruling-span method:** that method leaves point loads out — weights and constant forces alike. A section solved by it says so in every weather case, naming them ("point loads (P1: across 400 N) left out by the ruling-span method — their weight and pull are missing, so the sag can be larger; use FE").
 - A jumper's point takes no constant force (refused when the line is read).
 
 *Validation:* `ptforce-001…002` (`benchmarks/wirefe/point-force.toml`): two elastic pieces by quadrature joined at a loaded node, to 10⁻⁷ on the forces.
