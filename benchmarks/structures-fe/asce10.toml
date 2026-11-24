@@ -414,3 +414,52 @@ node = "b"
 force = ["50 kN", "0 kN", "0 kN"]
 '''
 expected.usage_m = { value = 0.3858346220209708, rel_tol = 1e-9 }
+
+[[case]]
+id = "asce10-010"
+title = "Bearing of a built-up member (two plies) at member level: one ply's thickness until the plate between is defined"
+calculation = "structures.fe"
+reference = "ASCE 10-97, Design of Latticed Steel Transmission Structures (ASCE), 4.4 as the asce10 plugin takes it, evaluated by hand; one ply's thickness until the plate between is defined is the program's assumption (owner, 2026-11-23), not the code's"
+notes = "Two plies of 6 mm (plies = 2), 2 M18 bolts in double shear, f_u 370 MPa (the bolt's not given): bearing 2 x 1.5 x 370 MPa x 18 mm x 6 mm x 1 ply = 119.88 kN (both plies, 239.76 kN, before; the plate between not defined, said not on the safe side); bolt shear 2 x 2 x 100 kN = 400 kN; net section 0.9 x (20 cm2 - 21.6 mm x 6 mm) x 355 MPa = 597.6 kN; 60 kN -> 0.50050050"
+max_seconds = 30.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "asce10-97"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "370 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "20 cm2"
+iy = "50 cm4"
+iz = "50 cm4"
+i_min = "20 cm4"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "s"
+[member.design]
+end_eccentricity = "none"
+length_ratios = [1, 1, 1]
+width_thickness = 10
+bolts = { diameter = "18 mm", hole = "20 mm", count = 2, shear_planes = 2, shear_capacity = "100 kN", holes = 1 }
+thickness = "6 mm"
+plies = 2
+connected_leg = "long"
+[[load]]
+node = "b"
+force = ["60 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.5005005005005005, rel_tol = 1e-9 }

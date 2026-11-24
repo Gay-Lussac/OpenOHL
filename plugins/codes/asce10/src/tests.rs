@@ -466,6 +466,61 @@ fn holes_in_each_leg_without_bolts() {
     assert_eq!(what, "gross section, no holes");
 }
 
+/// A built-up member's bearing at member level (O19 stage 5, the owner's
+/// answer of 2026-11-23, built 2026-11-24): two plies of 6 mm, 2 M18 in
+/// double shear, f_u 370 MPa — one ply's thickness until the plate between
+/// is defined, 2 × 1.5 × 370 MPa × 18 mm × 6 mm = 119.88 kN, said not on
+/// the safe side; with the end bolted onto a plate of known thickness both
+/// plies, 239.76 kN (the plate's own bearing in the joint checks).
+#[test]
+fn built_up_bearing_on_one_ply() {
+    let mut s = elastic(20e-4, 50e-8);
+    s.yield_strength = Some(355e6);
+    s.ultimate = Some(370e6);
+    let mut b = member(
+        "b",
+        s,
+        2.0,
+        MemberDesign {
+            thickness: Some(0.006),
+            plies: Some(2),
+            connected_leg: Some(ConnectedLeg::Long),
+            bolts: Some(Bolts {
+                diameter: 0.018,
+                hole: Some(0.020),
+                count: 2,
+                shear_planes: 2,
+                shear_capacity: Some(1e6),
+                ultimate: None,
+                holes: Some(1),
+                grade: None,
+            }),
+            ..MemberDesign::default()
+        },
+        None,
+    );
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 119.88e3).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "bearing");
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.starts_with("bearing on the plate between the 2 plies not checked")),
+        "{c:?}"
+    );
+    // Both ends onto a plate of known thickness: both plies.
+    let plate = crate::model::EndDesign {
+        onto: Some(crate::model::Onto::Plate),
+        onto_thickness: Some(0.010),
+        ..Default::default()
+    };
+    b.design.ends = [Some(plate.clone()), Some(plate)];
+    let (t, what) = capacity(&b, None).tension.unwrap();
+    assert!((t - 239.76e3).abs() < 1e-6, "{t}");
+    assert_eq!(what, "bearing");
+}
+
 /// The six curves at L/r 100 and 150 (hand values).
 #[test]
 fn effective_slenderness_curves() {

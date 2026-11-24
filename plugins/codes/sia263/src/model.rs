@@ -173,6 +173,9 @@ pub struct EndDesign {
     pub kind: Option<String>,
     /// What it bolts onto.
     pub onto: Option<Onto>,
+    /// The thickness of what it bolts onto, m (a plate's, a splice's
+    /// covers'; none: not known).
+    pub onto_thickness: Option<f64>,
     /// The leg bolted.
     pub leg: Option<ConnectedLeg>,
     /// Its bolts.

@@ -15,7 +15,7 @@ is rewritten). Theory: `docs/theory/sia263.md`.
 | Export | What |
 | --- | --- |
 | `member-check` | its method `sia263-2013` (`check-members` refused: the check needs the full records) |
-| `member-check-full` | every checked member in one call, with everything the core's check read; a member without bolts or holes in its data: (39) with a bolt hole in each leg of an angle (the member's typical bolt's, else a 20 mm bolt's hole of Table 17: the program's default), the connection said not checked (2026-11-24) |
+| `member-check-full` | every checked member in one call, with everything the core's check read; a member without bolts or holes in its data: (39) with a bolt hole in each leg of an angle (the member's typical bolt's, else a 20 mm bolt's hole of Table 17: the program's default), the connection said not checked; a built-up member's bearing (76) on one ply until its end bolts onto a plate of known thickness, said (2026-11-24) |
 | `member-check-bracing` | the same with what braces each member: buckling lengths between the joints held in the direction of buckling (5.4.1.3, read strictly), lateral supports of at least 1 % (4.2.3.7), where the member gives none (2026-11-19; `src/lengths.rs`, `src/bracing.rs` — the same file as `asce10`'s) |
 | `joint-check`, `joint-check-full`, `joint-check-moments` | a member's bolts in a gusset plate or cover; a weld between two plates (with the parameter file: `joint-check-full`; with the moments of a weld's force and a frame member's end shear and moments: `joint-check-moments`) |
 | `joint-check-groups` | a joint's bolt groups under the members' forces together (2026-11-19): each bolt's shear (Table 16, (73)–(75)), bearing (76) with e₁ along its force, Table 17's distances along and square to it |

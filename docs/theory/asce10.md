@@ -448,7 +448,18 @@ force equally (4.1).
   \\( n \cdot 1.5\,\min(f_u, f_{ub})\,d\,t \cdot n_p \\), \\( n_p \\) the plies
   (profiles side by side). Without the bolt's \\( f_{ub} \\) the member's
   \\( f_u \\) alone, said ("bearing on the member's f_u (the bolt's not
-  given)").
+  given)"). **A built-up member's plies** (2026-11-24, the owner's answer
+  of 2026-11-23, O19 stage 5; built, in active development): its bolts
+  pass through the plate between its angles too, which carries the whole
+  force in bearing; at member level all \\( n_p \\) plies count only where
+  the end bolts onto a plate of known thickness (that plate's own
+  bearing is the joint checks'), else \\( n_p = 1 \\): **one ply's
+  thickness taken as the plate between**, as a tower program takes it
+  (twice as much before on two plies). Said **not on the safe side**
+  ("bearing on the plate between the 2 plies not checked (no plate
+  defined at the end): taken as one ply's 6 mm, a thinner plate bears
+  less"): a plate thinner than one ply bears less; defining the joint's
+  plate checks it.
 
 **The root area** with the threads in the shear plane, when the bolt
 gives no shear capacity: **conservative**, 0.6 of the gross area

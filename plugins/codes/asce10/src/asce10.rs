@@ -43,7 +43,10 @@
 //! long leg counted as the short one); block shear of an angle bolted by
 //! one leg (Eq. 3.10-1); the bolts' shear (count × shear planes × each
 //! one's shear capacity, 4.3.2); bearing (count × 1.5 f_u d t × plies, f_u
-//! the lower of the member's and the bolt's, 4.4). An angle's w/t above
+//! the lower of the member's and the bolt's, 4.4; a built-up member's
+//! plies only where its end bolts onto a plate of known thickness, else
+//! one ply's t as the plate between, said not on the safe side —
+//! 2026-11-24). An angle's w/t above
 //! 25 is said (3.7.1).
 //!
 //! **At each end** (2026-11-02, stage 4.1 and 4.2 of the joint details):
@@ -743,6 +746,25 @@ pub fn leg_holes(s: &Section) -> Option<(u32, f64)> {
     }
 }
 
+/// The plies a built-up member's bolts bear on at member level (O19
+/// stage 5, the owner's answer of 2026-11-23, built 2026-11-24): all of
+/// them (`plies`) where the end bolts onto a plate of known thickness —
+/// the plate between, whose own bearing the joint checks take — else one
+/// ply's thickness `t` (m) as the plate between, said not on the safe side
+/// (a thinner plate bears less), as a tower program takes it.
+fn plies_in_bearing(plies: f64, t: f64, end: Option<&EndDesign>, conn: &mut Vec<String>) -> f64 {
+    let plate = end.is_some_and(|e| e.onto == Some(Onto::Plate) && e.onto_thickness.is_some());
+    if plies <= 1.0 || plate {
+        return plies;
+    }
+    conn.push(format!(
+        "bearing on the plate between the {plies:.0} plies not checked (no plate defined at the \
+         end): taken as one ply's {:.0} mm, a thinner plate bears less",
+        t * 1e3
+    ));
+    1.0
+}
+
 /// The connection's capacities at one end (`end`: its connection, none:
 /// the member's data only), as before for the member's data. `typical`:
 /// the member's typical bolt (diameter, hole, m) for an end whose data
@@ -868,6 +890,7 @@ fn end_check(
             };
             match (fu, thickness) {
                 (Some(fu), Some(t)) => {
+                    let plies = plies_in_bearing(plies, t, end, &mut conn);
                     bearing = Some(f64::from(b.count) * 1.5 * fu * b.diameter * t * plies);
                 }
                 (None, _) => conn.push("bearing not checked (no ultimate strength)".into()),

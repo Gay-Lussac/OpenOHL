@@ -500,6 +500,7 @@ notes give L/r, KL/r, \\( F_{cr} \\) and the capacity. Tolerance
 | asce10-007 | compression without design data: the assumptions on the safe side (curve 3) |
 | asce10-008 | tension without design data: the gross section |
 | asce10-009 | tension of an angle without bolts or holes in its data: a bolt hole in each leg (the default 20 mm bolt's standard hole, punched) until the bolts are known (2026-11-24) |
+| asce10-010 | bearing of a built-up member (two plies) at member level: one ply's thickness until the plate between is defined (2026-11-24) |
 
 The cases are not published worked examples; the
 method was also compared, privately, with a tower design program's
@@ -545,9 +546,14 @@ the theory pages ([joint groups](../theory/joint-groups.md),
 The members' connection capacities were also compared, privately, with a
 tower design program's on a real line's towers (163 690 members): bolt shear
 and bearing agree within 1 % on all but a few hundred members, the net section
-is 1.3 % lower (the punched hole); 100 members are higher than the program's
+is 1.3 % lower (the punched hole); 100 members were higher than the program's
 (members without holes given, built-up members' bearing) — owner questions
-in the roadmap (O19).
+in the roadmap (O19), answered 2026-11-23: since 2026-11-24 (a hole in each
+leg of an angle without bolts in its data, one ply's thickness in a built-up
+member's bearing until the plate between is defined) none is (built, in
+active development); the same rules make about 15 600 members lower than the
+program's, which counts both plies where it knows the plate between or takes
+no hole where its data give none (roadmap O19).
 
 ## What the cases showed
 

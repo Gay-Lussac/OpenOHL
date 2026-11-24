@@ -815,6 +815,25 @@ fn end_check(
                 }
                 let one = (0.85 * e / hole * fu * b.diameter * t).min(2.4 * fu * b.diameter * t)
                     / gamma_m2();
+                // A built-up member's plies at member level (O19 stage 5,
+                // the owner's answer of 2026-11-23, built 2026-11-24): all
+                // where the end bolts onto a plate of known thickness (the
+                // plate between, checked in the joint checks), else one
+                // ply's thickness as the plate between, said.
+                let plate = end.is_some_and(|e| {
+                    e.onto == Some(crate::model::Onto::Plate) && e.onto_thickness.is_some()
+                });
+                let plies = if plies > 1.0 && !plate {
+                    notes.push(format!(
+                        "bearing on the plate between the {plies:.0} plies not checked (no plate \
+                         defined at the end): taken as one ply's {:.0} mm, a thinner plate bears \
+                         less",
+                        t * 1e3
+                    ));
+                    1.0
+                } else {
+                    plies
+                };
                 bearing = Some(f64::from(b.count) * one * plies);
                 // And on the leg it bolts onto, when weaker. Its end
                 // distance there is not known: the smaller of this

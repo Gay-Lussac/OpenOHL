@@ -8,6 +8,36 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (member checks: a built-up member's bearing on one ply until the plate between is defined, O19 stage 5)
+
+**The owner's answer** to stage 5's question 2 of 2026-11-23 (approved
+2026-11-24, "go ahead with recommendations"): at member level a built-up
+member's bearing takes the thickness of one ply until the plate between
+is known — on the safe side; a change of both code plugins. Built (no
+core or interface change; built, in active development, not approved
+yet; [ASCE 10-97](../theory/asce10.md#connections),
+[SIA 263](../theory/sia263.md#bolts)).
+
+- **Before**: bearing × plies (both angles, 2 t), while the plate between
+  them, which carries the whole force in bearing, was checked only where
+  the joint's plate is defined.
+- **Now**: all plies only where the member end bolts onto a plate of known
+  thickness (`onto = plate`, already sent by `member-check-full` as
+  `onto-thickness`; that plate's own bearing is the joint checks'), else
+  one ply's thickness as the plate between. Said **not on the safe side**
+  with the member: "bearing on the plate between the 2 plies not checked
+  (no plate defined at the end): taken as one ply's 6 mm, a thinner plate
+  bears less" — what (the plate's bearing), why (a thinner plate bears
+  less), what makes it safe (defining the plate).
+- **Validation**: `asce10-010`, `sia263-005` by hand; the plugins' tests
+  `built_up_bearing_on_one_ply`.
+- **Measured** (private comparison): the 36 double angles are no longer
+  higher than the program's; but the program counts both plies on about
+  15 200 other built-up members (it evidently knows their plate between),
+  so those are now rated lower than the program's (median 0.63, at least
+  0.50) and their usage in the program's case rises (up to +35 points, none
+  over 100 %) — see the roadmap's question.
+
 ## 2026-11-24 (member checks: a bolt hole in each leg of a member without bolts in its data, O19 stage 5)
 
 **The owner's answer** to stage 5's question 1 of 2026-11-23 (approved

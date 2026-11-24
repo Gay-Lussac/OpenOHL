@@ -1849,7 +1849,25 @@ Six stages, the questions per stage and per detail level:
   > program one (36 double angles, up to 1.8 times ours against it); the
   > plate between them is checked only where the joint's plate is defined:
   > take one ply's thickness at member level until the plate is known? →
-  > yes, on the safe side (a plugin change: both codes' plugins).
+  > yes, on the safe side (a plugin change: both codes' plugins). **Built
+  > 2026-11-24** (built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-member-checks-a-built-up-members-bearing-on-one-ply-until-the-plate-between-is-defined-o19-stage-5)):
+  > all plies only where the end bolts onto a plate of known thickness,
+  > else one ply's, said not on the safe side (a thinner plate bears
+  > less); validation `asce10-010`, `sia263-005`. The 36 double angles are
+  > no longer above the program's, but the program counts both plies on
+  > about 15 200 other built-up members, now rated lower (median 0.63 of
+  > its; usages in its case up to +35 points, none over 100 %).
+  > (questions, 2026-11-24) (3) The program counts both plies on most
+  > built-up members (it knows their plate between); keep one ply until
+  > the joint's plate is defined? → Recommended: keep (approved, on the
+  > safe side); next, an imported tower's plate between written as a
+  > joint plate where the source gives its thickness (the private
+  > importer), so that both plies count there. (4) The 20 mm default hole
+  > is harsh on small angles (an L40 leg loses about half its area with
+  > two holes) → Recommended: the default bolt the largest the leg's
+  > usual gauge takes, or the structure's most used bolt, sent with the
+  > members (an interface change, to ask).
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition
