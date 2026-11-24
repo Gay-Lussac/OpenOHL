@@ -980,10 +980,13 @@ impl exports::ohl::plugin::bolt_distances_full::Guest for Asce10 {
     ) -> Result<Option<exports::ohl::plugin::bolt_distances_full::Distances>, String> {
         ours(&method)?;
         params::parse(&input.parameters)?;
-        // The analysis' force per bolt, else the bolt's own design shear
-        // capacity (4.3.2; third round, 2026-11-18: worked out here, as the
-        // core did before for every code).
-        let own = input.bolts.as_ref().and_then(|b| {
+        // The analysis' force per bolt, else the most one bolt can pass
+        // into the part: the smaller of its own design shear capacity
+        // (4.3.2; third round, 2026-11-18: worked out here, as the core did
+        // before for every code) and its bearing cap in the part, 1.5 f_u
+        // d t (4.4, f_u the lower of the part's and the bolt's; O44 L16's
+        // question 4, the owner's answer of 2026-11-24).
+        let shear = input.bolts.as_ref().and_then(|b| {
             asce10::bolt_shear(
                 input.diameter,
                 b.shear_planes,
@@ -993,6 +996,13 @@ impl exports::ohl::plugin::bolt_distances_full::Guest for Asce10 {
                 b.ultimate,
             )
         });
+        let bearing = asce10::bearing_cap(
+            input.diameter,
+            input.thickness,
+            input.ultimate,
+            input.bolts.as_ref().and_then(|b| b.ultimate),
+        );
+        let (own, basis) = asce10::force_without_analysis(shear, bearing);
         let bolt_force = input.analysis_force.or(own);
         let d = <Asce10 as exports::ohl::plugin::bolt_distances::Guest>::minimum_distances(
             method,
@@ -1014,8 +1024,8 @@ impl exports::ohl::plugin::bolt_distances_full::Guest for Asce10 {
                 clauses: d.clauses,
                 notes: d.notes,
                 bolt_force,
-                force_basis: if input.analysis_force.is_none() && own.is_some() {
-                    "the bolt's design shear capacity, ASCE 10-97 4.3.2".to_owned()
+                force_basis: if input.analysis_force.is_none() {
+                    basis.to_owned()
                 } else {
                     String::new()
                 },

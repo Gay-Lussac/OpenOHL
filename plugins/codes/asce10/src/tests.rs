@@ -521,6 +521,38 @@ fn built_up_bearing_on_one_ply() {
     assert_eq!(what, "bearing");
 }
 
+/// The force per bolt of the minimum distances without an analysis (O44
+/// L16's question 4, the owner's answer of 2026-11-24): the smaller of the
+/// bolt's design shear capacity and its bearing cap 1.5 f_u d t (4.4, f_u
+/// the lower of the part's and the bolt's). M20 in a 5 mm leg, f_u 490
+/// MPa, the bolt's capacity 94 kN a plane: bearing 1.5 × 490 × 20 × 5 =
+/// 73.5 kN governs; end 1.2 × 73.5 kN / (490 MPa × 5 mm) = 36 mm (= 1.8
+/// d; 1.3 d 26 mm), rolled edge 0.85 × 36 = 30.6 mm, sheared 32.1875 mm.
+/// A 12 mm leg: bearing 176.4 kN, the shear 94 kN governs.
+#[test]
+fn force_without_analysis_by_hand() {
+    use crate::asce10::{bearing_cap, bolt_minimums, bolt_shear, force_without_analysis};
+    let shear = bolt_shear(0.020, 1, Some(94e3), None, None, None);
+    let bearing = bearing_cap(0.020, 0.005, Some(490e6), Some(800e6));
+    assert!((bearing.unwrap() - 73.5e3).abs() < 1e-6);
+    let (p, basis) = force_without_analysis(shear, bearing);
+    assert!((p.unwrap() - 73.5e3).abs() < 1e-6);
+    assert!(basis.starts_with("the bolt's bearing cap in the part, ASCE 10-97 4.4"));
+    let [end, _, edge] = bolt_minimums(0.020, 0.005, 490e6, p, false, false);
+    assert!((end - 0.036).abs() < 1e-12, "{end}");
+    assert!((edge - 0.0306).abs() < 1e-12, "{edge}");
+    let [_, _, sheared] = bolt_minimums(0.020, 0.005, 490e6, p, false, true);
+    assert!((sheared - (0.0306 + 0.0015875)).abs() < 1e-12);
+    // The bolt's f_u lower than the part's: the bolt's.
+    let low = bearing_cap(0.020, 0.005, Some(490e6), Some(400e6)).unwrap();
+    assert!((low - 60e3).abs() < 1e-6);
+    // A thick leg: the shear capacity governs.
+    let (p, basis) = force_without_analysis(shear, bearing_cap(0.020, 0.012, Some(490e6), None));
+    assert!((p.unwrap() - 94e3).abs() < 1e-6);
+    assert!(basis.starts_with("the bolt's design shear capacity"));
+    assert_eq!(force_without_analysis(None, None), (None, ""));
+}
+
 /// The six curves at L/r 100 and 150 (hand values).
 #[test]
 fn effective_slenderness_curves() {

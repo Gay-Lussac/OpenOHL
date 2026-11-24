@@ -1079,6 +1079,56 @@ pub fn bolt_shear(
     Some(per_plane * f64::from(planes))
 }
 
+/// The bearing cap of one bolt in a connected part (ASCE 10-97 4.4: the
+/// bearing stress, the force on a bolt over d t, at most 1.5 times the
+/// specified minimum tensile strength of the connected part or of the
+/// bolt — the lower, as the member check takes it), N: diameter `d` and
+/// thickness `t` in m, the part's `fu` and the bolt's `fub` in Pa; none
+/// without a thickness or the part's f_u (the bolt's alone: its own).
+pub fn bearing_cap(d: f64, t: f64, fu: Option<f64>, fub: Option<f64>) -> Option<f64> {
+    let f = match (fu, fub) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(a), None) => a,
+        (None, _) => return None,
+    };
+    (t > 0.0 && d > 0.0).then_some(1.5 * f * d * t)
+}
+
+/// The force per bolt the minimum distances take without an analysis (O44
+/// L16's question 4, the owner's answer of 2026-11-24): the most one bolt
+/// can pass into the part — the smaller of its design shear capacity
+/// (4.3.2, [`bolt_shear`]) and its bearing cap in the part (4.4,
+/// [`bearing_cap`]): a force above either is refused by the member and
+/// joint checks, which still check both. With it Eq. 4.5-1's 1.2 P/(f_u t)
+/// is at most 1.8 d. N, and the basis in words ("" none).
+pub fn force_without_analysis(
+    shear: Option<f64>,
+    bearing: Option<f64>,
+) -> (Option<f64>, &'static str) {
+    match (shear, bearing) {
+        (Some(s), Some(b)) if b < s => (
+            Some(b),
+            "the bolt's bearing cap in the part, ASCE 10-97 4.4 (1.5 f_u d t, below its design \
+             shear capacity, 4.3.2)",
+        ),
+        (Some(s), Some(_)) => (
+            Some(s),
+            "the bolt's design shear capacity, ASCE 10-97 4.3.2 (below its bearing cap in the \
+             part, 4.4)",
+        ),
+        (Some(s), None) => (
+            Some(s),
+            "the bolt's design shear capacity, ASCE 10-97 4.3.2",
+        ),
+        (None, Some(b)) => (
+            Some(b),
+            "the bolt's bearing cap in the part, ASCE 10-97 4.4 (1.5 f_u d t; its shear capacity \
+             not known)",
+        ),
+        (None, None) => (None, ""),
+    }
+}
+
 /// Block shear (ASCE 10-97 Eq. 3.10-1): P = 0.60 A_v f_u + A_t f_y, A_v =
 /// t (e + (n − 1) s − (n − ½) d_h) along a bolt line of n bolts (the
 /// bolts shared out over the gauge lines), A_t = t (c − ½ d_h) from the

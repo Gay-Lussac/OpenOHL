@@ -518,7 +518,8 @@ values.
 ### Connection capacities (`benchmarks/structures-fe/joint-capacities.toml`)
 
 Calculations `structures.joint_groups` and `structures.joint_parts` (output
-`usage_<i>`, one case, strength factor 1): invented bolt groups and plate
+`usage_<i>`, one case, strength factor 1; `structures.bolt_distances` since
+2026-11-24: outputs `end_m`, `spacing_m`, `edge_m`, `bolt_force_n`): invented bolt groups and plate
 parts sent to the bundled plugins (`asce10`, `sia263`) as a structure's run
 sends them; the expected usages worked out line by line in
 `benchmarks/structures-fe/reference_joint_capacities.py` from the methods of
@@ -542,6 +543,9 @@ the theory pages ([joint groups](../theory/joint-groups.md),
 | joints-012 | the same, the grade not given: (74) |
 | joints-013 | the edge distance square to the bolt's force not kept (4.5.3, a rolled edge) |
 | joints-014 | a plate torn out towards its side edge (Eq. 3.10-1) |
+| joints-015 | minimum distances without an analysis: the force per bolt capped by its bearing (4.4), a rolled edge (4.5.1, 4.5.2, Eq. 4.5-6; 2026-11-24, calculation `structures.bolt_distances`) |
+| joints-016 | the same, a sheared edge (Eq. 4.5-7) |
+| joints-017 | the same in a thick leg: the bolt's shear capacity (4.3.2) below its bearing governs |
 
 The members' connection capacities were also compared, privately, with a
 tower design program's on a real line's towers (163 690 members): bolt shear

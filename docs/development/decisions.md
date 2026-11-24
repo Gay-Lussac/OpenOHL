@@ -8,6 +8,39 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (bolt distances: ASCE 10-97's force per bolt without an analysis capped by its bearing, O44 L16 question 4)
+
+**The owner's answer** to O44 L16's question 4 (approved 2026-11-24, "go
+ahead with recommendations"): the plugin's force basis without an
+analysis is the smaller of the bolt's shear capacity and its bearing in
+the part (a code plugin change, the source cited; the joint checks still
+check the bearing), and the toe of a rolled angle is taken as a rolled
+edge. **Built: the force basis** (`asce10` only, no core or interface
+change; built, in active development, not approved yet;
+[theory](../theory/asce10.md#minimum-distances-of-bolts)). **Not built:
+the rolled toe** — which edge is sheared is decided by OpenOHL's core
+(`ohl_structures_fe::bolt_rules::basis`: sheared unless the connection
+says `rolled_edge = true`, the owner's rule of 2026-11-03) and sent to
+the plugin as `sheared-edge`; the plugin cannot tell an angle's toe from a
+plate's edge, so taking the toe as rolled is a core change, asked first
+(the rule that plugins stay independent of the core; roadmap O44 L16).
+
+- **Before**: without an analysis the force per bolt in Eq. 4.5-1 was the
+  bolt's design shear capacity (4.3.2) alone.
+- **Now**: the smaller of that and its bearing cap in the part, 1.5 f_u d
+  t (4.4, f_u the lower of the part's and the bolt's; `asce10::bearing_cap`,
+  `asce10::force_without_analysis`); the basis said with the distances. A
+  force above either is refused by the member and joint checks (which
+  still check both), so Eq. 4.5-1's 1.2 P/(f_u t) needs not exceed 1.8 d;
+  an M20 in a 5 mm leg (f_u 490 MPa, 94 kN shear capacity): 73.5 kN, end
+  46 → 36 mm, sheared edge 41 → 32.2 mm (rolled 30.6 mm). Without a shear
+  capacity the bearing cap alone (the force terms were left out before).
+- **Validation**: `joints-015` to `joints-017` (a new calculation,
+  `structures.bolt_distances`: one bolt's minimums by a code plugin as
+  the bolt tools ask for them), written out in
+  `reference_joint_capacities.py`; the plugin's test
+  `force_without_analysis_by_hand`.
+
 ## 2026-11-24 (member checks: a built-up member's bearing on one ply until the plate between is defined, O19 stage 5)
 
 **The owner's answer** to stage 5's question 2 of 2026-11-23 (approved

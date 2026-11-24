@@ -3454,6 +3454,19 @@ only where it helps):
   > smaller of the bolt's shear capacity and its bearing in the part (a
   > code plugin change, the source cited; the joint checks still check the
   > bearing), and the toe of a rolled angle taken as a rolled edge.
+  > (2026-11-24) → approved. **The force basis built 2026-11-24** (the
+  > `asce10` plugin; built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-bolt-distances-asce-10-97s-force-per-bolt-without-an-analysis-capped-by-its-bearing-o44-l16-question-4)):
+  > the smaller of the bolt's design shear capacity and 1.5 f_u d t,
+  > the basis said; validation `joints-015` to `joints-017`. **The rolled
+  > toe not built**: the edge is the core's choice
+  > (`bolt_rules::basis`, sheared unless `rolled_edge = true`, the owner's
+  > rule of 2026-11-03), sent to the plugin as `sheared-edge`; taking an
+  > angle's toe as rolled is a core change → asked: a member's own leg
+  > (no plate thickness given) of a rolled angle profile sent as a rolled
+  > edge unless its connection says otherwise? Recommended: yes (the
+  > profile is rolled; a flame-cut or sheared toe is then given as
+  > `rolled_edge = false`).
 - [x] L17. **One plate in one gap; a turn refused after writing tried as
   before the plates between** (L16's questions 2 and 3; the owner busy:
   built on its own, reported). **Built 2026-11-23, in active development,

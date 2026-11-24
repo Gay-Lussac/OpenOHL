@@ -12,6 +12,7 @@
 
 use ohl_core::units::{Force, Length, Quantity, Stress};
 use ohl_member_check::joints::{self as mc, GroupsChecked, JointsChecked};
+use ohl_plugins::bolt_distances_full as bd;
 use ohl_plugins::joint_check as jc;
 use ohl_plugins::joint_check_groups as gr;
 use ohl_plugins::joint_check_groups_tension as gt;
@@ -22,6 +23,7 @@ use crate::{Calculation, Inputs, Outputs, Registry};
 pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(JointParts));
     registry.register(Box::new(JointGroups));
+    registry.register(Box::new(BoltDistances));
 }
 
 /// A value with a unit from a table (`"16 mm"`), SI; none: not given.
@@ -373,6 +375,68 @@ impl Calculation for JointGroups {
             if let Some(u) = r.usages.first() {
                 out.insert(format!("usage_{}", r.id), u.usage);
             }
+        }
+        Ok(out)
+    }
+}
+
+/// `structures.bolt_distances`: one bolt's minimum end distance, spacing
+/// and edge distance in a connected part by a design code's plugin, as the
+/// bolt tools and the joint layout ask for them (2026-11-24: the force per
+/// bolt without an analysis, O44 L16's question 4).
+struct BoltDistances;
+
+impl Calculation for BoltDistances {
+    fn id(&self) -> &'static str {
+        "structures.bolt_distances"
+    }
+
+    fn description(&self) -> &'static str {
+        "One bolt's minimum distances in a connected part by a design code's plugin (inputs: \
+         method, diameter, thickness, ultimate (the part's), sheared (true: a sheared edge, \
+         false: rolled), redundant, optional analysis_force, optional bolts = {count, planes, \
+         shear_capacity, bolt_ultimate}); outputs end_m, spacing_m, edge_m, bolt_force_n (the \
+         force per bolt they took; absent: none)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let p = method(inputs)?;
+        let flag = |k: &str| {
+            inputs
+                .get(k)
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(false)
+        };
+        let bolts = match inputs.get("bolts").and_then(toml::Value::as_table) {
+            None => None,
+            Some(b) => Some(bd::Bolts {
+                count: count(b, "count", 1),
+                shear_planes: count(b, "planes", 1),
+                shear_capacity: q::<Force>(b, "shear_capacity")?,
+                shear_capacity_shank: None,
+                ultimate: q::<Stress>(b, "bolt_ultimate")?,
+                threads_in_shear: None,
+                grade: String::new(),
+            }),
+        };
+        let input = bd::DistanceInput {
+            diameter: need::<Length>(inputs, "diameter")?,
+            thickness: need::<Length>(inputs, "thickness")?,
+            ultimate: q::<Stress>(inputs, "ultimate")?,
+            analysis_force: q::<Force>(inputs, "analysis_force")?,
+            bolts,
+            sheared_edge: flag("sheared"),
+            redundant: flag("redundant"),
+            parameters: String::new(),
+        };
+        let d = mc::minimum_distances_full(&p, &input)?
+            .ok_or("the plugin has no bolt-distances-full export")?;
+        let mut out = Outputs::new();
+        out.insert("end_m".into(), d.end);
+        out.insert("spacing_m".into(), d.spacing);
+        out.insert("edge_m".into(), d.edge);
+        if let Some(f) = d.bolt_force {
+            out.insert("bolt_force_n".into(), f);
         }
         Ok(out)
     }

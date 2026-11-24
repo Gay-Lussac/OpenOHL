@@ -497,17 +497,31 @@ strength and \\( P \\) the force one bolt transmits:
 | edge (hole centre to the leg's free edge) | rolled \\( 0.85\,e_{min} \\); sheared or flame-cut \\( 0.85\,e_{min} + 1.6 \\) mm (1/16 in.) | 4.5.3, Eqs. 4.5-6, 4.5-7 |
 
 \\( P \\) is the member's largest axial force over the last analysis
-divided by its bolts at that end; without an analysis the bolt's design
-shear capacity (**conservative**: no bolt carries more) — 4.3.2: the
-capacity given for the bolt (through the shank when the threads are said
-to be out of the shear plane), else \\( F_v = 0.62 f_u \\) of the bolt on
-the root area, taken as 0.6 of the gross area (the threads in the shear
-plane, **conservative**), times its shear planes. Since 2026-11-18 (third
+divided by its bolts at that end; without an analysis **the most one
+bolt can pass into the part** (2026-11-24, the owner's answer to O44
+L16's question 4; built, in active development): the smaller of its
+design shear capacity — 4.3.2: the capacity given for the bolt (through
+the shank when the threads are said to be out of the shear plane), else
+\\( F_v = 0.62 f_u \\) of the bolt on the root area, taken as 0.6 of the
+gross area (the threads in the shear plane, **conservative**), times its
+shear planes — and its **bearing cap in the part**, 4.4: the bearing
+stress (the bolt's force over its diameter times the part's thickness)
+may not exceed 1.5 times the specified minimum tensile strength of the
+connected part or of the bolt (the lower, as the member check takes it),
+so \\( P \\le 1.5 f_u d t \\)
+(`asce10::bearing_cap`, `asce10::force_without_analysis`; the basis said
+with the distances). **Conservative**: a force above either is refused by
+the member and joint checks, which still check both, so a bolt in a
+design that passes never carries more. With it Eq. 4.5-1's
+\\( 1.2P/(f_u t) \\) is at most \\( 1.8 d \\) (the commentary C4.4 ties the
+required end and edge distances to the bearing stress); an
+M20 in a 5 mm leg of \\( f_u \\) 490 MPa with a 94 kN shear capacity: 73.5
+kN, end 36 mm (46 mm with the shear capacity), rolled edge 30.6 mm. Since 2026-11-18 (third
 round) the plugin works this out itself (`asce10::bolt_shear`, its
 `bolt-distances-full`; before, OpenOHL's core did, for every code — the
 same numbers bit for bit on the shipped examples and the real towers
-compared, 4 013 640 member-end rows). Without either the force terms
-are left out (said). **Conservative:** the edge is taken as
+compared, 4 013 640 member-end rows). Without the shear capacity the
+bearing cap alone, without either the force terms are left out (said). **Conservative:** the edge is taken as
 sheared unless the connection says `rolled_edge = true`; holes as punched
 (Eq. 4.5-3 applies; it does not for drilled holes); the spacing is
 checked between any two bolts, also on different gauge lines (the

@@ -20,7 +20,8 @@
 //! Without an analysis the force one bolt transmits is the plugin's own
 //! (third round, 2026-11-18: its `bolt-distances-full` works out the
 //! bolt's design shear capacity by its code from the bolts' data [`basis`]
-//! sends). Where no code gives minimums (the simple check, a plugin
+//! sends; ASCE 10-97's since 2026-11-24 the smaller of it and the bolt's
+//! bearing cap in the part, 4.4). Where no code gives minimums (the simple check, a plugin
 //! without minimum distances, one that returns none for the bolt) the
 //! tools keep the structure's **default minimums** ([`assumed`]: end and
 //! edge 1.5, spacing 3 bolt diameters to start with,
@@ -40,7 +41,9 @@ use crate::model::Model;
 pub enum Force {
     /// The largest member force of the last analysis over the bolts.
     Analysis(f64),
-    /// The bolt's design shear capacity (no analysis: on the safe side).
+    /// The most one bolt can pass by its code without an analysis (on the
+    /// safe side): its design shear capacity, or (ASCE 10-97 since
+    /// 2026-11-24) the smaller of it and its bearing cap in the part.
     Capacity(f64),
     /// Not known (no analysis, no bolt capacity): the force terms left out.
     Unknown,
@@ -88,7 +91,8 @@ pub struct BoltRules {
     /// The force per bolt used.
     pub force: Force,
     /// Where a [`Force::Capacity`] comes from, in words (the plugin's:
-    /// "the bolt's design shear capacity, ASCE 10-97 4.3.2"; "" not said).
+    /// "the bolt's bearing cap in the part, ASCE 10-97 4.4 (…)"; "" not
+    /// said).
     pub force_basis: String,
     /// The bolts' diameter, m.
     pub diameter: f64,
