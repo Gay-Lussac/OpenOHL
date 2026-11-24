@@ -3565,9 +3565,9 @@ Where they do not fit, said ("H2: no level plate across two horizontals
 plate's `[plate.also_bolts]` (the fields of `[plate.leg_bolts]`, the
 second member), provisional as the first holder's. **Weighed per joint**:
 the bolts onto the second holder only add to a plan; a joint laid out
-with fewer ends after the clash rounds than its plan without them is
-planned again without them (the run's guard, `PlanCtx::no_level`, as for
-L11's and L15's steps).
+with fewer ends after the clash rounds than its plan without them, or as
+many on more plates, is planned again without them (the run's guard,
+`PlanCtx::no_level`, as for L11's and L15's steps).
 
 **Drawn, clash-checked, checked.** Joint details draw the second
 holder's end as bolted onto the plate by those bolts (as the leg's for
@@ -3638,7 +3638,11 @@ ends refused so on the 78 private towers, 5 065 of them within 40 mm.
   or as many on fewer plates, kept — on a tie the plan without (measured
   on two private towers before: an end left either way but tried on such a
   plate moved its plane's other ends onto plates, 10 joints as many ends
-  on more plates).
+  on more plates); and after writing, a joint laid out with fewer ends
+  than its plan without them, or as many on more plates, is planned again
+  without them (the run's guard of the level plates, `PlanCtx::no_level`:
+  an end laid out on such a plate whose neighbour the clash rounds then
+  took back).
 
 **Not on the safe side.** Without the estimated eccentricities (their
 default) and at level 4 these offsets are not analysed: said on every run

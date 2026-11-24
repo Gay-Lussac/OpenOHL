@@ -2509,15 +2509,21 @@ fn lay_out_once(
                     touched.insert(j.clone());
                 }
                 // L20's guard: a joint a level plate's bolts onto its second
-                // holder changed laid out with fewer ends than its plan
-                // without them lays out — planned again without them.
+                // holder, or (item 2) a plate in its member's own plane
+                // farther out, changed laid out with fewer ends than its plan
+                // without them lays out, or as many on more plates — planned
+                // again without them.
                 let mut back20: Vec<String> = Vec::new();
                 for o in &outcomes {
-                    let Some(&n) = g.level.get(&o.joint) else {
+                    let Some(&(n, np)) = g.level.get(&o.joint) else {
                         continue;
                     };
-                    let laid = if o.written { o.plan.ends.len() } else { 0 };
-                    if laid < n
+                    let (laid, plates) = if o.written {
+                        (o.plan.ends.len(), o.plates.len())
+                    } else {
+                        (0, 0)
+                    };
+                    if (laid < n || (laid == n && plates > np))
                         && !g.no_level.contains(&o.joint)
                         && !back.contains(&o.joint)
                         && !back11.contains(&o.joint)
@@ -3339,15 +3345,25 @@ fn plans_of(
             .iter()
             .filter(|a| a.direction[2].abs() <= crate::joints::HORIZONTAL_OFF.to_radians().sin())
             .count();
+        // (Item 2: where a plate in its member's own plane puts its axis
+        // farther out than a plate's thickness.)
+        let far_out = settings.own_offset_analysed
+            && p.plates.iter().any(|q| {
+                q.own
+                    .as_ref()
+                    .is_some_and(|w| w.out_more > q.thickness + 1e-9)
+            });
         if !plain
             && !no_level
-            && settings.level_plates
-            && (p.plates.iter().any(|q| q.also.is_some())
-                || (level_ends >= 3 && p.plates.iter().any(|q| q.hold.is_some())))
+            && ((settings.level_plates
+                && (p.plates.iter().any(|q| q.also.is_some())
+                    || (level_ends >= 3 && p.plates.iter().any(|q| q.hold.is_some()))))
+                || far_out)
         {
             let pre = own_with4(false, no_l11, no_between, true);
             if pre.ends != p.ends || pre.plates != p.plates {
-                g.level.insert(j.id.clone(), pre.ends.len());
+                g.level
+                    .insert(j.id.clone(), (pre.ends.len(), pre.plates.len()));
             }
         }
         // L1 (b, c in the plan): today's plan of the joint, for the guard.
@@ -3429,10 +3445,11 @@ struct Guard {
     /// (today's ends before them; kept when the joint is planned again).
     named: BTreeSet<String>,
     /// L20: the joints whose plan a level plate's bolts onto its second
-    /// holder changed, with the ends their plan without them lays out; a
-    /// joint laid out with fewer ends after the clash rounds is planned
-    /// again without them ([`Guard::no_level`]).
-    level: BTreeMap<String, usize>,
+    /// holder, or (item 2) a plate in its member's own plane farther out,
+    /// changed, with the ends and plates their plan without them lays out;
+    /// a joint laid out with fewer ends after the clash rounds, or as many
+    /// on more plates, is planned again without them ([`Guard::no_level`]).
+    level: BTreeMap<String, (usize, usize)>,
     /// L20: the joints planned without the level plates' second holders.
     no_level: BTreeSet<String>,
 }

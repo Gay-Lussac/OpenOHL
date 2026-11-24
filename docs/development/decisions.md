@@ -32,7 +32,10 @@ reported; built, in active development, not approved yet;
 - **Weighed per joint** (where an end lies off its flange): the plan with
   and without these plates, the one laying out more ends or as many on
   fewer plates kept, on a tie the plan without (unweighed, two private
-  towers: 23 joints better, 12 worse — 10 as many ends on more plates).
+  towers: 23 joints better, 12 worse — 10 as many ends on more plates);
+  after writing, the run's guard (`PlanCtx::no_level`, shared with the
+  level plates, now also for as many ends on more plates) plans a joint
+  again without them where it laid out less than its plan without.
 - **Measured**: in the roadmap block and on the theory page (L20 docs).
 
 ## 2026-11-24 (joint layout: a level plate across two horizontals, L20)

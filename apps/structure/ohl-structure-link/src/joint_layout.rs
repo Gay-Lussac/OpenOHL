@@ -2355,8 +2355,10 @@ pub(crate) struct PlanCtx {
     /// writing with them than without.
     pub no_between: bool,
     /// Planned without the level plates' bolts onto their second holders
-    /// (L20): the run's guard found the joint laid out with fewer ends
-    /// after writing with them than without.
+    /// and (item 2) the plates in their members' own planes farther out
+    /// than a plate's thickness (L20): the run's guard found the joint laid
+    /// out with fewer ends after writing with them than without, or as
+    /// many on more plates.
     pub no_level: bool,
 }
 
@@ -2388,14 +2390,16 @@ pub(crate) fn plan_joint_ctx(
     let l11_off = (ctx.plain || ctx.no_l11) && (s.plate_shift || s.both_faces);
     // (L15) Without the plates between a built-up member's angles.
     let between_off = ctx.no_between && s.between_plates;
-    // (L20) Without the level plates' bolts onto their second holders.
-    let level_off = ctx.no_level && s.level_plates;
+    // (L20) Without the level plates' bolts onto their second holders and
+    // the plates in their members' own planes farther out (item 2).
+    let level_off = ctx.no_level && (s.level_plates || s.own_offset_analysed);
     let s = if l11_off || between_off || level_off {
         plain = LayoutSettings {
             plate_shift: s.plate_shift && !l11_off,
             both_faces: s.both_faces && !l11_off,
             between_plates: s.between_plates && !between_off,
             level_plates: s.level_plates && !level_off,
+            own_offset_analysed: s.own_offset_analysed && !level_off,
             ..s.clone()
         };
         &plain
