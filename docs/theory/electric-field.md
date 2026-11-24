@@ -537,6 +537,112 @@ the axis and more where the field is smallest.
 examples, CIGRE's brochures on fields of overhead lines, the NISV guide's
 examples).
 
+## Other lines: solved together
+
+*Built 2026-11-24, in active development, not approved yet* (ROADMAP O17;
+`ohl_electrical::joint`, used by the network's electric field check and
+by the Electric field window on an offline working set's file:
+[Checks on a working set](scoped-checks.md#electric-field)).
+
+**Why not each line alone, added.** A line's charges depend on every
+conductor near it: the other line's phases, held at their own voltages,
+and its earth wires, held at zero, take charges of their own and change
+this line's. Two lines' fields each computed alone and added by size are
+therefore **not a proven bound** of their field together: an earth wire
+of one line screens the other (the test `an_earthed_wire_screens`: the
+field under a phase with an earthed wire 2 m beside it is below 90 % of
+the phase's alone), and the change runs either way. So every line near
+is put into **one system**.
+
+**The system (charge simulation).** Every wire of every line near — a
+bundle as its equivalent wire (radius
+\\( r_{eq} = \sqrt[n]{n\,r\,R^{n-1}} \\), as above), each earth wire —
+is cut into straight pieces of uniform charge per metre; each piece's
+potential is held at its wire's voltage at one point on the wire's
+surface at its middle (the matching point). The potential at a point of
+a piece of unit charge per metre is the closed form
+
+\\[ \varphi = \frac{1}{4\pi\varepsilon_0}\left(\operatorname{asinh}\frac{L-t}{\rho} + \operatorname{asinh}\frac{t}{\rho}\right), \\]
+
+and the earth a perfect conductor: each piece's image, of opposite
+charge, in the ground plane fitted under the matching point (the image
+method; the quick ground model of the 3D field, exact for level or
+evenly sloping ground). With \\( P_{ij} \\) the potential at matching
+point \\( i \\) of piece \\( j \\) and its image,
+
+\\[ P\,q = V, \\]
+
+\\( P \\) real and dense, solved by LU with partial pivoting on all cores.
+This is the charge simulation method of Singer, Steinbigler and Weiss
+(1974) with line-segment charges; the image of a charge in a conducting
+plane is Kelvin's (Maxwell 1873, ch. XI).
+
+**Where it reaches, and the pieces.** For each profile the system takes
+every wire within the field distance (500 m by default) in plan of the
+profile's middle; pieces are 4 m near the middle and grow with their
+distance \\( d \\) from it, \\( \min(\max(4, 0.15\,d), 60) \\) m — some 50
+pieces per wire and kilometre. The wires beyond are left out (**NOT ON
+THE SAFE SIDE**, said in every result with the distance). The jumpers are
+left out of the system; this line alone in its own model has them (below).
+
+**By parts.** The system is linear in the voltages, so the charges and
+the field are the sums of each **part**'s alone: a part is one line's
+phases of one frequency at their voltages with every other wire at zero
+(the other lines' conductors and every earth wire). One LU serves every
+part (two right-hand sides each, the real and imaginary parts). At a
+point each part gives a vector of three complex rms phasors
+\\( \vec E_k \\) (the images' field taken in the plane under that point).
+
+**The unknown phase angles.** The phase angle of one line's voltages to
+another's is not known to the program. With part \\( k \\) turned by
+\\( \theta_k \\),
+
+\\[ |\vec E|^2 = \Big|\sum_k e^{j\theta_k}\vec E_k\Big|^2 = \sum_k|\vec E_k|^2 + 2\sum_{k<l}\operatorname{Re}\!\left(e^{j(\theta_l-\theta_k)}\langle\vec E_k,\vec E_l\rangle\right), \qquad \langle\vec a,\vec b\rangle = \sum_{c=x,y,z}\bar a_c b_c. \\]
+
+Each cross term is at most \\( |\langle\vec E_k,\vec E_l\rangle| \\), so
+
+\\[ |\vec E|^2 \le \sum_k|\vec E_k|^2 + 2\sum_{k<l}|\langle\vec E_k,\vec E_l\rangle| . \\]
+
+- **Exact for two parts** (this line and one other line, one frequency
+  each): one angle, and the cross term reaches its bound at
+  \\( \theta_l - \theta_k = -\arg\langle\vec E_k,\vec E_l\rangle \\). The
+  worst over the angle in closed form, no sampling (tested: no angle of
+  3 600 above it, the best within a thousandth).
+- **An upper bound for three or more parts** (said with the result: "an
+  upper bound over their unknown phase angles"): the angles cannot always
+  turn every pair's cross term to its largest at once. **Conservative.**
+- **Never above the parts added by size**,
+  \\( \big(\sum_k|\vec E_k|\big)^2 \\) (Cauchy–Schwarz,
+  \\( |\langle\vec a,\vec b\rangle| \le |\vec a||\vec b| \\)) — and the
+  parts are solved together, each with every other wire in place, so the
+  screening is in them.
+- Parts of **different frequencies** have no fixed angle: their rms adds
+  as \\( \sum_k|\vec E_k|^2 \\), below the bound — conservative. A line with
+  systems of two frequencies gives a part per frequency.
+
+**The voltages.** Every line's phases at their systems' voltages: the
+highest operating voltage where the line gives one, else the nominal
+(**NOT ON THE SAFE SIDE**, said with the line's circuits); the Electric
+field window's voltages for its own line's circuits where given. Earth
+wires at zero; DC poles left out (said).
+
+**The result at a point** is **the larger** of this line alone in its own
+model (above: the charges from its cross-sections, the jumpers, the
+ground plane under each point in the network's check, the window's
+ground model in the window) and the lines solved together. The two
+models differ (the system leaves the jumpers out; it takes every wire's
+charge from the whole system, not from its cross-section), and neither
+is let to lower the other: **conservative** against either model alone.
+
+**Tested** (`ohl_electrical::joint`): two long parallel single wires over
+level ground (220 kV at 12 m, 132 kV at 15 m, 9 m apart) against the
+image method in 2D by hand — \\( p_{ii} = \frac{1}{2\pi\varepsilon_0}\ln\frac{2h_i}{r} \\),
+\\( p_{ij} = \frac{1}{2\pi\varepsilon_0}\ln\frac{D'_{ij}}{D_{ij}} \\),
+\\( q = P^{-1}V \\) per part — each part's field 1 m above the ground
+within 0.5 % at 21 points across; the worst over the angle against 3 600
+sampled angles; three parts' bound above every sampled pair of angles and
+below the parts added by size.
+
 ## What is left out
 
 - **Trees, buildings, fences and people.** Earthed objects shield the
@@ -548,7 +654,9 @@ examples).
 - **Space charge and corona**; DC systems.
 - **The charges' change by the steel** (the line's charges as without
   it).
-- **Other lines** (crossings, parallel lines): not in the model yet.
+- **Other lines** (crossings, parallel lines): in the line's own model
+  never; solved together with it in the network's check and in the window
+  on an offline working set's file ([above](#other-lines-solved-together)).
 
 ## Standards and sources
 
@@ -568,3 +676,11 @@ examples).
   power systems — Measurement procedures with regard to public exposure*.
 - EPRI, *Transmission Line Reference Book, 345 kV and Above* (the
   charge simulation of line conductors over a conducting earth).
+- H. Singer, H. Steinbigler, P. Weiss, "A charge simulation method for
+  the calculation of high voltage fields", *IEEE Transactions on Power
+  Apparatus and Systems* PAS-93 (1974) 1660–1668: the method of the other
+  lines solved together (line-segment charges, matching points on the
+  conductors' surfaces).
+- J. C. Maxwell, *A Treatise on Electricity and Magnetism* (1873),
+  vol. 1, ch. XI: electric images (W. Thomson's), the earth's image
+  charges.

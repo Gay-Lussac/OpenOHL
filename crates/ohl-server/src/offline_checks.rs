@@ -614,3 +614,72 @@ pub fn field_neighbours(
         seconds: started.elapsed().as_secs_f64(),
     })
 }
+
+/// An offline working set's lines near solved together for its electric
+/// field at given profiles ([`electric_neighbours`]).
+#[derive(Debug, Clone)]
+pub struct ElectricNeighbours {
+    /// The other lines in the system, each with its sections.
+    pub lines: Vec<(String, Vec<String>)>,
+    /// What the system took in, in words.
+    pub taken_in: Vec<String>,
+    /// How the unknown phase angles were taken (exact or a bound).
+    pub method: String,
+    /// Per profile asked, the lines together (none computed when no other
+    /// line is near).
+    pub profiles: Vec<Result<ohl_scope::electric::JointProfile, String>>,
+    /// What the file could not give (each makes it NOT ALL CHECKED): the
+    /// system's own reasons and the export's.
+    pub not_all_checked: Vec<String>,
+    /// What was assumed (voltages, left out).
+    pub notes: Vec<String>,
+    /// Seconds.
+    pub seconds: f64,
+}
+
+/// The lines whose wires can come within `distance` of the wires of
+/// `sections` (none: the working set's) of the offline working set in
+/// project file `path`, solved together with this line in weather case
+/// `case` at `profiles` (each its system: the wires within `distance` of
+/// its middle), the worst over their phase angles at every point — **the
+/// network's electric field check's own selection and system**
+/// ([`ohl_scope::electric::joint_lines`] and
+/// [`ohl_scope::electric::joint_at`] on the file), for OHL-Design's
+/// Electric field window (2026-11-24); `given`: the window's voltages of
+/// this line's circuits.
+pub fn electric_neighbours(
+    path: &Path,
+    sections: &[String],
+    case: &ohl_weather::WeatherCase,
+    distance: f64,
+    given: &[ohl_scope::electric::CircuitVoltage],
+    profiles: &[ohl_scope::electric::ProfileAt],
+) -> Result<ElectricNeighbours, String> {
+    let started = Instant::now();
+    let ((lines, model), _, _, gaps) = on_file(path, |net, ws| {
+        if !sections.is_empty() {
+            ws.sections = sections.to_vec();
+        }
+        Ok((
+            ohl_scope::electric::joint_lines(net, ws, case, distance, given)?,
+            ws.model.clone(),
+        ))
+    })?;
+    let computed = if lines.lines.is_empty() {
+        Vec::new()
+    } else {
+        ohl_scope::electric::joint_at(&lines, profiles, distance)
+    };
+    let mut not_all_checked = lines.not_all_checked.clone();
+    not_all_checked.extend(gaps.reasons());
+    not_all_checked.dedup();
+    Ok(ElectricNeighbours {
+        taken_in: lines.taken_in(&model),
+        method: lines.method(),
+        lines: lines.lines.clone(),
+        profiles: computed,
+        not_all_checked,
+        notes: lines.notes.clone(),
+        seconds: started.elapsed().as_secs_f64(),
+    })
+}

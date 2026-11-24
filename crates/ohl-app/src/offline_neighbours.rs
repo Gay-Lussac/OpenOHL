@@ -24,9 +24,13 @@
 //!   field added by size at every profile point, given point and cut —
 //!   the network's own selection and sources
 //!   ([`MagneticNeighbours`], `ohl_server::offline_checks::field_neighbours`);
-//! - **Electric field**: the export's lines within the field distance
-//!   named — their field is not added (NOT ALL CHECKED; the network
-//!   computes no electric field with other lines either);
+//! - **Electric field** (2026-11-24): the export's lines whose wires come
+//!   within the network's field distance of the spans computed, solved
+//!   together with this line (one system of charges over every line's
+//!   wires and earth wires), the worst over their unknown phase angles at
+//!   every profile point and given point — the network's own selection and
+//!   system ([`ElectricNeighbours`],
+//!   `ohl_server::offline_checks::electric_neighbours`);
 //! - a **plugin's check** whose reach needs neighbours: they are not
 //!   handed to the plugin (NOT ALL CHECKED, named).
 //!
@@ -384,7 +388,8 @@ pub fn field_notes(model: &crate::model::Model, magnetic: bool) -> Vec<String> {
         "Versions › Offline copy › Check the offline working set… › Magnetic field adds their \
          field by size (the safe side)"
     } else {
-        "no check adds them yet — the field where they come near is NOT ON THE SAFE SIDE"
+        "the Electric field window solves them together with this line on an offline working \
+         set's file"
     };
     let mut out = not_added_notes(
         n,
@@ -601,6 +606,208 @@ impl MagneticNeighbours {
              spans computed are left out (the network's field distance): their field is not in \
              the result"
         ));
+        out
+    }
+}
+
+/// The sections of `line` with a span among `spans` (structure pairs,
+/// either way).
+fn sections_of_spans(line: &Line, spans: &[(&str, &str)]) -> Vec<String> {
+    line.sections
+        .iter()
+        .filter(|s| {
+            s.points.windows(2).any(|w| {
+                spans.iter().any(|(a, b)| {
+                    (w[0].structure == *a && w[1].structure == *b)
+                        || (w[0].structure == *b && w[1].structure == *a)
+                })
+            })
+        })
+        .map(|s| s.id.clone())
+        .collect()
+}
+
+/// What the Electric field window takes at Run to compute an offline
+/// working set's other lines with its own (2026-11-24): the export's
+/// neighbours and the file.
+pub struct ElectricNeighbours {
+    n: Arc<Result<Neighbours, String>>,
+    path: std::path::PathBuf,
+}
+
+impl ElectricNeighbours {
+    /// On an offline working set's file (none otherwise).
+    pub fn of(model: &crate::model::Model) -> Option<Self> {
+        Some(Self {
+            n: model.offline_neighbours()?,
+            path: model.sources.file.clone(),
+        })
+    }
+
+    /// Computes into `field` (of `line` in weather case `case`, this
+    /// line's circuits at `given` where given) the export's other lines
+    /// whose wires come within the network's field distance of the spans
+    /// it computed, **solved together** with this line — one system of
+    /// charges over every line's wires and earth wires, the worst over the
+    /// other lines' unknown phase angles (exact for one other line, a
+    /// bound for more) — by the network's own code
+    /// ([`ohl_server::offline_checks::electric_neighbours`]): at every
+    /// profile point and given point the larger of this line's own value
+    /// and the lines together. Gives what the results say first (the
+    /// lines, the method, that they may be stale, NOT ALL CHECKED where
+    /// incomplete).
+    pub fn add(
+        &self,
+        line: &Line,
+        case: &ohl_weather::WeatherCase,
+        given: &[ohl_electrical::electric::CircuitVoltage],
+        field: &mut ohl_electrical::electric::ElectricField,
+    ) -> Vec<String> {
+        let n = match self.n.as_ref() {
+            Ok(n) => n,
+            Err(e) => {
+                return vec![format!(
+                    "NOT ALL CHECKED: the offline working set's neighbours could not be read \
+                     ({e}): the other lines near not computed with this line"
+                )];
+            }
+        };
+        let distance = ohl_scope::reach::FIELD_DISTANCE;
+        let mut spans: Vec<(&str, &str)> = Vec::new();
+        spans.extend(
+            field
+                .profiles
+                .iter()
+                .map(|p| (p.from.as_str(), p.to.as_str())),
+        );
+        spans.extend(field.cuts.iter().map(|c| (c.from.as_str(), c.to.as_str())));
+        spans.extend(
+            field
+                .volumes
+                .iter()
+                .map(|v| (v.from.as_str(), v.to.as_str())),
+        );
+        let sections = sections_of_spans(line, &spans);
+        // The profiles, then each given point on its own.
+        let mut at: Vec<ohl_scope::electric::ProfileAt> = field
+            .profiles
+            .iter()
+            .map(|p| ohl_scope::electric::ProfileAt {
+                centre: ohl_scope::electric::centre_of(&p.points).unwrap_or([0.0, 0.0]),
+                points: p.points.iter().map(|q| [q.x, q.y, q.z]).collect(),
+            })
+            .collect();
+        at.extend(field.points.iter().map(|q| ohl_scope::electric::ProfileAt {
+            centre: [q.x, q.y],
+            points: vec![[q.x, q.y, q.z]],
+        }));
+        let mut out = Vec::new();
+        let f = match ohl_server::offline_checks::electric_neighbours(
+            &self.path, &sections, case, distance, given, &at,
+        ) {
+            Ok(f) => f,
+            Err(e) => {
+                out.push(format!(
+                    "NOT ALL CHECKED: the export's other lines were not computed with this line \
+                     ({e}): {} — this line's field alone; where they come near NOT ON THE SAFE \
+                     SIDE",
+                    n.read_words()
+                ));
+                out.push(n.stale_words());
+                out.extend(n.gaps());
+                return out;
+            }
+        };
+        if f.lines.is_empty() {
+            out.push(format!(
+                "Neighbours from {} read: {} — none within {distance:.0} m of the spans computed \
+                 (the network's field distance): nothing of other lines is missing from the \
+                 field.",
+                n.export_words(),
+                n.read_words()
+            ));
+        } else {
+            let lines: Vec<String> = f
+                .lines
+                .iter()
+                .map(|(m, s)| format!("line {m} ({} section(s))", s.len()))
+                .collect();
+            out.push(format!(
+                "Neighbours from {} included: {} within {distance:.0} m of the spans computed, \
+                 solved together with this line in this case — {} (the network's code, {:.1} s).",
+                n.export_words(),
+                lines.join(", "),
+                f.method,
+                f.seconds
+            ));
+        }
+        out.push(n.stale_words());
+        out.extend(n.gaps());
+        let limit = field.limit_kv_m;
+        let mut failed = Vec::new();
+        let np = field.profiles.len();
+        for (k, r) in f.profiles.iter().enumerate() {
+            let j = match r {
+                Ok(j) => j,
+                Err(e) => {
+                    failed.push(if k < np {
+                        format!(
+                            "span {}–{}: {e}",
+                            field.profiles[k].from, field.profiles[k].to
+                        )
+                    } else {
+                        format!("point {}: {e}", field.points[k - np].name)
+                    });
+                    continue;
+                }
+            };
+            let points = if k < np {
+                &mut field.profiles[k].points
+            } else {
+                &mut field.points[k - np..=k - np]
+            };
+            for (q, w) in points.iter_mut().zip(&j.worst_kv_m) {
+                q.e_kv_m = q.e_kv_m.max(*w);
+                q.margin_kv_m = limit.map(|l| l - q.e_kv_m);
+            }
+            if k < np {
+                let p = &mut field.profiles[k];
+                let (offset, max) = p.points.iter().map(|q| (q.offset, q.e_kv_m)).fold(
+                    (0.0, f64::NEG_INFINITY),
+                    |a, b| if b.1 > a.1 { b } else { a },
+                );
+                p.max_kv_m = max;
+                p.max_offset = offset;
+            }
+        }
+        out.extend(
+            f.not_all_checked
+                .iter()
+                .map(|t| format!("NOT ALL CHECKED: {t}")),
+        );
+        out.extend(failed.into_iter().map(|t| {
+            format!("NOT ALL CHECKED: {t}: the lines not solved together there (this line alone)")
+        }));
+        if !f.lines.is_empty() {
+            out.extend(f.notes.iter().cloned());
+            out.push(ohl_scope::electric::SOLVED_TOGETHER.to_owned());
+            if !field.cuts.is_empty() || !field.volumes.is_empty() {
+                out.push(
+                    "NOT ALL CHECKED: the cuts and the volumes' surfaces are this line's field \
+                     alone — the other lines are computed with it at the profiles and the given \
+                     points"
+                        .to_owned(),
+                );
+            }
+            if !field.points.is_empty() {
+                out.push(format!(
+                    "NOT ON THE SAFE SIDE: the given points take the other lines within \
+                     {distance:.0} m of the spans computed — a point far from them may lie \
+                     nearer another line, left out"
+                ));
+            }
+        }
+        out.push(ohl_scope::electric::beyond_note(distance));
         out
     }
 }
