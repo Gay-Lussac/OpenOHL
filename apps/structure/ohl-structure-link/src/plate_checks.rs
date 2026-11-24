@@ -261,6 +261,9 @@ pub(crate) fn bolt_loads(at: &BoltPlace, ef: &[f64; 6], share: f64) -> [f64; 4] 
 /// joint), structure axes.
 pub(crate) type SideMember = (String, [f64; 3], [f64; 3]);
 
+/// The members on each side of a weld (a ring: all in the first).
+type Sides = [Vec<SideMember>; 2];
+
 /// Where a weld is (structure axes): the seam's middle, its direction
 /// (unit), its length and the weld's (m).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1014,16 +1017,7 @@ fn bolt_group(
 /// the joint and a point of their force's line (their bolts' centroid,
 /// else the joint); a ring (b reached from a without that weld): every
 /// member of the welded plate on one side.
-fn weld_sides(
-    j: &JointDetail,
-    a: &str,
-    b: &str,
-) -> (
-    [Vec<SideMember>; 2],
-    [Vec<SideMember>; 2],
-    [Vec<SideMember>; 2],
-    bool,
-) {
+fn weld_sides(j: &JointDetail, a: &str, b: &str) -> (Sides, Sides, Sides, bool) {
     let linked = |x: &str, y: &str| {
         j.plates
             .iter()
