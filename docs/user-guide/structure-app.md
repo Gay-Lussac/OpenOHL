@@ -1388,9 +1388,11 @@ sheared edge) — P 30.2 kN per bolt from the analysis`), the bolt layout
 form the same with what of the layout breaks them, and both views ring
 in red every bolt that breaks one (the clause on hover). The force per
 bolt P is the member's largest axial force over the last analysis
-(Results) shared by its bolts; without an analysis, the bolt's shear
-capacity (on the safe side); without either, the force terms are left
-out (said). The leg's edge is taken as sheared (the larger minimum)
+(Results) shared by its bolts; without an analysis, the most one bolt
+can pass by the code (on the safe side): its shear capacity, by ASCE
+10-97 since 2026-11-24 the smaller of that and its bearing in the part
+(1.5 f_u d t, 4.4 — the joint checks still check the bearing); without
+either, the force terms are left out (said). The leg's edge is taken as sheared (the larger minimum)
 unless the connection says `rolled_edge = true`. Change the capacity
 method and the tools follow its code (the simple check has none); a
 code added later brings its own minimums.

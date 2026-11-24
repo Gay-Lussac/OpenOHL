@@ -267,6 +267,7 @@ fn end_design(c: &full::EndConnection) -> EndDesign {
             "other" => Some(Onto::Other),
             _ => None,
         },
+        onto_thickness: c.onto_thickness,
         leg: ConnectedLeg::parse(&c.leg),
         bolts: c.bolts.as_ref().map(|b| EndBolts {
             count: b.count,

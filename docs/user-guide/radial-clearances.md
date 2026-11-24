@@ -275,8 +275,11 @@ Not on the safe side, and said in the results each time it applies:
   Enter a jumper band margin for your jumpers or tick the wind steps.
 - **The structures rigid** in the wire solve: a structure that gives under
   the wires' pull lets them hang lower, so a clearance below them can be
-  smaller than shown; calculation levels 3 and 4 take the structures'
-  flexibility. Said in every result.
+  smaller than shown. The clearance checks do not take the calculation
+  level yet (the wire tensions, string checks and structure loads do):
+  said in every result — on a line at level 3 or 4 naming that level and
+  that this check still solves the structures rigid (2026-11-24); keep a
+  margin.
 - The swing arc is a rigid swing about the attachments (a
   simplification; the band and its margin cover it on the example lines:
   [theory](../theory/clearances.md#wind-positions)).

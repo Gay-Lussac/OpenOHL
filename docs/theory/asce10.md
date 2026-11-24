@@ -395,9 +395,30 @@ mm (said: "holes punched (+ 1.6 mm)"). **Conservative** for drilled or
 reamed holes, which the standard lets count at their nominal diameter
 (the data do not say how a hole was made).
 
-Without bolts the tension is on the gross section, \\( A f_y \\) (said: "no
-bolts given: connection not checked"). With bolts counted 0 (the holes
-only, the connection elsewhere) only the net section is checked.
+**Without bolts or holes in the data** (2026-11-24, the owner's answer
+of 2026-11-23, O19 stage 5; built, in active development): the
+connection is not checked (said **not on the safe side**: "no bolts
+given: connection not checked (bolt shear, bearing and block shear left
+out; the net section on an assumed hole in each leg, which larger or
+more holes lower)"), and the tension is on the **net section with a bolt
+hole in each leg** of an angle — a single angle 2 holes in the section,
+two angles back to back or in a star 4, four in a cross 8 — until the
+bolts are known, as a tower program takes it (it took the gross section
+before, about 20 % higher on the members compared). The hole is the
+member's typical bolt's (an end whose `[[connection]]` gives bolts: their
+hole, else their standard hole), else a **20 mm bolt's standard hole,
+21.6 mm — the program's default, not the code's** (said: "no bolts or
+holes given: a 21.6 mm hole in each leg (2 in the section; a 20 mm bolt,
+the program's default (not the code's), and its standard hole (4.1))
+until the bolts are known"); punched (+ 1.6 mm) and one leg bolted
+(× 0.9; an unequal angle's short leg) as for any missing data. What it
+leaves out: the real bolts — a larger bolt or more holes in one section
+lower the net section further, and the bolts' shear, bearing and block
+shear can govern; give the member's `bolts` (or its ends' connections)
+to check them. A section that is not an angle (no leg to put a hole in)
+keeps the gross section, said the same way. An end that is continuous,
+welded or seated takes no hole. With bolts counted 0 (the holes only,
+the connection elsewhere) only the net section is checked.
 
 **Conservative:** with two gauge lines, or both legs bolted, all holes
 are taken in one cross-section; the standard's chain rule (3.10.1: deduct the holes of a
@@ -427,7 +448,18 @@ force equally (4.1).
   \\( n \cdot 1.5\,\min(f_u, f_{ub})\,d\,t \cdot n_p \\), \\( n_p \\) the plies
   (profiles side by side). Without the bolt's \\( f_{ub} \\) the member's
   \\( f_u \\) alone, said ("bearing on the member's f_u (the bolt's not
-  given)").
+  given)"). **A built-up member's plies** (2026-11-24, the owner's answer
+  of 2026-11-23, O19 stage 5; built, in active development): its bolts
+  pass through the plate between its angles too, which carries the whole
+  force in bearing; at member level all \\( n_p \\) plies count only where
+  the end bolts onto a plate of known thickness (that plate's own
+  bearing is the joint checks'), else \\( n_p = 1 \\): **one ply's
+  thickness taken as the plate between**, as a tower program takes it
+  (twice as much before on two plies). Said **not on the safe side**
+  ("bearing on the plate between the 2 plies not checked (no plate
+  defined at the end): taken as one ply's 6 mm, a thinner plate bears
+  less"): a plate thinner than one ply bears less; defining the joint's
+  plate checks it.
 
 **The root area** with the threads in the shear plane, when the bolt
 gives no shear capacity: **conservative**, 0.6 of the gross area
@@ -465,17 +497,31 @@ strength and \\( P \\) the force one bolt transmits:
 | edge (hole centre to the leg's free edge) | rolled \\( 0.85\,e_{min} \\); sheared or flame-cut \\( 0.85\,e_{min} + 1.6 \\) mm (1/16 in.) | 4.5.3, Eqs. 4.5-6, 4.5-7 |
 
 \\( P \\) is the member's largest axial force over the last analysis
-divided by its bolts at that end; without an analysis the bolt's design
-shear capacity (**conservative**: no bolt carries more) — 4.3.2: the
-capacity given for the bolt (through the shank when the threads are said
-to be out of the shear plane), else \\( F_v = 0.62 f_u \\) of the bolt on
-the root area, taken as 0.6 of the gross area (the threads in the shear
-plane, **conservative**), times its shear planes. Since 2026-11-18 (third
+divided by its bolts at that end; without an analysis **the most one
+bolt can pass into the part** (2026-11-24, the owner's answer to O44
+L16's question 4; built, in active development): the smaller of its
+design shear capacity — 4.3.2: the capacity given for the bolt (through
+the shank when the threads are said to be out of the shear plane), else
+\\( F_v = 0.62 f_u \\) of the bolt on the root area, taken as 0.6 of the
+gross area (the threads in the shear plane, **conservative**), times its
+shear planes — and its **bearing cap in the part**, 4.4: the bearing
+stress (the bolt's force over its diameter times the part's thickness)
+may not exceed 1.5 times the specified minimum tensile strength of the
+connected part or of the bolt (the lower, as the member check takes it),
+so \\( P \\le 1.5 f_u d t \\)
+(`asce10::bearing_cap`, `asce10::force_without_analysis`; the basis said
+with the distances). **Conservative**: a force above either is refused by
+the member and joint checks, which still check both, so a bolt in a
+design that passes never carries more. With it Eq. 4.5-1's
+\\( 1.2P/(f_u t) \\) is at most \\( 1.8 d \\) (the commentary C4.4 ties the
+required end and edge distances to the bearing stress); an
+M20 in a 5 mm leg of \\( f_u \\) 490 MPa with a 94 kN shear capacity: 73.5
+kN, end 36 mm (46 mm with the shear capacity), rolled edge 30.6 mm. Since 2026-11-18 (third
 round) the plugin works this out itself (`asce10::bolt_shear`, its
 `bolt-distances-full`; before, OpenOHL's core did, for every code — the
 same numbers bit for bit on the shipped examples and the real towers
-compared, 4 013 640 member-end rows). Without either the force terms
-are left out (said). **Conservative:** the edge is taken as
+compared, 4 013 640 member-end rows). Without the shear capacity the
+bearing cap alone, without either the force terms are left out (said). **Conservative:** the edge is taken as
 sheared unless the connection says `rolled_edge = true`; holes as punched
 (Eq. 4.5-3 applies; it does not for drilled holes); the spacing is
 checked between any two bolts, also on different gauge lines (the
@@ -571,7 +617,7 @@ said in what governs (`[assumed: …]`):
 | holes per section | 1 |
 | bolt threads | in the shear plane |
 | twisting | free to warp (K_t 1); built-ups' warping left out |
-| bolts | connection not checked, gross section in tension — **not on the safe side** (no hole to assume without a bolt): the member is marked `[not on the safe side: no bolts given: connection not checked]` and never shown as passing (2026-11-08) |
+| bolts | connection not checked — **not on the safe side**: the member is marked `[not on the safe side: no bolts given: connection not checked (…)]` and never shown as passing (2026-11-08); the tension on the net section with a hole in each leg of an angle (the member's typical bolt's, else a 20 mm bolt's standard hole, the program's default), another section the gross section (2026-11-24) |
 
 ## Plates and welds
 

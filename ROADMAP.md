@@ -1721,6 +1721,11 @@ Six stages, the questions per stage and per detail level:
   > with the share, until the friction branch (3) exists — it is the
   > frictionless slip that leaves such towers near-mechanisms; below it,
   > keep the result (the larger of the two keeps it on the safe side).
+  > **Built 2026-11-24** (built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-structure-analysis-a-case-refused-where-the-joint-options-are-taken-back-at-more-than-10--of-the-joints-o19-stage-44)):
+  > `FeError::TakenBack`, said with the joints, the share, the last
+  > failure and what to do; stops as soon as the share passes 10 %;
+  > tested on an invented beam (1 of 3 joints refused, 1 of 12 solved).
   > (6) The remaining failures (a joint held out of a face only by members
   > in that face, pinned by the releases): leave them refused (said where,
   > as now)? → yes; they are the tower data's near-mechanisms that the
@@ -1834,12 +1839,40 @@ Six stages, the questions per stage and per detail level:
   > **Owner:** (questions, 2026-11-23) (1) 64 members whose design data
   > gives no bolt or hole are checked on their gross section, where the
   > tower program takes a net section 20 % lower: take a hole per leg until
-  > the bolts are known? → yes, on the safe side (said). (2) A built-up
+  > the bolts are known? → yes, on the safe side (said). **Built
+  > 2026-11-24** (approved that day; built, in active development, not
+  > approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-member-checks-a-bolt-hole-in-each-leg-of-a-member-without-bolts-in-its-data-o19-stage-5)):
+  > both code plugins, a hole in each leg of an angle (2, 4 for two angles,
+  > 8 for four), the member's typical bolt's or a 20 mm bolt's (the
+  > program's default, not the code's), said not on the safe side with
+  > what it leaves out; another section keeps the gross section, said;
+  > validation `asce10-009`, `sia263-004`. On the private towers the 64
+  > members are no longer above the program's; 343 members fell below it
+  > (median 0.66; the program took no hole where its data give none). (2) A built-up
   > member's bearing at member level counts both its angles (2 × t), the
   > program one (36 double angles, up to 1.8 times ours against it); the
   > plate between them is checked only where the joint's plate is defined:
   > take one ply's thickness at member level until the plate is known? →
-  > yes, on the safe side (a plugin change: both codes' plugins).
+  > yes, on the safe side (a plugin change: both codes' plugins). **Built
+  > 2026-11-24** (built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-member-checks-a-built-up-members-bearing-on-one-ply-until-the-plate-between-is-defined-o19-stage-5)):
+  > all plies only where the end bolts onto a plate of known thickness,
+  > else one ply's, said not on the safe side (a thinner plate bears
+  > less); validation `asce10-010`, `sia263-005`. The 36 double angles are
+  > no longer above the program's, but the program counts both plies on
+  > about 15 200 other built-up members, now rated lower (median 0.63 of
+  > its; usages in its case up to +35 points, none over 100 %).
+  > (questions, 2026-11-24) (3) The program counts both plies on most
+  > built-up members (it knows their plate between); keep one ply until
+  > the joint's plate is defined? → Recommended: keep (approved, on the
+  > safe side); next, an imported tower's plate between written as a
+  > joint plate where the source gives its thickness (the private
+  > importer), so that both plies count there. (4) The 20 mm default hole
+  > is harsh on small angles (an L40 leg loses about half its area with
+  > two holes) → Recommended: the default bolt the largest the leg's
+  > usual gauge takes, or the structure's most used bolt, sent with the
+  > members (an interface change, to ask).
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition
@@ -1930,7 +1963,14 @@ the code checks once on the converged state), its phases:
   line with the same digits (2026-11-17); 8 measured on a real line
   (kept privately, 2026-11-16 to 11-18).
 - [ ] 7 completing: the internal clearances with the deflected body; the
-  clearances taking the level (rigid today, said); OHL-Design updated
+  clearances taking the level (rigid today, said — since 2026-11-24 by the
+  line's level, the owner's answer of that day: "at level 3 yes, keep it;
+  at level 4 no", the note dropped at level 4 only where that level really
+  takes the flexibility; no clearance check takes the level yet, so at
+  levels 3 and 4 the note now names the level and that the check still
+  solves rigid — built, in active development, not approved yet;
+  [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-clearance-reports-the-rigid-structures-note-by-the-lines-calculation-level));
+  OHL-Design updated
   near moved structures only; a level per structure group and per check;
   springs per attachment point at level 2 (only if wanted); a fixed
   post's tilt; levels 3 and 4 linearised at or started from a current
@@ -3426,6 +3466,19 @@ only where it helps):
   > smaller of the bolt's shear capacity and its bearing in the part (a
   > code plugin change, the source cited; the joint checks still check the
   > bearing), and the toe of a rolled angle taken as a rolled edge.
+  > (2026-11-24) → approved. **The force basis built 2026-11-24** (the
+  > `asce10` plugin; built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-bolt-distances-asce-10-97s-force-per-bolt-without-an-analysis-capped-by-its-bearing-o44-l16-question-4)):
+  > the smaller of the bolt's design shear capacity and 1.5 f_u d t,
+  > the basis said; validation `joints-015` to `joints-017`. **The rolled
+  > toe not built**: the edge is the core's choice
+  > (`bolt_rules::basis`, sheared unless `rolled_edge = true`, the owner's
+  > rule of 2026-11-03), sent to the plugin as `sheared-edge`; taking an
+  > angle's toe as rolled is a core change → asked: a member's own leg
+  > (no plate thickness given) of a rolled angle profile sent as a rolled
+  > edge unless its connection says otherwise? Recommended: yes (the
+  > profile is rolled; a flame-cut or sheared toe is then given as
+  > `rolled_edge = false`).
 - [x] L17. **One plate in one gap; a turn refused after writing tried as
   before the plates between** (L16's questions 2 and 3; the owner busy:
   built on its own, reported). **Built 2026-11-23, in active development,

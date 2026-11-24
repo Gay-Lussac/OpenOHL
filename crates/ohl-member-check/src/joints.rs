@@ -17,7 +17,8 @@
 //! - **The force per bolt** without an analysis is the plugin's own
 //!   (third round, 2026-11-18): its `bolt-distances-full` export gets the
 //!   end's bolts and the structure's parameter file and works out the
-//!   bolt's design shear capacity by its code. A plugin built without it
+//!   bolt's design shear capacity by its code (ASCE 10-97's since
+//!   2026-11-24 capped by its bearing in the part). A plugin built without it
 //!   gets the bolt's shear capacity as ASCE 10-97 4.3.2 gives it, as
 //!   before ([`ohl_structures_fe::bolt_rules::shear_without_plugin`]).
 //! - **One call per structure** for the joint parts, with every load

@@ -110,6 +110,10 @@ pub struct VegetationParams {
     /// Keep every grow-in and every fall-in point found
     /// ([`WireVegetation::all`]), not only the worst.
     pub keep_all: bool,
+    /// The line's calculation level, for the rigid-structures note
+    /// ([`crate::rigid_structures_at`]; 2026-11-24): the check itself
+    /// solves rigid at every level.
+    pub structures: ohl_line::StructuresInSolve,
 }
 
 // The danger-tree defaults (the owner, 2026-10-20): the utility
@@ -151,6 +155,7 @@ impl Default for VegetationParams {
             clearance_by_voltage: None,
             allowance_by_voltage: None,
             keep_all: false,
+            structures: ohl_line::StructuresInSolve::default(),
         }
     }
 }
@@ -606,7 +611,7 @@ impl VegetationCheck {
                 ));
             }
         }
-        beyond.push(crate::RIGID_STRUCTURES.to_owned());
+        beyond.push(crate::rigid_structures_at(params.structures));
         // Fall-in: a straight trunk under each point, no crown — said, not
         // on the safe side (2026-11-08).
         if params.fall_in {

@@ -72,6 +72,175 @@ L22's questions** (roadmap O44; 2026-11-24). Answers given the same day:
   truth with the joint details, the safety checks staying in the core,
   and the layout still changing every step. Step 1's open design
   questions are in the roadmap with recommendations.
+## 2026-11-24 (clearance reports: the rigid-structures note by the line's calculation level)
+
+**The owner's answer** (2026-11-24) on the clearance reports' note
+"NOT ON THE SAFE SIDE: the structures rigid in the wire solve …": *at
+calculation level 3 yes, keep it; at level 4 no* — drop it at level 4
+only where that level really takes the structures' flexibility in the
+check; where a report at level 4 still leaves something rigid, keep a
+precise note. Built (`ohl-clearance`; built, in active development, not
+approved yet).
+
+- **Found**: no clearance check takes the calculation level yet — the
+  clearance zones, internal clearances, safety volumes and vegetation
+  solve the wires with the structures rigid at every level (the wire
+  tensions, string checks and structure loads take it; the internal
+  clearances say so, the others carry `ohl_line::rigid_check_note`). The
+  old note even said "calculation levels 3 and 4 take the structures'
+  flexibility", which is not so for these checks. So **at level 4 the note
+  is kept**, precise, as the answer asks where something stays rigid.
+- **Now** (`ohl_clearance::rigid_structures`, `rigid_structures_at`):
+  levels 1–2 the note as before, without the wrong claim ("the clearance
+  checks do not take the structures' flexibility at any calculation level
+  yet (levels 3 and 4 take it in the wire tensions, string checks and
+  structure loads), so keep a margin"); levels 3 and 4 a note naming the
+  level and what it would model ("this check solves the wires with the
+  structures rigid although the line asks for calculation level 4
+  (structures as their full non-linear models) — the clearance checks do
+  not take the calculation level yet, so the structures giving under the
+  wires' pull, which lets the wires hang lower, is left out and a clearance
+  below them can be smaller than shown; the wire tensions, string checks
+  and structure loads take level 4, this check not yet: keep a margin").
+  The vegetation check gets the level through `VegetationParams::structures`
+  (the application and `ohl lidar vegetation` set it from the line).
+- **Tests**: `the_rigid_structures_note_by_calculation_level` (levels 2, 3,
+  4; the safety volumes' notes on the example line at levels 2 and 4); the
+  existing zone, vegetation and safety-volume tests keep the level-2 note.
+- **Next** (roadmap): when a clearance check takes the flexible solve, its
+  note at that level goes (level 4: none; level 3: the non-linear part
+  left out).
+
+## 2026-11-24 (structure analysis: a case refused where the joint options are taken back at more than 10 % of the joints, O19 stage 4.4)
+
+**The owner's answer** to stage 4.4's question 5 of 2026-11-24 (approved
+the same day, "go ahead with recommendations"): where the taking back of
+the end releases and bolt slip reaches more than 10 % of a tower's joints,
+the case is refused instead of giving a model that is in large parts the
+one without the options, said with the share, until the friction branch
+exists; below it the result is kept (the larger of the two keeps it on
+the safe side). Built (core, `ohl-structures-fe`; built, in active
+development, not approved yet;
+[theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options)).
+
+- **Now**: `solve_with_options` counts the joints taken back after each
+  round; beyond `joint_stiffness::TAKE_BACK_LIMIT` (0.10) of the model's
+  joints it stops with `FeError::TakenBack` — "refused with the joint
+  options: the end releases and bolt slip had to be taken back at N of M
+  joints (x %, more than the limit of 10 %) where the solve with them found
+  mechanisms, buckling modes or implausible displacements — at J1, J2, …
+  (the last: …). The result would be in large parts the model without the
+  options, with members kept rigid beside slipping ones drawing their
+  force, so it would not show this tower with the options (frictionless
+  slip leaves it near a mechanism); solve this case without the joint
+  options until the bolt slip's friction branch exists". Where, why, what
+  to do, as the NOT ON THE SAFE SIDE rule asks. It stops as soon as the
+  share is passed (no rounds spent beyond it).
+- **Tests**: `taking_back_beyond_a_tenth_of_the_joints_refuses_the_case`
+  (an invented beam whose releases leave a joint free: 1 of 3 joints
+  refuses, 1 of 12 is solved and said).
+- On the private towers (2026-11-24 measurement of the take-back: the
+  towers solved only since that day took the slip back at 7 % to 43 % of
+  their joints) the towers above 10 % are now refused with the options;
+  those below keep their results.
+
+## 2026-11-24 (bolt distances: ASCE 10-97's force per bolt without an analysis capped by its bearing, O44 L16 question 4)
+
+**The owner's answer** to O44 L16's question 4 (approved 2026-11-24, "go
+ahead with recommendations"): the plugin's force basis without an
+analysis is the smaller of the bolt's shear capacity and its bearing in
+the part (a code plugin change, the source cited; the joint checks still
+check the bearing), and the toe of a rolled angle is taken as a rolled
+edge. **Built: the force basis** (`asce10` only, no core or interface
+change; built, in active development, not approved yet;
+[theory](../theory/asce10.md#minimum-distances-of-bolts)). **Not built:
+the rolled toe** — which edge is sheared is decided by OpenOHL's core
+(`ohl_structures_fe::bolt_rules::basis`: sheared unless the connection
+says `rolled_edge = true`, the owner's rule of 2026-11-03) and sent to
+the plugin as `sheared-edge`; the plugin cannot tell an angle's toe from a
+plate's edge, so taking the toe as rolled is a core change, asked first
+(the rule that plugins stay independent of the core; roadmap O44 L16).
+
+- **Before**: without an analysis the force per bolt in Eq. 4.5-1 was the
+  bolt's design shear capacity (4.3.2) alone.
+- **Now**: the smaller of that and its bearing cap in the part, 1.5 f_u d
+  t (4.4, f_u the lower of the part's and the bolt's; `asce10::bearing_cap`,
+  `asce10::force_without_analysis`); the basis said with the distances. A
+  force above either is refused by the member and joint checks (which
+  still check both), so Eq. 4.5-1's 1.2 P/(f_u t) needs not exceed 1.8 d;
+  an M20 in a 5 mm leg (f_u 490 MPa, 94 kN shear capacity): 73.5 kN, end
+  46 → 36 mm, sheared edge 41 → 32.2 mm (rolled 30.6 mm). Without a shear
+  capacity the bearing cap alone (the force terms were left out before).
+- **Validation**: `joints-015` to `joints-017` (a new calculation,
+  `structures.bolt_distances`: one bolt's minimums by a code plugin as
+  the bolt tools ask for them), written out in
+  `reference_joint_capacities.py`; the plugin's test
+  `force_without_analysis_by_hand`.
+
+## 2026-11-24 (member checks: a built-up member's bearing on one ply until the plate between is defined, O19 stage 5)
+
+**The owner's answer** to stage 5's question 2 of 2026-11-23 (approved
+2026-11-24, "go ahead with recommendations"): at member level a built-up
+member's bearing takes the thickness of one ply until the plate between
+is known — on the safe side; a change of both code plugins. Built (no
+core or interface change; built, in active development, not approved
+yet; [ASCE 10-97](../theory/asce10.md#connections),
+[SIA 263](../theory/sia263.md#bolts)).
+
+- **Before**: bearing × plies (both angles, 2 t), while the plate between
+  them, which carries the whole force in bearing, was checked only where
+  the joint's plate is defined.
+- **Now**: all plies only where the member end bolts onto a plate of known
+  thickness (`onto = plate`, already sent by `member-check-full` as
+  `onto-thickness`; that plate's own bearing is the joint checks'), else
+  one ply's thickness as the plate between. Said **not on the safe side**
+  with the member: "bearing on the plate between the 2 plies not checked
+  (no plate defined at the end): taken as one ply's 6 mm, a thinner plate
+  bears less" — what (the plate's bearing), why (a thinner plate bears
+  less), what makes it safe (defining the plate).
+- **Validation**: `asce10-010`, `sia263-005` by hand; the plugins' tests
+  `built_up_bearing_on_one_ply`.
+- **Measured** (private comparison): the 36 double angles are no longer
+  higher than the program's; but the program counts both plies on about
+  15 200 other built-up members (it evidently knows their plate between),
+  so those are now rated lower than the program's (median 0.63, at least
+  0.50) and their usage in the program's case rises (up to +35 points, none
+  over 100 %) — see the roadmap's question.
+
+## 2026-11-24 (member checks: a bolt hole in each leg of a member without bolts in its data, O19 stage 5)
+
+**The owner's answer** to stage 5's question 1 of 2026-11-23 (approved
+2026-11-24, "go ahead with recommendations"): a member whose design data
+gives no bolts or holes takes a hole in each leg until the bolts are known
+— on the safe side, said. Built in both bundled code plugins (`asce10`,
+`sia263`; no core or interface change; built, in active development, not
+approved yet;
+[ASCE 10-97](../theory/asce10.md#tension),
+[SIA 263](../theory/sia263.md#tension)).
+
+- **Before**: such a member's tension was on its gross section; the tower
+  program compared takes a net section about 20 % lower (64 members rated
+  higher than the program's, kept privately).
+- **Now**: at an end that is bolted (not continuous, welded or seated)
+  with no bolts of known diameter, the tension is the net section with a
+  hole in **each leg of an angle** — a single angle 2 holes, two angles
+  back to back or in a star 4, four in a cross 8 — the hole the member's
+  typical bolt's (an end whose connection gives bolts), else a **20 mm
+  bolt's** (the program's default, not the code's: ASCE 10-97's standard
+  hole 21.6 mm, punched + 1.6 mm, × 0.9 for one leg bolted; SIA 263's
+  Table 17 hole 22 mm in (39)). Said with the member in the rule's three
+  parts: the connection not checked (bolt shear, bearing, block shear /
+  6.2.4.4 left out), the net section on an assumed hole (larger or more
+  holes lower it), give the bolts. A section that is not an angle keeps
+  the gross section, said. A built-up member's thickness for ASCE 10-97 is
+  now its angles' when its design data gives none (as SIA 263 took it).
+- **Validation**: `asce10-009`, `sia263-004` (an invented 60 × 6 angle by
+  hand); the plugins' tests `holes_in_each_leg_without_bolts`.
+- **Measured** (the private comparison of 2026-11-24): the 64 members are
+  no longer higher than the program's; 343 members' tension capacities
+  fell (median 0.66 of the program's: where the program took no hole, its
+  data giving none, or a fractional count; the 20 mm default is harsh on
+  small angles) — see the roadmap's question.
 
 ## 2026-11-24 (every "not on the safe side" says why)
 

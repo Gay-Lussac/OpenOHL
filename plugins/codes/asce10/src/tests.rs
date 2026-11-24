@@ -407,6 +407,152 @@ fn connection_rules_by_hand() {
     );
 }
 
+/// A member whose data gives no bolts or holes (O19 stage 5, the owner's
+/// answer of 2026-11-23, built 2026-11-24): a bolt hole in each leg of an
+/// angle until the bolts are known — the default 20 mm bolt's standard
+/// hole 21.6 mm, punched 23.2 mm; an unequal angle as bolted by its short
+/// leg (its long leg counted as the short one), 0.9 for one leg bolted:
+/// L100 × 60 × 8 with no root radius, A = 8 (100 + 60 − 8) = 1216 mm²,
+/// counted 1216 − 40 × 8 = 896 mm², net 896 − 2 × 23.2 × 8 = 524.8 mm²,
+/// × 355 MPa × 0.9 = 167.6736 kN. Another end's bolt (M16, 17.5 mm hole):
+/// its hole, 896 − 2 × 19.1 × 8 = 590.4 mm², 188.6328 kN. A section that
+/// is not an angle: the gross section, said.
+#[test]
+fn holes_in_each_leg_without_bolts() {
+    let (s, q) = profiled(ohl_sections::Shape::UnequalAngle {
+        h: 0.1,
+        b: 0.06,
+        t: 0.008,
+        r: 0.0,
+    });
+    assert!((q.area - 1216e-6).abs() < 1e-12);
+    let mut b = member("b", s, 2.0, MemberDesign::default(), None);
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 524.8e-6 * 355e6 * 0.9).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section");
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("21.6 mm hole in each leg (2 in the section; a 20 mm bolt")),
+        "{c:?}"
+    );
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.starts_with("no bolts given: connection not checked")),
+        "{c:?}"
+    );
+    // The other end's connection gives its bolts: their hole at this end.
+    b.design.ends[1] = Some(crate::model::EndDesign {
+        bolts: Some(crate::model::EndBolts {
+            count: 2,
+            diameter: Some(0.016),
+            hole: Some(0.0175),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 590.4e-6 * 355e6 * 0.9).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section at a", "{c:?}");
+    // Not an angle: the gross section, as before.
+    let mut s = elastic(10e-4, 50e-8);
+    s.yield_strength = Some(355e6);
+    let c = capacity(&member("g", s, 2.0, MemberDesign::default(), None), None);
+    let (t, what) = c.tension.unwrap();
+    assert!((t - 355e3).abs() < 1e-6);
+    assert_eq!(what, "gross section, no holes");
+}
+
+/// A built-up member's bearing at member level (O19 stage 5, the owner's
+/// answer of 2026-11-23, built 2026-11-24): two plies of 6 mm, 2 M18 in
+/// double shear, f_u 370 MPa — one ply's thickness until the plate between
+/// is defined, 2 × 1.5 × 370 MPa × 18 mm × 6 mm = 119.88 kN, said not on
+/// the safe side; with the end bolted onto a plate of known thickness both
+/// plies, 239.76 kN (the plate's own bearing in the joint checks).
+#[test]
+fn built_up_bearing_on_one_ply() {
+    let mut s = elastic(20e-4, 50e-8);
+    s.yield_strength = Some(355e6);
+    s.ultimate = Some(370e6);
+    let mut b = member(
+        "b",
+        s,
+        2.0,
+        MemberDesign {
+            thickness: Some(0.006),
+            plies: Some(2),
+            connected_leg: Some(ConnectedLeg::Long),
+            bolts: Some(Bolts {
+                diameter: 0.018,
+                hole: Some(0.020),
+                count: 2,
+                shear_planes: 2,
+                shear_capacity: Some(1e6),
+                ultimate: None,
+                holes: Some(1),
+                grade: None,
+            }),
+            ..MemberDesign::default()
+        },
+        None,
+    );
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 119.88e3).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "bearing");
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.starts_with("bearing on the plate between the 2 plies not checked")),
+        "{c:?}"
+    );
+    // Both ends onto a plate of known thickness: both plies.
+    let plate = crate::model::EndDesign {
+        onto: Some(crate::model::Onto::Plate),
+        onto_thickness: Some(0.010),
+        ..Default::default()
+    };
+    b.design.ends = [Some(plate.clone()), Some(plate)];
+    let (t, what) = capacity(&b, None).tension.unwrap();
+    assert!((t - 239.76e3).abs() < 1e-6, "{t}");
+    assert_eq!(what, "bearing");
+}
+
+/// The force per bolt of the minimum distances without an analysis (O44
+/// L16's question 4, the owner's answer of 2026-11-24): the smaller of the
+/// bolt's design shear capacity and its bearing cap 1.5 f_u d t (4.4, f_u
+/// the lower of the part's and the bolt's). M20 in a 5 mm leg, f_u 490
+/// MPa, the bolt's capacity 94 kN a plane: bearing 1.5 × 490 × 20 × 5 =
+/// 73.5 kN governs; end 1.2 × 73.5 kN / (490 MPa × 5 mm) = 36 mm (= 1.8
+/// d; 1.3 d 26 mm), rolled edge 0.85 × 36 = 30.6 mm, sheared 32.1875 mm.
+/// A 12 mm leg: bearing 176.4 kN, the shear 94 kN governs.
+#[test]
+fn force_without_analysis_by_hand() {
+    use crate::asce10::{bearing_cap, bolt_minimums, bolt_shear, force_without_analysis};
+    let shear = bolt_shear(0.020, 1, Some(94e3), None, None, None);
+    let bearing = bearing_cap(0.020, 0.005, Some(490e6), Some(800e6));
+    assert!((bearing.unwrap() - 73.5e3).abs() < 1e-6);
+    let (p, basis) = force_without_analysis(shear, bearing);
+    assert!((p.unwrap() - 73.5e3).abs() < 1e-6);
+    assert!(basis.starts_with("the bolt's bearing cap in the part, ASCE 10-97 4.4"));
+    let [end, _, edge] = bolt_minimums(0.020, 0.005, 490e6, p, false, false);
+    assert!((end - 0.036).abs() < 1e-12, "{end}");
+    assert!((edge - 0.0306).abs() < 1e-12, "{edge}");
+    let [_, _, sheared] = bolt_minimums(0.020, 0.005, 490e6, p, false, true);
+    assert!((sheared - (0.0306 + 0.0015875)).abs() < 1e-12);
+    // The bolt's f_u lower than the part's: the bolt's.
+    let low = bearing_cap(0.020, 0.005, Some(490e6), Some(400e6)).unwrap();
+    assert!((low - 60e3).abs() < 1e-6);
+    // A thick leg: the shear capacity governs.
+    let (p, basis) = force_without_analysis(shear, bearing_cap(0.020, 0.012, Some(490e6), None));
+    assert!((p.unwrap() - 94e3).abs() < 1e-6);
+    assert!(basis.starts_with("the bolt's design shear capacity"));
+    assert_eq!(force_without_analysis(None, None), (None, ""));
+}
+
 /// The six curves at L/r 100 and 150 (hand values).
 #[test]
 fn effective_slenderness_curves() {

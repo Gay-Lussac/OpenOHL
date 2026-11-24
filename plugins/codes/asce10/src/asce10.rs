@@ -43,7 +43,10 @@
 //! long leg counted as the short one); block shear of an angle bolted by
 //! one leg (Eq. 3.10-1); the bolts' shear (count × shear planes × each
 //! one's shear capacity, 4.3.2); bearing (count × 1.5 f_u d t × plies, f_u
-//! the lower of the member's and the bolt's, 4.4). An angle's w/t above
+//! the lower of the member's and the bolt's, 4.4; a built-up member's
+//! plies only where its end bolts onto a plate of known thickness, else
+//! one ply's t as the plate between, said not on the safe side —
+//! 2026-11-24). An angle's w/t above
 //! 25 is said (3.7.1).
 //!
 //! **At each end** (2026-11-02, stage 4.1 and 4.2 of the joint details):
@@ -73,8 +76,11 @@
 //! punched, one hole per section, the bolts' threads in the shear plane
 //! (0.62 f_ub on 0.6 of the gross area) when only their
 //! strength is given (with the threads given out of the plane but no
-//! capacity for it: as with them in). Without bolts, the connection is not checked and
-//! the tension is on the gross section (said so). Local buckling is
+//! capacity for it: as with them in). Without bolts, the connection is not checked (said
+//! not on the safe side) and the tension is on the net section with a bolt
+//! hole in each leg of an angle (2026-11-24, the owner's answer of
+//! 2026-11-23: the member's typical bolt's hole, else [`DEFAULT_BOLT`]'s
+//! standard hole; another shape: the gross section). Local buckling is
 //! checked on angles (and on sections given a `width_thickness`) only.
 
 use crate::lengths::{Worked, ends_of};
@@ -522,7 +528,16 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
         },
     );
     // The connection, at each end: the end's own data over the member's.
-    let thickness = d.thickness.or(legs.map(|l| l.1));
+    // A built-up member's thickness is its angles' (2026-11-24).
+    let thickness = d
+        .thickness
+        .or(legs.map(|l| l.1))
+        .or(leg_holes(s).map(|l| l.1));
+    // The member's typical bolt for an end without bolts or holes in its
+    // data: the first end whose connection gives bolts.
+    let typical = (0..2).find_map(|end| {
+        end_bolts(d, d.ends[end].as_ref(), &mut Vec::new()).map(|(b, _, _)| (b.diameter, b.hole))
+    });
     let checks = [0, 1].map(|end| {
         end_check(
             d,
@@ -532,6 +547,7 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
             fy,
             a,
             m.onto[end].as_ref(),
+            typical,
         )
     });
     // Ends alike (no connection data, or the same capacities at both): as
@@ -709,8 +725,51 @@ pub fn end_bolts(
     Some((b, own.shear_capacity_shank, own.threads_in_shear))
 }
 
+/// The bolt taken for the holes of a member end whose data gives no bolts
+/// or holes when no end of the member gives one either (O19 stage 5, the
+/// owner's answer of 2026-11-23, built 2026-11-24): a 20 mm bolt, m — the
+/// program's default, not ASCE 10-97's (a common lattice-tower bolt; a
+/// larger one is said not on the safe side with the member).
+pub const DEFAULT_BOLT: f64 = 0.020;
+
+/// The legs of an angle section that each take a bolt hole where the data
+/// gives none, and their thickness, m: a single angle 2, two angles back
+/// to back or in a star 4, four in a cross 8; none for another shape (no
+/// leg to put a hole in: the gross section, said).
+pub fn leg_holes(s: &Section) -> Option<(u32, f64)> {
+    use ohl_sections::Shape;
+    match s.profile.as_ref()?.shape {
+        Shape::EqualAngle { t, .. } | Shape::UnequalAngle { t, .. } => Some((2, t)),
+        Shape::DoubleAngle { t, .. } | Shape::StarAngle { t, .. } => Some((4, t)),
+        Shape::CrossAngle { t, .. } => Some((8, t)),
+        _ => None,
+    }
+}
+
+/// The plies a built-up member's bolts bear on at member level (O19
+/// stage 5, the owner's answer of 2026-11-23, built 2026-11-24): all of
+/// them (`plies`) where the end bolts onto a plate of known thickness —
+/// the plate between, whose own bearing the joint checks take — else one
+/// ply's thickness `t` (m) as the plate between, said not on the safe side
+/// (a thinner plate bears less), as a tower program takes it.
+fn plies_in_bearing(plies: f64, t: f64, end: Option<&EndDesign>, conn: &mut Vec<String>) -> f64 {
+    let plate = end.is_some_and(|e| e.onto == Some(Onto::Plate) && e.onto_thickness.is_some());
+    if plies <= 1.0 || plate {
+        return plies;
+    }
+    conn.push(format!(
+        "bearing on the plate between the {plies:.0} plies not checked (no plate defined at the \
+         end): taken as one ply's {:.0} mm, a thinner plate bears less",
+        t * 1e3
+    ));
+    1.0
+}
+
 /// The connection's capacities at one end (`end`: its connection, none:
-/// the member's data only), as before for the member's data.
+/// the member's data only), as before for the member's data. `typical`:
+/// the member's typical bolt (diameter, hole, m) for an end whose data
+/// gives no bolts or holes.
+#[allow(clippy::too_many_arguments)]
 fn end_check(
     d: &MemberDesign,
     end: Option<&EndDesign>,
@@ -719,16 +778,72 @@ fn end_check(
     fy: f64,
     a: f64,
     onto: Option<&OntoLeg>,
+    typical: Option<(f64, Option<f64>)>,
 ) -> EndCheck {
     let plies = f64::from(d.plies.unwrap_or(1));
     let mut shear = None;
     let mut bearing = None;
     let mut conn: Vec<String> = Vec::new();
     let bolts = end_bolts(d, end, &mut conn);
+    // An end that is bolted (not continuous, welded or seated) whose data
+    // gives no bolts or holes: a bolt hole in each leg of an angle in the
+    // net section until the bolts are known (O19 stage 5, the owner's
+    // answer of 2026-11-23: as a tower program takes it, on the safe side;
+    // before, the gross section) — the hole the member's typical bolt's,
+    // else [`DEFAULT_BOLT`]'s standard hole (4.1).
+    let unbolted =
+        end.is_some_and(|e| e.continuous || e.kind.as_deref().is_some_and(|k| k != "bolted"));
+    let mut net_notes: Vec<String> = Vec::new();
+    let assumed = match (bolts, unbolted, leg_holes(s)) {
+        (None, false, Some((legs, _))) => {
+            let (diameter, hole, whose) = match typical {
+                Some((dia, hole)) => (
+                    dia,
+                    hole.unwrap_or(dia + STANDARD_HOLE),
+                    format!("the member's other end's {:.0} mm bolt", dia * 1e3),
+                ),
+                None => (
+                    DEFAULT_BOLT,
+                    DEFAULT_BOLT + STANDARD_HOLE,
+                    format!(
+                        "a {:.0} mm bolt, the program's default (not the code's), and its \
+                         standard hole (4.1)",
+                        DEFAULT_BOLT * 1e3
+                    ),
+                ),
+            };
+            net_notes.push(format!(
+                "no bolts or holes given: a {:.1} mm hole in each leg ({legs} in the section; {whose}) \
+                 until the bolts are known",
+                hole * 1e3
+            ));
+            Some(Bolts {
+                diameter,
+                hole: Some(hole),
+                count: 0,
+                shear_planes: 1,
+                shear_capacity: None,
+                ultimate: None,
+                holes: Some(legs),
+                grade: None,
+            })
+        }
+        _ => None,
+    };
     match bolts {
         None => {
             if conn.is_empty() {
-                conn.push("no bolts given: connection not checked".into());
+                conn.push(if assumed.is_some() {
+                    "no bolts given: connection not checked (bolt shear, bearing and block shear \
+                     left out; the net section on an assumed hole in each leg, which larger or \
+                     more holes lower)"
+                        .into()
+                } else {
+                    "no bolts given: connection not checked (bolt shear, bearing, block shear and \
+                     the net section left out: the tension on the gross section, which holes \
+                     lower)"
+                        .into()
+                });
             }
         }
         // Holes only (the bolts elsewhere): the net section, no bolt check.
@@ -775,6 +890,7 @@ fn end_check(
             };
             match (fu, thickness) {
                 (Some(fu), Some(t)) => {
+                    let plies = plies_in_bearing(plies, t, end, &mut conn);
                     bearing = Some(f64::from(b.count) * 1.5 * fu * b.diameter * t * plies);
                 }
                 (None, _) => conn.push("bearing not checked (no ultimate strength)".into()),
@@ -801,7 +917,7 @@ fn end_check(
         }
     }
     let connected_leg = end.and_then(|e| e.leg).or(d.connected_leg);
-    let mut notes = Vec::new();
+    let mut notes = net_notes;
     // The angle's legs (long, short), m.
     let angle = s.profile.as_ref().and_then(|p| match p.shape {
         ohl_sections::Shape::EqualAngle { h, .. } => Some((h, h)),
@@ -809,7 +925,7 @@ fn end_check(
         _ => None,
     });
     let unequal = angle.is_some_and(|(l, s)| l > s);
-    let mut tension = match (bolts, thickness) {
+    let mut tension = match (bolts.or(assumed.map(|b| (b, None, None))), thickness) {
         (None, _) => (a * fy, "gross section, no holes".to_owned()),
         (Some((b, _, _)), Some(t)) => {
             // The hole: given, else a standard hole (4.1); taken as punched
@@ -961,6 +1077,56 @@ pub fn bolt_shear(
         _ => return None,
     };
     Some(per_plane * f64::from(planes))
+}
+
+/// The bearing cap of one bolt in a connected part (ASCE 10-97 4.4: the
+/// bearing stress, the force on a bolt over d t, at most 1.5 times the
+/// specified minimum tensile strength of the connected part or of the
+/// bolt — the lower, as the member check takes it), N: diameter `d` and
+/// thickness `t` in m, the part's `fu` and the bolt's `fub` in Pa; none
+/// without a thickness or the part's f_u (the bolt's alone: its own).
+pub fn bearing_cap(d: f64, t: f64, fu: Option<f64>, fub: Option<f64>) -> Option<f64> {
+    let f = match (fu, fub) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(a), None) => a,
+        (None, _) => return None,
+    };
+    (t > 0.0 && d > 0.0).then_some(1.5 * f * d * t)
+}
+
+/// The force per bolt the minimum distances take without an analysis (O44
+/// L16's question 4, the owner's answer of 2026-11-24): the most one bolt
+/// can pass into the part — the smaller of its design shear capacity
+/// (4.3.2, [`bolt_shear`]) and its bearing cap in the part (4.4,
+/// [`bearing_cap`]): a force above either is refused by the member and
+/// joint checks, which still check both. With it Eq. 4.5-1's 1.2 P/(f_u t)
+/// is at most 1.8 d. N, and the basis in words ("" none).
+pub fn force_without_analysis(
+    shear: Option<f64>,
+    bearing: Option<f64>,
+) -> (Option<f64>, &'static str) {
+    match (shear, bearing) {
+        (Some(s), Some(b)) if b < s => (
+            Some(b),
+            "the bolt's bearing cap in the part, ASCE 10-97 4.4 (1.5 f_u d t, below its design \
+             shear capacity, 4.3.2)",
+        ),
+        (Some(s), Some(_)) => (
+            Some(s),
+            "the bolt's design shear capacity, ASCE 10-97 4.3.2 (below its bearing cap in the \
+             part, 4.4)",
+        ),
+        (Some(s), None) => (
+            Some(s),
+            "the bolt's design shear capacity, ASCE 10-97 4.3.2",
+        ),
+        (None, Some(b)) => (
+            Some(b),
+            "the bolt's bearing cap in the part, ASCE 10-97 4.4 (1.5 f_u d t; its shear capacity \
+             not known)",
+        ),
+        (None, None) => (None, ""),
+    }
 }
 
 /// Block shear (ASCE 10-97 Eq. 3.10-1): P = 0.60 A_v f_u + A_t f_y, A_v =

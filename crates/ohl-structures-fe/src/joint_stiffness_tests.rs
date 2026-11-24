@@ -427,3 +427,71 @@ kind = "truss"
     };
     assert!(solve(&m, &under, &Options::default(), &default_budget()).is_ok());
 }
+
+/// Taking the options back at more than a tenth of a model's joints
+/// refuses the case (O19 stage 4.4, the owner's answer of 2026-11-24):
+/// the beam of [`a_joint_nothing_holds_keeps_an_end_rigid`] with b not
+/// held across — released, ab and bc let b move along y (a mechanism), so
+/// the releases are taken back at b: 1 of 3 joints (33 %) refuses the
+/// case, said with the joints and why; the same beam beside nine more
+/// joints (fixed, nothing on them: 1 of 12, 8 %) is solved, b taken back
+/// and said.
+#[test]
+fn taking_back_beyond_a_tenth_of_the_joints_refuses_the_case() {
+    let model = || {
+        let mut m = beam("diameter = \"16 mm\", count = 3, holes = 1", false);
+        m.members[0].design.connected_leg = Some(crate::design::ConnectedLeg::Long);
+        let one = beam("diameter = \"16 mm\", count = 1", false);
+        m.members[1].design = one.members[0].design.clone();
+        m.analysis.end_releases = true;
+        m
+    };
+    let mut m = model();
+    apply(&mut m);
+    let loads = Loads {
+        nodal: vec![load(1, [0.0, 2e3, -10e3])],
+        self_weight: 0.0,
+        ..Loads::default()
+    };
+    let options = Options {
+        nonlinear: false,
+        ..Options::default()
+    };
+    let e = solve(&m, &loads, &options, &default_budget()).unwrap_err();
+    let crate::solve::FeError::TakenBack {
+        taken,
+        joints,
+        named,
+        ..
+    } = &e
+    else {
+        panic!("{e}")
+    };
+    assert_eq!((*taken, *joints), (1, 3), "{e}");
+    assert_eq!(named, &vec!["b".to_owned()]);
+    let words = e.to_string();
+    for w in [
+        "refused with the joint options",
+        "1 of 3 joints (33 %, more than the limit of 10 %)",
+        "at b",
+        "solve this case without the joint options",
+    ] {
+        assert!(words.contains(w), "{w}: {words}");
+    }
+    // Nine more joints: 1 of 12 is within the limit — solved, said.
+    let mut m = model();
+    for k in 0..9 {
+        let mut n = m.nodes[0].clone();
+        n.id = format!("x{k}");
+        n.point = [0.0, 1.0 + f64::from(k), 0.0];
+        m.nodes.push(n);
+    }
+    apply(&mut m);
+    let s = solve(&m, &loads, &options, &default_budget()).unwrap();
+    assert_eq!(s.taken_back, vec!["b".to_owned()]);
+    assert!(
+        crate::joint_stiffness::case_note(&s)
+            .unwrap()
+            .contains("taken back at the members meeting 1 joint(s) of 12 (8 %)")
+    );
+}

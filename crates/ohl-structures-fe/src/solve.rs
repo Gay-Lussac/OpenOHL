@@ -236,6 +236,21 @@ pub enum FeError {
         /// The structure's size, m.
         size: f64,
     },
+    /// The end releases and the bolt slip had to be taken back at more
+    /// than [`crate::joint_stiffness::TAKE_BACK_LIMIT`] of the model's
+    /// joints (`solve_with_options`; O19 stage 4.4, the owner's answer of
+    /// 2026-11-24): the case is refused with the options rather than given
+    /// as a model that is in large parts the one without them.
+    TakenBack {
+        /// Joints where they were taken back.
+        taken: usize,
+        /// The model's joints.
+        joints: usize,
+        /// The first of them (at most [`MECHANISM_JOINTS`]).
+        named: Vec<String>,
+        /// The last failure of the solve with them, in words.
+        cause: String,
+    },
     /// An exit clause stopped the iterations.
     Stopped {
         /// Which limit.
@@ -350,6 +365,26 @@ impl fmt::Display for FeError {
                 f,
                 "not converged: {stop}; out-of-balance forces still {:.2e} of the loads",
                 residual
+            ),
+            FeError::TakenBack {
+                taken,
+                joints,
+                named,
+                cause,
+            } => write!(
+                f,
+                "refused with the joint options: the end releases and bolt slip had to be taken \
+                 back at {taken} of {joints} joints ({:.0} %, more than the limit of {:.0} %) \
+                 where the solve with them found mechanisms, buckling modes or implausible \
+                 displacements — at {}{} (the last: {cause}). The result would be in large parts \
+                 the model without the options, with members kept rigid beside slipping ones \
+                 drawing their force, so it would not show this tower with the options \
+                 (frictionless slip leaves it near a mechanism); solve this case without the \
+                 joint options until the bolt slip's friction branch exists",
+                100.0 * *taken as f64 / (*joints).max(1) as f64,
+                crate::joint_stiffness::TAKE_BACK_LIMIT * 100.0,
+                named.join(", "),
+                if *taken > named.len() { ", …" } else { "" }
             ),
         }
     }

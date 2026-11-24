@@ -1016,7 +1016,8 @@ before; the method names are `member-check`'s):
   they took (`bolt-force`) and where it comes from (`force-basis`).
   Without an analysis **the plugin works out the bolt's own design shear
   capacity by its code** — before, OpenOHL sent ASCE 10-97 4.3.2's for
-  every code. A plugin built without it is asked by `bolt-distances` as
+  every code (the bundled `asce10` since 2026-11-24 the smaller of it and
+  the bolt's bearing cap in the part, 4.4). A plugin built without it is asked by `bolt-distances` as
   before (the analysis' force, else ASCE 10-97 4.3.2's bolt shear, said).
 
 **Never another code in their place.** With a structure whose method is

@@ -227,7 +227,13 @@ fn fnv(text: &str) -> u64 {
 /// be higher than shown; give what is missing, or check it by hand",
 /// "— turn it on / make it a frame to take them"); with those words taken
 /// out the lines hash to the value before (0xc0af_556a_a502_75d7), so every
-/// usage's bits are the same.
+/// usage's bits are the same. Recorded again 2026-11-24 (O19 stage 5, the
+/// owner's answer of 2026-11-23): a member end without bolts or holes in
+/// its data takes a hole in each leg of an angle — 96 of the 2 256 lines
+/// say so in new words (the members without bolts), 36 of them with the
+/// hole (`every-profile.ohls` m-EA, m-EA-2, m-UA), 4 usages changed (m-UA
+/// in case C, tension now on the net section (39): 176.1 kN, the gross
+/// section before); every other usage's bits the same.
 #[test]
 fn the_examples_give_the_cores_numbers() {
     if !built() {
@@ -242,7 +248,7 @@ fn the_examples_give_the_cores_numbers() {
         lines(&repo().join(f), &sections, "sia263-2013", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0x8723_ca32_ae0e_aa96, "{out}");
+    assert_eq!(fnv(&out), 0x69c5_d277_d9ea_23c2, "{out}");
 }
 
 /// The same examples by ASCE 10-97 (the default), now its bundled plugin
@@ -251,7 +257,9 @@ fn the_examples_give_the_cores_numbers() {
 /// it) — the same hash, every usage's bits and what governs. Recorded
 /// again 2026-11-24: the not-safe marks' wording only (as above); with
 /// those words taken out the lines hash to the value before
-/// (0xa2ac_8421_7e06_e804).
+/// (0xa2ac_8421_7e06_e804). Recorded again 2026-11-24 (as above): 96 lines
+/// in new words, 36 with the hole in each leg, 4 usages changed (m-UA in
+/// case C: the net section, 95.1 kN).
 #[test]
 fn the_examples_keep_the_cores_asce10_numbers() {
     if !built() {
@@ -266,7 +274,7 @@ fn the_examples_keep_the_cores_asce10_numbers() {
         lines(&repo().join(f), &sections, "asce10-97", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0xa495_6143_6051_f5fd, "{out}");
+    assert_eq!(fnv(&out), 0x58dd_da48_cbc2_3fa0, "{out}");
 }
 
 fn library() -> ohl_sections::SectionLibrary {

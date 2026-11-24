@@ -1043,7 +1043,7 @@ pub fn check(
     budget: &ohl_core::budget::Budget,
 ) -> Result<InternalReport, String> {
     let mut report = InternalReport {
-        notes: vec![crate::RIGID_STRUCTURES.to_owned()],
+        notes: vec![crate::rigid_structures(line)],
         ..InternalReport::default()
     };
     let potentials = line.potentials().map_err(|e| e.to_string())?;

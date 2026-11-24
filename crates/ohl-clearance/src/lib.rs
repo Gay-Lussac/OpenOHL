@@ -36,11 +36,49 @@
 
 /// Every clearance of the wires is computed with the structures rigid in
 /// the wire solve (2026-11-08: said with the reports, not on the safe
-/// side): a structure giving under the wires' pull lowers their sags.
+/// side): a structure giving under the wires' pull lowers their sags. The
+/// note of a line at calculation level 1 or 2 ([`rigid_structures_at`]).
+/// Since 2026-11-24 it no longer says that levels 3 and 4 take the
+/// structures' flexibility here: the clearance checks solve the wires rigid
+/// at every level (the wire tensions, string checks and structure loads
+/// take the level).
 pub const RIGID_STRUCTURES: &str = "NOT ON THE SAFE SIDE: the structures rigid in the wire \
      solve — a structure giving under the wires' pull lets the wires hang lower, so a \
-     clearance below them can be smaller than shown; calculation levels 3 and 4 take the \
-     structures' flexibility (Calculation level), else keep a margin";
+     clearance below them can be smaller than shown; the clearance checks do not take the \
+     structures' flexibility at any calculation level yet (levels 3 and 4 take it in the wire \
+     tensions, string checks and structure loads), so keep a margin";
+
+/// The rigid-structures note of a clearance report for `line`'s calculation
+/// level ([`rigid_structures_at`]).
+pub fn rigid_structures(line: &ohl_line::Line) -> String {
+    rigid_structures_at(line.solver.structures)
+}
+
+/// The rigid-structures note of a clearance report at the calculation
+/// level `level` (owner, 2026-11-24: at level 3 keep the note and say
+/// exactly what is not covered; at level 4 drop it only where that level
+/// really takes the structures' flexibility in the check). The clearance
+/// checks (clearance zones, internal clearances, safety volumes,
+/// vegetation) solve the wires with the structures rigid at every level —
+/// none takes the level yet — so a line at level 3 or 4 gets a note naming
+/// its level and what is left out (the whole flexibility, not only level
+/// 4's non-linear part); levels 1–2 [`RIGID_STRUCTURES`].
+pub fn rigid_structures_at(level: ohl_line::StructuresInSolve) -> String {
+    use ohl_line::StructuresInSolve;
+    let (n, what) = match level {
+        StructuresInSolve::Rigid => return RIGID_STRUCTURES.to_owned(),
+        StructuresInSolve::Linear => (3, "a linear stiffness at their attachment points"),
+        StructuresInSolve::Full => (4, "their full non-linear models"),
+    };
+    format!(
+        "NOT ON THE SAFE SIDE: this check solves the wires with the structures rigid although \
+         the line asks for calculation level {n} (structures as {what}) — the clearance checks \
+         do not take the calculation level yet, so the structures giving under the wires' pull, \
+         which lets the wires hang lower, is left out and a clearance below them can be smaller \
+         than shown; the wire tensions, string checks and structure loads take level {n}, this \
+         check not yet: keep a margin"
+    )
+}
 
 pub mod blowout;
 pub mod calculation;
@@ -88,6 +126,50 @@ pub use zone::{Measure, Zone, ZoneFinding, ZoneReport, ZoneRule};
 mod tests {
     use super::*;
     use ohl_core::units::Temperature;
+
+    /// The rigid-structures note per calculation level (owner, 2026-11-24):
+    /// levels 1–2 the note as before (without the claim that levels 3 and 4
+    /// take the flexibility here); levels 3 and 4 kept — the clearance
+    /// checks solve rigid at every level — naming the level and what is left
+    /// out; the safety volumes' notes take the line's level.
+    #[test]
+    fn the_rigid_structures_note_by_calculation_level() {
+        use ohl_line::StructuresInSolve;
+        let rigid = rigid_structures_at(StructuresInSolve::Rigid);
+        assert_eq!(rigid, RIGID_STRUCTURES);
+        assert!(!rigid.contains("levels 3 and 4 take the structures' flexibility (Calculation"));
+        for (level, n, what) in [
+            (StructuresInSolve::Linear, 3, "a linear stiffness"),
+            (StructuresInSolve::Full, 4, "their full non-linear models"),
+        ] {
+            let t = rigid_structures_at(level);
+            assert!(t.starts_with("NOT ON THE SAFE SIDE: this check solves the wires with the"));
+            assert!(
+                t.contains(&format!("calculation level {n} (structures as {what}")),
+                "{t}"
+            );
+            assert!(
+                t.contains("a clearance below them can be smaller than shown"),
+                "{t}"
+            );
+            assert!(t.ends_with("this check not yet: keep a margin"), "{t}");
+        }
+        let (mut line, _) = example();
+        let notes = |line: &Line| {
+            crate::safety_volume::safe_side_notes(
+                line,
+                &[],
+                crate::safety_volume::WindMode::None,
+                WindSteps::default(),
+            )
+        };
+        assert_eq!(notes(&line)[0], RIGID_STRUCTURES);
+        line.solver.structures = StructuresInSolve::Full;
+        assert_eq!(
+            notes(&line)[0],
+            rigid_structures_at(StructuresInSolve::Full)
+        );
+    }
     use ohl_line::Line;
     use ohl_line::solve::SectionShape;
     use ohl_terrain::{SurveyPoint, Terrain};

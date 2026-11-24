@@ -28,8 +28,10 @@
 //! - `joint-check-groups` (2026-11-19): a joint's bolt groups under the
 //!   members' forces together, each bolt by 4.3.2, 4.4, 4.5 ([`groups`]).
 //! - `bolt-distances` (and `bolt-distances-full`): ASCE 10-97 4.5 with the
-//!   bolt's force; without an analysis the bolt's own design shear
-//!   capacity (4.3.2, [`asce10::bolt_shear`]; third round, 2026-11-18).
+//!   bolt's force; without an analysis the most one bolt can pass into
+//!   the part: the smaller of its own design shear capacity (4.3.2,
+//!   [`asce10::bolt_shear`]; third round, 2026-11-18) and its bearing cap
+//!   1.5 f_u d t (4.4, [`asce10::bearing_cap`]; 2026-11-24).
 //! - **Parameters**: none — ASCE 10-97's design strengths have no factors
 //!   to set ([`params`]); a parameter file `Plugins/asce10.toml` that is not
 //!   empty is refused, so that a value meant for it is never silently left

@@ -144,5 +144,30 @@ av1 = t * (22 * MM + 2 * 40 * MM - 2.5 * dh)
 at1 = t * (25 * MM + 0 - 0.5 * dh)
 cases["joints-014"] = 120 * KN / (0.60 * av1 * 360 * MPA + at1 * 235 * MPA)
 
+# --- minimum distances without an analysis, ASCE 10-97 -------------------
+# O: the force per bolt the smaller of its design shear capacity (4.3.2,
+# given 94 kN a plane) and its bearing cap in the part (4.4: 1.5 F_u d t,
+# F_u the lower of the part's and the bolt's) — M20 in a 5 mm leg of 490
+# MPa (f_ub 800 MPa): 73.5 kN; end (4.5.1) the largest of 1.2 P/(F_u t),
+# 1.3 d, t + d/2; spacing (4.5.2) 1.2 P/(F_u t) + 0.6 d; edge (4.5.3)
+# 0.85 e_min for a rolled edge (Eq. 4.5-6), + 1/16 in. for a sheared one
+# (Eq. 4.5-7).
+d, t, fu = 20 * MM, 5 * MM, 490 * MPA
+p = min(94 * KN, 1.5 * min(fu, 800 * MPA) * d * t)
+force_term = 1.2 * p / (fu * t)
+end_min = max(force_term, 1.3 * d, t + d / 2)
+cases["joints-015 end_m"] = end_min
+cases["joints-015 spacing_m"] = force_term + 0.6 * d
+cases["joints-015 edge_m"] = 0.85 * end_min
+cases["joints-015 bolt_force_n"] = p
+cases["joints-016 edge_m"] = 0.85 * end_min + 0.0625 * 25.4 * MM
+# P: a 12 mm leg: the bearing cap 176.4 kN, the shear capacity governs.
+t = 12 * MM
+p = min(94 * KN, 1.5 * min(fu, 800 * MPA) * d * t)
+force_term = 1.2 * p / (fu * t)
+cases["joints-017 end_m"] = max(force_term, 1.3 * d, t + d / 2)
+cases["joints-017 spacing_m"] = force_term + 0.6 * d
+cases["joints-017 bolt_force_n"] = p
+
 for k, v in cases.items():
     print(f"{k} {v!r}")
