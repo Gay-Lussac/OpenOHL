@@ -189,7 +189,8 @@ fn with_redundant_force(
     let s = match supported {
         Err(why) => {
             own.governs.push_str(&format!(
-                " {NOT_SAFE} redundant force ({pct} %) not checked: {why}]"
+                " {NOT_SAFE} redundant force ({pct} %) not checked: {why} — its usage can be \
+                 higher]"
             ));
             return own;
         }
@@ -450,9 +451,9 @@ fn usage_of(
                 "bending not checked (axial check{}): it would add {:.0} % (My {:.2}, Mz {:.2} kN \
                  m along it)",
                 if m.is_frame() {
-                    ", single_angle_moments off"
+                    ", single_angle_moments off — turn it on to take them"
                 } else {
-                    ": a truss member"
+                    ": a truss member — make it a frame to take them"
                 },
                 add * 100.0,
                 kn(my),
@@ -462,7 +463,11 @@ fn usage_of(
     }
     not_safe_notes.extend(uncovered_clauses(analysis, m, f, strength));
     if !not_safe_notes.is_empty() {
-        suffix.push_str(&format!(" {NOT_SAFE} {}]", not_safe_notes.join(", ")));
+        suffix.push_str(&format!(
+            " {NOT_SAFE} {} — its usage can be higher than shown; give what is missing, or \
+             check it by hand]",
+            not_safe_notes.join(", ")
+        ));
     }
     // SIA 263: compression with the bending of an eccentric connection,
     // class 4 and frames by the stability check (formulas 50, 62, 63), the

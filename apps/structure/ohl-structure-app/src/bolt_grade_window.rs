@@ -144,7 +144,8 @@ impl StructureApp {
                      is written into the structure file with its values, their source and \
                      'set by command', so every result says where the bolts' strengths come \
                      from. Nothing takes a grade by itself: a bolt without strengths stays \
-                     without them, its checks said NOT ON THE SAFE SIDE. A member's bolts \
+                     without them, its checks said NOT ON THE SAFE SIDE (a bolt pulled too \
+                     hard would not be found). A member's bolts \
                      include its ends' and a gusset plate's own bolts onto it. One undo step.",
                     BOLT_GRADE_ANCHOR,
                     || crate::help::open_section(BOLT_GRADE_PAGE.0, BOLT_GRADE_PAGE.1),

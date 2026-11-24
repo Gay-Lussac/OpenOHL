@@ -530,7 +530,8 @@ pub(crate) fn quantities_of(
     ];
     if !zero_density.is_empty() {
         notes.push(format!(
-            "NOT ON THE SAFE SIDE: section(s) {} without a density — weighed 0 kg/m",
+            "NOT ON THE SAFE SIDE: section(s) {} without a density — weighed 0 kg/m, so the \
+             mass is too low; give their density",
             zero_density.join(", ")
         ));
     }
@@ -543,7 +544,8 @@ pub(crate) fn quantities_of(
     if tally.outlines_worked_out > 0 {
         notes.push(format!(
             "NOT ON THE SAFE SIDE: {} plate or cover outline(s) worked out round their bolts \
-             (the least plate keeping the edge distances; a drawn plate is often larger)",
+             (the least plate keeping the edge distances; a drawn plate is often larger, so \
+             the mass can be too low; draw the outlines to count them)",
             tally.outlines_worked_out
         ));
     }
@@ -552,7 +554,7 @@ pub(crate) fn quantities_of(
             "{} bolt(s) without a mass in the bolt library: weighed from their sizes (shank \
              over the grip, the nut and what stands beyond, head and nut as hexagonal prisms; \
              the drawing proportions where the library gives no sizes) — washers not counted, \
-             NOT ON THE SAFE SIDE by their mass",
+             NOT ON THE SAFE SIDE: their mass is missing; give the bolts a library mass",
             tally.estimated_bolts
         ));
     }
@@ -566,7 +568,7 @@ pub(crate) fn quantities_of(
     if tally.library_no_grip > 0 {
         notes.push(format!(
             "{} bolt(s): the library mass as sold, its grip not given (NOT ON THE SAFE SIDE \
-             where they clamp more)",
+             where they clamp more: a longer bolt weighs more; give the grip in the library)",
             tally.library_no_grip
         ));
     }
@@ -580,7 +582,8 @@ pub(crate) fn quantities_of(
     if !tally.welded_ends.is_empty() {
         notes.push(format!(
             "NOT ON THE SAFE SIDE: {} welded member end(s) — their welds have no size in the \
-             data, not counted ({})",
+             data, not counted, so the mass is too low by their weight (no input for them \
+             yet) ({})",
             tally.welded_ends.len(),
             first_names(&tally.welded_ends)
         ));
@@ -588,14 +591,17 @@ pub(crate) fn quantities_of(
     if !tally.held_ends.is_empty() {
         notes.push(format!(
             "NOT ON THE SAFE SIDE: {} pinned or fixed member end(s) — what holds them is not in \
-             the data, not counted ({})",
+             the data, not counted, so the mass is too low by their weight; model them as \
+             parts (plates, bolts) to count them ({})",
             tally.held_ends.len(),
             first_names(&tally.held_ends)
         ));
     }
     notes.push(
         "NOT ON THE SAFE SIDE: not counted — galvanising, fillers and packs (no record in the \
-         data), step bolts, ladders and the other fittings not modelled as parts"
+         data), step bolts, ladders and the other fittings not modelled as parts, so the counted \
+         mass is too low; the default envelope (self_weight_from left out) keeps the \
+         members × the dead-load factor where that is larger"
             .to_owned(),
     );
     let mut bom = StructureBom::new(&t.id, parts, undefined.into_iter().collect(), notes);
@@ -709,7 +715,8 @@ pub fn counted_self_weight(
             if heavy > typed {
                 note.push_str(&format!(
                     "; NOT ON THE SAFE SIDE: the counted mass, {:.0} kg, is above the factor's \
-                     ({typed:.3} ×)",
+                     ({typed:.3} ×), so the self-weight taken can be too low; raise the factor or \
+                     take the envelope (the default)",
                     bom.mass
                 ));
             }
@@ -724,7 +731,8 @@ pub fn counted_self_weight(
                  ({heavy:.3} × the members' steel), instead of {words} ({typed:.3} ×); the cases \
                  whose self-weight factor is below 1 take the light count, {:.0} kg \
                  ({light:.3} ×). NOT ON THE SAFE SIDE until the counting is validated \
-                 ({not_counted})",
+                 ({not_counted}): the real weight can be higher where it loads the tower and \
+                 lower where it holds it; the envelope (the default) bounds both",
                 bom.mass, bom.light
             ),
         ),

@@ -1367,7 +1367,8 @@ fn layout_summary(ui: &mut egui::Ui, p: &Preview) {
             egui::RichText::new(format!(
                 "{shifted} end(s) moved sideways: the analysis takes each move as an \
                  eccentricity where a frame member meets the joint; where only bars meet it, it \
-                 is left out — NOT ON THE SAFE SIDE there (said per member in the results)"
+                 is left out — NOT ON THE SAFE SIDE there: its moment is missing, so a usage can \
+                 be too low; a frame member at the joint takes it (said per member in the results)"
             ))
             .small()
             .color(ui.visuals().warn_fg_color),

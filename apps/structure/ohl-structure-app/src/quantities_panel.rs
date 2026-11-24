@@ -92,7 +92,8 @@ fn from_words(from: SelfWeightFrom) -> (&'static str, &'static str) {
         SelfWeightFrom::Factor => (
             "Dead-load factor only",
             "The members' steel × the dead-load factor, as before (self_weight_from = \
-             \"factor\"); a run says NOT ON THE SAFE SIDE where the counted mass is above it.",
+             \"factor\"); a run says NOT ON THE SAFE SIDE where the counted mass is above it \
+             (the self-weight taken is then too low).",
         ),
         SelfWeightFrom::Counted => (
             "Counted mass only",
@@ -205,7 +206,9 @@ impl StructureApp {
                 }
                 SelfWeightFrom::Counted => {
                     "Every joint is defined: a run takes the counted mass alone — NOT ON THE \
-                     SAFE SIDE until the counting is validated."
+                     SAFE SIDE until the counting is validated (galvanising, fillers and \
+                     fittings are not in it, so the weight can be too low where it loads the \
+                     tower; the default bounds both sides)."
                         .to_owned()
                 }
             }

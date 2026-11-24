@@ -1175,7 +1175,7 @@ impl StructureApp {
                     ui,
                     format!(
                         "{why} \u{2014} the layout is not checked against minimum distances \
-                         (NOT ON THE SAFE SIDE)"
+                         (NOT ON THE SAFE SIDE: a bolt too close to an edge would not be found)"
                     ),
                 );
             }

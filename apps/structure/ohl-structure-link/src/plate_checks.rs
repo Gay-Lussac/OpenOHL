@@ -469,7 +469,8 @@ pub fn plate_plans_in(
                 if passed.len() > PASSED_EACH {
                     notes.push(format!(
                         "NOT ON THE SAFE SIDE: more than {PASSED_EACH} forces a level plate may \
-                         pass to {}: the rest taken together (none or all)",
+                         pass to {}: the rest taken together (none or all), so a mix of them \
+                         in between, which can load it more, is not tried (not covered yet)",
                         a.member
                     ));
                 }

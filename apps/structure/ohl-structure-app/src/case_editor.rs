@@ -108,8 +108,8 @@ const BACK_SHARE_HOVER: &str = "Back spans %: the wires' horizontal pull from th
      share of the solved pull — 100 (or empty): as solved; 0: none; e.g. 5: 5 % of it. The \
      vertical load, the wind across the spans and the jumpers stay; the factors apply after. A \
      load assumption, not an equilibrium state and not on the safe side by itself (the real \
-     one-sided pull with swinging strings can be smaller or larger): said in the load table \
-     and the results. Back: the span before the point in its section's order. Needs the pulls \
+     one-sided pull with swinging strings can be smaller or larger; the exact way is a line \
+     result solved with the one-sided condition): said in the load table and the results. Back: the span before the point in its section's order. Needs the pulls \
      from the line (OHL-Design; else the rows have no value). No extra solve time: the line is \
      not solved again.";
 
@@ -118,8 +118,8 @@ const AHEAD_SHARE_HOVER: &str = "Ahead spans %: the wires' horizontal pull from 
      this share of the solved pull — 100 (or empty): as solved; 0: none; e.g. 5: 5 % of it. The \
      vertical load, the wind across the spans and the jumpers stay; the factors apply after. A \
      load assumption, not an equilibrium state and not on the safe side by itself (the real \
-     one-sided pull with swinging strings can be smaller or larger): said in the load table \
-     and the results. Ahead: the span after the point in its section's order. Needs the pulls \
+     one-sided pull with swinging strings can be smaller or larger; the exact way is a line \
+     result solved with the one-sided condition): said in the load table and the results. Ahead: the span after the point in its section's order. Needs the pulls \
      from the line (OHL-Design; else the rows have no value). No extra solve time: the line is \
      not solved again.";
 

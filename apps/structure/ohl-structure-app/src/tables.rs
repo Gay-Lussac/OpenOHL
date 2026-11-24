@@ -102,7 +102,8 @@ const DEFAULT_BOLT_MINIMUMS_HELP: &str = "Default minimum, assumed, not a code's
      Table 17 through their plugins). They change where bolts may go, the bolts placed by the \
      joint layout and the plate outlines worked out (so what a plate check reads from them), \
      not the members' checks; they take no force, so they may be smaller than \
-     a code's would be (not on the safe side in that sense, said wherever shown). Writes \
+     a code's would be (not on the safe side in that sense: a bolt can then sit closer to an \
+     edge than the code allows; said wherever shown). Writes \
      [default_bolt_minimums] (structure file version 18); instant (no calculation)";
 
 /// The Analysis row's climbing load (`[analysis] climbing_load`, owner
@@ -263,7 +264,9 @@ fn post_cell(
                 ui.selectable_value(&mut pick, Some(false), "fixed")
                     .on_hover_text(
                         "On a fixed base: a cantilever; its moment goes to the pylon with its \
-                         force (NOT ON THE SAFE SIDE where only trusses meet its joint: said)",
+                         force (NOT ON THE SAFE SIDE where only trusses meet its joint: the \
+                         moment is left out there, so the members can carry more than computed; \
+                         make it a frame joint; said)",
                     );
                 ui.selectable_value(&mut pick, Some(true), "hinged")
                     .on_hover_text(
@@ -383,7 +386,7 @@ const HINGE_FRICTION_HELP: &str = "Its hinge friction, N·m: the moment the hing
      the post turns. Unticked: frictionless (the default) — the post turns freely about the line \
      through its base and its brace's until the wires (or a jumper) balance it, and the pylon \
      takes no longitudinal load from the hinge (NOT ON THE SAFE SIDE for the pylon if the real \
-     hinge sticks). Ticked: the hinge holds the post where it is given while the moment needed is \
+     hinge sticks: its longitudinal load is then larger; tick and give the friction to take it). Ticked: the hinge holds the post where it is given while the moment needed is \
      at most this (stick), else the post turns until that moment is reached (slip); the moment \
      goes into the pylon at the post's base, so its longitudinal load includes the hinge's \
      friction up to this value.";
@@ -2028,7 +2031,8 @@ impl StructureApp {
                                  structure, or the user's plugins): it receives every checked \
                                  member with its forces in each case and gives the usage. Not \
                                  checked by OpenOHL; a member it returns nothing for is shown \
-                                 as NOT CHECKED, NOT ON THE SAFE SIDE. The plates', covers', \
+                                 as NOT CHECKED, NOT ON THE SAFE SIDE (an overload there would \
+                                 not be found). The plates', covers', \
                                  welds' and bolt groups' checks and the bolt tools' minimum \
                                  distances are the plugin's too where it gives them; where \
                                  it does not, they are shown as not checked by it — never \

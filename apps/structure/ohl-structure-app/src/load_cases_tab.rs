@@ -1559,7 +1559,8 @@ impl LoadCasesTab {
             if !gone.is_empty() {
                 out.push(format!(
                     "Case {} takes the line forces of {}, which the line does not send: their \
-                     rows have no value and are left out of the run — NOT ON THE SAFE SIDE. \
+                     rows have no value and are left out of the run — NOT ON THE SAFE SIDE: \
+                     their loads are missing, so the usage is too low. \
                      Since 2026-11-15 the line sends this structure's library cases only (the \
                      weather cases once sent on their own are gone): pick one of them in its 1. \
                      line forces ({}).",

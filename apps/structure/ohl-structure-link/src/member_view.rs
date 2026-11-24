@@ -307,10 +307,13 @@ fn plugin_capacity(
         )
     };
     let given = ohl_member_check::capacities(model).map_err(from)?;
-    let g = given
-        .iter()
-        .find(|g| g.id == id)
-        .ok_or_else(|| from("nothing for this member: NOT CHECKED, NOT ON THE SAFE SIDE".into()))?;
+    let g = given.iter().find(|g| g.id == id).ok_or_else(|| {
+        from(
+            "nothing for this member: NOT CHECKED, NOT ON THE SAFE SIDE (an overload would \
+                 not be found)"
+                .into(),
+        )
+    })?;
     let capacity = |name: &str| {
         g.capacities
             .iter()
@@ -387,7 +390,10 @@ pub(crate) fn rules_in(
             idx,
             end,
             part,
-            format!("{why}; NOT ON THE SAFE SIDE where the code's own minimums would be larger"),
+            format!(
+                "{why}; NOT ON THE SAFE SIDE where the code's own minimums would be larger (the \
+                 bolts could then sit too close to an edge)"
+            ),
         ),
         None => {
             ohl_structures_fe::bolt_rules::rules_in(model, idx, end, force, part).or_else(|| {

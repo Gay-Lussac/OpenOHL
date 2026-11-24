@@ -1291,8 +1291,9 @@ fn surface_rows(
             Source::Line,
             format!(
                 "{origin}; NOT ON THE SAFE SIDE: the pressure on the member's area without a \
-                 drag factor (1) — the wind on the body ([[load_case.structure.wind]]) takes \
-                 the profiles' drag factors"
+                 drag factor (1) — a profile's drag factor is often larger, so this wind can be \
+                 too low; the wind on the body ([[load_case.structure.wind]]) takes the \
+                 profiles' drag factors"
             ),
         ),
         Some(Err(why)) => {

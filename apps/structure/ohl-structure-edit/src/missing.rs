@@ -248,7 +248,8 @@ fn advice(t: &StructureType) -> Vec<Missing> {
                 p.label,
                 if hangs {
                     "NOT ON THE SAFE SIDE: the strings hanging from it are not attached to the 3D \
-                     structure (their loads do not reach the members)"
+                     structure (their loads do not reach the members, so the members' usage is \
+                     too low); link it to a joint"
                 } else {
                     "it carries no load in the analysis"
                 }

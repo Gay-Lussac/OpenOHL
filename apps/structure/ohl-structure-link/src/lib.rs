@@ -1047,7 +1047,8 @@ impl SectionAreas {
                     Vec::new(),
                     vec![format!(
                         "NOT ON THE SAFE SIDE: gusset plates' own wind area not included (the \
-                         joints do not read: {e})"
+                         joints do not read: {e}), so the wind load is too low; fix the joints \
+                         to take them"
                     )],
                 ),
             }
@@ -1122,7 +1123,8 @@ pub fn wind_plates(
     ] {
         if !list.is_empty() {
             notes.push(format!(
-                "NOT ON THE SAFE SIDE: {} gusset plate(s) {what} not in the wind: {}",
+                "NOT ON THE SAFE SIDE: {} gusset plate(s) {what} not in the wind, so the wind \
+                 load is too low; give each an outline, at a joint of the model: {}",
                 list.len(),
                 first_ten(&list)
             ));

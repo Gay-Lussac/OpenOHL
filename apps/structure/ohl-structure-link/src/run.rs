@@ -611,7 +611,8 @@ fn piece_part_loads(
             }
             notes.push(format!(
                 "extension {extension}: wind {} ({}) also on its {} member(s), {:.2} kN \
-                 (NOT ON THE SAFE SIDE: the piece's gusset plates not in it)",
+                 (NOT ON THE SAFE SIDE: the piece's gusset plates not in it, so its wind is too \
+                 low; not taken yet: keep a margin)",
                 k + 1,
                 ohl_structure_loads::wind_text(w),
                 piece.len(),
@@ -704,7 +705,8 @@ fn pole_case(
     if !moments.is_empty() {
         notes.push(format!(
             "NOT ON THE SAFE SIDE: the moment of a post insulator at {} left out (the pole \
-             check takes forces at points only)",
+             check takes forces at points only), so the moment in the pole can be larger than \
+             computed; add it by hand to the pole's check",
             moments.join(", ")
         ));
     }
@@ -823,7 +825,8 @@ fn pole_case(
         }
         Ok(None) => {}
         Err(e) => notes.push(format!(
-            "NOT ON THE SAFE SIDE: the line's foot movements not taken — {e}"
+            "NOT ON THE SAFE SIDE: the line's foot movements not taken — {e}; a lean adds \
+             moment in the pole, so its usage can be too low; fix this to take them"
         )),
     }
     Ok(PoleResult {
@@ -1007,7 +1010,9 @@ pub fn analyse_structure_with(
             }
             Err(e) => {
                 run.notes.push(format!(
-                    "NOT ON THE SAFE SIDE: the line's foot movements not taken — {e}"
+                    "NOT ON THE SAFE SIDE: the line's foot movements not taken — {e}; a \
+                     settlement adds forces in the members, so their usage can be too low; fix \
+                     this to take them"
                 ));
                 Vec::new()
             }
@@ -1095,8 +1100,9 @@ pub fn analyse_structure_with(
             run.notes.push(format!(
                 "NOT ON THE SAFE SIDE: {} plate(s) in their member's own plane laid out with the \
                  member's axis more than the plate's thickness farther out of the flange (up to \
-                 {:.0} mm) — that offset is not in this analysis (the estimated eccentricities \
-                 carry it, an option at level 3)",
+                 {:.0} mm) — that offset is not in this analysis, so its moment is missing and \
+                 a usage can be too low (the estimated eccentricities carry it, an option at \
+                 level 3)",
                 outs.len(),
                 outs.iter().fold(0.0f64, |a, b| a.max(*b)) * 1000.0
             ));
@@ -1365,7 +1371,8 @@ fn estimated_models(
         Err(e) => {
             run.notes.push(format!(
                 "NOT ON THE SAFE SIDE: the estimated eccentricities asked for but not made ({e}) \
-                 — the members checked without them"
+                 — the members checked without them, so their usage can be too low; fix this to \
+                 take them"
             ));
             return None;
         }
@@ -1419,7 +1426,9 @@ fn estimated_models(
     left.dedup();
     if !left.is_empty() {
         run.notes.push(format!(
-            "NOT ON THE SAFE SIDE: estimated eccentricities of {} end(s) left out — {}{}",
+            "NOT ON THE SAFE SIDE: estimated eccentricities of {} end(s) left out — their \
+             moments are missing, so those members' usage can be too low (each says why; a \
+             hand-written eccentricity takes its place): {}{}",
             left.len(),
             left.iter().take(6).cloned().collect::<Vec<_>>().join("; "),
             if left.len() > 6 { "; …" } else { "" }

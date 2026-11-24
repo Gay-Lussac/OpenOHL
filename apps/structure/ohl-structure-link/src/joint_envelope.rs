@@ -78,7 +78,8 @@ impl Governed {
             format!(
                 "NOT ON THE SAFE SIDE: {} support reaction(s) with a component of opposite sign \
                  with and without the joint options — the larger in magnitude shown, the smaller \
-                 of opposite sign not (compare the two runs for the foundations there)",
+                 of opposite sign not, so a foundation's uplift or pull the other way can be \
+                 missed (compare the two runs for the foundations there)",
                 self.reactions_flipped
             )
         })

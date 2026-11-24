@@ -332,7 +332,8 @@ pub(crate) fn bend_rows(
                     .map(|b| {
                         let mut r = row(b, c.2);
                         r.governs = "NOT CHECKED, NOT ON THE SAFE SIDE: the bend's own bending \
-                                     (no design code's check)"
+                                     (no design code's check), so a failure there would not be \
+                                     found; choose a design code"
                             .into();
                         r
                     })
@@ -401,7 +402,8 @@ pub(crate) fn bend_rows(
                     let mut r = row(b, c.2);
                     if let Some(why) = &b.unknown {
                         r.governs = format!(
-                            "NOT CHECKED, NOT ON THE SAFE SIDE: the bend's own bending — {why}"
+                            "NOT CHECKED, NOT ON THE SAFE SIDE: the bend's own bending — {why}; \
+                             a failure there would not be found until that is given"
                         );
                         return r;
                     }

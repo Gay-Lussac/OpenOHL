@@ -1089,7 +1089,8 @@ fn passed_note(sources: &[Source], part: &str) -> Option<String> {
             if sources.iter().any(|s| s.passed.len() > PASSED_EACH) {
                 format!(
                     "; NOT ON THE SAFE SIDE: more than {PASSED_EACH} such forces — the rest taken \
-                     together (none or all)"
+                     together (none or all), so a mix of them in between, which can load the \
+                     bolts more, is not tried (not covered yet)"
                 )
             } else {
                 String::new()
@@ -1135,8 +1136,9 @@ fn end_bolt_groups(
                 h.member.clone(),
                 format!(
                     "NOT CHECKED, NOT ON THE SAFE SIDE: {words} laid onto {}, which ends at the \
-                     joint and {} here: where their forces go is not given (its end bolted onto \
-                     a part, or the pieces in line said one part)",
+                     joint and {} here: where their forces go is not given, so a failure there \
+                     would not be found (give its end bolted onto a part, or say the pieces in \
+                     line one part)",
                     h.member,
                     if bolted {
                         "bolts onto nothing"
@@ -1153,7 +1155,7 @@ fn end_bolt_groups(
                 h.member.clone(),
                 format!(
                     "NOT CHECKED, NOT ON THE SAFE SIDE: {}'s end bolts with {words} laid onto it \
-                     — {why}",
+                     — {why}, so a failure there would not be found until that is given",
                     h.member
                 ),
             )
@@ -1421,7 +1423,7 @@ fn end_bolt_groups(
                 format!(
                     "NOT CHECKED, NOT ON THE SAFE SIDE: {}'s own steel at its end bolts (its net \
                      section, its block shear) under the forces of {words} laid onto it near \
-                     its end — {}",
+                     its end — {}, so a failure there would not be found",
                     h.member,
                     match other {
                         Err(e) => format!("no tension capacity: {e}"),
@@ -1523,7 +1525,7 @@ fn holding_groups(
                          joint's leg ({}) is not given — no bolts of the leg onto it (a leg \
                          running on through the joint: give the plate's own bolts onto it, \
                          [plate.leg_bolts]): the bolts holding it and the leg's bearing under \
-                         them",
+                         them, so a failure there would not be found",
                         legs.join(", ")
                     ),
                 ));
@@ -1570,7 +1572,8 @@ fn holding_groups(
                         q.clone(),
                         format!(
                             "NOT CHECKED, NOT ON THE SAFE SIDE: plate {q}'s bolts onto {hw} — \
-                             their bolts are not placed"
+                             their bolts are not placed, so a failure there would not be found; \
+                             place them"
                         ),
                     ));
                     continue;
@@ -1663,7 +1666,8 @@ fn holding_groups(
                         q.clone(),
                         format!(
                             "NOT CHECKED, NOT ON THE SAFE SIDE: plate {q}'s bolts onto {hw} — \
-                             their bolts not known"
+                             their bolts not known, so a failure there would not be found; give \
+                             them"
                         ),
                     ));
                     continue;
@@ -1811,7 +1815,9 @@ fn holding_groups(
                 if passed_here.len() > PASSED_EACH {
                     notes.push(format!(
                         "NOT ON THE SAFE SIDE: more than {PASSED_EACH} forces the plate may pass \
-                         to these bolts: the rest taken together (none or all)"
+                         to these bolts: the rest taken together (none or all), so a mix of them \
+                         in between, which can load the bolts more, is not tried (not covered \
+                         yet)"
                     ));
                 }
                 if plates.len() > 1 {
@@ -1970,7 +1976,7 @@ fn bearing_groups(
                     part.clone(),
                     format!(
                         "NOT CHECKED, NOT ON THE SAFE SIDE: the bolts onto {part} — its thickness \
-                         is not known"
+                         is not known, so a failure there would not be found; give its thickness"
                     ),
                 ));
                 continue;
