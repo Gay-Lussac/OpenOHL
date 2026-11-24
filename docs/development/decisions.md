@@ -8,6 +8,64 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (structure analysis: the joint options never lower a usage, O19 stage 4.4 follow-up)
+
+**With the end releases or the bolt slip on, each member's and joint
+check's usage is the larger of with and without them** (roadmap O19 stage
+4.4, the owner's question 2 of 2026-11-23 — "build it before the slip is
+used in design"; the owner's "go ahead … so the work goes through the
+night"; built, in active development, not approved yet;
+[theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options);
+no file format change):
+
+- **The solve without the options is used, not only shown**: a run with
+  either option already solved every case without it for its effect; now
+  each member takes the result of the solve where its usage is larger —
+  its forces, usage and what governs, *(without the joint options)* added
+  where that solve governs; equal: the solve with them — as the foot
+  movements and the estimated eccentricities do. Every row of the joints'
+  checks likewise. The tables, the report and the 3D colours read these
+  results; the effect line says how many members each solve governs.
+  OHL-Structure (`joint_envelope::envelope`) and `ohl structures fe` (the
+  listing and the CSV) both; the core gives the rule
+  (`joint_stiffness::governs_without`).
+- **Displacements and reactions**: each joint's displacement the larger
+  of the two (on the safe side for a deflection read from them; the drawn
+  shape mixes the two solves, said); each support's reaction component by
+  component the larger in magnitude (an envelope for the foundations, not
+  one equilibrium — the sum shown stays the solve's with the options); a
+  component of opposite signs in the two (both over 1 % of the largest)
+  said NOT ON THE SAFE SIDE for that foundation.
+- **With the estimated eccentricities on too**, the solve without the
+  joint options takes the estimates as well (four solves): each of the two
+  is the larger of with and without the estimates, then the larger of the
+  two.
+- **A case that solves with the options but not without them fails** (the
+  larger of the two is not known), as it would with them off.
+- **What stays as it was**: a case that fails with the options fails (the
+  taking back); the structure's stiffness for the line at levels 3 and 4
+  without the slip; the validation's `structures.fe` reports the model with
+  the options alone (it checks the solve, not the envelope); the bolt-slip
+  passes not settling stays NOT ON THE SAFE SIDE.
+- **The "not on the safe side for every member" wording** of the notes,
+  the hover texts, the command line's help, the theory and the user guide
+  replaced by the rule, since it now covers the members and joint checks.
+- **Measured** (2026-11-24; the case and the 72 private real towers of
+  2026-11-23, results kept privately; each member's larger usage of the
+  two solves): with the releases 74 022 of 154 129 members are governed by
+  the solve without them (mostly by hundredths of a point), 2 092 raised
+  by more than 1 point (at most +10.7 points), a tower's largest usage
+  raised on 14 of 69 towers (at most ×1.08); with the slip 99 644 of
+  146 486 (68 %) governed without it, 60 004 raised by more than 1 point
+  and 5 641 by more than 10 (at most +47 points: bracing the slip relieves
+  to a few per cent), a tower's largest usage raised on 13 of 66 towers
+  (at most ×1.29) — against the model without the slip the largest usage
+  is now +15 % in the median (1.00 to 1.55), never below; both: 91 449 of
+  137 269 governed without them, 9 of 62 towers' largest usage raised (at
+  most ×1.16). No member passes with the options and fails only through
+  the larger of the two. The solve fails with them on the same 3, 6 and
+  10 towers (below).
+
 ## 2026-11-23 (joint checks: validation of the connection capacities, O19 stage 5)
 
 **The connection capacities validated against hand calculations** (roadmap

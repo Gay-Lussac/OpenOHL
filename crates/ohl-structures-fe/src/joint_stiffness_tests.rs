@@ -298,3 +298,49 @@ fn options_off_change_nothing() {
     assert_eq!(before, after);
     assert_eq!(after.slip_passes, 0);
 }
+
+/// Each member's usage the larger of with and without the options (stage
+/// 4.4 follow-up, 2026-11-24): on `slip_sheds_force_to_the_stiffer_path`'s
+/// bars (yield 200 MPa, so a pull N uses N / (200 MPa × 1000 mm²) = N /
+/// 200 kN; P = 3kδ = 1890 kN) the slip relieves ab (kδ = 630 kN against P/2
+/// = 945 kN without it: 3.15 against 4.725) and loads bc in compression
+/// (2kδ = 1260 kN, Euler's N_cr = π² E I / L² = 4145 kN far above, its
+/// yield 6.3 against 4.725): ab governed by the solve without the slip,
+/// bc by the solve with it, one each.
+#[test]
+fn each_member_takes_the_larger_usage_of_with_and_without() {
+    use crate::joint_stiffness::{effect, governs_without};
+    let mut off_model = bars();
+    for s in &mut off_model.sections {
+        s.yield_strength = Some(200e6);
+    }
+    let k = E * AREA / 1.0;
+    let p = 3.0 * k * 3e-3;
+    let loads = vec![load(1, [p, 0.0, 0.0])];
+    let off = first_order(&off_model, loads.clone());
+    let mut on_model = off_model.clone();
+    on_model.analysis.bolt_slip = true;
+    apply(&mut on_model);
+    let on = first_order(&on_model, loads);
+    let u_off = crate::member_usage(&off_model, &off, 1.0);
+    let u_on = crate::member_usage(&on_model, &on, 1.0);
+    let usage =
+        |u: &[crate::MemberUsage], k: usize| u.iter().find(|x| x.member == k).unwrap().usage;
+    let tol = 10.0 * SLIP_TOLERANCE;
+    assert!((usage(&u_off, 0).unwrap() - 945e3 / 200e3).abs() < tol);
+    assert!((usage(&u_on, 0).unwrap() - 630e3 / 200e3).abs() < tol * 10.0);
+    assert!((usage(&u_on, 1).unwrap() - 1260e3 / 200e3).abs() < tol * 10.0);
+    // ab: without governs; bc: with governs; equal: with governs.
+    assert!(governs_without(usage(&u_on, 0), usage(&u_off, 0)));
+    assert!(!governs_without(usage(&u_on, 1), usage(&u_off, 1)));
+    assert!(!governs_without(Some(0.5), Some(0.5)));
+    assert!(governs_without(None, Some(0.1)));
+    assert!(!governs_without(Some(0.1), None));
+    assert!(governs_without(Some(0.9), Some(f64::NAN)));
+    let d = std::time::Duration::ZERO;
+    let e = effect(&on_model, (&on, &u_on, d), (&off, &u_off, d));
+    assert_eq!(e.governed, (1, 1));
+    assert!(e.words().contains(
+        "1 member(s) governed by the solve with the options, 1 by the solve without them"
+    ));
+}

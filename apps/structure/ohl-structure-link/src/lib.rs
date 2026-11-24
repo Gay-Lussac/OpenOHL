@@ -64,6 +64,9 @@ mod in_line_tests;
 pub mod joint_classes;
 #[cfg(test)]
 mod joint_classes_tests;
+pub mod joint_envelope;
+#[cfg(test)]
+mod joint_envelope_tests;
 pub mod joint_fixes;
 mod joint_groups;
 #[cfg(test)]

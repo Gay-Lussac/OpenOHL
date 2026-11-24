@@ -219,7 +219,11 @@ values were worked out from the joints and which assumed.
    each case without them too and saying the effect
    ([theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options)).
    Measured on real towers: the releases change little, the slip the
-   deflections about threefold.
+   deflections about threefold. **Since 2026-11-24** (the owner's question
+   2; built, in active development, not approved yet) each member's and
+   joint check's usage is the larger of with and without the options, so
+   neither can lower a usage
+   ([theory](../theory/structures-fe.md#end-releases-and-bolt-slip-from-the-joints-bolts-options)).
 
    These matter for deflections and for the structure–line interaction
    at level 4 (O7), much less for the members' forces.

@@ -1666,9 +1666,26 @@ Six stages, the questions per stage and per detail level:
   times), the slip much (the top's displacement about 2.9 times, a tower's
   largest usage +15 %, most bracing relieved and the legs loaded more, the
   solve 16 times slower); runs fail with them on 3 (releases), 6 (slip)
-  and 10 (both) of 72 towers. Neither is on the safe side for every member
-  (said); the tower program's results match the model without them.
-  Validation `structfe-017` to `structfe-020`.
+  and 10 (both) of 72 towers. Alone neither is on the safe side for every
+  member; the tower program's results match the model without them.
+  Validation `structfe-017` to `structfe-020`. **Follow-up built 2026-11-24**
+  (the owner's answer to (2) below; built, in active development, not
+  approved yet;
+  [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-structure-analysis-the-joint-options-never-lower-a-usage-o19-stage-44-follow-up)):
+  with either option on, each member's and joint check's usage is the
+  larger of with and without it (the solve without it, already made for the
+  effect, now used; said "without the joint options" where it governs; the
+  effect line counts the members each solve governs); each joint's larger
+  displacement; each support's reaction component by component the larger
+  in magnitude (a sign flip said not on the safe side); OHL-Structure and
+  `ohl structures fe`. Neither option can lower a usage now. Measured on
+  the 72 private towers: with the slip 68 % of the members are governed by
+  the solve without it (up to +47 points on relieved bracing), a tower's
+  largest usage raised on 13 of 66 towers (at most ×1.29); with the
+  releases 2 092 members raised by more than a point, the largest usage on
+  14 of 69 towers (at most ×1.08). Still as before: a case failing with the
+  options fails; the stiffness for the line at levels 3–4 without the slip.
+  The towers where the take-back fails: (5) below.
   > **Owner:** (questions, 2026-11-23) (1) Keep both off by default? →
   > yes: the releases change little for the time they cost and fail on a
   > few towers; the slip is a different model of the tower, not a
@@ -1679,7 +1696,7 @@ Six stages, the questions per stage and per detail level:
   > measured source? → yes, later, with the source's numbers read from the
   > paper (to be checked; not in the repository's documents). (4) Store the
   > options per structure (a file field, version bump)? → only once (1)–(2)
-  > are decided.
+  > are decided. **Built since:** (2), 2026-11-24 (above).
 - [x] Stage 4.5, the joints' own checks: the plates', covers' and fillet
   welds' (2026-11-04, above); the safe-side items of 2026-11-18 — a weld's
   moments about its seam (SIA 263; no weld rule in ASCE 10-97, said), a

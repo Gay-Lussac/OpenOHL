@@ -954,17 +954,17 @@ pub fn note(model: &Model) -> Option<String> {
             ));
         }
         t.push_str(
-            " — the forces shared differently: not on the safe side for every member (compare \
-             with the option off)",
+            " — the forces shared differently: each member's usage taken as the larger of with \
+             and without the option (on the safe side for the members)",
         );
         parts.push(t);
     }
     if sum.slip_on {
         parts.push(format!(
             "bolt slip (option): {} member(s) slip by their ends' hole clearances (at most {:.1} \
-             mm), friction not counted — larger deflections, the forces shared differently: not \
-             on the safe side for every member (compare with the option off); {} bolted end(s) \
-             without a known clearance (no slip)",
+             mm), friction not counted — larger deflections, the forces shared differently: each \
+             member's usage taken as the larger of with and without the option (on the safe side \
+             for the members); {} bolted end(s) without a known clearance (no slip)",
             sum.slipping,
             sum.largest_slip * 1e3,
             sum.no_clearance
@@ -1027,6 +1027,26 @@ pub struct Effect {
     pub up_down: (usize, usize),
     /// The solve times with and without, s.
     pub seconds: [f64; 2],
+    /// Members whose usage governs with the options and without them
+    /// ([`governs_without`]): each member's usage is the larger of the two
+    /// (stage 4.4 follow-up, 2026-11-24). Members with no usage in either:
+    /// in neither.
+    pub governed: (usize, usize),
+}
+
+/// Whether a member's usage `without` the joint options governs over its
+/// usage `with` them (stage 4.4 follow-up, 2026-11-24, the owner's
+/// question 2 of 2026-11-23): strictly larger ([`crate::check::usage_order`],
+/// NaN above any number), or a usage where with them there is none. Equal:
+/// the solve with the options governs. Each member's usage is the larger of
+/// the two, so neither option can lower a usage — as the foot movements
+/// ([`crate::feet::larger_usage`]).
+pub fn governs_without(with: Option<f64>, without: Option<f64>) -> bool {
+    match (without, with) {
+        (Some(a), Some(b)) => crate::check::usage_order(a, b).is_gt(),
+        (Some(_), None) => true,
+        _ => false,
+    }
 }
 
 /// A member of a solved case for [`Effect::of`]: its id, axial force (N)
@@ -1053,6 +1073,11 @@ impl Effect {
                 if (x.1 - y.1).abs() > 0.1 * y.1.abs() {
                     e.forces.1 += 1;
                 }
+            }
+            if governs_without(x.2, y.2) {
+                e.governed.1 += 1;
+            } else if x.2.is_some() {
+                e.governed.0 += 1;
             }
             if let (Some(p), Some(q)) = (x.2, y.2) {
                 if p > q + 0.01 {
@@ -1086,7 +1111,8 @@ impl Effect {
             "effect of the joint options: largest displacement {:.1} mm against {:.1} mm \
              without ({:+.0} %); {} of {} member forces over 1 kN changed by more than 10 %; \
              {usage}; {} member usage(s) up and {} down by more than 1 point; solved in {:.2} s \
-             against {:.2} s",
+             against {:.2} s; each member's usage the larger of the two: {} member(s) governed by \
+             the solve with the options, {} by the solve without them",
             a * 1e3,
             b * 1e3,
             if b > 0.0 { 100.0 * (a / b - 1.0) } else { 0.0 },
@@ -1095,7 +1121,9 @@ impl Effect {
             self.up_down.0,
             self.up_down.1,
             self.seconds[0],
-            self.seconds[1]
+            self.seconds[1],
+            self.governed.0,
+            self.governed.1
         )
     }
 }
