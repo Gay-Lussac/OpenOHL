@@ -14,10 +14,10 @@
 //!   them), each solved in every position checked with its own line's
 //!   settings and wire library, as the network's checks solve them;
 //! - **Structure loads**: the towers shared with another line of the
-//!   export (twins: the same type within 0.5 m) named — their other
-//!   lines' sections are not added in this window (NOT ALL CHECKED,
-//!   with where they are: the Offline working set window's Loads on
-//!   shared towers);
+//!   export (twins: the same type within 0.5 m) named and, since
+//!   2026-11-24, computed with every line's sections on them under each
+//!   line's cases, the worst kept, by the network's own check on the file
+//!   (the Results' Shared towers view, [`crate::loads_shared`]);
 //! - **Magnetic and electric field**: the export's lines within the
 //!   field distance named — their field is not added in these windows
 //!   (NOT ALL CHECKED; the magnetic field with them: the Offline working
@@ -488,8 +488,10 @@ pub fn banner(ui: &mut eframe::egui::Ui, n: &Result<Neighbours, String>, lines: 
             "An offline working set's file holds the other lines near its working set as the \
              network's server exported them (within the export's reach). The rules to other lines \
              take their wires — each solved in every position checked with its own line's \
-             settings and wires. Structure loads, the fields and plugins do not add them here: \
-             they say which lines lie near, and NOT ALL CHECKED for them. The neighbours are \
+             settings and wires. Structure loads computes the towers shared with another line \
+             with that line's sections (its Shared towers view). The fields and plugins do not \
+             add them here: they say which lines lie near, and NOT ALL CHECKED for them. The \
+             neighbours are \
              those of the export's date: what changed on the network since is not in the file.",
         );
         guide = ui

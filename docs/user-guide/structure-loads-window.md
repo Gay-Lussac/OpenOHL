@@ -159,11 +159,45 @@ it, and the structures left out with why. A structure that was to be
 computed in a case that could not be computed is **not checked** in the
 governing usage (grey), never a pass.
 
-On an **offline working set's file**, the results name the structures
-shared with another line of its export (one of the same type within
-0.5 m): the other lines' sections hanging there are not added — NOT ALL
-CHECKED; the Offline working set window's *Loads on shared towers* adds
-them ([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
+### Shared towers (offline working set)
+
+*Built 2026-11-24, in active development, not approved yet.* On an
+**offline working set's file**, a tower of your working set shared with
+another line of its export (one of the same type within 0.5 m) also
+carries that line's sections. Each Run then computes, beside the
+window's own loads, every such tower **with every line's sections on
+it, under each line's load cases** (its own library's, else the shipped
+defaults), each line solved with its own settings and wires, **the
+worst kept** — the network's own check on the file, so the same loads as
+the network's check on the same file (tested). The Results get a third
+view, **Shared towers**:
+
+1. Read the lines first: which export's neighbours were read, that they
+   **may be stale** (orange; red when the export was stale already), and
+   the verdict — *✔ N shared tower(s) computed with every line's sections
+   on them*, or **NOT ALL CHECKED** in red with each reason below it.
+2. Choose the **Load case**: *the worst of every line's cases* (per point
+   and direction the largest factored load by size, the **Governing**
+   column naming the line and case for transverse / longitudinal /
+   vertical) or one line's case (the points' loads, the lines and the
+   sections hanging there).
+3. Click a row to go to its structure; **Export CSV…** writes the case
+   shown.
+
+![The Structure loads window's Results on an offline working set's file, the Shared towers view: the export and its two lines named, the orange line saying they may be stale, the verdict naming the shared towers computed, their notes, the load case "the worst of every line's cases" and the table of points with their factored loads and governing cases](../images/user-guide/offline-neighbours-loads.png)
+
+At a point holding several lines' sections their loads are added, each
+line's strings there counted again (more load: conservative, said);
+solved rigid (calculation level 2) — a line set to level 3 or 4 is said
+**NOT ON THE SAFE SIDE** with the tower. **NOT ALL CHECKED** (red, also
+named above the views): a shared tower outside your working set
+(read-only in the file — the network computes it for a working set
+holding it), a line's sections or cases not read or not solved, a check
+reaching beyond the export, neighbours left out of the export. The
+**Loads** and **Usage** views keep this line's own loads; the Usage view
+says in red that the usage of the shared towers is this line's loads
+alone (NOT ALL CHECKED for them)
+([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
 
 ## Add the default cases… and the weather cases
 

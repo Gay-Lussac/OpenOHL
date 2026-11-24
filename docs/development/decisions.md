@@ -8,6 +8,71 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-24 (country server: Structure loads with the shared towers' other lines)
+
+**OHL-Design's Structure loads window computes an offline working set's
+shared towers with the export's other lines** (ROADMAP O17: the
+follow-up of 2026-11-23's "left"; its owner question 1 recommended
+"next, those two computed with them in the windows themselves by the
+network's code"; the owner, 2026-11-23: "go ahead with the server too";
+built, in active development, not approved yet;
+[the user guide](../user-guide/structure-loads-window.md#shared-towers-offline-working-set)).
+
+- **Before** (2026-11-23): the window named the towers of the working
+  set shared with another line of the export (twins: the same type
+  within 0.5 m) and said NOT ALL CHECKED for them, pointing to the
+  Offline working set window's *Loads on shared towers*.
+- **Now** each Run computes, beside the window's own loads (in a thread
+  of its own), every such tower **with every line's sections on it,
+  under each line's load cases, the worst kept**, by **the network's own
+  check on the file** — `ohl_server::offline_checks::shared_tower_loads`
+  (new), the same run as `check_offline`'s *structure loads* before its
+  report (both now go through one function opening the file as the
+  network's server reads it): each line's sections on its twin solved
+  with its own settings, wires and cases (its own library's, else the
+  shipped defaults), at a point holding several lines' sections their
+  loads added (each line's strings counted again: conservative, said),
+  solved rigid (a line at level 3 or 4: NOT ON THE SAFE SIDE, said).
+  Shown in the Results' new **Shared towers** view: the export and the
+  lines read, that they may be stale, the verdict, the towers' notes, the
+  worst of every line's cases with the governing line and case per
+  direction, or one line's case point by point.
+- **Tested** against a local network's server (the offline test's
+  synthetic country, a route with 11 towers shared with another line,
+  exported through OHL-Design's window): the window's shared towers give
+  **the same points, governing cases and factored loads, to the bit**, as
+  the network's check `check_offline` on the same file.
+- **Never silently**: **NOT ALL CHECKED** in red (in the view and above
+  the views) for a shared tower outside the working set (read-only in
+  the file: the network computes it for a working set holding it), the
+  result's own reasons (a line's sections not read or not solved, its
+  cases not read), a check reaching beyond the export, neighbours left
+  out of the export. **Decided as conservative** (the owner's question
+  below): the Loads and Usage views keep this line's own loads; the
+  Usage view says in red that the usage of the shared towers is this
+  line's loads alone (NOT ALL CHECKED for them) — the combined loads are
+  not fed into the usage check yet. **Found**: the window's notes were
+  all drawn grey, NOT ALL CHECKED among them; they are now red (and "may
+  be stale" orange), as in the other windows.
+- **Measured** on the synthetic country of 300 pylons (a heavily shared
+  machine, two runs): the window's own loads (145 structures, 9 load
+  cases) 4.0 s; its 32 shared towers with the other lines 38–39 s beside
+  them (a thread of its own: the run 39 s); the network's check on the
+  same file 35–37 s. On 150 pylons (11 shared towers) 15.1 s against
+  15.0 s. A shared tower costs about a second: each line's sections on
+  it solved in every case of every line on it.
+- **The desktop format unchanged.**
+
+> **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
+> 1. The shared towers in a view of their own (the Loads and Usage views
+> keep this line's own loads, the usage of the shared towers NOT ALL
+> CHECKED)? → yes for now; next, the usage check of a shared tower on
+> the combined loads (each line's case its own, the worst kept).
+> 2. The shared towers computed with every Run (seconds per tower on a
+> shared machine), not on a button? → yes: a run without them would be
+> incomplete on such a file; a tick to leave them out (said NOT ALL
+> CHECKED) if they prove slow.
+
 ## 2026-11-23 (country server: a revision of main made by the server so any designer can export)
 
 **Main's unrecorded changes recorded by the network's server itself

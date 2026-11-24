@@ -664,14 +664,14 @@ fn offline_working_set_window_on_a_local_network() {
         &rules,
         report.number,
         &twin,
-        &|h, name| {
+        &|h, title, name| {
             if let Ok(shots) = ohl_core::env::var("OHL_SHOTS") {
                 assert_eq!(crate::files::user(), "tester", "made with USER=tester");
                 h.input_mut().events.push(egui::Event::PointerGone);
                 h.run_steps(2);
                 let image = h.render().unwrap();
                 let ppp = image.width() as f32 / 1100.0;
-                let image = match super::tool_shots::window_rect(h, "Clearances") {
+                let image = match super::tool_shots::window_rect(h, title) {
                     Some(rect) => super::tool_shots::crop(&image, rect, ppp),
                     None => image,
                 };
@@ -720,7 +720,7 @@ fn offline_files_neighbours_in_the_check_windows(
     rules: &Path,
     number: i64,
     twin: &ohl_store_pg::import::Twin,
-    shot: &dyn Fn(&mut Harness<'_, App>, &str),
+    shot: &dyn Fn(&mut Harness<'_, App>, &str, &str),
 ) {
     use crate::offline_neighbours::{ExportRecord, Neighbours, RECORD_KEY};
     // What the file holds: the other line, and the server's word on the
@@ -892,18 +892,21 @@ fn offline_files_neighbours_in_the_check_windows(
     for (a, b) in on_server.iter().zip(&here) {
         assert!((a.2 - b.2).abs() < 1e-6, "{a:?} {b:?}");
     }
-    // Structure loads: the shared tower named, NOT ALL CHECKED for it.
+    // Structure loads: the shared tower named, computed with the other
+    // line's sections in the Shared towers view (2026-11-24).
     {
         let r = h.state_mut().ready().unwrap();
         let m = &r.model;
         let ids: Vec<String> = m.line.structures.iter().map(|s| s.id.clone()).collect();
         let notes = crate::loads::offline_notes(m, &m.offline_neighbours().unwrap(), &ids);
+        let named = notes[0].contains(&format!(
+            "{} (line {} {})",
+            twin.structure, twin.other_line, twin.other
+        ));
         assert!(
-            notes[0].starts_with("NOT ALL CHECKED")
-                && notes[0].contains(&format!(
-                    "{} (line {} {})",
-                    twin.structure, twin.other_line, twin.other
-                )),
+            (named || notes[0].contains(" more —"))
+                && notes[0].contains("shared with another line of the export")
+                && notes[0].contains("the Shared towers view"),
             "{notes:?}"
         );
         // The fields: the other line within 500 m, its field not added.
@@ -931,7 +934,7 @@ fn offline_files_neighbours_in_the_check_windows(
         h.query_by_label_contains("Neighbours from the export of")
             .is_some()
     );
-    shot(h, "offline-neighbours-setup");
+    shot(h, "Clearances", "offline-neighbours-setup");
     let run = |h: &mut Harness<'_, App>| {
         h.get_by_label("Run").click();
         let t0 = std::time::Instant::now();
@@ -951,7 +954,7 @@ fn offline_files_neighbours_in_the_check_windows(
         crate::offline_neighbours::IGNORED.with(|c| c.set(true));
         h.run_steps(3);
         run(h);
-        shot(h, "offline-neighbours-clearances-before");
+        shot(h, "Clearances", "offline-neighbours-clearances-before");
         crate::offline_neighbours::IGNORED.with(|c| c.set(false));
         let r = h.state_mut().ready().unwrap();
         r.clearances = crate::clearance::Clearances::new(&r.model, Some(rules));
@@ -972,5 +975,186 @@ fn offline_files_neighbours_in_the_check_windows(
         h.query_by_label_contains("Within the rules' reach")
             .is_some()
     );
-    shot(h, "offline-neighbours-clearances");
+    shot(h, "Clearances", "offline-neighbours-clearances");
+
+    // The Structure loads window (2026-11-24): the shared tower with the
+    // other line's sections on it, under each line's cases, the worst
+    // kept — the same loads as the network's check on the same file.
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.clearances.open = false;
+        // The shipped default weather and load cases: those the network's
+        // check takes for a line without files of its own (the window's
+        // own loads in the same cases).
+        let mut m = model::load(
+            Sources {
+                file: ws.to_path_buf(),
+                point_budget: 1000,
+                corridor: 60.0,
+                user: Some("tester".into()),
+                weather: Some(root().join("libraries/weather/default-weather-cases.ohlwc")),
+                load_cases: Some(root().join("libraries/loadcases/default-load-cases.ohllc")),
+                ..Sources::default()
+            },
+            &|_| {},
+        )
+        .unwrap();
+        m.library = ohl_cables::Library::load(&root().join("libraries/cables")).unwrap();
+        r.model = m;
+        r.loads = crate::loads::LoadsPage::default();
+        r.loads.open = true;
+    }
+    h.run_steps(3);
+    let run_loads = |h: &mut Harness<'_, App>| {
+        h.get_by_label("Run").click();
+        let t0 = std::time::Instant::now();
+        loop {
+            let l = &h.state_mut().ready().unwrap().loads;
+            if l.results.is_some() && !l.running() && !l.shared.running() {
+                break;
+            }
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(300),
+                "computed"
+            );
+            h.run_steps(2);
+            std::thread::sleep(std::time::Duration::from_millis(30));
+        }
+        h.run_steps(3);
+        t0.elapsed()
+    };
+    let window_with = run_loads(h);
+    let (own_model, c, took, cases) = {
+        let r = h.state_mut().ready().unwrap();
+        let n = r.model.offline_neighbours().unwrap();
+        let own = n.as_ref().as_ref().unwrap().meta.model.clone();
+        let cases = match &r.loads.results {
+            Some(Ok(v)) => v.len(),
+            other => panic!("{other:?}"),
+        };
+        (
+            own,
+            r.loads.shared.last.clone().expect("the shared towers"),
+            r.loads.took,
+            cases,
+        )
+    };
+    // The network's check on the same file: every tower of the working
+    // set shared with another line.
+    let server = ohl_server::offline_checks::check_offline(
+        ws,
+        &ohl_server::ScopedCheck::StructureLoads {
+            structures: Vec::new(),
+        },
+    )
+    .unwrap();
+    eprintln!(
+        "structure loads: the window {:.2?} (its own loads, {cases} case(s)), the {} shared \
+         tower(s) with the other line {:.2?} beside (the network's code {:.2} s), the whole run \
+         {window_with:.2?}; the network's check on the file {:.2} s",
+        took.unwrap(),
+        c.computed().len(),
+        c.took,
+        c.result.as_ref().unwrap().seconds,
+        server.seconds
+    );
+    assert!(c.not_all_checked().is_empty(), "{:?}", c.not_all_checked());
+    assert!(
+        c.computed().contains(&twin.structure.as_str()),
+        "{:?}",
+        c.computed()
+    );
+    let measures = [
+        "factored transverse (N)",
+        "factored longitudinal (N)",
+        "factored vertical (N)",
+    ];
+    let on_server: Vec<(String, String, String, f64)> = server
+        .findings
+        .iter()
+        .filter(|f| f.what == "structure loads (worst)")
+        .map(|f| {
+            (
+                f.on.clone(),
+                f.against.clone().unwrap(),
+                f.measure.clone(),
+                f.value,
+            )
+        })
+        .collect();
+    let mut here = Vec::new();
+    let towers = &c.result.as_ref().unwrap().loads.towers;
+    assert!(
+        towers
+            .iter()
+            .any(|t| t.twins.iter().any(|n| n.model == twin.other_line))
+    );
+    for t in towers {
+        assert!(!t.twins.is_empty());
+        for w in &t.worst {
+            for (k, measure) in measures.iter().enumerate() {
+                let (line, case) = &w.governing[k];
+                here.push((
+                    format!(
+                        "structure {} point {}",
+                        t.structure,
+                        if w.point.is_empty() {
+                            "(body)"
+                        } else {
+                            &w.point
+                        }
+                    ),
+                    if *line == own_model {
+                        format!("case {case}")
+                    } else {
+                        format!("line {line}'s case {case}")
+                    },
+                    (*measure).to_owned(),
+                    w.factored[k],
+                ));
+            }
+        }
+    }
+    assert!(!on_server.is_empty(), "{server:?}");
+    // The same points, governing cases and loads, to the bit.
+    assert_eq!(on_server, here);
+    // Some point carries the other line's sections.
+    assert!(
+        c.result.as_ref().unwrap().loads.towers.iter().any(|t| t
+            .cases
+            .iter()
+            .any(|x| x.points.iter().any(|p| p.lines.contains(&twin.other_line)))),
+        "{c:?}"
+    );
+    // Said in the window: the Shared towers view, its verdict.
+    h.get_by_label("Shared towers").click();
+    h.run_steps(3);
+    assert!(
+        h.query_by_label_contains("Shared towers with the export's other lines")
+            .is_some()
+    );
+    assert!(
+        h.query_by_label_contains("shared tower(s) computed with every line's sections")
+            .is_some()
+    );
+    shot(h, "Structure loads", "offline-neighbours-loads");
+    // A shared tower outside the working set: NOT ALL CHECKED, in the
+    // view and the Usage view.
+    let mut outside = c.clone();
+    outside.outside = vec!["X1".into()];
+    assert!(
+        outside.not_all_checked()[0].starts_with("NOT ALL CHECKED: structure(s) X1"),
+        "{:?}",
+        outside.not_all_checked()
+    );
+    assert!(
+        h.state_mut()
+            .ready()
+            .unwrap()
+            .loads
+            .shared
+            .usage_words()
+            .unwrap()
+            .starts_with("NOT ALL CHECKED: the usage of the shared tower(s)")
+    );
 }

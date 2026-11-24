@@ -152,6 +152,15 @@ twin's points.
   rigid (calculation level 2). A line set to level 3 or 4 takes the larger
   of the rigid and the flexible solve's loads in its own checks; here the
   flexible solve is not made.
+- **On an offline working set's file** (2026-11-24): OHL-Design's
+  Structure loads window runs this same computation on the file
+  (`ohl_server::offline_checks::shared_tower_loads`, the network's check
+  without its report) for the shared towers of the working set among the
+  structures it computes — the same loads, to the bit (tested). A shared
+  tower outside the working set (read-only in the file) is **not
+  checked** there with its other lines (NOT ALL CHECKED, said); the
+  window's usage check keeps this line's loads alone on the shared towers
+  (NOT ALL CHECKED for them, said).
 
 ## Neighbours a user may not see
 

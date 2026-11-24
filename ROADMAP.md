@@ -4649,9 +4649,10 @@ or three, L four or more. The phases, in order:
   between its wires) 3.5–3.9 s on the file alone → 5.8–7.3 s with its 2
   neighbour lines (OHL-Design's window); the network's own check on the
   same file 5.2–5.6 s.
-  Left: the loads on shared towers and the magnetic field computed with
-  the export's neighbours in the windows themselves (now in the Offline
-  working set window only); rules to other lines across weather cases.
+  Left: ~~the loads on shared towers~~ (built 2026-11-24, below) and the
+  magnetic field computed with the export's neighbours in the windows
+  themselves (now in the Offline working set window only); rules to
+  other lines across weather cases.
   > **Owner:** (to answer, 2026-11-23; the recommendation after the arrow)
   > 1. Structure loads, the fields and plugins name the export's
   > neighbours (NOT ALL CHECKED) instead of adding them; the Offline
@@ -4691,6 +4692,43 @@ or three, L four or more. The phases, in order:
   > every change themselves? → yes: one author for main's bookkeeping,
   > the exporter named in the message and the audit.
   > 3. Its author `network:server` (not a user)? → yes.
+- [x] Follow-up of 2026-11-24 (S): the first follow-up's "left" — **the
+  Structure loads window computes an offline file's shared towers with
+  the export's other lines** (owner, 2026-11-23: "go ahead with the
+  server too"). **Built 2026-11-24, in active development, not approved
+  yet** ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-country-server-structure-loads-with-the-shared-towers-other-lines),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/structure-loads-window.md#shared-towers-offline-working-set)):
+  each Run computes, beside the window's own loads, every tower of the
+  working set shared with another line of the export with every line's
+  sections on it, under each line's load cases, the worst kept — **the
+  network's own check on the file**
+  (`ohl_server::offline_checks::shared_tower_loads`, the same run as
+  `check_offline`'s structure loads) — shown in the Results' **Shared
+  towers** view (the export and lines read, that they may be stale, the
+  verdict, the worst with its governing line and case, or one line's
+  case); **tested** against a local network's server: the same points,
+  governing cases and factored loads, to the bit, as the network's check
+  on the same file (11 shared towers). **NOT ALL CHECKED** in red for a
+  shared tower outside the working set, a line's sections or cases not
+  read or not solved, a reach beyond the export, neighbours left out;
+  the Usage view says the shared towers' usage is this line's loads
+  alone. **Found**: the window's notes were all grey, NOT ALL CHECKED
+  among them (now red). Measured on the synthetic country of 300 pylons
+  (a heavily shared machine): the window's own loads (145 structures, 9
+  load cases) 4.0 s; its 32 shared towers with the other lines 38–39 s
+  beside them (in parallel: the run 39 s); the network's check on the
+  same file 35–37 s (150 pylons, 11 shared towers: 15.1 s against
+  15.0 s).
+  Left: the usage check of a shared tower on the combined loads; the
+  magnetic field with the export's neighbours in its window.
+  > **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
+  > 1. The shared towers in a view of their own (the Loads and Usage views
+  > keep this line's own loads, the usage of the shared towers NOT ALL
+  > CHECKED)? → yes for now; next, the usage check of a shared tower on
+  > the combined loads.
+  > 2. The shared towers computed with every Run, not on a button? → yes:
+  > a run without them would be incomplete on such a file; a tick to
+  > leave them out (said NOT ALL CHECKED) if they prove slow.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable
