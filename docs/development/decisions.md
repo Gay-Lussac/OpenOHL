@@ -38,6 +38,41 @@ built on its own, reported;
   plate's thickness with no room at the seam at all).
 - **Measured** (private towers): in the roadmap block and the theory page.
 
+## 2026-11-24 (joint layout: the owner's answers to L19–L22, the joint layout and plugins)
+
+**The owner approved every recommendation of L19's, L20's, L21's and
+L22's questions** (roadmap O44; 2026-11-24). Answers given the same day:
+
+- **L19's question 7c** (an end whose outstanding leg points into the
+  flange, so that a plate in its own plane would have it stand on the
+  flat plate): *"probably a half turn if possible then other options"*,
+  and added: *"maybe a 90 degrees turn might be better so you could also
+  consider it"*. So: for such members both a half turn and a quarter turn
+  (either way; an equal-leg angle then bolts its other leg onto the
+  flange, an unequal one its other, wider or narrower, leg — its bolts,
+  gauges and the plate change with it) tried and the one laying out more
+  ends with no joint worse kept, weighed over every joint the member
+  reaches as L19 weighs turns — automatic only on imported towers where
+  the roll is the program's, else proposed, never silently on a designed
+  tower; a stand-off (a welded assembly of three parts) later, where
+  neither turn works. Not built in L23 (time): planned as its own step
+  (roadmap O44 L25).
+- **The joint layout and plugins** (the owner's idea of 2026-11-24; the
+  plan written in L23, roadmap O44 L24): *"For the joint in plugin go with
+  what you said"* — approved as proposed: step 1, a "detailing practice"
+  preset as data (the fabrication order, face preferences, shift and
+  pull-back limits, the 2° flatness, plate shapes and thickness rules,
+  bolt patterns), supplied by code plugins or the project's file, the
+  core staying the validator — the next step after L23, its own step
+  (L24); step 2, a "propose a joint" plugin hook called only for the
+  joints the built-in layout leaves for a hand detail, its candidates
+  checked and weighed by the core — later, once the layout settles. Not
+  the whole layout in a plugin: thousands of joints per tower planned
+  many times (a user plugin has 5 s per call by default), one source of
+  truth with the joint details, the safety checks staying in the core,
+  and the layout still changing every step. Step 1's open design
+  questions are in the roadmap with recommendations.
+
 ## 2026-11-24 (every "not on the safe side" says why)
 
 **The owner's rule** (verbatim): *"with the 'not on the safe side' please

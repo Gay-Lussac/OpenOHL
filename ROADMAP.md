@@ -3957,6 +3957,115 @@ only where it helps):
   > the welded plate does (L20 item 2) — measured first. (5) The half or
   > quarter turn for an outstanding leg into the flange (the owner's
   > answer to 7c) → planned as L25, below.
+- [ ] L24. **The joint layout and plugins: a detailing practice as data,
+  the core the validator** (the owner's idea of 2026-11-24, after L22; the
+  plan written in L23; **approved by the owner on 2026-11-24**: *"For the
+  joint in plugin go with what you said"* — step 1 next, as its own step
+  after L23; step 2 later, once the layout settles). Not built yet.
+  **Why not the whole layout in a plugin.** (a) Speed: a tower has
+  thousands of joints, and a layout run plans each several times (the
+  searched orders, L5's, L11's, L15's, L20's plans with and without, the
+  clash rounds, L22's plans again) and lays the tower out about five and a
+  half times when it weighs the turns (L19) — a plugin call costs a
+  sandboxed call with its records copied in and out, and a user plugin
+  has 5 s per call by default (the bundled codes 120 s); (b) one source of
+  truth: what the layout plans must be what Joint details draws, clash
+  checks and checks — the same geometry code (plates seated off the
+  flange, outlines grown round bolts, the bolts' heads and nuts), which a
+  plugin would have to copy and keep in step; (c) safety: the checks that
+  make a layout safe (clashes, edge and end distances against the steel as
+  written, holes overlapping, the bolts' groups, the bend check, the
+  NOT ON THE SAFE SIDE words) stay in the core, whatever proposes the
+  detail; (d) the layout still changes with every step (L1–L23): an
+  interface fixed now would freeze it too early.
+  **Step 1 (next, L24): a detailing practice preset as data.** What a
+  fabricator or utility does differently is mostly a choice among what the
+  layout already does, and its limits: a preset (a table of values, no
+  code) that the layout reads — the fabrication order (direct → one plate
+  → one bend → several bends → welded, today fixed in the code), the face
+  preferences (an end on the outer or inner face of a leg's flange; L10's
+  other face allowed or not), the shift and pull-back limits (today the
+  settings' starting values), the flatness within which an end counts as
+  flat (2°, `FLAT_OFF`), the plate shapes and thickness rules (the
+  thickest leg on it, a least thickness, steps of thickness, short plates
+  allowed, a plate grown along its holder), bent plates (the inside
+  radius in thicknesses, `BEND_RADIUS_RATIO`; the largest bend,
+  `BEND_SMALL_MAX`; bends allowed or not), welded plates allowed or not and
+  the largest axis offset they may make (`OWN_OUT_MAX`), and the bolt
+  patterns (the gauge lines, the least pitch and end distance, the
+  provisional bolt). Supplied by a **code plugin** (a new optional export
+  answering the preset for its code, as it answers the minimum bolt
+  distances today) or by the **project's file** (a preset written with the
+  structure, chosen in Lay out joints), the user's values winning; the
+  core stays the validator — every value is a choice inside what the core
+  checks, never a way round a check (a preset can ask for a smaller gap
+  only down to the clash check's tolerance, never for a bolt nearer an
+  edge than the code allows).
+  **Step 2 (later): a "propose a joint" hook.** For the joints the
+  built-in layout leaves for a hand detail only (some per cent of a
+  tower's joints): the plugin is given the joint as the layout sees it
+  (its members, their legs and bolts, what is fixed) and answers
+  candidate details (ends onto members or plates, plates, bolts); each
+  candidate is written, drawn, clash-checked and checked by the core
+  exactly as a layout's plan, weighed per joint as the layout's own steps
+  (kept only where it lays out more ends, or as many on fewer plates, and
+  no joint worse), and marked as the plugin's in the record. Called once
+  per joint left, not inside the layout's search.
+  > **Owner** (approved 2026-11-24; the open design questions of step 1,
+  > each with the recommendation after the arrow): (1) Where a preset
+  > lives → Recommended: a table `[layout_practice]` in the structure file
+  > (a format version step, older files read as today's defaults) and the
+  > same table answered by a code plugin's optional export
+  > `layout-practice` (additive, a plugin without it as today); the
+  > structure's own table wins over the plugin's, value by value.
+  > (2) Which values in the first preset → Recommended: those already
+  > settings or the program's constants listed above (no new behaviour,
+  > only made choosable), each with its present value as the default, so
+  > that a preset with nothing in it lays out exactly as today (tested on
+  > the private towers: identical files). (3) The fabrication order as
+  > data → Recommended: an ordered list of the five forms, each allowed or
+  > not; the layout's weighing keeps its rule (more ends, or as many on
+  > fewer plates) and uses the order only on ties, as today. (4) Limits a
+  > preset may not pass → Recommended: the core's checks are not settings
+  > of the preset (the clash check, the code's distances, holes
+  > overlapping, the bend check, the NOT ON THE SAFE SIDE words); a value
+  > beyond what the core can check is refused with the reason, in Lay out
+  > joints and in the run's notes. (5) Presets per member class or per
+  > joint kind → Recommended: per member class first (as the connection
+  > presets are), per joint kind later if asked. (6) Shown to the user →
+  > Recommended: Lay out joints shows the preset in force (its source:
+  > the file, the plugin, the defaults) and each value's effect measured
+  > as for the other settings (the owner's rule: every setting explains
+  > its effect and its time).
+- [ ] L25. **An outstanding leg pointing into the flange: a half or a
+  quarter turn, weighed** (L19's question 7c; the owner, 2026-11-24:
+  *"probably a half turn if possible then other options"* and *"maybe a 90
+  degrees turn might be better so you could also consider it"*). Not
+  built yet (L23 ran out of time; the owner to order it before or after
+  L24). Today a plate in the end's own plane is refused where the end's
+  outstanding leg points into the flange (it would stand on the flat
+  plate): 450 such ends on the eight private towers L21–L23 measure (29
+  under 5°, 115 at 5°–10°, 95 at 10°–20°, 116 at 20°–45°, 95 at 45° or
+  more). Built already, in part: the run's half turn (step 2b) and, for an
+  equal-leg angle at most 20° off, the quarter turn (L3b), each kept for a
+  member where more of its ends are planned laid out with it and its
+  joints no worse in sum. **Planned**: for every member with such an end
+  (not a leg or chord, not one part with another, its roll the
+  program's on an imported tower), both a half turn and a quarter turn
+  (either way; an equal-leg angle then bolts its other leg onto the
+  flange; an unequal angle its other leg — wider or narrower, with its
+  own bolts, gauges and edge distances, said on the proposal) laid out
+  and weighed over every joint the member reaches as L19 weighs turns
+  (each joint no worse, one better, after writing), the one laying out
+  more ends kept (on a tie the half turn: the same leg bolted); on a
+  designed tower proposed in Lay out joints, never applied silently; how
+  often each wins reported. Where neither helps, the other options later
+  (a stand-off: a welded assembly of three parts).
+  > **Owner:** (1) Order → Recommended: L25 before L24 (it lays out
+  > measured ends now; the preset only makes today's choices choosable).
+  > (2) The quarter turn of an unequal angle (its other leg bolted: other
+  > bolts and gauges, the member's own check unchanged as its section is)
+  > → Recommended: allowed, said on the proposal with the leg it bolts.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
