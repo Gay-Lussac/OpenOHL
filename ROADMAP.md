@@ -4926,11 +4926,9 @@ or three, L four or more. The phases, in order:
   10.6–11.1 s alone → 17.0–20.0 s with the lines near. **Found**: the
   field windows drew their NOT ALL CHECKED notes faint since 2026-11-23
   (now red).
-  **The electric field — not built** (the third item of the night): the
-  network computes no electric field with other lines, so there is no
-  network code to share; the window keeps naming the lines within 500 m
-  (NOT ALL CHECKED, NOT ON THE SAFE SIDE where they come near). **What it
-  needs**: an electric field in `ohl_scope` — the lines within reach
+  **The electric field** (the third item of the night) — ~~not built~~
+  built 2026-11-24 (the third follow-up, below). What it needed, as
+  written then: an electric field in `ohl_scope` — the lines within reach
   solved **together** (one system of potential coefficients over every
   line's conductors and earth wires: a neighbour's conductors change this
   line's charges, and its earthed wires screen, so independently computed
@@ -4938,8 +4936,8 @@ or three, L four or more. The phases, in order:
   angles to this line's unknown — the worst over their relative angles,
   or a bound said; then the network's check, `check_offline` and the
   window on the same code, as the magnetic field now.
-  Left: the volumes' surfaces with the other lines; the electric field
-  (above); the given points' own reach.
+  Left: the volumes' surfaces with the other lines; ~~the electric field
+  (above)~~ (built 2026-11-24, below); the given points' own reach.
   > **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
   > 1. The other lines taken within 500 m of the sections whose spans the
   > window computes (the network's selection)? → yes.
@@ -4954,7 +4952,69 @@ or three, L four or more. The phases, in order:
   > field part can be solved once and the worst over the relative angles
   > found from them without sampling (one other line: in closed form;
   > several: a bound from the same parts, said); the network's check first,
-  > then the window as for the magnetic field.
+  > then the window as for the magnetic field. *(Built that way
+  > 2026-11-24, the third follow-up below, awaiting the owner's word.)*
+- [x] Follow-up of 2026-11-24, third (M): **the electric field with other
+  lines, solved together** (the second follow-up's "left" and its owner
+  question 4; owner, 2026-11-23: "go ahead with the server too"). **Built
+  2026-11-24, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-country-server-the-electric-field-with-other-lines-solved-together),
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/electric-field.md#other-lines-solved-together),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/electric-field.md#other-lines-on-an-offline-working-sets-file)):
+  1. **The network's check** (`ohl_scope::electric`, the scoped check
+     `electric_field`, `ohl network check-offline --check electric`): the
+     lines within the field distance (the magnetic field's selection,
+     split out as `ohl_scope::fields::near_sections`) **solved together**
+     — charge simulation (`ohl_electrical::joint`, new: every line's
+     wires and earth wires cut into straight pieces of uniform charge,
+     graded from 4 m near the profile to 60 m, *Pq = V* over the
+     ground plane under each point, one LU on all cores per profile) —
+     **by parts** (one line's phases of one frequency each, every other
+     wire at zero), the worst over the unknown phase angles in closed
+     form: Σ|E_k|² + 2 Σ_{k<l} |⟨E_k, E_l⟩|,
+     **exact for one other line**, **an upper bound for more** (said in
+     every result, with what the system took in); at each point the
+     larger of this line alone in its own model and the lines together.
+     **Tested**: two long parallel wires against the image method in 2D
+     by hand (within 0.5 %), the worst against 3 600 sampled angles, the
+     three-part bound; on the synthetic country every point at least this
+     line alone. Measured: 0.4–7.2 s per working set of four sections
+     (one to three profiles, 586–1 068 pieces).
+  2. **OHL-Design's Electric field window on an offline file**: the same
+     with the export's neighbours (`ohl_server::offline_checks::electric_neighbours`,
+     the same `joint_lines` / `joint_at` at the window's profile points and
+     given points, the window's voltages for this line); the notes say the
+     export, the lines solved together, the method, that they may be
+     stale, NOT ALL CHECKED (red) where incomplete (the cuts and volumes
+     this line alone among them); the "NOT ON THE SAFE SIDE where they
+     come near" note gone where they are computed. **Tested** against a
+     local network's server: per span the network check's highest value
+     (to the bit; this line and two other lines: three parts, the bound).
+     Measured on the offline test's synthetic country (300 pylons, a
+     heavily shared machine): the working set's spans as the network
+     computes them 7.2–7.9 s for this line + 6.5–6.7 s for the other lines
+     solved together, the network's check on the file 13.4–14.9 s; the
+     window (plane ground, every 5 m) 8.8 s alone → 15.6 s with them (the
+     window's default tiled floor every 1 m: over 300 s alone there); with
+     another test suite on the machine (load ~96) 47 s and 89 s.
+  Left: the cuts and volumes with the other lines; the jumpers in the
+  joint system; the Offline working set window's step 2 offering the
+  electric field (today the command line and the server's check).
+  > **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
+  > 1. At each point the larger of this line alone (its own model) and
+  > the lines solved together, rather than the joint value alone? → yes:
+  > the two models differ (the joint one leaves the jumpers out, takes
+  > every charge from the whole system), neither should lower the other.
+  > 2. The joint system per profile reaching the field distance (500 m)
+  > from the profile's middle, pieces graded 4–60 m? → yes: some 50 pieces
+  > per wire and kilometre, seconds per working set; the reach a setting
+  > of the check with the field distance.
+  > 3. Three or more parts said "an upper bound" rather than searched for
+  > the exact worst? → yes for now: the bound is never above the parts
+  > added by size and needs no sampling; an exact search over two or more
+  > angles later if the bound proves loose on real corridors.
+  > 4. Other lines at their systems' highest operating voltage, else the
+  > nominal (NOT ON THE SAFE SIDE, said)? → yes, as this line's.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

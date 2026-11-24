@@ -390,6 +390,35 @@ impl ElectricFieldWindow {
         self.common.span_pick.volume.insert(spans[k].clone());
     }
 
+    /// The quick ground, the plane under each point (tests).
+    #[cfg(test)]
+    pub fn use_plane_ground(&mut self) {
+        self.tiled = false;
+    }
+
+    /// Ticks the spans of `sections` only (tests).
+    #[cfg(test)]
+    pub fn tick_sections(&mut self, model: &Model, sections: &[String]) {
+        let spans = self.common.spans(model);
+        let pairs: Vec<(String, String)> = model
+            .line
+            .sections
+            .iter()
+            .filter(|s| sections.contains(&s.id))
+            .flat_map(|s| {
+                s.points
+                    .windows(2)
+                    .map(|w| (w[0].structure.clone(), w[1].structure.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        self.common.span_pick.only_where(model, &spans, |ids| {
+            pairs
+                .iter()
+                .any(|(a, b)| (*a == ids.0 && *b == ids.1) || (*a == ids.1 && *b == ids.0))
+        });
+    }
+
     /// The modelling settings of the inputs (owner, 2026-11-12: in 4
     /// Model, folded, with the steel and the wire pieces): the profiles'
     /// model, the jumpers, the stretches per span, the ground and its
@@ -976,9 +1005,17 @@ impl ElectricFieldWindow {
         // A new run's outputs all drawn.
         self.common.hidden.clear();
         self.common.saving.stale = None;
-        // An offline working set's neighbours, a network's working set
-        // (2026-11-23): said first with the results.
-        let neighbour_notes = crate::offline_neighbours::field_notes(model, false);
+        // An offline working set's other lines (2026-11-24): solved
+        // together with this line after its run, by the network's code; a
+        // network's working set's neighbours not pulled in (2026-11-23):
+        // said first with the results.
+        let neighbours = crate::offline_neighbours::ElectricNeighbours::of(model);
+        let neighbour_notes = if neighbours.is_some() {
+            Vec::new()
+        } else {
+            crate::offline_neighbours::field_notes(model, false)
+        };
+        let given = settings.voltages.clone();
         self.common.job.start_at(ctx, model.revision(), move || {
             progress.plan_steps(field_common::steps_planned(
                 &steps
@@ -1082,6 +1119,14 @@ impl ElectricFieldWindow {
             );
             for n in neighbour_notes.into_iter().rev() {
                 field.notes.insert(0, n);
+            }
+            if let Some(nb) = &neighbours {
+                progress.set_stage("the export's other lines near, solved together".to_owned());
+                let words = nb.add(&line, &case, &given, &mut field);
+                progress.set_stage(String::new());
+                for n in words.into_iter().rev() {
+                    field.notes.insert(0, n);
+                }
             }
             let meshes = crate::magnetic_field::views::take_meshes(&mut field.volumes);
             Ok(Answer {
