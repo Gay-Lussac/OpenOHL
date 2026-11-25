@@ -86,6 +86,15 @@ pub struct Preview {
     /// proposals of its kind applied together), joints laid out whole,
     /// member ends, plates there — never judged on one joint.
     pub effects: BTreeMap<String, (RunCounts, RunCounts)>,
+    /// O44 L25: the half or quarter turns the layout record offers for an
+    /// outstanding leg pointing into the flange (the roll the designer's:
+    /// never applied unasked), each with its row (its effect as weighed),
+    /// and whether it is ticked (applied with the run).
+    pub flange_offered: Vec<(
+        String,
+        ohl_structure_link::flange_turns::FlangeTurnRow,
+        bool,
+    )>,
 }
 
 /// Joints laid out whole, member ends laid out, plates.
@@ -282,6 +291,9 @@ pub struct LayoutWindow {
     /// O44 L18: the plane turns ticked or not (by the run's first piece);
     /// a run not listed: ticked where its roll is automatic.
     pub plane_ticks: BTreeMap<String, bool>,
+    /// O44 L25: the offered turns for an outstanding leg pointing into the
+    /// flange ticked (by member): applied with the run; none by default.
+    pub flange_ticks: BTreeSet<String>,
 }
 
 impl LayoutWindow {
@@ -405,6 +417,12 @@ impl LayoutWindow {
             // L22 (2026-11-24): a plate's own holding bolts placed clear of
             // what the plan lays out after that plate at the joint.
             holds_clear: true,
+            // L25 (2026-11-25): a member with an end whose outstanding leg
+            // points into the flange laid out turned by half a turn and a
+            // quarter turn, weighed over every joint it reaches (applied
+            // where the roll is the program's, else offered).
+            flange_half: true,
+            flange_quarter: true,
         }
     }
 
@@ -420,6 +438,7 @@ impl LayoutWindow {
         (&self.bolt, &self.presets, self.welded, self.replace).hash(&mut h);
         self.turns.hash(&mut h);
         self.plane_ticks.hash(&mut h);
+        self.flange_ticks.hash(&mut h);
         h.finish()
     }
 }
@@ -478,6 +497,7 @@ impl StructureApp {
             usage_job: None,
             turns: BTreeSet::new(),
             plane_ticks: BTreeMap::new(),
+            flange_ticks: BTreeSet::new(),
         })
     }
 
@@ -600,6 +620,7 @@ impl StructureApp {
             let joints = targets.clone();
             let ticked = w.turns.clone();
             let plane_ticks = w.plane_ticks.clone();
+            let flange_ticks = w.flange_ticks.clone();
             let (tx, rx) = channel();
             std::thread::spawn(move || {
                 let ask = RunAsk {
@@ -618,6 +639,47 @@ impl StructureApp {
                     let settled = ohl_structure_link::weighed_turns::settle_turns(&text, &ask)?;
                     let weighed = settled.as_ref().map(|(_, r)| r.weighed.clone());
                     let text = settled.map_or(text, |(s, _)| s);
+                    // (O44 L25) The turns offered for an outstanding leg
+                    // pointing into the flange (the roll the designer's):
+                    // those ticked applied, every joint they reach laid
+                    // out with them.
+                    let flange_offered: Vec<(
+                        String,
+                        ohl_structure_link::flange_turns::FlangeTurnRow,
+                        bool,
+                    )> = {
+                        let t =
+                            <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+                                std::path::Path::new("s.ohls"),
+                                &text,
+                            )
+                            .map_err(|e| e.message)?;
+                        ohl_structure_link::flange_turns::offered(&t)
+                            .into_iter()
+                            .map(|(m, r)| {
+                                let on = flange_ticks.contains(&m);
+                                (m, r, on)
+                            })
+                            .collect()
+                    };
+                    let mut joints = joints.clone();
+                    let text = if flange_offered.iter().any(|(_, _, on)| *on) {
+                        let t =
+                            <ohl_structures::StructureType as ohl_structures::LibraryItem>::parse(
+                                std::path::Path::new("s.ohls"),
+                                &text,
+                            )
+                            .map_err(|e| e.message)?;
+                        let on: BTreeSet<String> = flange_offered
+                            .iter()
+                            .filter(|(_, _, on)| *on)
+                            .map(|(m, _, _)| m.clone())
+                            .collect();
+                        joints.extend(reach_of(&t, on.iter()));
+                        ohl_structure_link::flange_turns::apply_offered(&text, &on)?
+                    } else {
+                        text
+                    };
                     // Every joint a turn kept reaches laid out with it.
                     let mut joints = joints.clone();
                     for w in weighed.iter().flatten().filter(|w| w.kept) {
@@ -797,6 +859,7 @@ impl StructureApp {
                         without,
                         plane_turns,
                         effects,
+                        flange_offered,
                     })
                 })();
                 let _ = tx.send(r);
@@ -1049,6 +1112,7 @@ impl StructureApp {
                     Some(p) => {
                         layout_summary(ui, p);
                         layout_turns(ui, p, &mut w.turns, &mut w.plane_ticks);
+                        layout_flange_turns(ui, p, &mut w.flange_ticks);
                         in_line = layout_in_line(ui, p);
                         leg_places = layout_leg_splices(ui, p);
                         layout_changes(ui, p);
@@ -1516,6 +1580,52 @@ fn layout_turns(
         );
     }
 }
+
+/// The turns offered for an outstanding leg pointing into the flange (O44
+/// L25): each with its tick (off by default: the roll is the designer's)
+/// and its effect as weighed over every joint the member reaches.
+fn layout_flange_turns(ui: &mut egui::Ui, p: &Preview, ticks: &mut BTreeSet<String>) {
+    if p.flange_offered.is_empty() {
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
+        ui.label(
+            egui::RichText::new(format!(
+                "Members with an outstanding leg pointing into the flange, a turn offered: {} \
+                 (their rolls given by hand) — each applied only when ticked (with the run, one \
+                 undo step)",
+                p.flange_offered.len()
+            ))
+            .small()
+            .color(ui.visuals().warn_fg_color),
+        );
+        ohl_ui::tool_window::question(ui, FLANGE_TURN_HELP);
+    });
+    for (m, r, _) in &p.flange_offered {
+        let mut on = ticks.contains(m);
+        if ui.checkbox(&mut on, r.words.clone()).changed() {
+            if on {
+                ticks.insert(m.clone());
+            } else {
+                ticks.remove(m);
+            }
+        }
+    }
+}
+
+/// The help of the turns for an outstanding leg pointing into the flange
+/// (O44 L25).
+pub const FLANGE_TURN_HELP: &str = "A member end whose outstanding leg points into the flange it \
+     bolts onto: a plate in its own plane welded to the flat plate would have that leg stand on \
+     the flat plate, so the end is left for a hand detail. The layout lays the member out turned \
+     by half a turn (the same leg bolted) and by a quarter turn either way (its other leg bolted: \
+     on an unequal angle the other width, with its own bolts, gauges and edge distances — only \
+     where no leg is given), each weighed over every joint the member reaches (both its ends, \
+     after writing: each joint no worse, one better); the one laying out more member ends is \
+     kept, on a tie the half turn. Where the member's roll is the program's (an import's) the \
+     turn is applied and written in the layout record; where its roll is given by hand it is \
+     offered here, never applied unasked — tick it to apply it with the run. The words say its \
+     effect as weighed.";
 
 /// The help of the leg pieces turned against their joints (O44 L11).
 pub const LEG_ROLL_HELP: &str = "A leg piece, or a chord running on through a joint (an arm's \

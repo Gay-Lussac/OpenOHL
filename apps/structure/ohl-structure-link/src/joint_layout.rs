@@ -425,6 +425,20 @@ pub struct LayoutSettings {
     /// them kept clear of it, kept only where fewer meet something and
     /// nothing else is laid out worse. On by default; off: as before.
     pub holds_clear: bool,
+    /// O44 L25 (the owner, 2026-11-24: "probably a half turn if possible
+    /// then other options"): a member left with an end whose outstanding
+    /// leg points into the flange laid out turned by **half a turn**, the
+    /// turn weighed over every joint the member reaches after writing (each
+    /// joint no worse, one better) — applied where the roll is the
+    /// program's, offered where it is the designer's
+    /// ([`crate::flange_turns`]). On by default; off: not tried.
+    pub flange_half: bool,
+    /// O44 L25 (the owner, 2026-11-24: "maybe a 90 degrees turn might be
+    /// better so you could also consider it"): the same with **a quarter
+    /// turn** either way (its other leg bolted; on an unequal angle only
+    /// where no leg is given), the one laying out more member ends kept,
+    /// on a tie the half turn. On by default; off: not tried.
+    pub flange_quarter: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -481,6 +495,8 @@ impl Default for LayoutSettings {
             level_plates: true,
             own_offset_analysed: true,
             holds_clear: true,
+            flange_half: true,
+            flange_quarter: true,
         }
     }
 }

@@ -168,6 +168,13 @@ pub struct LayoutRecord {
     /// joint its members reach and keeps it only where that lays out better
     /// ([`crate::weighed_turns`]); the rows go with that run.
     pub plane_turns: BTreeMap<String, PlaneTurnRow>,
+    /// O44 L25: the members weighed for an end whose outstanding leg points
+    /// into the flange ([`crate::flange_turns`]): member → its roll before
+    /// and with the turn, the kind (half or a quarter turn applied, a turn
+    /// offered, neither helping) and the words. A turn applied keeps its
+    /// roll in later runs (never turned again); a row still current is not
+    /// weighed again; Lay out joints applies an offered turn when ticked.
+    pub flange_turns: BTreeMap<String, crate::flange_turns::FlangeTurnRow>,
     /// The option **estimated eccentricities** (O45, owner 2026-11-19;
     /// `estimated_eccentricities = true`, written only when on): at level
     /// 3 the analysis takes the member ends' eccentricities the layout's
@@ -447,6 +454,19 @@ impl LayoutRecord {
                 r.oriented.insert(row[0].clone(), (row[1].clone(), k));
             }
         }
+        for row in rows("flange_turns") {
+            if row.len() == 5 {
+                r.flange_turns.insert(
+                    row[0].clone(),
+                    crate::flange_turns::FlangeTurnRow {
+                        before: row[1].clone(),
+                        with: row[2].clone(),
+                        kind: row[3].clone(),
+                        words: row[4].clone(),
+                    },
+                );
+            }
+        }
         r
     }
 
@@ -459,6 +479,7 @@ impl LayoutRecord {
             && self.hand.is_empty()
             && self.oriented.is_empty()
             && self.plane_turns.is_empty()
+            && self.flange_turns.is_empty()
             && self.provisional.is_empty()
     }
 
@@ -632,6 +653,25 @@ impl LayoutRecord {
                     ),
                 );
             }
+            if !self.flange_turns.is_empty() {
+                t.insert(
+                    "flange_turns",
+                    list(
+                        self.flange_turns
+                            .iter()
+                            .map(|(m, r)| {
+                                vec![
+                                    m.clone(),
+                                    r.before.clone(),
+                                    r.with.clone(),
+                                    r.kind.clone(),
+                                    r.words.clone(),
+                                ]
+                            })
+                            .collect(),
+                    ),
+                );
+            }
             a.push(t);
         }
         if !a.is_empty() {
@@ -741,6 +781,10 @@ pub struct RunAsk<'a> {
 /// ([`LayoutRecord::plane_turns`]) weighed first, each kept only where
 /// every joint it reaches is laid out better
 /// ([`crate::weighed_turns::weigh_turns`], [`LayoutSettings::weigh_turns`]).
+/// O44 L25: then the members left with an end whose outstanding leg points
+/// into the flange laid out turned by half a turn and a quarter turn,
+/// weighed so too ([`crate::flange_turns`], [`LayoutSettings::flange_half`],
+/// [`LayoutSettings::flange_quarter`]).
 pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     if ask.settings.weigh_turns && text.contains("plane_turns") {
         let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
@@ -750,7 +794,8 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
             return crate::weighed_turns::weigh_turns(text, &cands, ask);
         }
     }
-    lay_out_plain(text, ask)
+    let r0 = lay_out_plain(text, ask)?;
+    crate::flange_turns::weigh_flange_turns(text, r0, &[], ask).map(|x| x.0)
 }
 
 /// [`lay_out`] without weighing the turns the record lists: the file's
@@ -1116,6 +1161,14 @@ fn lay_out_once(
     }
     for (m, r) in &restored {
         put_roll(&mut planning, m, r);
+    }
+    // O44 L25: a member turned for its outstanding leg pointing into the
+    // flange (weighed over every joint it reaches): its roll kept, never
+    // turned again by the run.
+    for (m, r) in &record.flange_turns {
+        if r.applied() && members_here.contains_key(m.as_str()) && r.current(t, &record.rolled, m) {
+            held.insert(m.clone());
+        }
     }
 
     // (Its model gives the code's edge distances when no member turns.)
@@ -5630,6 +5683,13 @@ fn follow_parsed(
     let before_rolled = record.rolled.len();
     record.rolled.retain(|m, _| roll(t0, m) == roll(&t1, m));
     changed_record |= record.rolled.len() != before_rolled;
+    // (O44 L25: a member weighed for its outstanding leg into the flange
+    // whose roll the edit changed: the user's now, its row gone.)
+    let before_flange = record.flange_turns.len();
+    record
+        .flange_turns
+        .retain(|m, _| roll(t0, m) == roll(&t1, m));
+    changed_record |= record.flange_turns.len() != before_flange;
     for (id, (_, fields)) in record.made.iter_mut() {
         let (a, b) = (
             t0.plates.iter().find(|p| &p.id == id),

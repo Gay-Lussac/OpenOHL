@@ -129,6 +129,33 @@ impl WeighedTurn {
     pub fn words(&self) -> String {
         let (e0, p0) = self.before;
         let (e1, p1) = self.after;
+        if is_flange(&self.kind) {
+            let what = format!(
+                "{}: its outstanding leg into the flange, {} ({:+.0}°)",
+                self.members.join(", "),
+                self.kind,
+                self.turn
+            );
+            return if self.kept {
+                format!(
+                    "{what}: kept — its {} joint(s) lay out {e1} member end(s) on {p1} plate(s) \
+                     (before {e0} on {p0}), none worse",
+                    self.joints.len()
+                )
+            } else if self.turn != 0.0 {
+                format!(
+                    "{what}: not applied (offered, or the turns kept together did not all \
+                     still help); its {} joint(s) {e0} end(s) on {p0} plate(s) as it is",
+                    self.joints.len()
+                )
+            } else {
+                format!(
+                    "{what}: neither turn helps over its {} joint(s) ({e0} end(s) on {p0} \
+                     plate(s)); left",
+                    self.joints.len()
+                )
+            };
+        }
         let from = if stage_of(&self.kind) == 1 {
             "as its joints say"
         } else {
@@ -317,12 +344,16 @@ pub fn candidates_for(t: &StructureType, joints: Option<&BTreeSet<String>>) -> V
 /// The layout run on `text` (the file with every turn of `cands` applied)
 /// with each turn weighed over every joint it reaches (see the module); the
 /// joints asked must hold every joint the turns reach ([`candidates_for`]).
+/// Then (O44 L25) the half and quarter turns for an outstanding leg
+/// pointing into the flange weighed on the file so settled
+/// ([`crate::flange_turns`]).
 pub fn weigh_turns(
     text: &str,
     cands: &[TurnCandidate],
     ask: &RunAsk<'_>,
 ) -> Result<LayoutRun, String> {
-    weigh(text, cands, ask).map(|x| x.0)
+    let (r, settled, extra) = weigh(text, cands, ask)?;
+    crate::flange_turns::weigh_flange_turns(&settled, r, &extra, ask).map(|x| x.0)
 }
 
 /// **Settle the turns** of `text` the layout record lists as not weighed
@@ -331,32 +362,56 @@ pub fn weigh_turns(
 /// every joint it reaches out better, the others' rolls back to before,
 /// their rows gone — and that run. None: nothing to weigh. For a window
 /// that lays out the file several ways (the proposals' effects): weighed
-/// once, the rest laid out from the settled file.
+/// once, the rest laid out from the settled file. O44 L25: then the half
+/// and quarter turns for an outstanding leg pointing into the flange
+/// weighed on the whole tower too ([`crate::flange_turns`]; their rows
+/// written, so that a run of the settled file weighs them no more).
 pub fn settle_turns(text: &str, ask: &RunAsk<'_>) -> Result<Option<(String, LayoutRun)>, String> {
-    if !ask.settings.weigh_turns || !text.contains("plane_turns") {
-        return Ok(None);
-    }
-    let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
-        .map_err(|e| e.message)?;
-    let cands = candidates_of(&t);
-    if cands.is_empty() {
-        return Ok(None);
-    }
     let whole = RunAsk {
         joints: None,
         ..ask.clone()
     };
-    let (run, settled) = weigh(text, &cands, &whole)?;
-    Ok(Some((settled, run)))
+    let (text1, r0, extra) = if ask.settings.weigh_turns && text.contains("plane_turns") {
+        let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+            .map_err(|e| e.message)?;
+        let cands = candidates_of(&t);
+        if cands.is_empty() {
+            (text.to_owned(), None, Vec::new())
+        } else {
+            let (run, settled, extra) = weigh(text, &cands, &whole)?;
+            (settled, Some(run), extra)
+        }
+    } else {
+        (text.to_owned(), None, Vec::new())
+    };
+    let flange = ask.settings.flange_half || ask.settings.flange_quarter;
+    match (r0, flange) {
+        (None, false) => Ok(None),
+        (Some(r), false) => Ok(Some((text1, r))),
+        (r0, true) => {
+            let weighed_before = r0.is_some();
+            let r0 = match r0 {
+                Some(r) => r,
+                None => lay_out_plain(&text1, &whole)?,
+            };
+            let (run, settled) =
+                crate::flange_turns::weigh_flange_turns(&text1, r0, &extra, &whole)?;
+            if !weighed_before && settled == text1 {
+                return Ok(None);
+            }
+            Ok(Some((settled, run)))
+        }
+    }
 }
 
-/// [`weigh_turns`] and the file settled (before the layout: the turns kept,
-/// the others taken back, their rows gone).
+/// [`weigh_turns`] without L25's turns, the file settled (before the
+/// layout: the turns kept, the others taken back, their rows gone) and the
+/// notes the weighing added to the run's.
 fn weigh(
     text: &str,
     cands: &[TurnCandidate],
     ask: &RunAsk<'_>,
-) -> Result<(LayoutRun, String), String> {
+) -> Result<(LayoutRun, String, Vec<String>), String> {
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
     let doc0: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
@@ -503,18 +558,19 @@ fn weigh(
     let mut out = prev;
     out.seconds = seconds;
     let list: Vec<WeighedTurn> = order.iter().filter_map(|k| weighed.remove(k)).collect();
-    out.notes.extend(notes_of(&list));
-    out.notes.push(format!(
+    let mut extra = notes_of(&list);
+    extra.push(format!(
         "the weighing laid the tower out {layouts} times ({seconds:.1} s, measured)"
     ));
     if unexplained > 0 {
-        out.notes.push(format!(
+        extra.push(format!(
             "{unexplained} joint(s) laid out worse after the last turns kept where no turn \
              reaches nor a member turned otherwise meets them (the layout's order)"
         ));
     }
+    out.notes.extend(extra.iter().cloned());
     out.weighed = list;
-    Ok((out, text_with(&kept)))
+    Ok((out, text_with(&kept), extra))
 }
 
 /// The joints laid out worse in `r` than in `prev` (fewer member ends, or
@@ -522,7 +578,7 @@ fn weigh(
 /// to blame: those reaching a joint of a member meeting there whose roll the
 /// layout wrote otherwise in `r` (or that is the turn's own). And how many
 /// such joints no turn reaches and no member turned otherwise meets.
-fn knock_on(
+pub(crate) fn knock_on(
     prev: &LayoutRun,
     r: &LayoutRun,
     tried: &BTreeSet<usize>,
@@ -579,9 +635,9 @@ fn knock_on(
 /// plates (all none where it is not written).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Counts {
-    whole: bool,
-    ends: usize,
-    plates: usize,
+    pub(crate) whole: bool,
+    pub(crate) ends: usize,
+    pub(crate) plates: usize,
 }
 
 impl Counts {
@@ -626,7 +682,7 @@ pub(crate) fn counts_of(r: &LayoutRun) -> BTreeMap<&str, Counts> {
 /// The run's guard over the joints a turn reaches (before, after): at none
 /// laid out worse ([`Counts::worse_than`]); in all more ends, or as many on
 /// fewer plates, or as many joints whole more.
-fn helps(before: &[Counts], after: &[Counts]) -> bool {
+pub(crate) fn helps(before: &[Counts], after: &[Counts]) -> bool {
     if before.iter().zip(after).any(|(b, a)| a.worse_than(b)) {
         return false;
     }
@@ -657,7 +713,12 @@ fn rolls_in(text: &str) -> Result<BTreeMap<String, String>, String> {
 
 /// The run's notes on the turns `list` weighed: how many kept, then each.
 pub fn notes_of(list: &[WeighedTurn]) -> Vec<String> {
-    let (k, n) = (list.iter().filter(|w| w.kept).count(), list.len());
+    let (k, n) = (
+        list.iter()
+            .filter(|w| w.kept && !is_flange(&w.kind))
+            .count(),
+        list.iter().filter(|w| !is_flange(&w.kind)).count(),
+    );
     let mut out = vec![format!(
         "the turns from the joints' planes weighed over every joint they reach: {k} of {n} \
          kept, {} taken back (offered in Lay out joints)",
@@ -665,6 +726,12 @@ pub fn notes_of(list: &[WeighedTurn]) -> Vec<String> {
     )];
     out.extend(list.iter().map(WeighedTurn::words));
     out
+}
+
+/// A turn of kind `kind` is L25's ([`crate::flange_turns`]): half or a
+/// quarter turn for an outstanding leg pointing into the flange.
+pub fn is_flange(kind: &str) -> bool {
+    matches!(kind, "half turn" | "quarter turn" | "flange turn")
 }
 
 /// A roll value as written (empty: none).

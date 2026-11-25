@@ -48,7 +48,7 @@ fn run_at(
 /// An invented body with a sharp taper change (the outline leaves the
 /// lower legs' flanges a few degrees off their faces: the joints' planes
 /// turn them) and plan diagonals.
-fn tower() -> String {
+pub(crate) fn tower() -> String {
     crate::orient_tests::body(
         &[
             (0.0, 4.0, 4.0),
