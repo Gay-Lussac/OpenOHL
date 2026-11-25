@@ -79,6 +79,18 @@ development, not approved yet).
    alike; the test compares the network's values only when its check is
    complete (else it fails naming why); a new test forces the slow path
    (a neighbour that cannot be solved: NOT ALL CHECKED, the line named).
+   **Found on the way** (the full check under load again): the network's
+   value was the same in every run (0.7428… kV/m on the first span) and
+   the test's own "this line alone" (the window's solve, which keeps the
+   120 s limit) was the one that moved — a section of its whole-line solve
+   stopped on the clock, its wires left out (an earth wire missing raises
+   the field); the test now solves that line clock-free too and requires
+   every section solved. The Electric field window itself still says such
+   a section "not solved in this case, left out" in its notes. Also
+   found: the server's folder for the structure libraries
+   (`work/checks-types`) was not made when its parent did not exist yet
+   — every shared tower's usage NOT ALL CHECKED there; made now (tested),
+   its errors without the server's paths.
 
 - **Tested**: on the synthetic country (150 pylons, an invented type with
   allowable loads on every structure) 4 shared towers, 72 cases of every

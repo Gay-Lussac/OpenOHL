@@ -1202,7 +1202,7 @@ fn offline_files_neighbours_in_the_check_windows(
         // across the working set's spans 1 m above the ground, ±50 m every
         // 5 m, every circuit without a current of its own at `amps`.
         let t0 = std::time::Instant::now();
-        let solved = crate::model::Solved::as_shown(&m.line, &m.library, case.clone());
+        let solved = clock_free(&m.line, &m.library, case.clone());
         let ws_sections: std::collections::BTreeSet<String> = wanted.iter().cloned().collect();
         let settings = ohl_electrical::magnetic::Settings {
             height: 1.0,
@@ -1224,10 +1224,10 @@ fn offline_files_neighbours_in_the_check_windows(
         let src = ohl_electrical::Sources {
             line: &m.line,
             library: &m.library,
-            shapes: &solved.shapes,
+            shapes: &solved.0,
             temperature: case.temperature,
             ground: None,
-            jumpers: &solved.jumpers,
+            jumpers: &solved.1,
         };
         let (own, _) = ohl_electrical::magnetic::run_keeping(&src, &settings, None).unwrap();
         let took_own = t0.elapsed();
@@ -1425,7 +1425,7 @@ fn offline_files_neighbours_in_the_check_windows(
         // across the working set's spans 1 m above the ground, ±50 m every
         // 5 m, the ground plane under each point.
         let t0 = std::time::Instant::now();
-        let solved = crate::model::Solved::as_shown(&m.line, &m.library, case.clone());
+        let solved = clock_free(&m.line, &m.library, case.clone());
         let ws_sections: std::collections::BTreeSet<String> = wanted.iter().cloned().collect();
         let settings = ohl_electrical::electric::Settings {
             height: 1.0,
@@ -1439,10 +1439,10 @@ fn offline_files_neighbours_in_the_check_windows(
         let src = ohl_electrical::Sources {
             line: &m.line,
             library: &m.library,
-            shapes: &solved.shapes,
+            shapes: &solved.0,
             temperature: case.temperature,
             ground: None,
-            jumpers: &solved.jumpers,
+            jumpers: &solved.1,
         };
         let own = ohl_electrical::electric::run(&src, &settings, None).unwrap();
         let took_own = t0.elapsed();
@@ -1713,4 +1713,31 @@ fn offline_files_neighbours_in_the_check_windows(
          export's lines near solved together (up {rise:.3} kV/m at most)",
         own.cuts.len()
     );
+}
+
+/// `line` solved in `case` as it is drawn first, every section's solve
+/// with the iteration limit and no clock, as the network's checks solve
+/// (2026-11-25: under heavy load a section of the window's own solve could
+/// stop on the solver's 120 s limit, its wires left out and this test's
+/// "this line alone" off — a test of the same field on both sides must not
+/// depend on the load). Every section must solve.
+fn clock_free(
+    line: &ohl_line::Line,
+    library: &ohl_cables::Library,
+    case: ohl_weather::WeatherCase,
+) -> (
+    Vec<ohl_line::solve::SectionShape>,
+    Vec<ohl_line::jumper::JumperShape>,
+) {
+    let case = crate::model::as_shown(case);
+    let shapes: Vec<_> =
+        ohl_line::solve::solve_line_with(line, library, &case, &ohl_scope::solve_budget())
+            .into_iter()
+            .map(|r| r.expect("every section solved"))
+            .collect();
+    let jumpers = ohl_line::jumper::solve_jumpers(line, library, &case, &shapes)
+        .into_iter()
+        .filter_map(Result::ok)
+        .collect();
+    (shapes, jumpers)
 }

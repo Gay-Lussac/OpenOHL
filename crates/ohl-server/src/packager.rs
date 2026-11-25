@@ -625,16 +625,23 @@ pub(crate) fn structure_checks(
                 .into(),
         );
     }
-    crate::private_dir(work).map_err(|e| format!("{}: {e}", work.display()))?;
+    // Its working folder (its parents made first: a server's work folder
+    // may not exist yet); errors without the server's paths.
+    let unwritable =
+        |e: std::io::Error| format!("the structure libraries could not be laid out ({e})");
+    if let Some(parent) = work.parent() {
+        std::fs::create_dir_all(parent).map_err(unwritable)?;
+    }
+    crate::private_dir(work).map_err(unwritable)?;
     let dir = work.join(format!("types-{}", crate::random_code(8)));
-    crate::private_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    crate::private_dir(&dir).map_err(unwritable)?;
     let mut out = ohl_scope::loads::StructureChecks::default();
     out.folder = Some(dir.clone());
     let mut own = std::collections::BTreeSet::new();
     for (kind, folder) in CHECK_LIBRARIES {
         let Some(list) = given(kind) else { continue };
         let at = dir.join(folder);
-        std::fs::create_dir_all(&at).map_err(|e| format!("{}: {e}", at.display()))?;
+        std::fs::create_dir_all(&at).map_err(unwritable)?;
         for (name, text) in list {
             if !ohl_session::safe_file_name(name) {
                 return Err(format!("library file \"{name}\": not a plain file name"));
@@ -1146,6 +1153,45 @@ pub(crate) fn context_structure(model: &str, s: &Structure) -> ContextStructure 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The structure libraries of a usage check laid out in a work folder
+    /// whose parents do not exist yet (2026-11-25: a server's
+    /// `work/checks-types` refused every shared tower's usage), removed
+    /// when the answer is dropped; a library naming a member-check plugin
+    /// refused where plugins are not run, said without a path.
+    #[cfg(feature = "offline-checks")]
+    #[test]
+    fn structure_checks_lay_out_their_folder() {
+        let root = std::env::temp_dir().join(format!("ohl-checks-{}", crate::random_code(8)));
+        let work = root.join("work").join("checks-types");
+        let ex = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/synthetic-line/Structures");
+        let mut files: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+        for name in ["type-01.ohls", "type-02.ohls", "type-02-model.ohlfe"] {
+            let text = std::fs::read_to_string(ex.join(name)).unwrap();
+            let kind = if name.ends_with(".ohlfe") {
+                "femodels"
+            } else {
+                "structures"
+            };
+            files
+                .entry(kind.to_owned())
+                .or_default()
+                .push((name.to_owned(), text));
+        }
+        let checks = structure_checks(&files, &work, false).expect("laid out");
+        assert!(checks.types.get("type-01").is_some());
+        assert!(checks.types.get("type-02").is_some());
+        let folder = checks.folder.clone().expect("a folder");
+        assert!(folder.join("structures").join("type-02-model.ohlfe").is_file());
+        drop(checks);
+        assert!(!folder.exists());
+        let mut plugin = files.clone();
+        plugin.get_mut("femodels").unwrap()[0].1 += "\n# capacity = \"plugin:any\"\n";
+        let e = structure_checks(&plugin, &work, false).unwrap_err();
+        assert!(e.contains("runs no plugins") && !e.contains('/'), "{e}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// Every section solved on its sub-line gives the shape it gets on its
     /// whole line, bit for bit (the `Debug` text of the results compared):
