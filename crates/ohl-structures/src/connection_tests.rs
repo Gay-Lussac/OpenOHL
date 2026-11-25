@@ -198,7 +198,7 @@ fn a_welds_sides_are_read() {
         assert!(e.contains("sides 1 (one fillet) or 2"), "{e}");
     }
     assert_eq!(crate::connections::WELD_SIDES_VERSION, 28);
-    assert!(crate::structures::STRUCTURE_FILE_VERSION >= 28);
+    const { assert!(crate::structures::STRUCTURE_FILE_VERSION >= 28) };
     let newer = format!(
         "version = {}",
         crate::structures::STRUCTURE_FILE_VERSION + 1
