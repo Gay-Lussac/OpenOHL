@@ -5701,7 +5701,9 @@ or three, L four or more. The phases, in order:
   (only connected at substations but not the same line)", and "for the
   model merging this has to be dealt with at the network design level and
   then corrected with the app that has the capabilities for it. Keep the
-  function with "twin" as is"). **Decided, not built.**
+  function with "twin" as is"). **Decided, not built**; the join command's
+  three questions answered "Ok with recommendations" (owner, 2026-11-25):
+  to build.
   1. **The rule**: one model per line, its branches included — a line
      branching (a Y or T connection, two or more routes sharing a tower)
      is one model, its shared towers one object each (towers shared by
@@ -5726,7 +5728,7 @@ or three, L four or more. The phases, in order:
      holding several lines' starts and towers carrying another line's
      circuits. The admin's command merging twins (formerly under *Later*)
      is dropped.
-  > **Owner:** (to answer, 2026-11-25; the recommendation after the arrow)
+  > **Owner:** (answered 2026-11-25: "Ok with recommendations")
   > 1. The join command in OHL-Design under File (*Join routes from
   > another project…*), not in OHL-Structure? → yes: routes, sections and
   > towers are OHL-Design's.

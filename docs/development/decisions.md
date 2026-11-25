@@ -24,7 +24,9 @@ circuits as twins** (roadmap O17, *One model per line*; owner,
   corrected**: in OHL-Design, the application with the capability — a
   command joining another project file's routes into the open project is
   to be built (its twins offered to become shared towers, the user
-  deciding; owner questions in the roadmap).
+  deciding, none ticked by default; the open project's tower kept and the
+  other line's sections re-attached by point label, those without a match
+  refused and listed; owner, 2026-11-25: "Ok with recommendations").
 - **Twins unchanged**: listed by the import for an admin, never merged,
   taken as one tower by the scoped checks; they cover substation portals
   holding several lines' starts. The admin's command merging twins,
