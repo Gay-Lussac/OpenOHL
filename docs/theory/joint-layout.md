@@ -3894,6 +3894,94 @@ the same towers:
 | How far out of today's choice's flange an end must lie to be named onto a member ending at the joint by its plane (L13) | 10° | measured on the 78 private towers: the ends 5° to 10° out made 250 joints worse and 137 better (a bent plate lays many out); those farther out 1 to 4 times more better than worse |
 | Passes planning a joint again with the members named but not laid out where the file draws them (L8) | 2 | a bound on the extra work: on six private real towers the second pass found 3 more joints (of about 1 190 in the first), one plate more |
 
+## The detailing practice (L24)
+
+(The owner, 2026-11-24: the layout's detailing rules pluggable as data,
+the engine staying in the program; roadmap O44 L24, built 2026-11-25, in
+active development, not approved yet;
+[plugins](../development/plugins.md#detailing-practice).)
+
+**Why.** Shops and utilities detail towers differently: some never weld,
+some keep every gusset round the work point, some bolt three bolts where
+others bolt two. Until L24 those preferences were constants in the code.
+A **detailing practice** holds them as data — the structure's own, or
+given by the code plugin of its member check, else the default — and the
+layout follows it.
+
+**What it holds** (each with its default, which is the layout as it was
+before L24 exactly):
+
+| Preference | Default | What the layout does with it |
+|---|---|---|
+| Fabrication order | direct → plate → bend → welded | the kinds of parts tried, in this order; a kind left out is never made (an end needing it is left for a hand detail, said); "bends" (several bends) accepted, not built |
+| Faces of a leg's flange | a diagonal onto the inner face first | L10's order of the ends tried on the other face |
+| Members on either side of a flange | yes | L10's half turn onto the other face |
+| Both faces of one plate | yes | L11 |
+| Gap, pull-back, shift | 10, 300, 30 mm | the Lay out joints window's starting values (the settings above) |
+| Flatness | 2° | where the planner decides an end lies flat on its flange, and the roll for a whole member |
+| Small bend, at most | 20° | L3's plate bent by a few degrees |
+| Welded plate's axis offset, at most | 40 mm | L20 item 2 |
+| Bend's inside radius | 2 thicknesses | J2b's and L3's bent plates |
+| Plate between angles, least gap | 0.5 × the thickest leg | L15 |
+| Plates may stop short of the work point | yes | L2's follow-up (a) |
+| The picked bolt's pattern | 2 in one line | the provisional bolts of an end without bolts or a class preset |
+
+**On the safe side.** A practice only chooses among what the engine does
+already: it turns kinds off and changes the program's numbers, never adds
+a way of detailing. The clash check, the joint checks after writing and
+the guard that no step leaves a joint worse run whatever it says. Every
+value is checked and a practice with one out of its range is refused —
+not used, the default used instead, said — with what, why and what to
+give instead:
+
+- the flatness 1° to 2°: the joint details take an end as lying flat up
+  to 2° (the owner's value, 2026-11-19); a looser practice would bolt
+  flat ends they see off their flange — a forced fit whose locked-in
+  bending no check takes. **Not changed with it**: the joint details, the
+  clash check, the joints' planes and groups, Orient angles and the
+  level plates' in-plane tests keep 2°, so a stricter practice puts more
+  ends onto bent or welded plates but never lets one count as flat that
+  the joint details see off;
+- the shift up to 30 mm and the welded plate's axis offset up to 40 mm:
+  what the estimated eccentricities take as their upper bounds where no
+  plan exists (O45, decided 2026-11-19, until J5 checks the moment
+  instead of refusing the end) — a larger value would let the layout make
+  an offset beyond what the analysis is told;
+- a bend's inside radius at least one plate thickness (a tighter bend
+  may crack; the code plugins' bend checks check the radius against their
+  code, and without such a check the bend is said NOT ON THE SAFE SIDE as
+  before);
+- the plate between a built-up member's angles at least half the
+  thickest leg on it (the program's least, L15);
+- 2 to 8 bolts in one gauge line: one bolt per end is the codes' question
+  (J8), two lines for the picked bolt wait on the codes' bolt choice;
+- "direct" and "plate" always: the layout has no way without them; the
+  kinds in the engine's order (it does not follow another order yet).
+
+**Where it comes from, and the record.** The Lay out joints window takes
+the structure's own practice (the layout record's `[generator.practice]`,
+`source = "project"`), else asks the structure's code plugin (its
+`detailing-practice` export, once per session), else the default; it
+shows where it comes from and its values, each with its effect, and why a
+practice given is not used. A run writes the practice it took into the
+record with its source; an edit's follow and the estimated eccentricities
+take the record's, so that they plan as the run planned.
+
+**Tested** (`practice_tests.rs`, `ohl-structure-tests/tests/detailing_practice.rs`):
+the default practice leaves the engine's settings exactly as they were
+(also with switches off) and lays an invented K-brace out to the same
+plans, the same file (but for the record's practice table) and the same
+estimated eccentricities, its diagonal flat, 10° and 30° off; a shop
+without bends puts the 10° diagonal on a welded plate instead of a bent
+one, one without bends and welds leaves it for a hand detail, said; an
+axis offset limit of 0 leaves the 30° diagonal by hand; three bolts per
+end given where ends have none; every refusal; the record's round trip;
+the example plugin's practice through the real host. **Expected cost**:
+none measurable — reading a practice is microseconds, and a kind left out
+makes a run a little faster, never slower. Not measured on the private
+real towers: the default changes nothing there by construction (the same
+values), which the tests above prove on invented towers.
+
 ## Measured (J1 and J2, 2026-11-19)
 
 On the 78 tower files of a private real line (Orient angles, then Lay

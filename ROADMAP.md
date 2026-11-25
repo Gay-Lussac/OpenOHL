@@ -3926,6 +3926,88 @@ only where it helps):
   > again with (2). (4) Members in line with the holder not tested by the
   > plan's check (the check after writing tests their heads and nuts) →
   > Recommended: keep until (2) (testing them changed nothing measured).
+- [x] L24. **A detailing practice, as data** (the owner, 2026-11-24:
+  the layout's detailing rules pluggable as data, the engine that builds,
+  checks and validates the layout staying in the program — step 1; step
+  2, a "propose a joint" hook for joints left for a hand detail, later).
+  **Built 2026-11-25, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-detailing-practice-l24),
+  [plugins](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/plugins.md#detailing-practice),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-a-detailing-practice-as-data-o44-l24);
+  `ohl_structure_link::practice`; no structure file version change). A
+  `DetailingPractice` — the structure's own (the layout record's
+  `[generator.practice]`, `source = "project"`), else the structure's code
+  plugin's (the new optional export `detailing-practice`, additive to
+  interface 0.3), else the default — read, every value checked, and
+  applied to the engine's settings; a run records the practice it took
+  with its source, the follow and the estimated eccentricities take the
+  record's. Lay out joints shows where it comes from, why one given is
+  not used, and its values read-only, each with its effect.
+  **The default is the layout as before, exactly** (every value the
+  constant the code had; applying a practice only turns switches off and
+  replaces numbers): proved by tests — the engine's settings equal with
+  the default applied (also with switches off), an invented K-brace laid
+  out to the same plans, the same file but for the record's table and
+  the same estimated eccentricities (its diagonal flat, 10° and 30° off),
+  every existing layout test unchanged. **Inventory** of the detailing
+  preferences the layout code hard-coded — **now in the practice**: the
+  kinds made (`bent_plates`, `small_bends`, `bend_facing`, `bend_back`:
+  "bend"; step 4's welded plate in its own plane, `rooms_for`, and the
+  corner plates welded together, `welded`: "welded"; "bends": accepted,
+  not built); the face preferences (`face_pattern`, `other_face`,
+  `both_faces`); `GAP_START`, `PULL_BACK_START`, `SHIFT_LIMIT_START` (the
+  window's starting values); `FLAT_OFF` where the planner decides an end
+  lies flat (`plan_joint_searched`, `plan_avoiding`, `own_geometry`'s
+  guards, `turned_end`, the run's whole roll and L3b's turns);
+  `BEND_SMALL_MAX`; `OWN_OUT_MAX`; `BEND_RADIUS_RATIO`; `BETWEEN_LEAST`;
+  `short_plates`; the picked bolt's "two in one line". **Kept in code**
+  (not preferences, or not yet): the search bounds and rounds
+  (`NODE_LIMIT` 400, `PLATE_TRIES`, `HOLD_TRIES`, `CUT_TRIES`,
+  `CLASH_ROUNDS`, `PULLS`, `ONTO_TRIES`, `AS_DRAWN_PASSES`, `FACE_ROUNDS`,
+  `CHORD_ROUNDS`, `WEIGH_ROUNDS`, Solve the clashes' `FIX_TRIES`); the
+  geometric tolerances (`CLASH_TOLERANCE` 1 mm; `FLAT_OFF` 2° in the joint
+  details, the clash check, the joints' planes and groups, Orient angles,
+  the level plates' in-plane tests and J9's roll tolerance;
+  `HORIZONTAL_OFF` 5°, `NESTED_ANGLE_DEG` 5°, the in-line angles 5°/10°,
+  `NEAR_PLANE_DEG` 16°, `PLANE_HOST_OFF` 10°, `TILT_MAX` 75°,
+  `ROLL_WINDOW_DEG` 22.5°, the joint kinds' 2 mm and 0.1°, `OVER_HEEL`,
+  `RESULTANT_TURN` 15°); the switches that make the plan agree with the
+  check or are measurement options (`exact_plan`, `plate_on`,
+  `seat_as_drawn`, `nothing_joined`, `partner_bolts`, `holds_clear`, …);
+  the plate's thickness (as thick as the thickest leg on it); the plates'
+  own holding bolts (two provisional, L5o, J2b, L15); the weld's throat;
+  the class order (the owner's) and the planes' order; direct bolting
+  winning a tie (L1 b). **The checks** (refused with what, why and what to
+  give instead; a refused practice not used, said): flatness 1°–2° (never
+  looser than the joint details'), shift 0–30 mm and axis offset 0–40 mm
+  (the estimated eccentricities' upper bounds until J5), bend radius 1–10
+  thicknesses, plate between 0.5–4, small bend from the flatness to 20°,
+  gap 2–100 mm, pull-back 10–2000 mm, 2–8 bolts in one line, "direct" and
+  "plate" always, the kinds in the engine's order, no unknown key. Tests:
+  `practice_tests.rs` (default = today, a kind left out changes the
+  layout as it says, a smaller offset limit, three bolts, every refusal,
+  the record, the example plugin's practice through the real host) and
+  `ohl-structure-tests/tests/detailing_practice.rs`. Not measured on the
+  private real towers: the default is the same values by construction.
+  > **Owner:** (1) The window's own gap, pull-back and shift may go beyond
+  > a practice's ranges (the shift up to 200 mm, as before) → Recommended:
+  > keep them the user's choice per run, but say it in the window where
+  > they exceed the practice's (a run's shift is recorded and the estimates
+  > take it). (2) The plate's thickness rule (a least thickness, stock
+  > thicknesses rounded up) is not in the practice yet → Recommended: next,
+  > as data with the same checks (thicker only, never thinner than the
+  > thickest leg). (3) The fabrication order is the engine's (a different
+  > order, e.g. a plate before direct bolting, is refused) → Recommended:
+  > keep until a shop asks; it needs an engine change. (4) The practice is
+  > read-only in the window (a structure's own is written in the file) →
+  > Recommended: a small editor following the tool-window pattern next,
+  > with "make it this structure's own" and "back to the plugin's /
+  > default". (5) One practice per structure → Recommended: keep; a
+  > project-wide default later with the country server. (6) The bundled
+  > codes give none → Recommended: keep (a practice is a shop's, not a
+  > code's). (7) The flatness only stricter than 2° → Recommended: keep (a
+  > looser one needs the joint details to follow, a forced fit no check
+  > takes).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

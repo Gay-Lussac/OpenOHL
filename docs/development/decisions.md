@@ -8,6 +8,58 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (joint layout: a detailing practice as data, O44 L24)
+
+**The owner's approval** (2026-11-24): make the joint layout's detailing
+*rules* pluggable as data; keep the engine that builds, checks and
+validates the layout in the program (thousands of joints per tower; one
+source of truth with the joint details; safety stays with the core — a
+plugin never certifies its own result). Step 1, this entry: a "detailing
+practice" preset, as data, with the plugin interface change it needs.
+Step 2 (a "propose a joint" hook for joints left for a hand detail):
+later. Built (`ohl_structure_link::practice`; built, in active
+development, not approved yet;
+[theory](../theory/joint-layout.md#the-detailing-practice-l24),
+[plugins](plugins.md#detailing-practice)).
+
+- **The data**: `DetailingPractice` — the fabrication order (direct,
+  plate, bend, bends, welded; "direct" and "plate" always, the engine's
+  order, "bends" accepted and not built), the face preferences (L10's
+  pattern, L10's other face, L11's both faces of one plate), the gap,
+  pull-back and shift (the window's starting values), the flatness, the
+  small bend's and the welded plate's axis offset's limits, the bend's
+  inside radius, the least gap for a plate between angles, plates
+  stopping short of the work point, the picked bolt's pattern.
+- **The default is the layout as before, exactly**: every value the
+  constant the code had; applying a practice only turns switches off and
+  replaces the program's numbers, so the default leaves the engine's
+  settings equal (tested, also with switches off) and an invented
+  K-brace laid out to the same plans and file (but for the record's
+  table) and the same estimated eccentricities.
+- **Where it comes from**: the structure's own (the layout record's
+  `[generator.practice]`, `source = "project"`), else the structure's
+  code plugin (the new optional export `detailing-practice`, additive to
+  interface 0.3: a plugin without it loads as before), else the default.
+  A run records the practice it took with its source; the follow and the
+  estimated eccentricities take the record's. No structure file version
+  change (the core passes the record through).
+- **Checked by the program, every value**; a practice out of range is
+  refused (not used, the default used, said) with what, why and what to
+  give instead. The safety-relevant ranges: the flatness never looser
+  than the joint details' 2°; the shift at most 30 mm and the welded
+  plate's axis offset at most 40 mm (the estimated eccentricities' upper
+  bounds, until J5); the bend radius at least one thickness; no single
+  bolt (J8). The clash checks, joint checks and the "no joint worse"
+  guards run whatever a practice says.
+- **Not in the practice** (kept in code, listed in the roadmap with why):
+  the search bounds and rounds, the geometric tolerances (the joint
+  details', clash check's, planes' and groups' 2°, the 75° tilt, the
+  in-line angles), the switches that make the plan agree with the check,
+  the plate's thickness rule (as thick as the thickest leg on it), the
+  plates' own holding bolts, the class order.
+- **The bundled codes** give no practice (a practice is a shop's, not a
+  code's); the example plugin gives an invented one for the tests.
+
 ## 2026-11-24 (clearance reports: the rigid-structures note by the line's calculation level)
 
 **The owner's answer** (2026-11-24) on the clearance reports' note
