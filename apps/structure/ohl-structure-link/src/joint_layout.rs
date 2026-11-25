@@ -7197,6 +7197,14 @@ fn stand_off_fits(
 ) -> Result<(), String> {
     let t = x.tilted.as_ref().expect("tilted");
     let w = geo.web.as_ref().ok_or("no web")?;
+    let past = web_past_heel(x, t, geo, gap);
+    if past > 1e-6 {
+        return Err(format!(
+            "its stand-off's web would stand {:.0} mm past the heel side of {}'s flange",
+            past * 1000.0,
+            x.host
+        ));
+    }
     let heel = sub(x.heel, wp);
     let to2 = |q: [f64; 3]| [dot(sub(q, heel), t.x3), dot(sub(q, heel), x.across)];
     let dir2 = |q: [f64; 3]| {
@@ -7287,6 +7295,25 @@ fn stand_off_fits(
     Ok(())
 }
 
+/// How far stand-off `geo`'s web foot (with its welds' room either side)
+/// lies past the heel side of end `x`'s flange — its heel, or on an inner
+/// face the angle's other leg and root — less half the gap, m (≤ 0: clear).
+fn web_past_heel(x: &Strip, t: &Tilted, geo: &OwnGeo, gap: f64) -> f64 {
+    let Some(w) = &geo.web else {
+        return 0.0;
+    };
+    let floor = if x.inside { x.t + x.r } else { 0.0 } + gap / 2.0;
+    let n = unit(cross(sub(w.foot[1], w.foot[0]), t.out)).unwrap_or([0.0; 3]);
+    let mut low = f64::INFINITY;
+    for f in w.foot {
+        for k in [-1.0, 1.0] {
+            let q = add(f, scale(n, k * w.margin));
+            low = low.min(dot(sub(q, t.face), x.across));
+        }
+    }
+    floor - low
+}
+
 /// Said for an end whose outstanding leg points into the flange (a plate
 /// in its own plane would stand on the flat plate).
 pub const INTO_FLANGE_WORDS: &str =
@@ -7308,9 +7335,32 @@ fn toe_clear(
     room: Room,
 ) -> Result<f64, String> {
     // (L26) A stand-off lifts its member clear of the flat plate: its steel
-    // where it is.
+    // where it is — pulled back only so far that its web's foot (with its
+    // welds' room) stays on the flange, clear of its heel side (the angle's
+    // other leg and root on an inner face) by half the gap.
     if room == Room::StandOff {
-        return Ok(ceil_to(cut, 0.001));
+        let rate = dot(t.dir, x.across) / t.lu;
+        let mut c = cut;
+        for _ in 0..4 {
+            let geo = own_geometry(t, c / t.lu, p.moved, t.face, t.out, x.own_t, gap, room)?;
+            let need = web_past_heel(x, t, &geo, gap);
+            if need <= 1e-9 {
+                return Ok(ceil_to(c, 0.001));
+            }
+            if rate <= 1e-6 {
+                return Err(format!(
+                    "its stand-off's web would stand {:.0} mm past the heel side of {}'s flange \
+                     (pulling it back does not help)",
+                    need * 1000.0,
+                    x.host
+                ));
+            }
+            c += need / rate + 1e-6;
+        }
+        return Err(format!(
+            "its stand-off's web would stand past the heel side of {}'s flange",
+            x.host
+        ));
     }
     let heel = t.face;
     let _ = wp;
