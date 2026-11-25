@@ -439,7 +439,7 @@ pub fn combine(
             loads,
             failed: Vec::new(),
             missing,
-            structure_wind: own.2.structure_wind.clone(),
+            structure_wind: own.2.structure_wind,
             broken_each,
             notes: Vec::new(),
             unknown_sets: Vec::new(),
