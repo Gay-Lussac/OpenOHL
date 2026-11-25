@@ -1206,6 +1206,7 @@ pub fn plate_usage(
             &plans.structure,
             None,
             &[("", strength, axial)],
+            &[],
         )
         .into_iter()
         .flatten(),
@@ -1397,7 +1398,7 @@ pub fn plate_usage_cases_with(
     };
     // The bent plates' bends (2026-11-19): one more call with every bend
     // and case.
-    let mut bends = crate::bends::bend_rows(&plans.bends, &plans.structure, Some(p), cases);
+    let mut bends = crate::bends::bend_rows(&plans.bends, &plans.structure, Some(p), cases, ends);
     cases
         .iter()
         .enumerate()

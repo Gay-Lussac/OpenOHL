@@ -82,6 +82,27 @@ owner busy: built on its own, reported):
   invented spliced leg (`leg_splices` tests: D through a 15 mm cover, its
   offset 15 mm along its bolts, its moment at least 50 kN × 15 mm; none
   without the joint details).
+- **A bent plate's bend takes a frame member's end shear and moments**
+  ([the bend in bending](../theory/joint-layout.md#the-bend-in-bending-2026-11-19)).
+  Before: the bend's section took the members' axial forces only — said
+  NOT ON THE SAFE SIDE in the theory. Now, where the case's end forces are
+  known (OHL-Structure's runs): each member's shear (square to its axis)
+  and moment, carried to its bolts' centroid and on to the bend's middle,
+  the shear across the bend added to N, along it to V, square to the flat
+  to V by size; the moment about the bend line to M by size, in the
+  plate's plane to M_in, its twist to M by size (a thin plate's torsion
+  stress 3T/(w t²) counted as a bending stress 6T/(w t²): on the safe
+  side). The same four values reach the plugins' `joint-check-bends`,
+  larger: no interface changed. Tested by hand (1 kN square to the flat
+  at 0.2 m, 50 N m of twist, 30 N m in the plane). Results rise only at
+  bends where frame members (end moments) meet.
+- **Not built, an owner question: a plate in compression lying on a
+  flange** (a short plate, a level plate on its holders). Its strut check
+  (K = 2 to its edge) takes it as held where it lies on the flange — by
+  contact on one side where it has no bolts of its own there; the fix
+  (such a strut NOT CHECKED, never a usage) changes how many plates read
+  "not checked", so it is asked with a recommendation in the roadmap
+  (O19); the NOT ON THE SAFE SIDE text in the theory stays.
 
 ## 2026-11-25 (joint layout: a detailing practice as data, O44 L24)
 

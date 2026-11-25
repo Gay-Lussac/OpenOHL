@@ -696,7 +696,24 @@ the bend line; n the flat's normal; o the bend's middle):
   bend line to the farthest bolt holding the other flat on the leg (else
   that flat's farthest edge, said);
 - in the plate's plane M_in = |Σ Nᵢ ((cᵢ − o) × dᵢ) · n|, cᵢ the centroid
-  of member i's bolts.
+  of member i's bolts;
+- (since 2026-11-25) **a frame member's end shear and moments**, where
+  the case's end forces are known (OHL-Structure's runs): its shear
+  \( \mathbf V_i \) (its end force on the plate square to its axis; the
+  axial part is Nᵢ's, not taken twice) and moment \( \mathbf M_i \),
+  carried to its bolts' centroid, \( \mathbf M_i + (\mathbf p - \mathbf c_i)
+  \times \mathbf V_i \) (p the joint), and on to the bend's middle,
+  \( + (\mathbf c_i - \mathbf o) \times \mathbf V_i \): the shear's part
+  across the bend added to N, along it to V, square to the flat to V by
+  size; the moment about the bend line to M by size, in the plate's
+  plane to M_in, and its twist about the across axis a to M by size —
+  *on the safe side*: a thin plate's largest torsion stress is
+  \( 3T/(w t^2) \) (St-Venant's thin rectangle; S. Timoshenko & J. N.
+  Goodier, *Theory of Elasticity*, 2nd ed., 1951), counted as a
+  bending stress \( 6T/(w t^2) \), at least its von Mises equivalent
+  \( \sqrt 3 \cdot 3T/(w t^2) \) and its Tresca one. Before, left out
+  (said NOT ON THE SAFE SIDE below). No plugin interface changed: the
+  same four values reach the plugin, larger.
 
 *Conservative assumptions:* the members' moments about the bend line
 added by size (the worst of their signs); the whole force across the
@@ -705,12 +722,13 @@ the largest moment that flat's cantilever can give, **taken at the
 bend** (where the flat bears on the leg's face, less); the normal and
 the shear stresses taken at one point of the section (the codes'
 checks below). **NOT ON THE SAFE SIDE** (by what it leaves out, so the
-bend's stress can be higher than checked): the members' axial forces
-only — a frame member's end moments and shear at its bolts are not added
-at the bend (the flats' plate checks take them); the bend short across
-its section — no buckling across it (the flats' own strut checks take
-theirs). Not modelled yet: where frame members with large end moments
-meet a bent plate, check the bend by hand.
+bend's stress can be higher than checked): the bend short across its
+section — no buckling across it (the flats' own strut checks take
+theirs); where the end forces are not known (a plate check given axial
+forces only, `plate_usage_cases`), a frame member's end moments and shear
+are not added at the bend — OHL-Structure's run gives them (above).
+Not modelled yet: check such a bend by hand where its buckling may
+govern.
 
 The plugins apply their code to that section: **ASCE 10-97** Eq. 3.13-1
 (P/P_a + M/M_a, P_a = F_y A on the gross section by 3.10.1, the
