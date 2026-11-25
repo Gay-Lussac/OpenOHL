@@ -1316,9 +1316,13 @@ fn a_run_keeps_the_place_of_a_member_left_by_hand() {
 fn a_member_named_but_not_laid_out_is_planned_where_it_is_drawn() {
     let text = tall();
     // (L20 item 2 off: a member it leaves would now go onto a welded plate
-    // farther out where the file draws it — laid out, not left.)
+    // farther out where the file draws it — laid out, not left. L25 off:
+    // its turns weighed after the run lay out more ends without L8 here,
+    // not what is tested.)
     let settings = || LayoutSettings {
         own_offset_analysed: false,
+        flange_half: false,
+        flange_quarter: false,
         ..settings()
     };
     let r = run(&text, &settings(), None, false);

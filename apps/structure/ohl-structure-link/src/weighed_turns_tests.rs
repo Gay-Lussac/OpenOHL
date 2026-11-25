@@ -19,6 +19,10 @@ fn settings(weigh: bool) -> LayoutSettings {
     LayoutSettings {
         bolt: Some(BoltArea::picked(None, 0.016, None)),
         weigh_turns: weigh,
+        // (L25's turns weighed after these: tested on their own,
+        // `flange_turns_tests`.)
+        flange_half: false,
+        flange_quarter: false,
         ..Default::default()
     }
 }
