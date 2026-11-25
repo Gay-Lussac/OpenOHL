@@ -3746,7 +3746,7 @@ only where it helps):
   > you could also consider it"* — for an end whose outstanding leg points
   > into the flange both a half turn and a quarter turn tried, weighed
   > over every joint the member reaches, the better kept; a stand-off
-  > later, where neither works; L23's question 5).
+  > later, where neither works; L23's question 6, L25).
 - [x] L20. **A level plate across two horizontals; the welded plate's axis
   offset carried into the analysis** (L19's questions 6 and 7a, and
   the owner's "go ahead to improve" of 2026-11-23 for plates with several
@@ -3945,8 +3945,8 @@ only where it helps):
   ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plates-own-holding-bolts-tested-by-the-clash-check-after-writing-tried-not-kept-l23),
   [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-three-steps-measured-none-kept-l23)).
   Measured on four of the eight private towers of L21 and L22 (3 111
-  joints; the same settings; L22 main as the base — main reproduced it
-  exactly):
+  joints; the same settings — without the code plugin's distances, see
+  4.; L22 main as the base — main reproduced it exactly):
 
   | | joints whole | member ends | plates | a plate's own bolts in a clash after writing (joints) | plates' own holding ends | joints better / worse |
   |---|---|---|---|---|---|---|
@@ -3986,11 +3986,23 @@ only where it helps):
   60 ends at most 15° off refused for their axis, 5 would come within a
   plate's thickness with no room at the seam at all (20 if their bolts
   also needed no edge distance from the bend — no plate allows that).
-  **4. After the code plugins' edge distances** (holding bolts with the
-  ASCE 10-97 edge distance, the bearing cap and the rolled toe): not
-  measured — the change had not reached main when L23 ended (the tools
-  and the before-runs are kept privately for it: level plates written,
-  "no place for 2" notes, plates held by their own bolts, joints whole).
+  **4. After the code plugins' bolt distances** (the ASCE 10-97 plugin's
+  force per bolt capped by its bearing without an analysis, and the
+  member checks' changes of the same day; the rolled toe not built by
+  them), measured with the bundled plugin before and after (four private
+  towers, 3 111 joints): plates held by their own bolts 1 126 → 1 209
+  holding ends, "no place for 2" notes 1 000 → 1 010, level plates
+  across two horizontals 0 → 0, joints whole 2 070 → 2 065, member ends
+  7 028 → 7 025, plates 3 472 → 3 508 (24 joints better, 54 worse: 24
+  with an end fewer, 30 as many ends on more plates), a plate's own bolts
+  in a clash after writing 66 → 67. **Found on the way**: L21's, L22's and
+  this step's other measurements ran without the code plugin's distances —
+  the measuring setup's copy of the plugin had lost its WebAssembly file,
+  so the layout took the structure's default minimums. The comparisons
+  within each step hold (the same setup on both sides); with the plugin
+  the same four towers lay out 2 070 joints whole instead of 2 093, 7 028
+  ends instead of 7 103, on 3 472 plates instead of 3 756, 1 126 holding
+  ends instead of 1 345 (202 joints better, 149 worse).
   **5. The joint layout and plugins**: the plan below (L24), approved by
   the owner on 2026-11-24.
   > **Owner:** (1) A plate's own bolts tested by the check after writing:
@@ -4004,10 +4016,14 @@ only where it helps):
   > with and without them, the one with them kept only where every joint
   > its member reaches is laid out no worse and one better (L19's rule;
   > a layout run more per tower); until then keep L20 item 2 as it is.
-  > (4) The joggle → Recommended: drop it (it cannot bring the axis back);
+  > (4) The measurements without the code plugin's distances (L21–L23,
+  > found in L23) → Recommended: L24 and later measured with the bundled
+  > plugin (the setup checked to load it before each run); L21's and
+  > L22's decisions stand (each compared both sides alike). (5) The
+  > joggle → Recommended: drop it (it cannot bring the axis back);
   > instead, as the fabrication order puts one bend before a weld, let a
   > plate bent once carry its axis offset into the analysis up to 40 mm as
-  > the welded plate does (L20 item 2) — measured first. (5) The half or
+  > the welded plate does (L20 item 2) — measured first. (6) The half or
   > quarter turn for an outstanding leg into the flange (the owner's
   > answer to 7c) → planned as L25, below.
 - [ ] L24. **The joint layout and plugins: a detailing practice as data,

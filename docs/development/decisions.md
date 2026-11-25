@@ -36,6 +36,13 @@ built on its own, reported;
   the welded plate is already within the seam's room of that bound (of 60
   such ends at most 15° off on eight private towers, 5 could come within a
   plate's thickness with no room at the seam at all).
+- **The measuring setup** (found on the way): L21's, L22's and this
+  step's comparisons ran without the code plugin's minimum distances (the
+  setup's copy of the plugin had lost its WebAssembly file; the layout
+  took the structure's default minimums) — each comparison alike on both
+  sides, so its decision stands; the code plugin's change of the same day
+  (the force per bolt capped by its bearing) measured with the plugin
+  loaded (roadmap L23 item 4).
 - **Measured** (private towers): in the roadmap block and the theory page.
 
 ## 2026-11-24 (joint layout: the owner's answers to L19–L22, the joint layout and plugins)

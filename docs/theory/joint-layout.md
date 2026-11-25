@@ -3863,7 +3863,10 @@ where no place inside is clear (L22's question 3, tried again with it):
 | and only where nothing but those bolts moves | 2 090 | 7 100 | 3 759 | 87 (31) | 1 357 | 0 / 3 | |
 
 ¹ under a varying load of other work, not comparable; ² against a run
-beside it at the same time (one with the next section's change).
+beside it at the same time (one with the next section's change). Measured,
+as L21's and L22's comparisons were, with the structure's default minimum
+distances (the measuring setup's code plugin had lost its WebAssembly
+file — found in L23); both sides alike.
 
 No form lays out an end more; the first changes no joint (six more
 holding ends) at a much longer run; the plate grown along its holder
