@@ -439,26 +439,6 @@ pub struct LayoutSettings {
     /// where no leg is given), the one laying out more member ends kept,
     /// on a tie the half turn. On by default; off: not tried.
     pub flange_quarter: bool,
-    /// O44 L26 (L25's question 2; the owner, 2026-11-24: "probably a half
-    /// turn if possible then other options"): an end whose outstanding leg
-    /// points into the flange and that neither turn helped laid out on a
-    /// **stand-off** — a welded assembly of three parts: the flat plate on
-    /// the flange, a web standing on it in the plane of the member's axis,
-    /// a gusset in the member's own plane welded on the web, the member
-    /// lifted so that its outstanding leg clears the flat plate by the gap
-    /// ([`crate::flange_turns`] weighs it per member as L25 weighs the
-    /// turns). **Off by default** (it changes the default layout; a tick in
-    /// Lay out joints, allowed by the detailing practice's `stand_off` and
-    /// `welded`).
-    pub stand_offs: bool,
-    /// O44 L26: the members whose ends may take a stand-off (those the
-    /// weighing tries, and those the layout record keeps — kept by every
-    /// later run, the setting on or off); empty: none.
-    pub stand_off_members: BTreeSet<String>,
-    /// O44 L26: the detailing practice allows stand-offs (its `stand_off`
-    /// and `welded`); off: none made, not even those the record keeps. On
-    /// by default.
-    pub stand_offs_allowed: bool,
     /// O44 L24 (the detailing practice's fabrication order without
     /// `welded`): an end no roll lays flat may go onto a plate in its own
     /// plane welded to the flat plate (step 4). On by default; off: such an
@@ -561,9 +541,6 @@ impl Default for LayoutSettings {
             holds_clear: true,
             flange_half: true,
             flange_quarter: true,
-            stand_offs: false,
-            stand_off_members: BTreeSet::new(),
-            stand_offs_allowed: true,
             own_plane_welded: true,
             flat_off: FLAT_OFF,
             bend_small_max: BEND_SMALL_MAX,
@@ -835,28 +812,6 @@ pub struct OwnPlane {
     /// Bent from the flat plate (J2b), not welded to it (its weld's size and
     /// length then 0).
     pub bend: Option<BendPlan>,
-    /// A stand-off's part (O44 L26): its web (welded to the flat plate) or
-    /// its gusset (welded to the web, its member on it); none: a plate in
-    /// its member's own plane welded or bent at the seam, as before.
-    pub stand_off: Option<StandOffPart>,
-}
-
-/// A part of a stand-off (O44 L26; [`Room::StandOff`]).
-#[derive(Debug, Clone, PartialEq)]
-pub enum StandOffPart {
-    /// The web standing on the flat plate, square to it, in the plane of
-    /// its member's axis: sized so that its root carries the member's gross
-    /// section at yield.
-    Web {
-        /// The member it carries.
-        member: String,
-        /// Its length along its foot, m.
-        length: f64,
-        /// Its height at its higher end, m.
-        height: f64,
-    },
-    /// The gusset in the member's own plane, welded on the web's top.
-    Gusset,
 }
 
 /// Two members in line through the joint joined (the owner's step 1,
@@ -1571,7 +1526,6 @@ fn bent_over(
                 inner_radius: r,
                 line: [line_at(lo), line_at(hi)],
             }),
-            stand_off: None,
         }),
         reach: None,
         outline: None,
@@ -2436,14 +2390,6 @@ struct Tilted {
     /// L24: a bent plate's inside radius, in plate thicknesses
     /// ([`LayoutSettings::bend_radius_ratio`]).
     bend_ratio: f64,
-    /// L26: its outstanding leg points into the flange — only a stand-off
-    /// ([`Room::StandOff`]) can take it.
-    into: bool,
-    /// L26: its outstanding leg's width and the angle's thickness, m.
-    other_w: f64,
-    leg_t: f64,
-    /// L26: its bolts' diameter, m.
-    d: f64,
 }
 
 impl Strip {
@@ -3615,9 +3561,6 @@ fn plan_avoiding(
                     let mut ok: Vec<(Room, f64)> = Vec::new();
                     let mut errs: Vec<(Room, String)> = Vec::new();
                     for room in rooms_for(t, s) {
-                        // (L26) A stand-off's member lifted clear of the
-                        // flange: no pull-back past its toe.
-                        let need = if room == Room::StandOff { 0.0 } else { need };
                         match toe_clear(x, t, &p, need.max(p.cut), j.position, s.gap, room) {
                             Ok(c) if c.max(need) <= p.cut + 1e-9 || c.max(need) <= limit + 1e-9 => {
                                 ok.push((room, c.max(need).max(p.cut)));
@@ -3741,19 +3684,15 @@ fn plan_avoiding(
                         errs.push((room, farther_out(geo.out_more, x.own_t, room, s)));
                         continue;
                     }
-                    let fits_now = if room == Room::StandOff {
-                        stand_off_fits(&strips, x, &geo, &flat_ends, &owns, j.position, s.gap)
-                    } else {
-                        own_fits(&strips, x, &geo, &flat_ends, &owns, j.position, s.gap)
-                    };
-                    if let Err(e) = fits_now {
+                    if let Err(e) = own_fits(&strips, x, &geo, &flat_ends, &owns, j.position, s.gap)
+                    {
                         errs.push((room, e));
                         continue;
                     }
                     let rank = match room {
                         // (L24) The practice's order on this tie.
                         Room::Weld if s.weld_before_bend => -1.0,
-                        Room::Weld | Room::StandOff => f64::INFINITY,
+                        Room::Weld => f64::INFINITY,
                         Room::Bend { down } => geo.out_more.abs() + if down { 1e-6 } else { 0.0 },
                     };
                     fits.push((rank, geo, cut));
@@ -3965,8 +3904,7 @@ fn plan_avoiding(
                 between: between.is_some(),
                 also: None,
             };
-            // (L26: a stand-off's web, then its gusset.)
-            let mut own_plates: Vec<Vec<PlatePlan>> = Vec::new();
+            let mut own_plates: Vec<PlatePlan> = Vec::new();
             let mut seams3: Vec<([f64; 3], [f64; 3])> = Vec::new();
             let mut short_reach: Vec<[f64; 3]> = Vec::new();
             let mut seam_pts: Vec<[f64; 3]> = Vec::new();
@@ -4003,23 +3941,13 @@ fn plan_avoiding(
                 );
                 seam_pts.extend(all.iter().take(2).copied());
                 r.points.extend(all);
-                // (L26) A stand-off's web stands on the flat plate, which
-                // runs on under it: no side kept.
-                if geo.room != Room::StandOff {
-                    r.keep_to.push((abs(geo.seam_at), geo.side));
-                    seams3.push((geo.seam_at, geo.side));
-                }
+                r.keep_to.push((abs(geo.seam_at), geo.side));
                 let seam = norm(sub(geo.seam[1], geo.seam[0]));
+                seams3.push((geo.seam_at, geo.side));
                 // L3: bent from the flat plate by its few degrees (no weld),
                 // its bend line where the two flats' middle planes meet.
                 let (weld_size, weld_length, bend) = match geo.room {
                     Room::Weld => (weld_throat(thickness), round_to(2.0 * seam, 1e-4), None),
-                    // (L26) The gusset on the web's top, both sides.
-                    Room::StandOff => (
-                        weld_throat(thickness),
-                        round_to(2.0 * geo.web.as_ref().map_or(0.0, |w| w.top_length), 1e-4),
-                        None,
-                    ),
                     Room::Bend { .. } => (
                         0.0,
                         0.0,
@@ -4030,40 +3958,7 @@ fn plan_avoiding(
                         }),
                     ),
                 };
-                let mut parts: Vec<PlatePlan> = Vec::new();
-                // (L26) A stand-off's web: on the flat plate, welded to it
-                // along its foot (both sides).
-                if let Some(w) = &geo.web {
-                    parts.push(PlatePlan {
-                        members: Vec::new(),
-                        thickness: w.thickness,
-                        on: x.host.clone(),
-                        heel: None,
-                        own: Some(OwnPlane {
-                            welded_to: index,
-                            outline: w.outline.iter().map(|q| abs(*q)).collect(),
-                            off: 90.0,
-                            lift: 0.0,
-                            out_more: 0.0,
-                            weld_size: weld_throat(w.thickness.min(thickness)),
-                            weld_length: round_to(2.0 * w.length, 1e-4),
-                            bend: None,
-                            stand_off: Some(StandOffPart::Web {
-                                member: x.member.clone(),
-                                length: w.length,
-                                height: w.height,
-                            }),
-                        }),
-                        reach: None,
-                        outline: None,
-                        hold: None,
-                        short: false,
-                        cuts: Vec::new(),
-                        between: false,
-                        also: None,
-                    });
-                }
-                parts.push(PlatePlan {
+                own_plates.push(PlatePlan {
                     members: vec![x.member.clone()],
                     thickness,
                     on: x.host.clone(),
@@ -4077,7 +3972,6 @@ fn plan_avoiding(
                         weld_size,
                         weld_length,
                         bend,
-                        stand_off: geo.web.as_ref().map(|_| StandOffPart::Gusset),
                     }),
                     reach: None,
                     outline: None,
@@ -4087,7 +3981,6 @@ fn plan_avoiding(
                     between: false,
                     also: None,
                 });
-                own_plates.push(parts);
             }
             // L9 (L8's question 5, 2026-11-21): a flat plate with plates in
             // their members' own planes welded to it, its outline as the run
@@ -4286,21 +4179,9 @@ fn plan_avoiding(
                     plate_of.insert(p.k, index);
                 }
             }
-            for ((k, _), parts) in owns.iter().zip(own_plates) {
-                // (L26) A stand-off: its web first (welded to the flat
-                // plate), its gusset welded to the web.
-                let mut web: Option<usize> = None;
-                for mut w in parts {
-                    if let (Some(i), Some(o)) = (web, w.own.as_mut()) {
-                        o.welded_to = i;
-                    }
-                    if w.members.is_empty() {
-                        web = Some(plan.plates.len());
-                    } else {
-                        plate_of.insert(*k, plan.plates.len());
-                    }
-                    plan.plates.push(w);
-                }
+            for ((k, _), w) in owns.iter().zip(own_plates) {
+                plate_of.insert(*k, plan.plates.len());
+                plan.plates.push(w);
             }
             laid3.extend(solids_of(
                 &strips,
@@ -6181,17 +6062,10 @@ fn strip_of(
                 return Err(format!("it runs along {}'s flange", host.member));
             }
             let nbo = dot(nb, face_out);
-            // (L26) Its outstanding leg into the flange: a stand-off, where
-            // allowed for its member (the weighing's, the record's) and the
-            // leg at most `TILT_MAX` off.
-            let into = nbo <= 0.0
-                && s.stand_offs_allowed
-                && s.own_plane_welded
-                && s.stand_off_members.contains(&a.member)
-                && -nbo >= TILT_MAX.to_radians().cos();
-            if nbo < TILT_MAX.to_radians().cos() && !into {
+            if nbo < TILT_MAX.to_radians().cos() {
                 return Err(if nbo <= 0.0 {
-                    INTO_FLANGE_WORDS.to_owned()
+                    "its outstanding leg points towards the flange (it would stand on the plate)"
+                        .to_owned()
                 } else {
                     format!(
                         "more than {TILT_MAX:.0}° off (the plate would stand nearly square to \
@@ -6244,10 +6118,6 @@ fn strip_of(
                 back: s.bend_back && s.small_bends,
                 flat: s.flat_off,
                 bend_ratio: s.bend_radius_ratio,
-                into,
-                other_w: if a.leg_y { g.h } else { g.b },
-                leg_t: g.t,
-                d,
             };
             // Its footprint on the flange's plane: its section where it is
             // drawn and its plate's (to the seam), across the plane's `v`.
@@ -6274,8 +6144,7 @@ fn strip_of(
                 match own_geometry(&t, 0.0, 0.0, t.face, t.out, g.t, s.gap, room) {
                     Ok(geo) if within(room, geo.out_more, g.t, s) => {
                         fit = true;
-                        let web = geo.web.iter().flat_map(|w| w.outline.iter());
-                        for c in geo.outline.iter().chain(web) {
+                        for c in &geo.outline {
                             lo = lo.min(l(*c));
                             hi = hi.max(l(*c));
                         }
@@ -6527,9 +6396,6 @@ struct OwnGeo {
     /// Bent (L3): where the two flats' middle planes meet, over the seam's
     /// ends (from the work point); welded: the seam's ends.
     middle: [[f64; 3]; 2],
-    /// A stand-off (L26): its web (its foot the `seam`, `side` its normal);
-    /// none: a plate welded or bent at the seam.
-    web: Option<WebGeo>,
 }
 
 /// How a plate in a member's own plane meets the flat plate on the flange
@@ -6546,11 +6412,6 @@ enum Room {
     /// bend's curved part by half the gap, its bolts their edge distance
     /// from it.
     Bend { down: bool },
-    /// A stand-off (O44 L26): the member, its outstanding leg pointing into
-    /// the flange, lifted the gap clear of the flat plate on a gusset in its
-    /// own plane (on the back of its leg bolted) welded on a web standing on
-    /// the flat plate ([`stand_off_geometry`]).
-    StandOff,
 }
 
 /// The most a member's leg bolted may lie off the flange for a plate bent
@@ -6563,10 +6424,6 @@ pub const BEND_SMALL_MAX: f64 = 20.0;
 /// and down (L3, where it lies at most [`BEND_SMALL_MAX`] off and
 /// [`LayoutSettings::small_bends`]), then welded (step 4).
 fn rooms_for(t: &Tilted, s: &LayoutSettings) -> Vec<Room> {
-    // (L26) Its outstanding leg into the flange: a stand-off only.
-    if t.into {
-        return vec![Room::StandOff];
-    }
     let mut out = Vec::new();
     if s.small_bends && t.off <= s.bend_small_max {
         out.push(Room::Bend { down: false });
@@ -6592,11 +6449,6 @@ pub const NO_WELD: &str = "no plate welded in its own plane (the detailing pract
 /// Why each plate tried for an end off its flange does not fit, in words:
 /// the welded plate's (as before L3), then the bent ones' (L3).
 fn rooms_words(errs: &[(Room, String)]) -> String {
-    // (L26) A stand-off tried (its outstanding leg into the flange): said
-    // with the reason the welded plate cannot take it.
-    if let Some((_, e)) = errs.iter().find(|(r, _)| *r == Room::StandOff) {
-        return format!("{INTO_FLANGE_WORDS}; {STAND_OFF_WORD} does not fit either: {e}");
-    }
     let weld = errs
         .iter()
         .find(|(r, _)| *r == Room::Weld)
@@ -6613,7 +6465,7 @@ fn rooms_words(errs: &[(Room, String)]) -> String {
                     "away from it"
                 }
             )),
-            Room::Weld | Room::StandOff => None,
+            Room::Weld => None,
         })
         .collect();
     if bent.is_empty() {
@@ -6631,8 +6483,6 @@ fn within(room: Room, more: f64, t: f64, s: &LayoutSettings) -> bool {
     match room {
         Room::Weld => more <= t + 1e-9 || (s.own_offset_analysed && more <= s.own_out_max + 1e-9),
         Room::Bend { .. } => more.abs() <= t + 1e-9,
-        // (L26) Only where the offset is carried into the analysis.
-        Room::StandOff => s.own_offset_analysed && more <= s.own_out_max + 1e-9,
     }
 }
 
@@ -6687,9 +6537,6 @@ fn own_geometry(
     gap: f64,
     room: Room,
 ) -> Result<OwnGeo, String> {
-    if room == Room::StandOff {
-        return stand_off_geometry(t, cut, moved, heel, out, tf, gap);
-    }
     if t.bolts.is_empty() {
         return Err("no bolts to lay its plate round".to_owned());
     }
@@ -6738,7 +6585,7 @@ fn own_geometry(
     let angle = dot(t.nb, out).abs().clamp(0.0, 1.0).acos().to_degrees();
     // The bend's curved part from the seam (L3): (r + t) tan(θ/2).
     let curved = match room {
-        Room::Weld | Room::StandOff => 0.0,
+        Room::Weld => 0.0,
         Room::Bend { .. } => {
             (bend_radius_by(tf, t.bend_ratio) + tf) * (angle.to_radians() / 2.0).tan()
         }
@@ -6748,7 +6595,7 @@ fn own_geometry(
     // gap; bent: the curved part and half the gap), its bolts (the edge
     // distance; bent: from the curved part).
     let (steel_room, bolt_room) = match room {
-        Room::Weld | Room::StandOff => (gap, keep_edge * RING_GROW),
+        Room::Weld => (gap, keep_edge * RING_GROW),
         Room::Bend { .. } => (curved + gap / 2.0, keep_edge * RING_GROW + curved),
     };
     let along = t.bolts.iter().map(|b| b.0).fold(0.0, f64::max) + keep_end;
@@ -6839,7 +6686,7 @@ fn own_geometry(
     // towards the flat in its own plane (bent away from the flange) or
     // towards the flat plate (bent towards it).
     let middle = match room {
-        Room::Weld | Room::StandOff => seam,
+        Room::Weld => seam,
         Room::Bend { down } => {
             let k = tf / 2.0 * (angle.to_radians() / 2.0).tan();
             let shift = add(
@@ -6859,468 +6706,8 @@ fn own_geometry(
         room,
         angle,
         middle,
-        web: None,
     })
 }
-
-/// A stand-off's web (O44 L26): a plate square to the flat plate on the
-/// flange, in the plane of its member's axis and the flat plate's normal,
-/// welded to the flat plate along its foot and to the plate in the
-/// member's own plane (the stand-off's gusset) along its top; from the
-/// work point, m.
-#[derive(Debug, Clone)]
-struct WebGeo {
-    /// Its outline (on its face a half thickness off the member's axis,
-    /// wound so that its normal points through the web).
-    outline: Vec<[f64; 3]>,
-    /// Its foot's two ends on the flat plate's face (the web's middle).
-    foot: [[f64; 3]; 2],
-    /// Its thickness, m.
-    thickness: f64,
-    /// Its length along its foot, m.
-    length: f64,
-    /// Its height at its higher end, m.
-    height: f64,
-    /// Its top's length on the gusset, m.
-    top_length: f64,
-    /// Its margin either side on the flat plate (half its thickness, its
-    /// fillet's leg, half the gap), m.
-    margin: f64,
-}
-
-/// The stand-off's parts in words (the record, the notes).
-pub const STAND_OFF_PARTS: &str = "a stand-off (a flat plate on the flange, a web standing on \
-                                   it, a gusset in the member's own plane welded on the web)";
-
-/// The longest a stand-off's web may be along its foot (L26), m: **the
-/// program's value, not a standard's** (about two and a half times a small
-/// bracing angle's leg) — beyond, even three plates thick, the end is left
-/// for a hand detail, said.
-pub const STAND_OFF_LONGEST: f64 = 0.150;
-
-/// The least length of a stand-off's web along its foot (L26), m: the
-/// program's value (room for its two welds' ends).
-pub const STAND_OFF_SHORTEST: f64 = 0.050;
-
-/// The steps a stand-off's web is sized in, m.
-const STAND_OFF_STEP: f64 = 0.005;
-
-/// The largest elastic von Mises stress at a stand-off web's root per
-/// newton of the member's force, Pa/N (L26): the root section `tw` thick
-/// and `l` long, the force along `d` (unit) acting through `x` (from the
-/// root's middle `o`, both in the web's plane spanned by `along` and `out`)
-/// — the part along `out` pulling or pressing on the root, the part along
-/// it shearing it (parabolic, 1.5 times the mean at the middle), its moment
-/// about the root's middle bending it in its plane (linear); the largest
-/// of sqrt(σ² + 3τ²) over the root's depth (21 points). On the safe side:
-/// elastic, the force line taken where it is, the twist and the bending
-/// across the web nought by construction (the web in the force's plane).
-fn web_stress(
-    d: [f64; 3],
-    x: [f64; 3],
-    o: [f64; 3],
-    along: [f64; 3],
-    out: [f64; 3],
-    tw: f64,
-    l: f64,
-) -> f64 {
-    let n = dot(d, out);
-    let v = dot(d, along);
-    let r = sub(x, o);
-    // The moment about the root's middle, in the web's plane: r × d along
-    // the web's normal (along × out).
-    let wn = cross(along, out);
-    let m = dot(cross(r, d), wn);
-    let a = tw * l;
-    let w = tw * l * l / 6.0;
-    let mut worst: f64 = 0.0;
-    for k in 0..=20 {
-        let y = f64::from(k) / 10.0 - 1.0;
-        let sigma = n / a + m / w * y;
-        let tau = 1.5 * v / a * (1.0 - y * y);
-        worst = worst.max((sigma * sigma + 3.0 * tau * tau).sqrt());
-    }
-    worst
-}
-
-/// A stand-off for end `t` whose outstanding leg points into the flange
-/// (O44 L26; [`Room::StandOff`]), its steel stopping `cut` from the work
-/// point along it, moved `moved` across (its shift), the flat plate `tf`
-/// thick on the flange whose heel is at `heel` (from the work point) and
-/// whose outer face looks along `out`:
-///
-/// - the member **lifted** along `out` the least that keeps its steel
-///   where it stops and past its bolts (the angle's corners, the outstanding
-///   leg's toe among them) and its bolts' heads inside the angle `gap`
-///   clear of the flat plate's face;
-/// - the **gusset**: a plate in the member's own plane on the back of its
-///   leg bolted (away from the flange), round its bolts with their end and
-///   edge distances, reaching over the web;
-/// - the **web**: a plate square to the flat plate in the plane of the
-///   member's axis and `out`, centred on that axis, from the gap short of
-///   where the member's steel stops towards the joint, as thick as the
-///   plates (`tf`) or thicker (up to three times), sized so that its root
-///   carries the member's whole gross section at yield ([`web_stress`], the
-///   area taken as t (b + h), at least the section's) — as long as needed,
-///   at most [`STAND_OFF_LONGEST`].
-///
-/// `out_more`: how much farther out of the flange its axis lies at its
-/// bolts than the same member flat on a flat plate.
-#[allow(clippy::too_many_arguments)]
-fn stand_off_geometry(
-    t: &Tilted,
-    cut: f64,
-    moved: f64,
-    heel: [f64; 3],
-    out: [f64; 3],
-    tf: f64,
-    gap: f64,
-) -> Result<OwnGeo, String> {
-    if t.bolts.is_empty() {
-        return Err("no bolts to lay its plate round".to_owned());
-    }
-    let sin_flat = t.flat.to_radians().sin();
-    if dot(t.nb, out) >= 0.0 {
-        return Err("its outstanding leg points away from the flange".to_owned());
-    }
-    if dot(t.dir, out) < -sin_flat {
-        return Err("it runs down towards the flange away from the joint".to_owned());
-    }
-    let h = add(t.heel, scale(t.shift_dir, moved * t.shift_per));
-    let (keep_edge, keep_end) = t.keep;
-    // The flat plate's face.
-    let q0 = add(heel, scale(out, tf));
-    let along = t.bolts.iter().map(|b| b.0).fold(0.0, f64::max) + keep_end;
-    let pts: Vec<[f64; 3]> = t
-        .bolts
-        .iter()
-        .map(|(a, line)| {
-            let g = t.gauges.get(*line).copied().unwrap_or(t.width / 2.0);
-            add(h, add(scale(t.dir, cut + a), scale(t.across, g)))
-        })
-        .collect();
-    // Its steel near the joint: the angle's corners where its steel stops
-    // and past its bolts (the outstanding leg along `nb` from the heel);
-    // each bolt's head inside the angle, round its corners.
-    let mut low: Vec<[f64; 3]> = Vec::new();
-    for s in [cut, cut + along] {
-        let o = add(h, scale(t.dir, s));
-        for c in [
-            [0.0, 0.0],
-            [t.width, 0.0],
-            [t.width, t.leg_t],
-            [0.0, t.other_w],
-            [t.leg_t, t.other_w],
-        ] {
-            low.push(add(o, add(scale(t.across, c[0]), scale(t.nb, c[1]))));
-        }
-    }
-    let [flats, head_h, _, _] = crate::joints::BOLT_DRAWN;
-    let head_r = flats * t.d / 3f64.sqrt();
-    for b in &pts {
-        let c = add(*b, scale(t.nb, t.leg_t + head_h * t.d));
-        for k in 0..8 {
-            let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
-            low.push(add(
-                c,
-                add(
-                    scale(t.dir, head_r * a.cos()),
-                    scale(t.across, head_r * a.sin()),
-                ),
-            ));
-        }
-    }
-    // Lifted the least that keeps each the gap clear of the flat plate.
-    let lift = low
-        .iter()
-        .map(|p| dot(out, sub(q0, *p)) + gap)
-        .fold(f64::NEG_INFINITY, f64::max);
-    let up = scale(out, lift);
-    let hl = add(h, up);
-    let shifted = sub(h, t.heel);
-    let axis0 = add(add(t.axis, shifted), up);
-    // Its axis at its bolts' middle, against the same member on a flat
-    // plate (as `own_geometry`).
-    let mid = t.bolts.iter().map(|b| b.0).sum::<f64>() / t.bolts.len() as f64 + cut;
-    let centroid = -dot(sub(t.heel, t.axis), t.nb);
-    let out_more = dot(out, sub(add(axis0, scale(t.dir, mid)), heel)) - (tf + centroid);
-    // The web's plane: the member's axis and `out`.
-    let wn = unit(cross(t.dir, out)).ok_or("it runs square to the flange")?;
-    let fd = unit(cross(out, wn)).ok_or("it runs square to the flange")?;
-    let fd = if dot(fd, t.dir) < 0.0 {
-        scale(fd, -1.0)
-    } else {
-        fd
-    };
-    let rate = dot(fd, t.dir);
-    if rate < 0.2 {
-        return Err("it runs nearly square to the flange".to_owned());
-    }
-    let nbo = dot(t.nb, out);
-    // On the flat plate's face, and on the gusset's face (the back of the
-    // member's leg bolted), along `out`.
-    let on_foot = |p: [f64; 3]| sub(p, scale(out, dot(sub(p, q0), out)));
-    let on_top = |p: [f64; 3]| add(p, scale(out, dot(t.nb, sub(hl, p)) / nbo));
-    // Where the member's steel stops, on its axis.
-    let a_cut = add(axis0, scale(t.dir, cut));
-    let clear = |p: [f64; 3]| dot(sub(p, a_cut), t.dir);
-    // The web's end towards the member: the gap short of where its steel
-    // stops, foot and top.
-    let mut s1 = 0.0;
-    for _ in 0..6 {
-        let x = add(a_cut, scale(fd, s1));
-        let worst = clear(on_foot(x)).max(clear(on_top(x)));
-        let need = worst + gap;
-        if need <= 1e-9 {
-            break;
-        }
-        s1 -= need / rate + 1e-6;
-    }
-    // The member's area, on the safe side: t (b + h) (at least the angle's,
-    // its root fillet within the corner's t²).
-    let area = t.leg_t * (t.width + t.other_w);
-    // Its thickness: the plates' (`tf`), else thicker in steps of half that
-    // (whole millimetres) up to three times, the first that carries it
-    // within the longest length; its length the least that does.
-    let mut found: Option<(f64, f64)> = None;
-    'thick: for k in [1.0, 1.5, 2.0, 2.5, 3.0] {
-        let tw = ((tf * k * 1000.0) - 1e-6).ceil() / 1000.0;
-        let mut l = STAND_OFF_SHORTEST;
-        while l <= STAND_OFF_LONGEST + 1e-9 {
-            let o = on_foot(add(a_cut, scale(fd, s1 - l / 2.0)));
-            if area * web_stress(t.dir, a_cut, o, fd, out, tw, l) <= 1.0 {
-                found = Some((tw, l));
-                break 'thick;
-            }
-            l += STAND_OFF_STEP;
-        }
-    }
-    let (tw, l) = found.ok_or_else(|| {
-        format!(
-            "its stand-off's web would need to be longer than {:.0} mm, three plates thick, to \
-             carry the member's gross section at yield",
-            STAND_OFF_LONGEST * 1000.0
-        )
-    })?;
-    let x1 = add(a_cut, scale(fd, s1));
-    let x2 = add(a_cut, scale(fd, s1 - l));
-    let (f1, f2) = (on_foot(x1), on_foot(x2));
-    let (t1, t2) = (on_top(x1), on_top(x2));
-    let height = dot(sub(t1, f1), out).max(dot(sub(t2, f2), out));
-    if dot(sub(t1, f1), out).min(dot(sub(t2, f2), out))
-        < 2.0 * weld_throat(tw.min(tf)) * 2f64.sqrt()
-    {
-        return Err("its stand-off's web would be too low for its welds".to_owned());
-    }
-    // Its outline on its face −wn·tw/2 off the axis, wound so that its
-    // normal is +wn (the web drawn through its thickness along it).
-    let face = scale(wn, -tw / 2.0);
-    let mut web: Vec<[f64; 3]> = [f1, f2, t2, t1].iter().map(|q| add(*q, face)).collect();
-    if crate::welds::polygon_normal(&web).is_some_and(|n| dot(n, wn) < 0.0) {
-        web.reverse();
-    }
-    // The gusset: round the bolts (as `own_geometry`), and over the web's
-    // top with its welds' room either side and past its ends.
-    let fillet = weld_throat(tw.min(tf)) * 2f64.sqrt();
-    let reach_web = tw / 2.0 + fillet + gap / 2.0;
-    let across = unit(cross(t.nb, t.dir)).ok_or("no direction across it")?;
-    let o2 = hl;
-    let to2 = |q: [f64; 3]| {
-        let r = sub(q, o2);
-        [dot(r, t.dir), dot(r, across)]
-    };
-    let mut flat2: Vec<[f64; 2]> = Vec::new();
-    for b in &pts {
-        let b = add(*b, up);
-        for k in 0..8 {
-            let a = f64::from(k) * std::f64::consts::FRAC_PI_4;
-            let x = add(
-                b,
-                add(
-                    scale(t.dir, keep_end * RING_GROW * a.cos()),
-                    scale(across, keep_edge * RING_GROW * a.sin()),
-                ),
-            );
-            flat2.push(to2(x));
-        }
-    }
-    for (x, sgn) in [(x1, 1.0), (x2, -1.0)] {
-        for side in [-1.0, 1.0] {
-            let p = on_top(add(
-                add(x, scale(fd, sgn * fillet)),
-                scale(wn, side * reach_web),
-            ));
-            flat2.push(to2(p));
-        }
-    }
-    let hull = crate::joint_sheet::hull(flat2);
-    let outline: Vec<[f64; 3]> = hull
-        .iter()
-        .map(|q| add(o2, add(scale(t.dir, q[0]), scale(across, q[1]))))
-        .collect();
-    let angle = dot(t.nb, out).abs().clamp(0.0, 1.0).acos().to_degrees();
-    Ok(OwnGeo {
-        lift,
-        out_more,
-        outline,
-        seam: [f1, f2],
-        seam_at: f1,
-        side: wn,
-        room: Room::StandOff,
-        angle,
-        middle: [f1, f2],
-        web: Some(WebGeo {
-            outline: web,
-            foot: [f1, f2],
-            thickness: tw,
-            length: l,
-            height,
-            top_length: norm(sub(t2, t1)),
-            margin: reach_web,
-        }),
-    })
-}
-
-/// Whether stand-off `geo` of end `x` (L26) can stand on the flat plate of
-/// its face: its web's foot, with its welds' room, clear of the bolts of the
-/// ends flat on it (`flat`) by their edge distance and of the seams of the
-/// plates kept before (`owns`, on their side), and the flat plate reaching
-/// the flange over at least half a square of its width (as [`own_fits`]).
-fn stand_off_fits(
-    strips: &[Strip],
-    x: &Strip,
-    geo: &OwnGeo,
-    flat: &[Placed],
-    owns: &[(usize, OwnGeo)],
-    wp: [f64; 3],
-    gap: f64,
-) -> Result<(), String> {
-    let t = x.tilted.as_ref().expect("tilted");
-    let w = geo.web.as_ref().ok_or("no web")?;
-    let past = web_past_heel(x, t, geo, gap);
-    if past > 1e-6 {
-        return Err(format!(
-            "its stand-off's web would stand {:.0} mm past the heel side of {}'s flange",
-            past * 1000.0,
-            x.host
-        ));
-    }
-    let heel = sub(x.heel, wp);
-    let to2 = |q: [f64; 3]| [dot(sub(q, heel), t.x3), dot(sub(q, heel), x.across)];
-    let dir2 = |q: [f64; 3]| {
-        let v = [dot(q, t.x3), dot(q, x.across)];
-        let l = (v[0] * v[0] + v[1] * v[1]).sqrt().max(1e-12);
-        [v[0] / l, v[1] / l]
-    };
-    let (a, b) = (to2(w.foot[0]), to2(w.foot[1]));
-    let ab = sub2(b, a);
-    let len2 = dot2(ab, ab).max(1e-18);
-    let from_foot = |q: [f64; 2]| {
-        let k = (dot2(sub2(q, a), ab) / len2).clamp(0.0, 1.0);
-        let c = [a[0] + ab[0] * k, a[1] + ab[1] * k];
-        let d = sub2(q, c);
-        dot2(d, d).sqrt()
-    };
-    for p in flat {
-        let e = &strips[p.k];
-        for (along, line) in &e.bolts {
-            let l = e.gauges.get(*line).copied().unwrap_or(0.0) + p.moved;
-            let q = e.at(p.cut + along, l);
-            let d = from_foot(q);
-            if d < e.edge + w.margin - 1e-9 {
-                return Err(format!(
-                    "its stand-off's web would stand {:.0} mm from {}'s bolts on the flat plate \
-                     (they keep {:.0} mm and its welds' room)",
-                    d * 1000.0,
-                    e.member,
-                    e.edge * 1000.0
-                ));
-            }
-        }
-    }
-    for (k, g) in owns {
-        if g.room == Room::StandOff {
-            continue;
-        }
-        let side = |q: [f64; 2]| dot2(sub2(q, to2(g.seam_at)), dir2(g.side));
-        if side(a) < w.margin || side(b) < w.margin {
-            return Err(format!(
-                "its stand-off's web would stand past the seam of {}'s welded plate",
-                strips[*k].member
-            ));
-        }
-    }
-    let mut pts: Vec<[f64; 2]> = own_reach(x, geo, 0.0, wp)
-        .into_iter()
-        .map(|q| to2(sub(q, wp)))
-        .collect();
-    let mut cuts: Vec<&OwnGeo> = Vec::new();
-    for (k, g) in owns {
-        pts.extend(
-            own_reach(&strips[*k], g, 0.0, wp)
-                .into_iter()
-                .map(|q| to2(sub(q, wp))),
-        );
-        if g.room != Room::StandOff {
-            cuts.push(g);
-        }
-    }
-    let mut poly = crate::joint_sheet::hull(pts);
-    for g in cuts {
-        let (at, n) = (to2(g.seam_at), dir2(g.side));
-        poly = clip(&poly, |q| dot2(sub2(q, at), n) + 1e-9);
-    }
-    let floor = if x.inside { x.t + x.r } else { 0.0 } + gap / 2.0;
-    let poly = clip(&poly, |q| q[1] - floor);
-    let poly = clip(&poly, |q| x.width - q[1]);
-    let area = poly
-        .iter()
-        .enumerate()
-        .map(|(i, a)| {
-            let b = poly[(i + 1) % poly.len()];
-            a[0] * b[1] - a[1] * b[0]
-        })
-        .sum::<f64>()
-        .abs()
-        / 2.0;
-    if area < x.width * x.width / 2.0 {
-        return Err(format!(
-            "the flat plate its web stands on would reach only {:.0} cm² of {}'s flange (half a \
-             square of its width, {:.0} cm², at least)",
-            area * 1e4,
-            x.host,
-            x.width * x.width / 2.0 * 1e4
-        ));
-    }
-    Ok(())
-}
-
-/// How far stand-off `geo`'s web foot (with its welds' room either side)
-/// lies past the heel side of end `x`'s flange — its heel, or on an inner
-/// face the angle's other leg and root — less half the gap, m (≤ 0: clear).
-fn web_past_heel(x: &Strip, t: &Tilted, geo: &OwnGeo, gap: f64) -> f64 {
-    let Some(w) = &geo.web else {
-        return 0.0;
-    };
-    let floor = if x.inside { x.t + x.r } else { 0.0 } + gap / 2.0;
-    let n = unit(cross(sub(w.foot[1], w.foot[0]), t.out)).unwrap_or([0.0; 3]);
-    let mut low = f64::INFINITY;
-    for f in w.foot {
-        for k in [-1.0, 1.0] {
-            let q = add(f, scale(n, k * w.margin));
-            low = low.min(dot(sub(q, t.face), x.across));
-        }
-    }
-    floor - low
-}
-
-/// Said for an end whose outstanding leg points into the flange (a plate
-/// in its own plane would stand on the flat plate).
-pub const INTO_FLANGE_WORDS: &str =
-    "its outstanding leg points towards the flange (it would stand on the plate)";
-
-/// The stand-off in a hand detail's words (L26).
-pub const STAND_OFF_WORD: &str = "a stand-off";
 
 /// The cut (from `cut` on, m) that takes the plate in end `x`'s own plane
 /// past the flange's toe by half the gap (step 4: under it, near the seam,
@@ -7334,34 +6721,6 @@ fn toe_clear(
     gap: f64,
     room: Room,
 ) -> Result<f64, String> {
-    // (L26) A stand-off lifts its member clear of the flat plate: its steel
-    // where it is — pulled back only so far that its web's foot (with its
-    // welds' room) stays on the flange, clear of its heel side (the angle's
-    // other leg and root on an inner face) by half the gap.
-    if room == Room::StandOff {
-        let rate = dot(t.dir, x.across) / t.lu;
-        let mut c = cut;
-        for _ in 0..4 {
-            let geo = own_geometry(t, c / t.lu, p.moved, t.face, t.out, x.own_t, gap, room)?;
-            let need = web_past_heel(x, t, &geo, gap);
-            if need <= 1e-9 {
-                return Ok(ceil_to(c, 0.001));
-            }
-            if rate <= 1e-6 {
-                return Err(format!(
-                    "its stand-off's web would stand {:.0} mm past the heel side of {}'s flange \
-                     (pulling it back does not help)",
-                    need * 1000.0,
-                    x.host
-                ));
-            }
-            c += need / rate + 1e-6;
-        }
-        return Err(format!(
-            "its stand-off's web would stand past the heel side of {}'s flange",
-            x.host
-        ));
-    }
     let heel = t.face;
     let _ = wp;
     // Across the flange per metre of cut on the flange's plane: past the
@@ -7401,15 +6760,6 @@ fn own_reach(x: &Strip, geo: &OwnGeo, tf: f64, wp: [f64; 3]) -> Vec<[f64; 3]> {
         let h = add(add(heel, scale(t.x3, along)), scale(t.out, tf));
         out.push(add(h, wp));
         out.push(add(add(h, scale(x.across, x.width)), wp));
-    }
-    // (L26) A stand-off's web: its foot with its welds' room either side.
-    if let Some(w) = &geo.web {
-        let n = unit(cross(sub(w.foot[1], w.foot[0]), t.out)).unwrap_or([0.0; 3]);
-        for f in w.foot {
-            for k in [-1.0, 1.0] {
-                out.push(add(add(f, scale(n, k * w.margin)), wp));
-            }
-        }
     }
     out
 }
@@ -7516,20 +6866,6 @@ fn own_fits(
 /// farther out of the flange than on a flat plate, more than a plate of
 /// thickness `t` (its leg's), m.
 fn farther_out(more: f64, t: f64, room: Room, s: &LayoutSettings) -> String {
-    if room == Room::StandOff {
-        return if s.own_offset_analysed {
-            format!(
-                "on it its axis would lie {:.0} mm farther out of the flange than on a flat plate \
-                 (more than the {:.0} mm the analysis takes for a plate in its own plane)",
-                more * 1000.0,
-                s.own_out_max * 1000.0
-            )
-        } else {
-            "its axis would lie farther out of the flange than the analysis takes (the welded \
-             plate's offset not carried into the analysis)"
-                .to_owned()
-        };
-    }
     if room == Room::Weld && s.own_offset_analysed && more > 0.0 {
         return format!(
             "its axis would lie {:.0} mm farther out of the flange than on a flat plate (more \
@@ -9097,143 +8433,6 @@ mod cut_tests {
 }
 
 #[cfg(test)]
-mod stand_off_tests {
-    use super::{
-        OWN_OUT_MAX, Room, STAND_OFF_LONGEST, Tilted, add, dot, norm, own_geometry, scale, sub,
-        web_stress,
-    };
-
-    /// An invented L50x5 end, its leg bolted 6° off the flange, its
-    /// outstanding leg pointing into it (O44 L26).
-    fn end(off: f64) -> Tilted {
-        let th = off.to_radians();
-        let nb = [0.0, th.sin(), -th.cos()];
-        let across = [0.0, th.cos(), th.sin()];
-        let heel = [0.0, 0.0, 0.02];
-        let ex = 0.0142;
-        Tilted {
-            off,
-            dir: [1.0, 0.0, 0.0],
-            bolts: vec![(0.03, 0), (0.08, 0)],
-            lu: 1.0,
-            half: 1.5,
-            nb,
-            across,
-            heel,
-            axis: add(heel, add(scale(across, ex), scale(nb, ex))),
-            width: 0.05,
-            gauges: vec![0.028],
-            shift_dir: [0.0, 1.0, 0.0],
-            shift_per: 1.0,
-            keep: (0.025, 0.03),
-            x3: [1.0, 0.0, 0.0],
-            out: [0.0, 0.0, 1.0],
-            face: [0.0, -0.05, 0.0],
-            band: ([0.0, 1.0, 0.0], 0.1),
-            back: false,
-            flat: crate::FLAT_OFF,
-            bend_ratio: crate::BEND_RADIUS_RATIO,
-            into: true,
-            other_w: 0.05,
-            leg_t: 0.005,
-            d: 0.016,
-        }
-    }
-
-    /// The stand-off lifts the member so that its outstanding leg's toe
-    /// and its bolts' heads keep the gap from the flat plate; the web
-    /// stands on the flat plate's face, the gap short of where the member's
-    /// steel stops, centred on its axis, long enough to carry its gross
-    /// section at yield; the gusset lies on the back of its leg bolted; its
-    /// axis lies farther out than on a flat plate, within what the analysis
-    /// takes.
-    #[test]
-    fn a_stand_off_lifts_the_member_clear_and_carries_it() {
-        let t = end(6.0);
-        let (out, tf, gap, cut) = ([0.0, 0.0, 1.0], 0.006, 0.010, 0.04);
-        let geo = own_geometry(&t, cut, 0.0, [0.0; 3], out, tf, gap, Room::StandOff)
-            .expect("a stand-off");
-        let w = geo.web.as_ref().expect("its web");
-        // The outstanding leg's toe where the steel stops, lifted: the gap
-        // over the flat plate's face at least (within a micrometre).
-        let toe = add(
-            add(t.heel, scale(t.nb, t.other_w)),
-            add(scale(t.dir, cut), scale(out, geo.lift)),
-        );
-        assert!(toe[2] >= tf + gap - 1e-6, "toe {:?}", toe);
-        // The web's foot on the flat plate's face, the gap short of the cut.
-        for f in w.foot {
-            assert!((f[2] - tf).abs() < 1e-9, "{f:?}");
-        }
-        assert!(
-            w.foot.iter().all(|f| f[0] <= cut - gap + 1e-6),
-            "{:?}",
-            w.foot
-        );
-        assert!(w.length <= STAND_OFF_LONGEST + 1e-9 && w.length >= 0.05);
-        // Its root carries the gross section at yield: t (b + h) · stress ≤ 1.
-        let a_cut = add(add(t.axis, scale(out, geo.lift)), scale(t.dir, cut));
-        let mid = scale(add(w.foot[0], w.foot[1]), 0.5);
-        let s = web_stress(
-            t.dir,
-            a_cut,
-            mid,
-            [1.0, 0.0, 0.0],
-            out,
-            w.thickness,
-            w.length,
-        );
-        assert!(0.005 * 0.1 * s <= 1.0 + 1e-9, "{s}");
-        // The gusset on the back of the leg bolted (its plane through the
-        // lifted heel, normal nb).
-        let hl = add(t.heel, scale(out, geo.lift));
-        for q in &geo.outline {
-            assert!(dot(sub(*q, hl), t.nb).abs() < 1e-9, "{q:?}");
-        }
-        assert!(
-            geo.out_more > 0.0 && geo.out_more <= OWN_OUT_MAX,
-            "{}",
-            geo.out_more
-        );
-        assert!(norm(sub(w.foot[1], w.foot[0])) > 0.0);
-    }
-
-    /// Its outstanding leg away from the flange: no stand-off (a plate in its
-    /// own plane takes it); running down towards the flange: refused.
-    #[test]
-    fn a_stand_off_only_where_the_leg_points_into_the_flange() {
-        let mut t = end(6.0);
-        t.nb = scale(t.nb, -1.0);
-        let e = own_geometry(
-            &t,
-            0.04,
-            0.0,
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            0.006,
-            0.01,
-            Room::StandOff,
-        )
-        .expect_err("refused");
-        assert!(e.contains("away from the flange"), "{e}");
-        let mut t = end(6.0);
-        t.dir = [0.98, 0.0, -0.2];
-        let e = own_geometry(
-            &t,
-            0.04,
-            0.0,
-            [0.0; 3],
-            [0.0, 0.0, 1.0],
-            0.006,
-            0.01,
-            Room::StandOff,
-        )
-        .expect_err("refused");
-        assert!(e.contains("runs down towards the flange"), "{e}");
-    }
-}
-
-#[cfg(test)]
 mod back_tests {
     use super::{Room, Tilted, add, bend_radius, cross, dot, own_geometry, scale, sub, unit};
 
@@ -9276,10 +8475,6 @@ mod back_tests {
             back,
             flat: crate::FLAT_OFF,
             bend_ratio: crate::BEND_RADIUS_RATIO,
-            into: false,
-            other_w: 0.06,
-            leg_t: 0.006,
-            d: 0.016,
         };
         let room = Room::Bend { down: false };
         let cut = 0.02;

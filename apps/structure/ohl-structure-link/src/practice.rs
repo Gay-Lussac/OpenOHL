@@ -198,10 +198,6 @@ pub struct DetailingPractice {
     pub between_least: f64,
     /// A plate may stop short of the work point (L2's follow-up).
     pub short_plates: bool,
-    /// A stand-off may be made (O44 L26: a welded assembly of three parts —
-    /// with `welded` allowed; tried only where Lay out joints' stand-offs
-    /// are on, off by default).
-    pub stand_off: bool,
     /// The picked bolt's pattern: bolts per end.
     pub bolt_count: u32,
     /// The picked bolt's pattern: gauge lines (1 only, for now).
@@ -242,7 +238,6 @@ impl Default for DetailingPractice {
             bend_radius: BEND_RADIUS_RATIO,
             between_least: BETWEEN_LEAST,
             short_plates: true,
-            stand_off: true,
             bolt_count: 2,
             bolt_lines: 1,
             classes: Default::default(),
@@ -365,7 +360,7 @@ const LIMIT_KEYS: [&str; 6] = [
     "small_bend_deg",
     "own_plane_offset",
 ];
-const PLATE_KEYS: [&str; 4] = ["bend_radius", "between_least", "short", "stand_off"];
+const PLATE_KEYS: [&str; 3] = ["bend_radius", "between_least", "short"];
 const BOLT_KEYS: [&str; 2] = ["count", "lines"];
 
 impl DetailingPractice {
@@ -515,7 +510,6 @@ impl DetailingPractice {
                 &mut errs,
             );
             flag(&x, "short", "plates.", &mut p.short_plates, &mut errs);
-            flag(&x, "stand_off", "plates.", &mut p.stand_off, &mut errs);
         }
         if let Some(b) = table("bolts", &mut errs) {
             unknown(&b, &BOLT_KEYS, "bolts.", &mut errs);
@@ -801,8 +795,6 @@ impl DetailingPractice {
         s.other_face &= self.both_sides_of_flange;
         s.both_faces &= self.both_faces_of_plate;
         s.short_plates &= self.short_plates;
-        s.stand_offs &= self.stand_off && welded;
-        s.stand_offs_allowed &= self.stand_off && welded;
         s.flat_off = self.flatness_deg;
         s.bend_small_max = self.small_bend_deg;
         s.own_out_max = self.own_plane_offset;
@@ -878,7 +870,6 @@ impl DetailingPractice {
         plates.insert("bend_radius".into(), Value::from(self.bend_radius));
         plates.insert("between_least".into(), Value::from(self.between_least));
         plates.insert("short".into(), Value::from(self.short_plates));
-        plates.insert("stand_off".into(), Value::from(self.stand_off));
         t.insert("plates".into(), Value::Table(plates));
         let mut bolts = Table::new();
         bolts.insert("count".into(), Value::from(i64::from(self.bolt_count)));
@@ -1009,15 +1000,6 @@ impl DetailingPractice {
                 yes(self.short_plates),
                 "no: every plate reaches round the work point, or the ends on it are left for \
                  a hand detail where it would run into something; no change in time",
-            ),
-            (
-                &["plates.stand_off"],
-                "Stand-offs may be made",
-                yes(self.stand_off && self.makes(Fabrication::Welded)),
-                "a welded assembly of three parts lifting an end whose outstanding leg points \
-                 into the flange (L26), tried only where Lay out joints' stand-offs are on and \
-                 `welded` is allowed; no: such ends left for a hand detail; measured on eight \
-                 private towers: see the joint layout theory (L26)",
             ),
             (
                 &["bolts.count", "bolts.lines"],

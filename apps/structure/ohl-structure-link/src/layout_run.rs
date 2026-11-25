@@ -85,19 +85,6 @@ pub const ALSO: &str = "also_bolts";
 /// SAFE SIDE for such ends.
 pub const OWN_OUT: &str = "axis_out=";
 
-/// The record's mark of a stand-off's gusset (`made`, with [`OWN_PLANE`];
-/// O44 L26): a plate in its member's own plane on the back of the member's
-/// leg bolted, welded on the stand-off's web — the joint details seat its
-/// member on it lifted along the flat plate's normal, through the web.
-pub const STAND_OFF: &str = "stand_off";
-
-/// The record's mark of a stand-off's web (`made`, with [`OWN_PLANE`]; O44
-/// L26): "stand_off_web=D4", the member it carries — a plate square to the
-/// flat plate in the plane of that member's axis, welded to the flat plate
-/// along its foot and to the gusset along its top, sized so that its root
-/// carries that member's gross section at yield.
-pub const STAND_OFF_WEB: &str = "stand_off_web=";
-
 /// The record's mark of a splice the layout made (`made`, with `cover`
 /// and the covers' thickness as written; step 1c, 2026-11-19).
 pub const SPLICE: &str = "splice";
@@ -1183,20 +1170,10 @@ fn lay_out_once(
     // The structure's default minimum bolt distances (third round,
     // 2026-11-18): for the ends' pitch and end distance not given and the
     // edge distance where no code gives one.
-    let mut settings = LayoutSettings {
+    let settings = LayoutSettings {
         defaults: t.default_bolt_minimums.unwrap_or_default(),
         ..ask.settings.clone()
     };
-    // O44 L26: the members the record keeps on stand-offs (weighed before)
-    // take them again (the setting on or off: it only weighs new ones),
-    // where the detailing practice allows them.
-    if settings.stand_offs_allowed {
-        for (m, r) in &record.flange_turns {
-            if r.kind == crate::flange_turns::STAND_OFF && r.current(t, &record.rolled, m) {
-                settings.stand_off_members.insert(m.clone());
-            }
-        }
-    }
     let targets: BTreeSet<String> = match &ask.joints {
         Some(j) => j.clone(),
         None => t.nodes.iter().map(|n| n.id.clone()).collect(),
@@ -5430,16 +5407,6 @@ fn write_plan(
             welds.push(weld);
             x.insert("weld", Item::ArrayOfTables(welds));
             auto.extend(["outline".into(), OWN_PLANE.into()]);
-            // L26: a stand-off's part.
-            match &o.stand_off {
-                Some(crate::joint_layout::StandOffPart::Web { member, .. }) => {
-                    auto.insert(format!("{STAND_OFF_WEB}{member}"));
-                }
-                Some(crate::joint_layout::StandOffPart::Gusset) => {
-                    auto.insert(STAND_OFF.into());
-                }
-                None => {}
-            }
             // L20 item 2: its member's axis more than the plate's thickness
             // farther out of the flange: the offset recorded for the
             // analysis.

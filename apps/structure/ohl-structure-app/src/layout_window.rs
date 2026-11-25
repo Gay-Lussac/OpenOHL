@@ -267,9 +267,6 @@ pub struct LayoutWindow {
     pub welded: bool,
     /// Values given by hand replaced too.
     pub replace: bool,
-    /// O44 L26: stand-offs weighed for the members neither turn helped
-    /// (off by default: it changes the default layout).
-    pub stand_offs: bool,
     /// The preview.
     pub preview: Option<Preview>,
     job: Job<Preview>,
@@ -430,9 +427,6 @@ impl LayoutWindow {
             // where the roll is the program's, else offered).
             flange_half: true,
             flange_quarter: true,
-            // L26 (2026-11-25): a stand-off for a member neither turn
-            // helped, weighed so too — the window's tick (off by default).
-            stand_offs: self.stand_offs,
             // L24 (2026-11-25): the detailing practice's values, below.
             ..LayoutSettings::default()
         };
@@ -451,14 +445,7 @@ impl LayoutWindow {
         for v in [self.gap_mm, self.pull_mm, self.shift_mm, self.diameter_mm] {
             v.to_bits().hash(&mut h);
         }
-        (
-            &self.bolt,
-            &self.presets,
-            self.welded,
-            self.replace,
-            self.stand_offs,
-        )
-            .hash(&mut h);
+        (&self.bolt, &self.presets, self.welded, self.replace).hash(&mut h);
         self.practice
             .as_ref()
             .map(|p| (p.source.word(), p.practice.to_text()))
@@ -512,11 +499,6 @@ impl StructureApp {
             presets: rec.as_ref().map(|r| r.presets.clone()).unwrap_or_default(),
             welded: rec.as_ref().is_some_and(|r| r.welded),
             replace: false,
-            // (On where the last run kept stand-offs.)
-            stand_offs: record
-                .flange_turns
-                .values()
-                .any(|r| r.kind == ohl_structure_link::flange_turns::STAND_OFF),
             preview: None,
             job: None,
             error: None,
@@ -1161,17 +1143,6 @@ impl StructureApp {
                     .on_hover_text(
                         "Off: a cut, shift, roll or what a member bolts onto given by hand is \
                          kept (the layout works round it). On: replaced by the layout's.",
-                    );
-                ui.checkbox(&mut w.stand_offs, "Stand-offs where no turn helps")
-                    .on_hover_text(
-                        "A member whose outstanding leg points into the flange and that \
-                         neither a half nor a quarter turn helps is laid out on a stand-off: \
-                         a flat plate on the flange, a web standing on it, a gusset in the \
-                         member's own plane welded on the web — weighed over every joint the \
-                         member reaches (each no worse, one better), applied where its roll is \
-                         the program's, offered below where it is yours. Its axis lies up to \
-                         40 mm farther out (carried into the analysis by the estimated \
-                         eccentricities). Off by default; the layout about once more as long.",
                     );
                 ui.separator();
                 // The preview.
