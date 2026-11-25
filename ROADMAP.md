@@ -5695,9 +5695,51 @@ or three, L four or more. The phases, in order:
   > with the own (the union), rather than one surface of the larger
   > field? → yes for now: the own run's floors are not kept after it; the
   > union is the larger field's level set, the same region.
+- [ ] **One model per line: the network's design** (owner, 2026-11-25:
+  "a line with an y connection that's 2 routes should be made into one
+  model … Only separated "lines" should be put in the country server
+  (only connected at substations but not the same line)", and "for the
+  model merging this has to be dealt with at the network design level and
+  then corrected with the app that has the capabilities for it. Keep the
+  function with "twin" as is"). **Decided, not built.**
+  1. **The rule**: one model per line, its branches included — a line
+     branching (a Y or T connection, two or more routes sharing a tower)
+     is one model, its shared towers one object each (towers shared by
+     several routes, phase 8). Separate lines are separate models; they
+     meet at substations, and where another line's circuits ride on the
+     same towers.
+  2. **Where the split is decided**: at the network's design, before the
+     import — not by the server. `ohl network import` stays one project
+     file = one line (unchanged).
+  3. **Where it is corrected**: in the application that has the
+     capability — OHL-Design. To build: a command joining the routes of
+     another project file into the open project (one model), its twins
+     with the project's own towers offered to become one shared tower
+     each (the user deciding, each listed with its height and orientation
+     difference), ids clashing renamed and listed, library entries mapped
+     as the import maps them, one undo step and one revision.
+  4. **Twins stay as they are**: towers of separate lines within 0.5 m
+     with the same type are listed by the import for an admin, never
+     merged, and the scoped checks take them as one tower (loads and
+     usage on every line's loads, clearances, fields; turned more than
+     0.5° apart NOT ALL CHECKED). This covers **substation portals**
+     holding several lines' starts and towers carrying another line's
+     circuits. The admin's command merging twins (formerly under *Later*)
+     is dropped.
+  > **Owner:** (to answer, 2026-11-25; the recommendation after the arrow)
+  > 1. The join command in OHL-Design under File (*Join routes from
+  > another project…*), not in OHL-Structure? → yes: routes, sections and
+  > towers are OHL-Design's.
+  > 2. A twin becomes one shared tower only when the user ticks it (none
+  > ticked by default)? → yes: never a silent change of the data.
+  > 3. Two twins with different heights or attachment points: the open
+  > project's tower kept, the other line's sections re-attached to its
+  > points by label, those without a matching label refused and listed?
+  > → yes: nothing guessed.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
-by tile; the merge of twin towers (an admin's command). A first usable
+by tile (the merge of twin towers dropped, owner 2026-11-25: twins stay
+as they are). A first usable
 milestone (a country in the database, users moving about and editing
 their routes, checks on the working set said "neighbours not pulled in")
 comes after phase 6 with 7 and 8; phase 10 brings the full checks.

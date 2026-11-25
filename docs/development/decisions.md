@@ -8,6 +8,28 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (country server: one model per line, decided at the network's design; twins stay as they are)
+
+**A line and its branches are one model; separate lines are separate
+models, meeting at substations and on towers carrying another line's
+circuits as twins** (roadmap O17, *One model per line*; owner,
+2026-11-25). Nothing is built by this entry.
+
+- **The rule**: a line branching (a Y or T connection, two or more routes
+  sharing a tower) is one model, its shared towers one object each (phase
+  8's towers shared by several routes). Only separate lines are separate
+  models in the country server.
+- **Where it is decided**: at the network's design, before the import;
+  `ohl network import` stays one project file = one line. **Where it is
+  corrected**: in OHL-Design, the application with the capability — a
+  command joining another project file's routes into the open project is
+  to be built (its twins offered to become shared towers, the user
+  deciding; owner questions in the roadmap).
+- **Twins unchanged**: listed by the import for an admin, never merged,
+  taken as one tower by the scoped checks; they cover substation portals
+  holding several lines' starts. The admin's command merging twins,
+  planned under *Later*, is dropped.
+
 ## 2026-11-25 (country server: the usage of a shared tower on every line's loads; the electric field's cuts, volumes and jumpers with the other lines)
 
 **Four "left" items of the server's follow-ups of 2026-11-24, and a
