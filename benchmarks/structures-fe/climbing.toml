@@ -1,0 +1,66 @@
+# The optional climbing check (`[analysis] climbing_load`, ASCE 10-97
+# commentary C2.2: a vertical load at mid-length of a member, alone, against
+# first yield), every member whatever its slope (2026-11-25; built, in
+# active development, not approved yet). Invented model; the reference
+# values are the formulas in the notes, evaluated to double precision.
+
+[[case]]
+id = "structfe-021"
+title = "Climbing load on members at 0°, 53.13° and 90°: across bending, along compressing (whole) and amplifying, against first yield"
+calculation = "structures.fe"
+reference = "Statics of a simply supported member under a point load at mid-length (M = P cos θ L / 4), the load's part along it N = P sin θ, the elastic beam-column's amplification 1/(1 − N/N_cr) with N_cr = π² E I / L² (Timoshenko & Gere, Theory of Elastic Stability, §1.11), first yield N/A + M/W"
+notes = "P = 1100 N, no own weight; every member A = 1 cm², I = 1 cm⁴, W = 1 cm³ (the smaller), f_y = 355 MPa, E = 210 GPa. ab flat, 2 m: M = 1100 × 2 / 4 = 550 N m, 550 / (1e-6 × 355e6) = 1.5492957746478873. ac from (0, 0, 0) to (1.5, 0, 2): L = 2.5 m, sin θ = 0.8, cos θ = 0.6; M = 0.6 × 1100 × 2.5 / 4 = 412.5 N m; N = 0.8 × 1100 = 880 N; N_cr = π² × 2.1e11 × 1e-8 / 2.5² = 3316.187 N; 880 / (1e-4 × 355e6) + 412.5 / (355 × (1 − 880 / 3316.187)) = 1.6064882682762207 — more than the flat member: the part along it amplifies the bending (before 2026-11-25 this member, 53° from the horizontal, was not checked). ad vertical, 2 m: no moment, 1100 / (1e-4 × 355e6) = 0.030985915492957747"
+max_seconds = 1.0
+inputs.model = '''
+[analysis]
+nonlinear = false
+self_weight = false
+capacity = "simple"
+climbing_load = "1100 N"
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+[[section]]
+id = "s"
+material = "steel"
+area = "1 cm2"
+iy = "1 cm4"
+iz = "1 cm4"
+wy = "1 cm3"
+wz = "1 cm3"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "b"
+point = ["2 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "c"
+point = ["1.5 m", "0 m", "2 m"]
+support = "fixed"
+[[node]]
+id = "d"
+point = ["0 m", "0 m", "2 m"]
+support = "fixed"
+[[member]]
+id = "ab"
+nodes = ["a", "b"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "ac"
+nodes = ["a", "c"]
+section = "s"
+kind = "frame"
+[[member]]
+id = "ad"
+nodes = ["a", "d"]
+section = "s"
+kind = "frame"
+'''
+expected.climbing_ab = { value = 1.5492957746478873, rel_tol = 1e-9 }
+expected.climbing_ac = { value = 1.6064882682762207, rel_tol = 1e-9 }
+expected.climbing_ad = { value = 0.030985915492957747, rel_tol = 1e-9 }

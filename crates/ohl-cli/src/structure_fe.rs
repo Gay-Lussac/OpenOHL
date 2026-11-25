@@ -57,9 +57,9 @@ pub struct FeArgs {
     /// ASCE 10-97 commentary C3.7.4), whatever the model says; 0: off.
     #[arg(long, value_name = "PERCENT")]
     redundant_force: Option<f64>,
-    /// Also check each member within 30° of the horizontal for this load
-    /// at mid-length, alone ("1100 N": ASCE 10-97 commentary C2.2),
-    /// whatever the model says; 0: off.
+    /// Also check every member (cables excepted, whatever its slope) for
+    /// this vertical load at mid-length, alone ("1100 N": ASCE 10-97
+    /// commentary C2.2), whatever the model says; 0: off.
     #[arg(long, value_name = "FORCE")]
     climbing_load: Option<String>,
     /// A plugin giving member capacities (its folder; its

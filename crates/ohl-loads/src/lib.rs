@@ -364,6 +364,12 @@ pub struct LoadCase {
     /// set case's name (the structures' groups list that one). Not in
     /// files.
     pub of_set: Option<String>,
+    /// For a case made of one reading of some subconductors of a bundle
+    /// broken ([`expand_cases`], 2026-11-25): true the broken ones hanging
+    /// in the spacers of the wires left, false gone from the span; none:
+    /// not expanded — solved gone, the other reading said not solved. Not
+    /// in files.
+    pub hanging: Option<bool>,
 }
 
 /// A load case as files give it (versions 1 to 4).
@@ -497,6 +503,7 @@ impl From<LoadCaseFile> for LoadCase {
             wind_direction: f.wind_direction,
             wind_directions: f.wind_directions,
             of_set: None,
+            hanging: None,
         }
     }
 }
@@ -598,21 +605,39 @@ impl BrokenWire {
     }
 
     /// The breaks of the spans `spans` (from 0, as [`BrokenWire::spans`]
-    /// gives them) for the solve: each with this wire's subconductors.
-    pub fn breaks(&self, spans: &[usize]) -> Vec<ohl_line::solve::Break> {
+    /// gives them) for the solve: each with this wire's subconductors, the
+    /// broken ones `hanging` in the spacers of the wires left or gone
+    /// ([`LoadCase::hanging`]).
+    pub fn breaks(&self, spans: &[usize], hanging: bool) -> Vec<ohl_line::solve::Break> {
         spans
             .iter()
             .map(|&span| ohl_line::solve::Break {
                 span,
                 subconductors: self.subconductors,
+                hanging,
             })
             .collect()
     }
 
+    /// Whether some subconductors of a bundle break, not all ([`expand_cases`]
+    /// solves such a case in both readings): `subconductors` below the
+    /// bundle of its section in `line` (a section not there: false).
+    pub fn is_partial(&self, line: &Line) -> bool {
+        self.subconductors.is_some_and(|k| {
+            line.sections
+                .iter()
+                .find(|s| s.id == self.section)
+                .is_some_and(|s| k < s.bundle.max(1))
+        })
+    }
+
     /// What a case's notes say of some subconductors broken (none: the
     /// whole phase, or a section the line does not have): how many of
-    /// how many, what is solved and what is not checked.
-    pub fn partial_note(&self, line: &Line) -> Option<String> {
+    /// how many, which reading is solved ([`LoadCase::hanging`]: hanging,
+    /// gone, or none — not expanded, gone, the other reading said not
+    /// solved), what does not depend on which subconductor, and what is
+    /// not on the structure.
+    pub fn partial_note(&self, line: &Line, hanging: Option<bool>) -> Option<String> {
         let k = self.subconductors?;
         let n = line
             .sections
@@ -621,13 +646,42 @@ impl BrokenWire {
             .bundle
             .max(1);
         (k < n).then(|| {
+            let reading = match hanging {
+                Some(true) => {
+                    "the broken ones hanging in the spacers of the wires left (their weight, ice \
+                     and wind carried by the wires left, their own tension none; a broken end \
+                     resting on the ground left out: conservative) — of the two readings the \
+                     one with the larger tension of the wires left (so the larger pull at the \
+                     section's ends) and the larger vertical loads; the larger unbalance next to \
+                     the break is the other reading's own case (broken subconductors gone)"
+                }
+                Some(false) => {
+                    "the broken ones gone from the span (the least pull left in it) — of the two \
+                     readings the one with the larger unbalance at the structures next to the \
+                     break (smaller than the whole phase broken); the larger tension of the wires \
+                     left (and pull at the section's ends) and the larger vertical loads are the \
+                     other reading's own case (broken subconductors hanging)"
+                }
+                None => {
+                    "the broken ones gone from the span (the larger unbalance next to the \
+                     break); NOT ON THE SAFE SIDE: the other reading, the broken ones hanging in \
+                     the spacers of the wires left, is not solved here, so the tension of the \
+                     wires left, the pull at the section's ends and the vertical loads can be \
+                     larger than shown; \
+                     the structure checks and Compute structure loads solve both readings, each \
+                     its own case"
+                }
+            };
             format!(
-                "{k} of {n} subconductors of {} broken: the static state after the break, the \
-                 broken ones gone from the span (of the two readings the one with the larger \
-                 unbalance on the structures; smaller than the whole phase broken); NOT ON THE \
-                 SAFE SIDE for the subconductors left: their tension with the broken ones \
-                 hanging in the spacers is higher and not checked (not modelled yet: keep a \
-                 margin on that tension)",
+                "{k} of {n} subconductors of {} broken: the static state after the break, \
+                 {reading}; which subconductor breaks does not change the loads (one wire per \
+                 phase in the solve; a string pinned at its point takes the bundle's pull \
+                 through it); NOT ON THE SAFE SIDE where the set hangs from two strings or more \
+                 at separate points of the structure modelled as one attachment point: the \
+                 couple of the bundle's one-sided pull (the broken subconductors' tension \
+                 times their distance from the bundle's centre) is not put on the structure, \
+                 so the cross-arm's torsion and one string's attachment load can be larger; \
+                 add that couple by hand",
                 self.section
             )
         })
@@ -856,6 +910,7 @@ impl LoadCase {
             wind_direction: None,
             wind_directions: Vec::new(),
             of_set: None,
+            hanging: None,
         }
     }
 
@@ -2037,6 +2092,34 @@ pub fn expand_directions(cases: &[LoadCase]) -> Vec<LoadCase> {
     out
 }
 
+/// The cases as the checks solve them ([`expand_directions`], then the
+/// readings of some subconductors broken, 2026-11-25): a case whose broken
+/// wires break some subconductors of a bundle, not all
+/// ([`BrokenWire::is_partial`] in `line`), as two cases — `<case> (broken
+/// subconductors gone)` ([`LoadCase::hanging`] false: the larger unbalance
+/// on the structures) and `<case> (broken subconductors hanging)` (true:
+/// the larger tension of the wires left and the larger vertical loads) —
+/// [`LoadCase::of_set`] the case's set name. The checks take each as its
+/// own case and keep the worst, naming it (as a set of wind directions).
+/// Expected cost: such a case solved twice.
+pub fn expand_cases(cases: &[LoadCase], line: &Line) -> Vec<LoadCase> {
+    let mut out = Vec::new();
+    for c in expand_directions(cases) {
+        if c.hanging.is_some() || !c.broken_wires().any(|b| b.is_partial(line)) {
+            out.push(c);
+            continue;
+        }
+        for (hanging, words) in [(false, "gone"), (true, "hanging")] {
+            let mut one = c.clone();
+            one.name = format!("{} (broken subconductors {words})", c.name);
+            one.of_set = Some(c.set_name().to_owned());
+            one.hanging = Some(hanging);
+            out.push(one);
+        }
+    }
+    out
+}
+
 /// [`structure_loads`], each case on its own (2026-11-14): a case that
 /// does not compute (a weather case, section or span it names not there,
 /// ice on the structures without a density…) fails only itself, the
@@ -2082,8 +2165,9 @@ pub fn structure_loads_at(
     budget: &Budget,
     level: Option<&LoadsSetup>,
 ) -> Vec<Result<CaseLoads, String>> {
-    // A set of wind directions: one case per direction.
-    let cases = &expand_directions(cases);
+    // A set of wind directions: one case per direction; some
+    // subconductors broken: one case per reading.
+    let cases = &expand_cases(cases, line);
     // The structures as drawn, rigid (owner 2026-11-15: loads never below
     // rigid): a reference state in use set aside, said.
     let mut line = line.as_drawn(reference::LOADS_AS_DRAWN).into_owned();
@@ -2236,7 +2320,7 @@ pub fn structure_loads_at(
         let mut fixed: Vec<(String, Vec<Break>)> = Vec::new();
         let mut every: Option<(String, Vec<Break>)> = None;
         for b in case.broken_wires() {
-            let breaks = b.breaks(&b.spans(solving).map_err(fail)?);
+            let breaks = b.breaks(&b.spans(solving).map_err(fail)?, case.hanging == Some(true));
             match b.span {
                 BrokenSpan::Every => every = Some((b.section.clone(), breaks)),
                 BrokenSpan::One(_) => match fixed.iter_mut().find(|f| f.0 == b.section) {
@@ -2247,7 +2331,7 @@ pub fn structure_loads_at(
             notes.push(format!("broken wire: {}", b.describe()));
             // Some subconductors only (roadmap O22 item 7): what is
             // solved and what is not checked.
-            notes.extend(b.partial_note(solving));
+            notes.extend(b.partial_note(solving, case.hanging));
         }
         if case.broken_wires().count() > 1 {
             notes.push(

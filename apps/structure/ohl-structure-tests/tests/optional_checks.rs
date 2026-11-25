@@ -144,10 +144,15 @@ fn the_optional_checks_through_the_link() {
         "{}",
         r1.governs
     );
-    // The climbing list: the two flat redundants, the legs not.
-    let ids: Vec<&str> = on.climbing.iter().map(|c| c.member.as_str()).collect();
-    assert_eq!(ids, ["R1", "R2"]);
-    assert!((on.climbing[0].usage.unwrap() - 550.0 / 355.0).abs() < 1e-9);
+    // The climbing list: every member (since 2026-11-25; before, the two
+    // flat redundants only) — the vertical legs along them only, 1100 N on
+    // 40 cm² × 355 MPa.
+    let mut ids: Vec<&str> = on.climbing.iter().map(|c| c.member.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["AM", "MB", "R1", "R2"]);
+    let of = |id: &str| on.climbing.iter().find(|c| c.member == id).unwrap();
+    assert!((of("R1").usage.unwrap() - 550.0 / 355.0).abs() < 1e-9);
+    assert!((of("AM").usage.unwrap() - 1100.0 / (40e-4 * 355e6)).abs() < 1e-9);
     assert!(
         on.notes
             .iter()

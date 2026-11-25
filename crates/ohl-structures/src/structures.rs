@@ -261,8 +261,8 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// only when a string gives one (an older program must not read such a
 /// post as frictionless). Version 16 (2026-11-15) adds the optional
 /// checks `[analysis] redundant_force` (percent of the compression in the
-/// member a redundant member braces) and `climbing_load` (a load on flat
-/// members at mid-length, alone), read by `ohl_structures_fe`
+/// member a redundant member braces) and `climbing_load` (a vertical load
+/// on every member at mid-length, alone), read by `ohl_structures_fe`
 /// ([`REDUNDANT_FORCE_VERSION`], [`CLIMBING_LOAD_VERSION`]); a file is
 /// written at 16 only when it gives one. Version 17 (2026-11-15) adds an
 /// attachment point standing alone, linked to no joint (`[[point]]`

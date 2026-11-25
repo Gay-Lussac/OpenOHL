@@ -955,7 +955,7 @@ pub fn prepare_structure_loads_at(
     done: Option<&(dyn Fn(usize, usize) + Sync)>,
     cancel: Option<&ohl_core::budget::CancelToken>,
 ) -> LoadsSetup {
-    let cases = crate::expand_directions(cases);
+    let cases = crate::expand_cases(cases, line);
     let mut strung = line.clone();
     strung.set_weather_cases(weather);
     let initial = ohl_line::condition::Calculation::ALL

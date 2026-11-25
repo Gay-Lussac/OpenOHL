@@ -686,9 +686,13 @@ struct Cases<'a> {
     broken: &'a [usize],
     /// The spans where some subconductors of the bundle are broken
     /// (roadmap O22 item 7, 2026-11-11), each with the share of the
-    /// bundle left, (n − k)/n: the span keeps its element with that share
-    /// of the stiffness, of the weight and of the loads per metre.
-    partial: &'a [(usize, f64)],
+    /// bundle left, (n − k)/n, and the share of the bundle's weight and
+    /// loads per metre the span carries: the span keeps its element with
+    /// the share left of the stiffness, and of the weight and loads either
+    /// that same share (the broken ones gone from the span) or the whole
+    /// bundle's, 1 (the broken ones hanging in the spacers of the wires
+    /// left, 2026-11-25: [`Break::hanging`]).
+    partial: &'a [(usize, f64, f64)],
     /// The line's direction at the spans and points, for the cases with
     /// a wind at an angle (none: every case across, or not yet known).
     wind: Option<&'a WireWind>,
@@ -771,8 +775,18 @@ impl<'a> Cases<'a> {
     fn remaining(&self, s: usize) -> f64 {
         self.partial
             .iter()
-            .find(|(span, _)| *span == s)
-            .map_or(1.0, |(_, share)| *share)
+            .find(|(span, _, _)| *span == s)
+            .map_or(1.0, |(_, share, _)| *share)
+    }
+
+    /// The share of the bundle's weight, ice and wind span `s` carries: 1,
+    /// or with subconductors broken the share left (the broken ones gone)
+    /// or 1 (hanging in the spacers of the wires left, [`Break::hanging`]).
+    fn carried(&self, s: usize) -> f64 {
+        self.partial
+            .iter()
+            .find(|(span, _, _)| *span == s)
+            .map_or(1.0, |(_, _, carried)| *carried)
     }
 }
 
@@ -1673,12 +1687,14 @@ fn build(
         );
         // Some subconductors broken here (roadmap O22 item 7): the model
         // is one subconductor's share of the bundle, so this span carries
-        // the share left of the stiffness, of the weight and of the ice
-        // and wind; its length as cut. The objects on it stay (carried by
-        // the wires left).
-        let kept = cases.remaining(s);
-        let (ea, gravity) = (ea * kept, gravity * kept);
-        let (load, stretched) = (load * kept, stretched * kept);
+        // the share left of the stiffness, and of the weight and of the ice
+        // and wind either the same share (the broken ones gone) or the
+        // whole bundle's (hanging in the spacers of the wires left,
+        // 2026-11-25); its length as cut. The objects on it stay (carried
+        // by the wires left).
+        let (kept, carried) = (cases.remaining(s), cases.carried(s));
+        let (ea, gravity) = (ea * kept, gravity * carried);
+        let (load, stretched) = (load * carried, stretched * carried);
         let shape_props = CableProperties {
             unstressed_length: reference.lengths[s],
             axial_stiffness: ea,
@@ -1749,11 +1765,12 @@ fn build(
                 let (from, to) = (a0.min(b0), a0.max(b0));
                 // Per metre of the wire as cut, its share: a weight on the
                 // wire, kept as the wire grows or shrinks (as its own).
-                // (Of a span with subconductors broken: the share left.)
+                // (Of a span with subconductors broken: the share left, or
+                // all of it with the broken ones hanging in the spacers.)
                 spread.push((
                     from,
                     to,
-                    Vector3::new(0.0, 0.0, -l.load / bundle * scale * kept),
+                    Vector3::new(0.0, 0.0, -l.load / bundle * scale * carried),
                 ));
             }
             sites.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -3029,6 +3046,13 @@ pub struct Break {
     /// How many subconductors of the bundle are broken there (1 to the
     /// bundle's number); none, or all of them: the whole phase.
     pub subconductors: Option<u32>,
+    /// Some subconductors broken: the broken ones taken as **hanging in
+    /// the spacers** of the wires left (2026-11-25) — their weight, ice and
+    /// wind carried by the wires left, their own tension none — instead of
+    /// gone from the span (false). Hanging gives the larger tension of the
+    /// wires left and the larger vertical loads; gone the larger unbalance
+    /// along the line. Ignored for the whole phase.
+    pub hanging: bool,
 }
 
 impl Break {
@@ -3037,25 +3061,40 @@ impl Break {
         Self {
             span,
             subconductors: None,
+            hanging: false,
         }
     }
 }
 
 /// What the flags of a span with `broken` of its `bundle` subconductors
 /// broken say (span from 0). The state solved is the static one after the
-/// break with the broken subconductors **gone from the span** — the
-/// reading that leaves the least pull in the span, so the larger
-/// unbalance on the structures. Not covered: the broken subconductors
-/// hanging in the spacers of the wires left, whose own tension is then
-/// higher than the one reported.
-pub fn partial_break_flag(span: usize, broken: u32, bundle: u32) -> String {
-    format!(
-        "span {}: {broken} of {bundle} subconductors broken — the static state after the break, \
-         the broken ones gone from the span; NOT ON THE SAFE SIDE for the tension of the \
-         subconductors left: with the broken ones hanging in the spacers it is higher (not \
-         modelled yet: keep a margin on that tension)",
-        span + 1
-    )
+/// break, the broken subconductors either **gone from the span** — the
+/// least pull left in the span, so the larger unbalance on the structures
+/// — or **hanging in the spacers** of the wires left (`hanging`,
+/// 2026-11-25) — their weight, ice and wind on the wires left, so the
+/// larger tension of those and the larger vertical loads. A load case
+/// solves both, each its own case (`ohl_loads::expand_cases`); a solve of
+/// one reading alone says what the other covers.
+pub fn partial_break_flag(span: usize, broken: u32, bundle: u32, hanging: bool) -> String {
+    if hanging {
+        format!(
+            "span {}: {broken} of {bundle} subconductors broken — the static state after the \
+             break, the broken ones hanging in the spacers of the wires left (their weight, ice \
+             and wind carried by the wires left, their own tension none: conservative for the \
+             tension of the wires left and the vertical loads); the tension reported is the \
+             wires left's; the larger unbalance next to the break is the other reading's (the \
+             broken ones gone)",
+            span + 1
+        )
+    } else {
+        format!(
+            "span {}: {broken} of {bundle} subconductors broken — the static state after the \
+             break, the broken ones gone from the span (the least pull left: the larger \
+             unbalance next to the break); the larger tension of the wires left and the larger \
+             vertical loads are the other reading's (the broken ones hanging in the spacers)",
+            span + 1
+        )
+    }
 }
 
 /// [`solve_section_broken_spans`] with, per span, the whole phase or
@@ -3071,12 +3110,15 @@ pub fn partial_break_flag(span: usize, broken: u32, bundle: u32) -> String {
 /// [`SpanShape::max_tension`]); the end pulls are the whole bundle's. A
 /// section in the blocks rolls before the break, as for a whole one.
 ///
-/// Conservative: the broken subconductors are taken as gone from the
-/// span — the least pull left in it, so the larger unbalance on the
-/// structures (still smaller than the whole phase broken, the default).
-/// NOT ON THE SAFE SIDE, flagged on the span ([`partial_break_flag`]):
-/// the tension of the subconductors left when the broken ones hang in
-/// their spacers. Refused: 0 subconductors, more than the bundle has, and
+/// Two readings, both conservative for what they bound
+/// ([`Break::hanging`], 2026-11-25): the broken subconductors **gone**
+/// from the span (weight and loads the share left: the least pull left
+/// in it, so the larger unbalance on the structures — still smaller than
+/// the whole phase broken, the default), or **hanging** in the spacers of
+/// the wires left (weight and loads the whole bundle's, their own tension
+/// none: the larger tension of the wires left and the larger vertical
+/// loads); a load case solves both, each its own case. Flagged on the
+/// span ([`partial_break_flag`]). Refused: 0 subconductors, more than the bundle has, and
 /// what a whole break refuses (the ruling-span method; a spacer or a
 /// jumper on a span point of the span). A span given twice takes its
 /// larger break.
@@ -3094,8 +3136,10 @@ pub fn solve_section_breaks(
     let invalid = |m: String| LineError::Invalid(format!("section {}: {m}", section.id));
     let count = section.points.len().saturating_sub(1);
     let bundle = section.bundle.max(1);
-    // Per span, the subconductors broken (the bundle's number: all).
+    // Per span, the subconductors broken (the bundle's number: all) and
+    // whether hanging.
     let mut by_span: std::collections::BTreeMap<usize, u32> = Default::default();
+    let mut hanging: std::collections::BTreeSet<usize> = Default::default();
     for b in breaks {
         let k = b.subconductors.unwrap_or(bundle);
         if k == 0 || k > bundle {
@@ -3107,16 +3151,22 @@ pub fn solve_section_breaks(
         }
         let most = by_span.entry(b.span).or_insert(k);
         *most = (*most).max(k);
+        if b.hanging {
+            hanging.insert(b.span);
+        }
     }
     let broken: Vec<usize> = by_span
         .iter()
         .filter(|(_, k)| **k == bundle)
         .map(|(s, _)| *s)
         .collect();
-    let partial: Vec<(usize, f64)> = by_span
+    let partial: Vec<(usize, f64, f64)> = by_span
         .iter()
         .filter(|(_, k)| **k < bundle)
-        .map(|(s, k)| (*s, f64::from(bundle - k) / f64::from(bundle)))
+        .map(|(s, k)| {
+            let left = f64::from(bundle - k) / f64::from(bundle);
+            (*s, left, if hanging.contains(s) { 1.0 } else { left })
+        })
         .collect();
     if by_span.is_empty() {
         return Err(invalid("no span to break".into()));
@@ -3847,9 +3897,9 @@ fn solve_fe(
         flags.push(format!("span {}: the wire broken (roadmap O9)", k + 1));
     }
     let n = section.bundle.max(1);
-    for (k, left) in cases.partial {
+    for (k, left, carried) in cases.partial {
         let broken = n - (left * f64::from(n)).round() as u32;
-        flags.push(partial_break_flag(*k, broken, n));
+        flags.push(partial_break_flag(*k, broken, n, carried > left));
     }
     // Its stiffness at its structure points, when asked (calculation
     // levels 3 and 4).

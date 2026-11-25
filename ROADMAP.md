@@ -729,7 +729,8 @@ against what line design practice uses). In the order proposed:
    the pulls, line values 7; `sets` with `back` / `ahead` scales those
    sets only); the partial break of a bundle (`subconductors = k` of a
    load case's broken wire, load case file 5: the broken ones gone from
-   the span, the tensions per wire left; the form's field still to do).
+   the span, the tensions per wire left; since 2026-11-25 also hanging in
+   the spacers, each its own case — O48; the form's field still to do).
    Point loads across or along (`force_across`, `force_along` on a
    span point's object, line file 15, finite elements; the ruling span
    says the point loads it leaves out; benchmarks `ptforce-001…002`; the
@@ -4710,8 +4711,10 @@ OHL-Structure as a library case of the structure's groups (since
 2026-11-15; before, also as an unfactored line result from Criteria ›
 Loads for structures, now gone). Still to come: the codes' security
 and construction cases written by their plugins (the format is
-documented for them), a single subconductor of a bundle broken, the
-dynamic impact beyond a factor.
+documented for them), the dynamic impact beyond a factor. (A single
+subconductor of a bundle broken: `subconductors = k` since 2026-11-11,
+both readings — gone and hanging in the spacers — since 2026-11-25,
+[O48](#o48-two-safety-gaps-closed-the-climbing-load-on-every-member-a-single-subconductor-of-a-bundle-broken).)
 *Status (2026-11-03; added here 2026-11-07), built, in active
 development (not approved yet):* `.ohllc` version 4 — several broken
 wires in one case, solved together per section, and **removed**
@@ -5786,6 +5789,75 @@ net); the server's sub-line test 5.9 s → 0.7 s with O42's lookups.
 > **Owner:** (to answer, 2026-11-10) The "keep both" choice and servers:
 > a shared server updated together with the app, or the app hides the
 > choice when the server does not know it?
+
+### O48. Two safety gaps closed: the climbing load on every member, a single subconductor of a bundle broken
+2026-11-25. **Built, in active development (not approved yet).** Both
+were said NOT ON THE SAFE SIDE before; both now end on the safe side,
+measured and documented ([decision log](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md),
+[safe side](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/safe-side.md)).
+
+1. **The climbing load on every member** (`[analysis] climbing_load`;
+   [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/structures-fe.md#optional-checks-redundant-members-force-climbing-load)).
+   Before, only members within 30° of the horizontal (our own limit, not
+   ASCE 10-97 commentary C2.2's). Now every design-checked member but
+   cables, whatever its slope: the vertical load's part across the member
+   bends it, its part along it is taken whole in compression and amplifies
+   the moment, against first yield; no format change, no setting (nothing
+   left out). Measured: on 73 private lattice towers 1 204 more members
+   over first yield (all between 30° and 50°), 140 fewer among the flat
+   ones (the part across, cos θ); a few milliseconds per tower. Validation
+   `structfe-021`.
+2. **A single subconductor of a bundle broken** (`subconductors = k` of a
+   broken wire, since 2026-11-11, solved with the broken ones gone; the
+   tension of the wires left with them hanging was said not checked;
+   [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/wirefe.md#some-subconductors-of-a-bundle-broken)).
+   Now both readings are solved, each its own case — gone (the larger
+   unbalance) and hanging in the spacers of the wires left (the larger
+   tension of the wires left, +20 % on the benchmark, and the larger
+   vertical loads, +30 %; on the example line made a twin bundle the
+   dead-ends pull 10 % more hanging, the suspension structure next to the
+   break more along the line gone) — wherever loads are computed; no format change,
+   no plugin interface change. Which subconductor breaks does not change
+   the loads (one wire per phase, a pinned string), so a case names how
+   many, not which. Validation `brokenwire-006`, `007` (hand-checked).
+   Still NOT ON THE SAFE SIDE, said in the case's notes: a set hung from
+   two strings or more at separate points but modelled as one attachment
+   point does not get the couple of the bundle's one-sided pull.
+
+**Questions for the owner** (each with a recommendation):
+
+1. *Climbing, the flat members:* between 0° and 30° the bending is now
+   cos θ of what it was (at most 13 % less at 30°), partly made up by the
+   part along the member — 140 members of the private towers fell below
+   first yield. Keep the exact parts, or take the larger of the old and
+   the new check there? **Recommendation:** keep the exact parts — the
+   commentary's load is vertical, and the part along the member is now
+   counted, which the old check left out.
+2. *Climbing, the ends' restraint:* the commentary allows the friction of
+   tightened bolts to be counted; it is left out (simply supported:
+   conservative), and 3 028 members of the private towers exceed first
+   yield, mostly slender angles of 1.5 cm³. Offer the restraint as an
+   option? **Recommendation:** not without a source for how much fixity
+   tightened bolts give; until then keep simply supported and let the
+   user raise the section or turn the check off with reason.
+3. *A set on two strings:* a double tension string at two points of the
+   structure, modelled as one point, misses the couple of a partial
+   break. Give a set two attachment points (each string its own, the
+   yoke's statics sharing the pull)? **Recommendation:** yes, as a later
+   step of the strings' model (it also gives the strings' sharing in the
+   intact cases); until then the note says to add the couple by hand.
+4. *Both readings always:* a case with a partial break is solved twice
+   (about twice its time). A field to choose one reading? **Recommendation:**
+   no — both are needed for the safe side, and the cost is one section
+   solve more per such case.
+5. *Which subconductor:* not asked, since it gives the same loads in this
+   model. Add it only with item 3 (where the side matters).
+   **Recommendation:** as said, with item 3.
+6. *The codes' plugins:* nothing in the plugin interface changes; a code's
+   security case can write `subconductors = k` (format documented). The
+   dynamic impact of a subconductor letting go stays the code's factor.
+   **Recommendation:** nothing to do now.
+> **Owner:**
 
 ## Proposed stages (to discuss)
 

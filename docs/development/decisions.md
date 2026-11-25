@@ -8,6 +8,90 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (structure analysis: the climbing load on every member, whatever its slope)
+
+**The optional climbing check takes every member, not only the flat ones**
+(a safety gap: [theory](../theory/structures-fe.md#optional-checks-redundant-members-force-climbing-load)).
+Since 2026-11-15 `[analysis] climbing_load` checked only the members within
+30° of the horizontal and said the steeper ones NOT ON THE SAFE SIDE. The
+30° was our own limit: ASCE 10-97 commentary C2.2 speaks of members "used
+for support by maintenance personnel when climbing", whatever their slope,
+and a climber can stand on a 40° diagonal.
+
+- **Every design-checked member but cables** (guys are not climbed on and
+  carry no bending; modelling members are checked for nothing), whatever
+  its slope θ, under the commentary's **vertical** load P at mid-length,
+  alone, simply supported: its part **across** the member, P cos θ (with
+  the own weight's), bends it; its part **along** it, sin θ (P + qL), is
+  taken **whole, in compression, over the whole length** (conservative: the
+  two halves share it, one in tension), adds N/A and amplifies the moment
+  by 1/(1 − N/N_cr), N_cr = π² E I_min / L² with pinned ends; against first
+  yield. N ≥ N_cr is over. A flat member is checked exactly as before; a
+  vertical one in compression only.
+- **The components, not the whole load across**: the load is vertical, so
+  its parts are exact; the whole load across would bend vertical members
+  with a load nobody puts on them, and it leaves out the part along the
+  member, which can govern (validation `structfe-021`: a member at 53°,
+  not checked before, uses 161 % where the flat one uses 155 %). For flat
+  members between 0° and 30° the bending part is cos θ of what it was
+  (at most 13 % less at 30°), partly made up by the part along.
+- **No setting**: no member is left out, so no NOT ON THE SAFE SIDE for
+  slopes remains and no choice is needed. Members whose section lacks
+  what the check needs stay listed as not checked, said NOT ON THE SAFE
+  SIDE with why (now also a missing area or second moment where the part
+  along the member needs them).
+- **Measured**: public examples — *every-profile* 8 members checked
+  instead of 4, its one member over first yield unchanged (107 %); the
+  synthetic type 02 (table sections without elastic moduli) 178 listed as
+  not checked instead of 54. 73 private lattice towers: 163 689 checked
+  instead of 78 716, 3 028 over first yield instead of 1 964 (1 204 added,
+  all between 30° and 50°; 140 fewer among the flat ones; none buckling
+  under the load alone). Time: a few milliseconds per tower, at most 0.5 s
+  when a tower's profiles are first worked out (3.0 s for all 73).
+- **Format**: none changed (`CLIMBING_INCLINATION_DEG` removed from the
+  code); the validation calculation `structures.fe` outputs
+  `climbing_<member>`.
+
+## 2026-11-25 (broken wires: some subconductors of a bundle broken, both readings solved)
+
+**A partial break of a bundle is solved in both readings, each its own
+case** (a safety gap; roadmap O9, O48;
+[theory](../theory/wirefe.md#some-subconductors-of-a-bundle-broken)).
+Since 2026-11-11 `subconductors = k` of a broken wire was solved with the
+broken subconductors gone from the span — the larger unbalance on the
+structures — and the tension of the wires left with the broken ones
+hanging in the spacers was said NOT ON THE SAFE SIDE, not checked.
+
+- **The second reading, hanging** (`ohl_line::solve::Break::hanging`): the
+  span keeps the share left of the stiffness but carries the whole
+  bundle's weight, ice and wind; the broken pieces' own tension none.
+  Conservative for the tension of the wires left and the vertical loads
+  (a broken end on the ground, or a piece sharing the pull, would lower
+  them).
+- **Both, each its own case** (`ohl_loads::expand_cases`, after the wind
+  directions' expansion, in every loads path): `<case> (broken
+  subconductors gone)` and `<case> (broken subconductors hanging)`, the
+  structures' groups taking both by the case's name. Not an envelope of
+  components: a member force combines them, so each reading is its own
+  load (as a broken wire in every span).
+- **Which subconductor** is not asked: the solve follows one wire per
+  phase and a pinned string takes the bundle's pull through its point,
+  so every subconductor gives the same loads. Said in the notes, NOT ON
+  THE SAFE SIDE: a set hung from two strings or more at separate points,
+  modelled as one point, misses the couple of the one-sided pull (add it
+  by hand; a set on two points is an owner question, O48).
+- **No format change** (`LoadCase::hanging` is not in files, as
+  `of_set`), **no plugin interface change**; a case solved outside the
+  checks (not expanded) gives the gone reading and says the other is not
+  solved.
+- **Measured** (benchmark section, twin bundle, one subconductor broken):
+  the wire left 50.26 kN hanging against 41.83 kN gone (+20 %; a quad
+  with three broken +26 %), the load down on the middle structure +30 %,
+  the unbalance along the line 0.35 kN against 0.82 kN; validation
+  `brokenwire-006`, `007` against the independent reference (part 1c) and
+  hand checks. On the example line with its first section made a twin bundle and one subconductor of span 2 broken (2026-11-25): at the suspension structure next to the break 0.63 kN along the line gone against 0.29 kN hanging, but 12.3 kN down hanging against 9.5 kN gone, and at the section's two dead-ends 49.1 and 49.5 kN along the line hanging against 43.8 and 44.9 kN gone (the wires left pull harder) — neither reading bounds every force; the run took 0.94 s against 0.90 s with the whole phase broken. Other cases
+  unchanged.
+
 ## 2026-11-25 (country server: the usage of a shared tower on every line's loads; the electric field's cuts, volumes and jumpers with the other lines)
 
 **Four "left" items of the server's follow-ups of 2026-11-24, and a

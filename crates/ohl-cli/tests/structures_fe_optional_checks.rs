@@ -138,7 +138,9 @@ fn the_optional_checks_from_the_file_and_the_command_line() {
         "{text}"
     );
     // From the file: 2.5 % of 100 kN on R1, R2 (5.18 kN Euler: 48 %);
-    // 1100 N on the two flat redundants (550 N m on 1 cm³ × 355 MPa).
+    // 1100 N on the two flat redundants (550 N m on 1 cm³ × 355 MPa) and,
+    // since 2026-11-25, on the vertical legs too (along them only: 1100 N
+    // on 40 cm² × 355 MPa = 0.08 %).
     let file = write("file", "redundant_force = 2.5\nclimbing_load = \"1100 N\"");
     let csv = file.with_extension("csv");
     let (ok, out, err) = ohl(&[
@@ -163,9 +165,10 @@ fn the_optional_checks_from_the_file_and_the_command_line() {
         "{out}"
     );
     assert!(
-        out.contains("2 OVER first yield: R1 155 %, R2 155 %"),
+        out.contains("4 member(s) checked, worst R2 155 %; 2 OVER first yield: R1 155 %, R2 155 %"),
         "{out}"
     );
+    assert!(!out.contains("steeper"), "{out}");
     let text = std::fs::read_to_string(&csv).unwrap();
     assert!(
         text.starts_with("case,member,kind,section,axial_n,usage,governs,climbing\n"),
@@ -174,6 +177,11 @@ fn the_optional_checks_from_the_file_and_the_command_line() {
     assert!(
         text.lines()
             .any(|l| l.starts_with("model,R1,") && l.ends_with(",154.9")),
+        "{text}"
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("model,AM,") && l.ends_with(",0.1")),
         "{text}"
     );
     // The command line wins: off (0), or another share.
