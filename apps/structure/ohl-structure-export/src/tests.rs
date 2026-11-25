@@ -1205,7 +1205,7 @@ fn connections_and_plates_as_csv() {
     let plates = &t.iter().find(|(x, _)| *x == "plates.csv").unwrap().1;
     assert!(plates.starts_with(
         "id,joint,thickness_m,material,outline_m,kind,welded_to,weld_to,weld_kind,weld_size_m,\
-         weld_length_m"
+         weld_length_m,weld_sides"
     ));
     assert!(plates.contains("\nG2,N1,0.01,,,,G1,,,,"), "{plates}");
     // A weld with its size and length (`[[plate.weld]]`, 2026-11-04).
@@ -1217,7 +1217,25 @@ fn connections_and_plates_as_csv() {
     let t = csv::tables(&s);
     let plates = &t.iter().find(|(x, _)| *x == "plates.csv").unwrap().1;
     assert!(
-        plates.contains("\nG2,N1,0.01,,,,,G1,fillet,0.006,0.22"),
+        plates
+            .lines()
+            .any(|l| l == "G2,N1,0.01,,,,,G1,fillet,0.006,0.22,"),
+        "{plates}"
+    );
+    // Its sides (2026-11-25, O44 J7b): the last column.
+    let s = structure(
+        &sized.replace("length = \"220 mm\"\n", "length = \"220 mm\"\nsides = 2\n"),
+        &library,
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    let t = csv::tables(&s);
+    let plates = &t.iter().find(|(x, _)| *x == "plates.csv").unwrap().1;
+    assert!(
+        plates
+            .lines()
+            .any(|l| l == "G2,N1,0.01,,,,,G1,fillet,0.006,0.22,2"),
         "{plates}"
     );
     // A splice with two covers and a nested face (2026-11-05): a row per

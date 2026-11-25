@@ -1249,6 +1249,26 @@ fn joint_details_show_the_plate_checks() {
     let t = h.state().file.as_ref().unwrap().structure().clone();
     let w = t.weld_between("G1", "G2").expect("the weld written");
     assert!((w.size.unwrap().si() - 0.005).abs() < 1e-12);
+    // Its sides (2026-11-25, O44 J7b): a column of the weld's row, written
+    // into the file (version 28), the size kept.
+    assert_eq!(w.sides, None);
+    h.get_by_label("Sides");
+    h.state_mut().apply_joint_acts(
+        vec![crate::joint_tools::Act::WeldData(
+            "G1".into(),
+            "G2".into(),
+            ohl_structure_edit::connection_edits::WeldEdit {
+                sides: Some(Some(2)),
+                ..Default::default()
+            },
+        )],
+        &details,
+    );
+    h.run();
+    let t = h.state().file.as_ref().unwrap().structure().clone();
+    let w = t.weld_between("G1", "G2").expect("the weld kept");
+    assert_eq!(w.sides, Some(2));
+    assert!((w.size.unwrap().si() - 0.005).abs() < 1e-12);
     // Results › Run: the plates checked with the members.
     menu(&mut h, "Results", "FE results");
     h.get_by_label("▶ Run").click();

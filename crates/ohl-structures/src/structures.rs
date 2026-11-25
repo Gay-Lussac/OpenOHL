@@ -310,8 +310,12 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// joint layout's L24) adds the structure's own detailing practice
 /// (`[layout_practice]`: [`StructureType::layout_practice`],
 /// [`LAYOUT_PRACTICE_VERSION`]); a file is written at 27 only when it has
-/// one.
-pub const STRUCTURE_FILE_VERSION: u32 = 27;
+/// one. Version 28 (2026-11-25, the automatic joint layout's J7b) adds a
+/// weld's sides (`[[plate.weld]] sides`, the fillets on one side of the
+/// plate or both: [`crate::connections::TypeWeld::sides`],
+/// [`crate::connections::WELD_SIDES_VERSION`]); a file is written at 28
+/// only when a weld gives them.
+pub const STRUCTURE_FILE_VERSION: u32 = 28;
 
 /// The structure file version of the joint layout's detailing practice
 /// (`[layout_practice]`, O44 L24, 2026-11-25).

@@ -20,6 +20,10 @@
 //!   carries spread evenly and, since 2026-11-18, the moments of that force
 //!   about it, elastic ([`line_force`]; 6.3.1.7, 6.3.2.1); a full penetration weld
 //!   is as strong as the weaker plate (6.3.3.4) and not checked (6.3.1.8).
+//!   With its **sides** ([`weld_sides`], 2026-11-25, roadmap O44 J7b): one
+//!   fillet bent about its seam by its throat bent across (its root opened;
+//!   6.3.6.5 asks to avoid it, said), two fillets taking that moment as a
+//!   couple across the plate; sides not known, the worse of the two.
 //! - A plate in compression: SIA 263 gives no rule for a gusset plate's
 //!   buckling — "plate buckling not checked", said.
 
@@ -754,6 +758,245 @@ pub fn weld_with(w: &WeldInput, force: f64, x: &Extra) -> Checked {
             .notes
             .push("(88) not checked (no yield strength of the plates)".into()),
     }
+    detailing(w, a, l, &mut out);
+    out
+}
+
+/// The force per unit length at the most loaded end of each of **two
+/// fillets** of length `l` (m, each), one on each side of a plate, the
+/// fillets `e` apart (m): the force spread evenly over both (F / 2l), the
+/// moment of the force about the welds' middle bending them along their
+/// length taken by both lines elastically (6 M / (2 l²): each line's
+/// section modulus l² / 6), and the moment about the seam's own line taken
+/// as a couple of the two fillets across the plate (T / (e l)) — the sizes
+/// added (on the safe side: their directions may differ). `e` the thinner
+/// plate's thickness: the fillets' throats lie outside the plate's faces,
+/// so the lever arm between them is at least that (on the safe side; the
+/// plate's edge bearing on the other plate not counted). SIA 263 6.3.1.7
+/// admits a simplified distribution of the stresses; 6.3.2.1 checks the
+/// resultant per unit length whatever its direction (Figure 33).
+pub fn pair_force(force: f64, x: &Extra, l: f64, e: f64) -> f64 {
+    if l <= 0.0 {
+        return f64::INFINITY;
+    }
+    let mut q = force.abs() / (2.0 * l) + 3.0 * x.in_plane / (l * l);
+    if x.out_of_plane > 0.0 {
+        q += if e > 0.0 {
+            x.out_of_plane / (e * l)
+        } else {
+            f64::INFINITY
+        };
+    }
+    q
+}
+
+/// The checks of a weld with its **sides** (2026-11-25, roadmap O44 J7b,
+/// the owner's decision of 2026-11-19): `sides` 1 — one fillet on one side
+/// of the plate, as [`weld_with`] takes every weld (its throat bent across
+/// by the moment about the seam, its root opened: an engineering model,
+/// elastic, no plastic reserve, on the safe side; SIA 263 6.3.6.5 asks to
+/// avoid such a fillet, said); 2 — a fillet on each side, the length given
+/// both together (each half of it; not given, each the seam's), the moment
+/// about the seam a couple across the plate ([`pair_force`]); none (not
+/// known) — both, each check said for which, the larger governing (on the
+/// safe side: a file without its sides checked no weaker than before).
+/// (87) and (88) on the force per unit length at the most loaded end, as an
+/// equivalent force (that force per unit length times the welded length)
+/// against the resistance of the whole welded length.
+pub fn weld_sides(w: &WeldInput, sides: Option<u32>, force: f64, x: &Extra) -> Checked {
+    let mut out = Checked::default();
+    if !matches!(sides, None | Some(1 | 2)) {
+        out.notes.push(format!(
+            "sides {}: neither one fillet nor two — weld not checked",
+            sides.unwrap_or_default()
+        ));
+        return out;
+    }
+    // A full penetration weld, or one without a size: as every weld.
+    let (WeldKind::Fillet, Some(a)) = (w.kind, w.size) else {
+        return weld_with(w, force, x);
+    };
+    let s = contact_width(a, w.angle);
+    let moments = x.in_plane > 0.0 || x.out_of_plane > 0.0;
+    let fw = 0.6 * filler_ultimate() / gamma_m2();
+    let fs = w.fy.map(|fy| 0.8 * fy / gamma_m2());
+    let both = sides.is_none();
+    let label = |n: u32| match (both, n) {
+        (false, _) => String::new(),
+        (true, 1) => "one fillet: ".to_owned(),
+        (true, _) => "two fillets: ".to_owned(),
+    };
+    if both {
+        out.notes.push(
+            "sides not given: the worse of one fillet on one side of the plate and one on each \
+             side (on the safe side; give them)"
+                .into(),
+        );
+    }
+    if !moments {
+        out.notes
+            .push("the force spread evenly along the weld (SIA 263 6.3.1.7)".into());
+    } else {
+        out.notes.push(
+            "the force per unit length at the weld's most loaded end: its force spread evenly, \
+             its moments about the weld's middle and about the seam taken elastically (SIA 263 \
+             6.3.1.7, 6.3.2.1)"
+                .into(),
+        );
+    }
+    // One fillet.
+    if matches!(sides, None | Some(1)) {
+        let l = w.length;
+        if !w.length_given {
+            out.notes.push(format!(
+                "length {:.0} mm: the seam's, one side (not given)",
+                mm(l)
+            ));
+        }
+        if x.out_of_plane > 0.0 {
+            out.notes.push(format!(
+                "{}the weld bent about its seam ({:.2} kN m) opens the fillet's root: taken by \
+                 its throat (resp. contact width) bent across, elastic, no plastic reserve (an \
+                 engineering model, not a rule of SIA 263; on the safe side) — a fillet on one \
+                 side only bent so should be avoided (SIA 263 6.3.6.5): weld both sides",
+                if both { "if one fillet: " } else { "" },
+                x.out_of_plane / 1000.0
+            ));
+        }
+        let words = |wd: f64| {
+            if moments {
+                format!(
+                    "; {:.1} kN/m at its most loaded end: F/L {:.1}, 6M/L² {:.1}, 6T/(L·{:.1} mm) \
+                     {:.1}",
+                    line_force(force, x, l, wd) / 1000.0,
+                    force.abs() / l / 1000.0,
+                    6.0 * x.in_plane / (l * l) / 1000.0,
+                    mm(wd),
+                    6.0 * x.out_of_plane / (l * wd) / 1000.0
+                )
+            } else {
+                String::new()
+            }
+        };
+        out.checks.push(PlateCheck {
+            what: format!(
+                "{}fillet weld a {:.0} mm × {:.0} mm, one side, throat (SIA 263 6.3.2.2, (87), \
+                 f_uE {:.0} N/mm²{})",
+                label(1),
+                mm(a),
+                mm(l),
+                filler_ultimate() / 1e6,
+                words(a)
+            ),
+            demand: line_force(force, x, l, a) * l,
+            resistance: a * l * fw,
+            distance: false,
+        });
+        if let Some(fs) = fs {
+            out.checks.push(PlateCheck {
+                what: format!(
+                    "{}fillet weld s {:.1} mm, one side, contact (SIA 263 6.3.2.2, (88){})",
+                    label(1),
+                    mm(s),
+                    words(s)
+                ),
+                demand: line_force(force, x, l, s) * l,
+                resistance: s * l * fs,
+                distance: false,
+            });
+        }
+        detailing(w, a, l, &mut out);
+    }
+    // Two fillets, one on each side.
+    if matches!(sides, None | Some(2)) {
+        let l = if w.length_given {
+            w.length / 2.0
+        } else {
+            w.length
+        };
+        let e = w.thickness[0].min(w.thickness[1]);
+        out.notes.push(if w.length_given {
+            format!(
+                "{}length {:.0} mm both fillets together: each {:.0} mm",
+                label(2),
+                mm(w.length),
+                mm(l)
+            )
+        } else {
+            format!(
+                "{}each fillet the seam's length, {:.0} mm (not given)",
+                label(2),
+                mm(l)
+            )
+        });
+        if x.out_of_plane > 0.0 {
+            out.notes.push(format!(
+                "{}the weld bent about its seam ({:.2} kN m) taken by the two fillets as a \
+                 couple across the thinner plate's thickness, {:.0} mm (the fillets lie outside \
+                 its faces, so their lever arm is at least that; the plate's edge bearing on the \
+                 other not counted: on the safe side)",
+                label(2),
+                x.out_of_plane / 1000.0,
+                mm(e)
+            ));
+        }
+        let q = pair_force(force, x, l, e);
+        let words = if moments {
+            format!(
+                "; {:.1} kN/m on each at its most loaded end: F/2L {:.1}, 6M/(2L²) {:.1}, \
+                 T/(t·L) {:.1}",
+                q / 1000.0,
+                force.abs() / (2.0 * l) / 1000.0,
+                3.0 * x.in_plane / (l * l) / 1000.0,
+                if e > 0.0 {
+                    x.out_of_plane / (e * l) / 1000.0
+                } else {
+                    f64::INFINITY
+                }
+            )
+        } else {
+            String::new()
+        };
+        out.checks.push(PlateCheck {
+            what: format!(
+                "{}fillet welds 2 × a {:.0} mm × {:.0} mm, both sides, throat (SIA 263 6.3.2.2, \
+                 (87), f_uE {:.0} N/mm²{words})",
+                label(2),
+                mm(a),
+                mm(l),
+                filler_ultimate() / 1e6
+            ),
+            demand: q * 2.0 * l,
+            resistance: a * 2.0 * l * fw,
+            distance: false,
+        });
+        if let Some(fs) = fs {
+            out.checks.push(PlateCheck {
+                what: format!(
+                    "{}fillet welds 2 × s {:.1} mm, both sides, contact (SIA 263 6.3.2.2, \
+                     (88){words})",
+                    label(2),
+                    mm(s)
+                ),
+                demand: q * 2.0 * l,
+                resistance: s * 2.0 * l * fs,
+                distance: false,
+            });
+        }
+        detailing(w, a, l, &mut out);
+    }
+    if fs.is_none() {
+        out.notes
+            .push("(88) not checked (no yield strength of the plates)".into());
+    }
+    let mut seen = std::collections::HashSet::new();
+    out.notes.retain(|n| seen.insert(n.clone()));
+    out
+}
+
+/// What SIA 263 6.3.1.3 and 6.3.6.2 to 6.3.6.4 ask of a fillet of throat
+/// `a` and length `l` (each fillet's, m), said where not kept.
+fn detailing(w: &WeldInput, a: f64, l: f64, out: &mut Checked) {
     let t_min = w.thickness[0].min(w.thickness[1]);
     let t_max = w.thickness[0].max(w.thickness[1]);
     if l < 0.040 {
@@ -793,5 +1036,4 @@ pub fn weld_with(w: &WeldInput, force: f64, x: &Extra) -> Checked {
             mm(t_max)
         ));
     }
-    out
 }

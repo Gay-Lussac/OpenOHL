@@ -14,7 +14,8 @@
 
 use ohl_structures::StructureType;
 use ohl_structures::connections::{
-    CONNECTIONS_VERSION, ConnectionKind, CoverFace, CoverLeg, MAX_GAUGE_LINES, WeldKind,
+    CONNECTIONS_VERSION, ConnectionKind, CoverFace, CoverLeg, MAX_GAUGE_LINES, WELD_SIDES_VERSION,
+    WeldKind,
 };
 use toml_edit::{ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
@@ -537,6 +538,9 @@ pub fn copy_ends(doc: &mut DocumentMut, t: &StructureType, ends: &[CopyEnd]) -> 
             if let Some(k) = w.kind {
                 e.insert("kind", toml_edit::value(k.as_str()));
             }
+            if let Some(n) = w.sides {
+                e.insert("sides", toml_edit::value(i64::from(n)));
+            }
             if let Some(a) = x.get_mut("weld").and_then(Item::as_array_of_tables_mut) {
                 a.push(e);
             }
@@ -746,14 +750,18 @@ pub struct WeldEdit {
     pub length: Option<Option<f64>>,
     /// Its kind.
     pub kind: Option<WeldKind>,
+    /// Its sides: 1 or 2 fillets (cleared: not known; 2026-11-25, roadmap
+    /// O44 J7b, structure file version 28).
+    pub sides: Option<Option<u32>>,
 }
 
 /// The weld between plates `a` and `b` of one joint given its size,
-/// length or kind (2026-11-04, `[[plate.weld]]`, still version 9): written
+/// length or kind (2026-11-04, `[[plate.weld]]`, still version 9) or its
+/// sides (2026-11-25, `sides`, the file raised to version 28): written
 /// on the plate that already holds it (its `[[plate.weld]]`, else the one
 /// whose `welded_to` names the other, else `a`); the pair welded if it was
 /// not, the other's name taken out of that plate's `welded_to` (the weld
-/// now says it). A size or length above 0.
+/// now says it). A size or length above 0; sides 1 or 2.
 pub fn set_weld(
     doc: &mut DocumentMut,
     t: &StructureType,
@@ -776,6 +784,9 @@ pub fn set_weld(
         if v.is_nan() || v <= 0.0 {
             return Err("a weld's size and length above 0".into());
         }
+    }
+    if edit.sides.flatten().is_some_and(|n| n != 1 && n != 2) {
+        return Err("a weld's sides: 1 (one fillet) or 2 (one on each side)".into());
     }
     let (holder, other) = if pb.welds.iter().any(|w| w.to == a) {
         (b, a)
@@ -854,6 +865,16 @@ pub fn set_weld(
         }
         Some(k) => {
             w.insert("kind", toml_edit::value(k.as_str()));
+        }
+        None => {}
+    }
+    match edit.sides {
+        Some(Some(n)) => {
+            w.insert("sides", toml_edit::value(i64::from(n)));
+            raise_version(doc, i64::from(WELD_SIDES_VERSION));
+        }
+        Some(None) => {
+            w.remove("sides");
         }
         None => {}
     }

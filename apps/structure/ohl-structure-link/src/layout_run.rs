@@ -5396,10 +5396,24 @@ fn write_plan(
                     if let Some(k) = h.kind {
                         weld.insert("kind", toml_edit::value(k.as_str()));
                     }
+                    if let Some(n) = h.sides {
+                        weld.insert("sides", toml_edit::value(i64::from(n)));
+                        ohl_structure_edit::edits::raise_version(
+                            doc,
+                            i64::from(ohl_structures::connections::WELD_SIDES_VERSION),
+                        );
+                    }
                 }
                 None => {
                     weld.insert("size", toml_edit::value(crate::mm_text(o.weld_size)));
                     weld.insert("length", toml_edit::value(crate::mm_text(o.weld_length)));
+                    // J7b (2026-11-25): welded from both sides, as laid
+                    // out — two fillets, the length both together.
+                    weld.insert("sides", toml_edit::value(2));
+                    ohl_structure_edit::edits::raise_version(
+                        doc,
+                        i64::from(ohl_structures::connections::WELD_SIDES_VERSION),
+                    );
                     auto.insert("weld".into());
                 }
             }

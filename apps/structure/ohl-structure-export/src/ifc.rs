@@ -1318,7 +1318,13 @@ fn plate(
                     Some(l) => format!("{:.0} mm", l * 1000.0),
                     None => format!("{:.0} mm (the seam)", w.seam_length() * 1000.0),
                 };
-                format!("{}: {} {size}, {length}", w.with, w.kind.words())
+                // Its sides (2026-11-25, O44 J7b), when given.
+                let sides = match w.fillets {
+                    Some(1) => ", one side".to_owned(),
+                    Some(n) => format!(", {n} sides"),
+                    None => String::new(),
+                };
+                format!("{}: {} {size}, {length}{sides}", w.with, w.kind.words())
             })
             .collect();
         values.push(("Welds", label(&words.join("; "))));

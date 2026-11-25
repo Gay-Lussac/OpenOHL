@@ -1006,6 +1006,15 @@ out. Each change is one undo step.
   undo step, written as `[[plate.weld]]`; a plate's box (a plate picked)
   has its own welds' rows. The seam's label (`a6 × 220`) is drawn in the
   close-up and the face view.
+  Its **sides** (2026-11-25, built, in active development): *not known*,
+  *1 (one side)* — one fillet on one side of the plate — or *2 (both
+  sides)* — a fillet on each side, the length given both together (each
+  fillet half of it; empty, each the seam's length). Two fillets take a
+  moment about the seam as a couple across the plate; one fillet is bent
+  across, its root opened, and the check says SIA 263 6.3.6.5 asks such a
+  fillet to be avoided; *not known* checks the worse of the two (on the
+  safe side). Written as `sides` (the file then version 28); the label
+  then reads `a6 × 220, 2 sides` ([theory](../theory/joint-plates.md#a-welds-sides-j7b)).
 - **Plate checks** (2026-11-04): after a run (Results › Run), Joint
   details lists the joint's plate checks — per plate each member's bolts
   in it and each weld — with the usage in the case shown, the largest

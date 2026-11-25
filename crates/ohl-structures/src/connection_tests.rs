@@ -170,6 +170,42 @@ fn welds_carry_their_size_and_length() {
     assert!(t.plates.iter().all(|p| p.welds.is_empty()));
 }
 
+/// A weld's sides (2026-11-25, version 28, roadmap O44 J7b): 1 or 2
+/// fillets read; none in a file of before (not known, the check takes the
+/// worse of the two); 0 or 3 refused; a file of version 28 read, of the
+/// next refused.
+#[test]
+fn a_welds_sides_are_read() {
+    let text = format!(
+        "format = \"ohl-structure\"\nversion = 28\n{BODY}\
+         [[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate.weld]]\nto = \"G1\"\nsize = \"5 mm\"\nsides = 2\n\
+         [[plate]]\nid = \"G3\"\njoint = \"N2\"\nthickness = \"10 mm\"\n\
+         [[plate.weld]]\nto = \"G2\"\nsize = \"5 mm\"\n"
+    );
+    let t = parse(&text).unwrap();
+    assert_eq!(t.weld_between("G1", "G2").unwrap().sides, Some(2));
+    assert_eq!(t.weld_between("G2", "G3").unwrap().sides, None);
+    assert!(
+        parse(&text.replace("sides = 2", "sides = 1"))
+            .unwrap()
+            .weld_between("G1", "G2")
+            .is_some_and(|w| w.sides == Some(1))
+    );
+    for bad in ["sides = 0", "sides = 3"] {
+        let e = parse(&text.replace("sides = 2", bad)).unwrap_err();
+        assert!(e.contains("sides 1 (one fillet) or 2"), "{e}");
+    }
+    assert_eq!(crate::connections::WELD_SIDES_VERSION, 28);
+    assert!(crate::structures::STRUCTURE_FILE_VERSION >= 28);
+    let newer = format!(
+        "version = {}",
+        crate::structures::STRUCTURE_FILE_VERSION + 1
+    );
+    assert!(parse(&text.replace("version = 28", &newer)).is_err());
+}
+
 /// Three gauge lines (a wide leg, owner 2026-11-03), one gauge each.
 #[test]
 fn three_gauge_lines_are_read() {
@@ -722,5 +758,9 @@ fn a_plates_own_bolts_onto_a_second_member_are_read() {
     let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n");
     assert!(parse(&plain).unwrap().plates[0].also_bolts.is_none());
     assert_eq!(crate::connections::PLATE_ALSO_BOLTS_VERSION, 26);
-    assert!(parse(&text.replace("version = 26", "version = 28")).is_err());
+    let newer = format!(
+        "version = {}",
+        crate::structures::STRUCTURE_FILE_VERSION + 1
+    );
+    assert!(parse(&text.replace("version = 26", &newer)).is_err());
 }

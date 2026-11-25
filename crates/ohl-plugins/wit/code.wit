@@ -1540,6 +1540,9 @@ world joint-check-groups-prying-export {
     /// A bent plate's bend (2026-11-19): it takes `joint-check-groups`'
     /// records too; looked up on its own as the others.
     export joint-check-bends;
+    /// A weld with its sides (2026-11-25): it takes `joint-check-groups`'
+    /// records too; looked up on its own as the others.
+    export joint-check-welds;
 }
 
 /// A bent plate's bend in bending (optional export of any plugin, found by
@@ -1620,6 +1623,85 @@ interface joint-check-bends {
     /// plugin's `member-check` methods): one result per bend (its id), a
     /// usage per load case with the check and clause that give it.
     check-bends: func(method: string, input: bend-input) -> result<list<group-result>, string>;
+}
+
+/// A weld between two plates with its fillets (optional export of any
+/// plugin, found by its export name; 2026-11-25, roadmap O44 J7b, the
+/// owner's decision of 2026-11-19: a weld gets its sides — one fillet on
+/// one side of the plate or one on each side — and their check; added to
+/// interface version 0.3 without changing anything else). OpenOHL sends
+/// each weld's data with its sides and, per load case, the force it
+/// carries and the moments of that force about it (as `joint-check-moments`
+/// sends them for a weld); the plugin checks its fillets by its code — the
+/// moment about the seam's own line bending one fillet across (its root
+/// opened) or taken by two as a couple across the plate. A plugin that has
+/// it is sent every weld through it, not through `joint-check-moments`. A
+/// plugin without it: its welds as before, and OpenOHL says, with each weld
+/// whose sides change its check, that they were not sent (NOT ON THE SAFE
+/// SIDE). SI units throughout.
+interface joint-check-welds {
+    use joint-check-groups.{load-case, group-result};
+
+    /// What a weld carries in one load case (sizes, ≥ 0).
+    record weld-load {
+        /// The resultant of the member forces it carries, N.
+        force: f64,
+        /// The moment of that force about the weld's middle bending it
+        /// along its length (about the axis square to the seam), N·m.
+        in-plane: f64,
+        /// The moment about the seam's own line, N·m.
+        out-of-plane: f64,
+    }
+
+    /// One weld.
+    record weld {
+        /// Its number: the result names it.
+        id: u32,
+        /// The joint.
+        joint: string,
+        /// The two plates, in words ("G1/G2").
+        part: string,
+        /// `fillet` or `full_penetration`.
+        kind: string,
+        /// A fillet's throat, m (none: not given).
+        throat: option<f64>,
+        /// Its length, m: given, the whole length welded (both fillets
+        /// together when two); not given, the seam's (each fillet's).
+        length: f64,
+        /// The length is given (false: the seam's).
+        length-given: bool,
+        /// Its fillets: 1 (one side of the plate) or 2 (one on each side);
+        /// none: not known (OpenOHL's own bundled plugins then take the
+        /// worse of the two).
+        sides: option<u32>,
+        /// The angle between the two plates at the seam, degrees.
+        angle: f64,
+        /// The lower yield strength of the two plates, Pa.
+        fy: option<f64>,
+        /// The two plates' thicknesses, m.
+        thicknesses: list<f64>,
+        /// Per load case (the order of `weld-input.cases`).
+        loads: list<weld-load>,
+        /// What OpenOHL says about this weld's data and forces.
+        notes: list<string>,
+    }
+
+    /// Everything of one structure for one call.
+    record weld-input {
+        /// The structure's name.
+        structure: string,
+        /// The plugin's parameter file of the structure (TOML; "" none).
+        parameters: string,
+        /// The load cases of the run.
+        cases: list<load-case>,
+        /// The welds.
+        welds: list<weld>,
+    }
+
+    /// Checks the welds of `input` by method `method` (a name of the
+    /// plugin's `member-check` methods): one result per weld (its id), a
+    /// usage per load case with the check and clause that give it.
+    check-welds: func(method: string, input: weld-input) -> result<list<group-result>, string>;
 }
 
 
@@ -2286,7 +2368,8 @@ world member-check-bracing-export {
 /// members' forces together by `joint-check-groups` (2026-11-19) and their
 /// bolts in tension, with prying, by `joint-check-groups-tension`
 /// (2026-11-19), the plates' prying too by `joint-check-groups-prying`
-/// (2026-11-19), a bent plate's bend by `joint-check-bends` (2026-11-19).
+/// (2026-11-19), a bent plate's bend by `joint-check-bends` (2026-11-19),
+/// a weld with its sides by `joint-check-welds` (2026-11-25).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
@@ -2298,6 +2381,7 @@ world structure-code-plugin {
     export joint-check-groups-tension;
     export joint-check-groups-prying;
     export joint-check-bends;
+    export joint-check-welds;
     export bolt-distances;
     export bolt-distances-full;
 }

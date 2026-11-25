@@ -169,5 +169,35 @@ cases["joints-017 end_m"] = max(force_term, 1.3 * d, t + d / 2)
 cases["joints-017 spacing_m"] = force_term + 0.6 * d
 cases["joints-017 bolt_force_n"] = p
 
+# --- a weld's sides, SIA 263 (2026-11-25, roadmap O44 J7b) --------------
+# Q: one fillet a = 5 mm, L = 200 mm, plates of 10 and 12 mm at 90 deg,
+# f_y 355 MPa, F = 60 kN, M = 1 kN m about its middle, T = 0.3 kN m about
+# the seam: per unit length at its most loaded end F/L + 6 M/L^2 + 6 T/(L w)
+# (w the throat a for (87), the contact s for (88); its throat bent across,
+# elastic — an engineering model, its root opened; SIA 263 6.3.6.5 asks to
+# avoid it, said).
+a, L, tmin = 5 * MM, 200 * MM, 10 * MM
+F, M, T = 60 * KN, 1000.0, 300.0
+s = a / cos(radians(45))
+q87 = 0.6 * F_UE / GAMMA_M2
+q88 = 0.8 * 355 * MPA / GAMMA_M2
+one = max((F / L + 6 * M / L**2 + 6 * T / (L * a)) / (a * q87),
+          (F / L + 6 * M / L**2 + 6 * T / (L * s)) / (s * q88))
+cases["joints-018"] = one
+# R: two fillets, one on each side, each l = L/2; the moment about the seam
+# a couple across the thinner plate (its thickness the lever arm: the
+# fillets lie outside the plate's faces, on the safe side): per fillet
+# F/(2 l) + 6 M/(2 l^2) + T/(t l).
+l = L / 2
+qq = F / (2 * l) + 6 * M / (2 * l**2) + T / (tmin * l)
+two = max(qq / (a * q87), qq / (s * q88))
+cases["joints-019"] = two
+# S: the sides not known: the worse of the two.
+cases["joints-020"] = max(one, two)
+# T: two fillets without a length given: each the seam's, l = 200 mm.
+l = L
+qq = F / (2 * l) + 6 * M / (2 * l**2) + T / (tmin * l)
+cases["joints-021"] = max(qq / (a * q87), qq / (s * q88))
+
 for k, v in cases.items():
     print(f"{k} {v!r}")

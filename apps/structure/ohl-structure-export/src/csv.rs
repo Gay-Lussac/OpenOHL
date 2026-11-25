@@ -458,6 +458,7 @@ fn plates(s: &ExportStructure) -> String {
             "weld_kind",
             "weld_size_m",
             "weld_length_m",
+            "weld_sides",
         ],
         s.plates
             .iter()
@@ -494,6 +495,13 @@ fn plates(s: &ExportStructure) -> String {
                     p.welds
                         .iter()
                         .map(|w| w.length.map(|v| num(v.si())).unwrap_or_default())
+                        .collect::<Vec<_>>()
+                        .join(";"),
+                    // Its sides (2026-11-25, O44 J7b): 1 or 2 fillets,
+                    // empty where not known.
+                    p.welds
+                        .iter()
+                        .map(|w| w.sides.map(|n| n.to_string()).unwrap_or_default())
                         .collect::<Vec<_>>()
                         .join(";"),
                 ]

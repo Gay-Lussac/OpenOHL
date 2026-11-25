@@ -1921,6 +1921,7 @@ fn weld_plates(
                         kind: data.map(|w| w.kind()).unwrap_or_default(),
                         size: data.and_then(|w| w.size).map(|v| v.si()),
                         length: data.and_then(|w| w.length).map(|v| v.si()),
+                        fillets: data.and_then(|w| w.sides),
                     });
                 }
                 // A plate without an outline says so itself.

@@ -76,6 +76,9 @@
 //! size = "6 mm"           #   does; the fillet's throat a (SIA 263 6.3.2.6)
 //! length = "220 mm"       # none: the seam's length from the geometry
 //! kind = "fillet"         # fillet (default) or full_penetration
+//! sides = 2               # fillets: 1 (one side) or 2 (both sides of the
+//! #   plate; 2026-11-25, version 28); none: not known — the check takes
+//! #   the worse of one and two
 //!
 //! [plate.leg_bolts]       # the plate's own bolts onto the joint's leg
 //! member = "L3"           #   (2026-11-19, version 20): a member of the
@@ -573,6 +576,15 @@ pub struct TypeWeld {
     /// Fillet (none) or full penetration.
     #[serde(default)]
     pub kind: Option<WeldKind>,
+    /// How many fillets (2026-11-25, structure file version 28, roadmap
+    /// O44 J7b, the owner's decision of 2026-11-19): 1, one fillet on one
+    /// side of the plate; 2, a fillet on each side. None: not known — the
+    /// weld check takes the worse of one fillet and two (on the safe side:
+    /// a file of before reads as it did, never with a higher capacity).
+    /// With 2 a given `length` is both fillets together, each half of it;
+    /// none given, each fillet the seam's length.
+    #[serde(default)]
+    pub sides: Option<u32>,
 }
 
 impl TypeWeld {
@@ -581,6 +593,11 @@ impl TypeWeld {
         self.kind.unwrap_or_default()
     }
 }
+
+/// The structure file version of a weld's sides (`[[plate.weld]] sides`,
+/// 2026-11-25, roadmap O44 J7b): a file is written at 28 only when a weld
+/// gives them.
+pub const WELD_SIDES_VERSION: u32 = 28;
 
 /// The structure file version of a plate's own bolts onto the joint's
 /// leg (`[plate.leg_bolts]`, 2026-11-19): a file is written at 20 only
@@ -1407,6 +1424,12 @@ impl StructureType {
                 }
                 if p.welds[..k].iter().any(|x| x.to == w.to) {
                     return Err(format!("plate {}: the weld to {} given twice", p.id, w.to));
+                }
+                if w.sides.is_some_and(|n| n != 1 && n != 2) {
+                    return Err(format!(
+                        "plate {}: the weld to {}: sides 1 (one fillet) or 2 (one on each side)",
+                        p.id, w.to
+                    ));
                 }
             }
         }

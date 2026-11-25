@@ -60,7 +60,7 @@ from here. The owner's order of 2026-11-19:
    unknown sign in its member's own check built the same day).
 5. **The automatic joint layout J3–J4, then J5–J8** (leg splices and a weld's sides among them) ([O44](#o44-automatic-joint-layout);
    J3–J4, J9 and J7a (leg splices) built 2026-11-19, in active development,
-   not approved yet; J7b, a weld's sides, not started).
+   not approved yet; J7b, a weld's sides, built 2026-11-25).
 6. **The country server's phase 6, then 7, …** ([O17](#o17-a-database-as-the-models-backbone--the-country-server);
    phase 6 built 2026-11-19, phases 7 to 14 (rights and roles, country
    libraries, version control at scale, offline working sets, security,
@@ -2277,8 +2277,34 @@ step, reasons left), and the work stops where it stops paying:
   > to confirm? Recommended: yes. (5) Inner covers stop plates on a leg's
   > inner face (about 450 clashes): keep both covers (two shear planes)?
   > Recommended: keep until the shop drawings say otherwise.
-- [ ] J7b. **A weld's sides** (decided above: a `sides` field and its
-  check). Not started.
+- [x] J7b. **A weld's sides** (decided above: a `sides` field and its
+  check). **Built 2026-11-25, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-plates.md#a-welds-sides-j7b),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-checks-a-welds-sides-one-fillet-or-two-and-their-check-o44-j7b)):
+  `[[plate.weld]] sides` (1 or 2 fillets, structure file version 28); not
+  given, the worse of one fillet and two (a file of before never checked
+  weaker; a weld of two fillets with its length given both together took
+  up to half the moment along it before — that gap closed). SIA 263's
+  check by the bundled plugin's new additive export `joint-check-welds`:
+  one fillet bent about its seam by its throat bent across, elastic (an
+  engineering model; 6.3.6.5's "avoid it" said), two fillets a couple
+  across the thinner plate; a plugin without the export as before, with
+  "the weld's sides not sent" said NOT ON THE SAFE SIDE where they matter;
+  ASCE 10-97 no weld rule (said). The sides from Joint details (the welds'
+  *Sides* column) and the layout's welded plate in a member's own plane
+  (`sides = 2`). Validation `joints-018`–`joints-021`.
+  > **Owner:** (1) One fillet bent about its seam: checked by its throat
+  > bent across (elastic) and said "avoid it (SIA 263 6.3.6.5)", its usage
+  > not marked not on the safe side. Recommended: keep; the alternative is
+  > to refuse such a weld (no usage, NOT ON THE SAFE SIDE) as the standard's
+  > "should be avoided" might be read. (2) The two fillets' lever arm is
+  > the thinner plate's thickness (the plate whose edge is welded is not
+  > known from the data): keep? Recommended: yes, until a weld names its
+  > standing plate. (3) Towers laid out before 2026-11-25 have no `sides`
+  > on their layout welds (checked as the worse of one and two, often the
+  > one fillet governing): lay them out again, or let the layout mark its
+  > own old welds two-sided on reading? Recommended: lay out again (no
+  > silent change of a file's data).
 - [ ] J8. **Short members**: the class's smaller bolt, one bolt where the
   code's text allows it for a redundant, else a plate shared with the
   neighbouring member.

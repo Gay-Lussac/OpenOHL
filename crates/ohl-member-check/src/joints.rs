@@ -49,13 +49,14 @@ use ohl_plugins::bolt_distances as dist;
 pub use ohl_plugins::bolt_distances::DistanceInput;
 use ohl_plugins::bolt_distances_full as dist_full;
 use ohl_plugins::joint_check as wit;
-pub use ohl_plugins::joint_check::{JointInput, LoadCase, Part, PartResult};
+pub use ohl_plugins::joint_check::{CaseUsage, JointInput, LoadCase, Part, PartResult};
 pub use ohl_plugins::joint_check_bends as bends;
 use ohl_plugins::joint_check_full as full;
 pub use ohl_plugins::joint_check_groups as groups;
 pub use ohl_plugins::joint_check_groups_prying as prying;
 pub use ohl_plugins::joint_check_groups_tension as tension;
 use ohl_plugins::joint_check_moments as mom;
+pub use ohl_plugins::joint_check_welds as welds;
 use ohl_structures::connections::WeldKind;
 use ohl_structures_fe::Model;
 use ohl_structures_fe::bolt_rules::{Basis, BoltRules, Force};
@@ -366,6 +367,42 @@ pub fn check_bends(p: &PluginMethod, input: &bends::BendInput) -> GroupsChecked 
         Err(e) => {
             JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             GroupsChecked::NotChecked(format!("the bends' check failed: {e}"))
+        }
+    }
+}
+
+/// The welds of `input` with their sides (2026-11-25, roadmap O44 J7b)
+/// checked by the plugin `p` names through its `joint-check-welds` export:
+/// its results, or why there are none — the plugin is not installed or
+/// fails. None: the plugin has no such export (the caller checks the welds
+/// through `joint-check-moments` as before and says where their sides were
+/// not sent). One call counted when it is made.
+pub fn check_welds(p: &PluginMethod, input: &welds::WeldInput) -> Option<GroupsChecked> {
+    let dir = match installed(p) {
+        Ok(d) => d,
+        Err(e) => return Some(GroupsChecked::NotChecked(e)),
+    };
+    let host = match crate::host() {
+        Ok(h) => h,
+        Err(e) => {
+            return Some(GroupsChecked::NotChecked(format!(
+                "the plugin host does not start: {e}"
+            )));
+        }
+    };
+    let mut with = input.clone();
+    with.parameters = p.parameters.as_ref().map_or(String::new(), |x| x.1.clone());
+    match host.check_welds(&dir, &p.method, &with) {
+        Ok(Some(r)) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(GroupsChecked::Results(r))
+        }
+        Ok(None) => None,
+        Err(e) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(GroupsChecked::NotChecked(format!(
+                "the welds' check failed: {e}"
+            )))
         }
     }
 }

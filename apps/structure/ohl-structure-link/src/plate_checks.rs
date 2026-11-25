@@ -594,6 +594,7 @@ pub fn plate_plans_in(
                             angle: w.angle(),
                             fy,
                             thickness: [p.thickness, q.thickness],
+                            sides: w.fillets,
                         },
                         sides,
                         riding,
@@ -1323,6 +1324,11 @@ pub fn plate_usage_cases_with(
             _ => by_plugin::Extra::default(),
         }
     };
+    // The welds with their sides (2026-11-25, roadmap O44 J7b): one call
+    // with every weld and case through the plugin's `joint-check-welds`;
+    // a plugin without it gets them through `joint-check-moments` as
+    // before (none here).
+    let welds_checked = weld_results(plans, p, cases, &force);
     let mut extra: Vec<by_plugin::Extra> = Vec::new();
     let sent: Vec<by_plugin::Part> = plans
         .parts
@@ -1342,6 +1348,8 @@ pub fn plate_usage_cases_with(
                     Some(by_plugin::plate_steel(steel)),
                     None,
                 ),
+                // Checked with its sides by `joint-check-welds`.
+                Plan::Weld { .. } if welds_checked.is_some() => return None,
                 Plan::Weld { with, input, .. } => {
                     ("weld", with, None, None, Some(by_plugin::weld(input)))
                 }
@@ -1437,7 +1445,10 @@ pub fn plate_usage_cases_with(
                             .unwrap_or_else(|| "not checked".into());
                         return row;
                     }
-                    let results = match &checked {
+                    let by_welds = matches!(x.plan, Plan::Weld { .. })
+                        .then_some(welds_checked.as_ref())
+                        .flatten();
+                    let results = match by_welds.unwrap_or(&checked) {
                         by_plugin::JointsChecked::NotChecked(why) => {
                             row.governs = format!("{not_checked}: {why}");
                             return row;
@@ -1476,6 +1487,15 @@ pub fn plate_usage_cases_with(
                             not_sent_words(&p.plugin, &x.plan)
                         ));
                     }
+                    // (J7b) A weld checked without its sides (the plugin
+                    // has no joint-check-welds) where they change its check.
+                    if by_welds.is_none()
+                        && moments_sent
+                        && let Some(w) = sides_not_sent_words(&p.plugin, &x.plan, c.2)
+                    {
+                        row.governs
+                            .push_str(&format!(" {} {w}]", ohl_structures_fe::check::NOT_SAFE));
+                    }
                     // (L14's question 2) The resultant through the bolts
                     // turned far off the member's line.
                     if let Some(w) = turned_words(&x.plan, c.2) {
@@ -1490,6 +1510,158 @@ pub fn plate_usage_cases_with(
             rows
         })
         .collect()
+}
+
+/// The welds of `plans` with their sides (2026-11-25, roadmap O44 J7b)
+/// checked by the plugin `p` through its `joint-check-welds` export — one
+/// call with every weld and case, each weld's id its part's place in
+/// `plans.parts` —, as `joint-check`'s results. None: no weld, or the
+/// plugin has no such export (its welds then go through
+/// `joint-check-moments` as before).
+fn weld_results(
+    plans: &PlatePlans,
+    p: &ohl_structures_fe::model::PluginMethod,
+    cases: &[PlateCase],
+    force: &dyn Fn(&Planned, &BTreeMap<String, f64>) -> f64,
+) -> Option<ohl_member_check::joints::JointsChecked> {
+    use ohl_member_check::joints::{self as by_plugin, groups, welds};
+    let list: Vec<welds::Weld> = plans
+        .parts
+        .iter()
+        .enumerate()
+        .filter_map(|(k, x)| {
+            let Plan::Weld {
+                with,
+                input,
+                sides,
+                riding,
+                passed,
+                ring,
+                at,
+            } = &x.plan
+            else {
+                return None;
+            };
+            let w = by_plugin::weld(input);
+            Some(welds::Weld {
+                id: k as u32,
+                joint: x.joint.clone(),
+                part: format!("{}/{with}", x.plate),
+                kind: w.kind,
+                throat: w.throat,
+                length: w.length,
+                length_given: w.length_given,
+                sides: input.sides,
+                angle: w.angle,
+                fy: w.fy,
+                thicknesses: w.thicknesses,
+                loads: cases
+                    .iter()
+                    .map(|c| {
+                        let l = weld_loads_riding(sides, riding, passed, *ring, at, c.2);
+                        welds::WeldLoad {
+                            force: force(x, c.2),
+                            in_plane: l[1],
+                            out_of_plane: l[2],
+                        }
+                    })
+                    .collect(),
+                notes: x.notes.clone(),
+            })
+        })
+        .collect();
+    if list.is_empty() {
+        return None;
+    }
+    let input = welds::WeldInput {
+        structure: plans.structure.clone(),
+        parameters: String::new(),
+        cases: cases
+            .iter()
+            .map(|c| groups::LoadCase {
+                name: c.0.to_owned(),
+                strength: c.1,
+            })
+            .collect(),
+        welds: list,
+    };
+    Some(match by_plugin::check_welds(p, &input)? {
+        by_plugin::GroupsChecked::NotChecked(why) => by_plugin::JointsChecked::NotChecked(why),
+        by_plugin::GroupsChecked::Results(r) => by_plugin::JointsChecked::Results(
+            r.into_iter()
+                .map(|g| by_plugin::PartResult {
+                    id: g.id,
+                    usages: g
+                        .usages
+                        .into_iter()
+                        .map(|u| by_plugin::CaseUsage {
+                            load_case: u.load_case,
+                            usage: u.usage,
+                            check: u.check,
+                        })
+                        .collect(),
+                    governs: g.governs,
+                    notes: g.notes,
+                    not_safe: g.not_safe,
+                })
+                .collect(),
+        ),
+    })
+}
+
+/// What a plugin without `joint-check-welds` (2026-11-25, roadmap O44 J7b)
+/// was not sent of a weld in one case (`axial`), where it changes the
+/// weld's check — none where it does not: the moment about the seam (one
+/// fillet bent across or two as a couple: the plugin's moments check does
+/// not know which), and with a length given and the weld not said to be one
+/// fillet, the moment along it (on two fillets each takes up to twice what
+/// one line of the whole length does).
+fn sides_not_sent_words(
+    plugin: &str,
+    plan: &Plan,
+    axial: &BTreeMap<String, f64>,
+) -> Option<String> {
+    let Plan::Weld {
+        input,
+        sides,
+        riding,
+        passed,
+        ring,
+        at,
+        ..
+    } = plan
+    else {
+        return None;
+    };
+    if input.kind != ohl_structures::connections::WeldKind::Fillet || input.size.is_none() {
+        return None;
+    }
+    let l = weld_loads_riding(sides, riding, passed, *ring, at, axial);
+    let seam = l[2] > 0.0;
+    let along = l[1] > 0.0 && input.length_given && input.sides != Some(1);
+    if !seam && !along {
+        return None;
+    }
+    let mut what = Vec::new();
+    if seam {
+        what.push(format!(
+            "it is bent about its seam ({:.2} kN m), checked as the plugin takes every weld, not \
+             knowing whether it is one fillet (its root opened) or two",
+            l[2] / 1000.0
+        ));
+    }
+    if along {
+        what.push(
+            "its length given is both sides together where it is two fillets, each then taking \
+             up to twice the moment along it that one line of the whole length does"
+                .to_owned(),
+        );
+    }
+    Some(format!(
+        "the weld's sides not sent: the plugin {plugin} has no joint-check-welds — {}; the weld \
+         can be weaker than shown (a plugin with joint-check-welds checks its fillets)",
+        what.join("; ")
+    ))
 }
 
 /// What a plugin without `joint-check-moments` was not sent of a part.
@@ -2091,5 +2263,74 @@ mod tests {
         assert!((f - 180e3).abs() < 1e-6, "{f}");
         assert!((m - (8e3 + 0.04 * 100e3 + 0.04 * 50e3)).abs() < 1e-6, "{m}");
         assert!((t - 7.5e3).abs() < 1e-6, "{t}");
+    }
+
+    /// A plugin without `joint-check-welds` (2026-11-25, O44 J7b): the
+    /// weld above (T = 7.5 kN m about its seam, M = 8 kN m along it) is said
+    /// NOT ON THE SAFE SIDE for its sides not sent — whatever its sides,
+    /// since the moment about the seam is there; with only C's force
+    /// gone (no T), only where its length is given and it is not one
+    /// fillet; a full penetration weld or one without a size never.
+    #[test]
+    fn a_welds_sides_not_sent_are_said() {
+        let sides = [
+            vec![("A".to_owned(), [0.0, 0.0, 1.0], [0.0, 0.0, 0.1])],
+            vec![("B".to_owned(), [1.0, 0.0, 0.0], [0.15, 0.0, 0.18])],
+        ];
+        let at = WeldPlace {
+            middle: [0.0, 0.0, 0.1],
+            along: [0.0, 0.0, 1.0],
+            seam: 0.2,
+            length: 0.2,
+        };
+        let plan = |sides_n: Option<u32>, given: bool, with_c: bool| Plan::Weld {
+            with: "G1".into(),
+            input: WeldInput {
+                kind: ohl_structures::connections::WeldKind::Fillet,
+                size: Some(0.005),
+                length: 0.2,
+                length_given: given,
+                angle: 90.0,
+                fy: Some(355e6),
+                thickness: [0.01, 0.01],
+                sides: sides_n,
+            },
+            sides: if with_c {
+                let mut s = sides.clone();
+                s[1].push(("C".to_owned(), [0.0, 1.0, 0.0], [0.15, 0.0, 0.1]));
+                s
+            } else {
+                sides.clone()
+            },
+            riding: [Vec::new(), Vec::new()],
+            passed: [Vec::new(), Vec::new()],
+            ring: false,
+            at,
+        };
+        let axial: BTreeMap<String, f64> = [("A", 30e3), ("B", 100e3), ("C", -50e3)]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect();
+        for n in [None, Some(1), Some(2)] {
+            let w = sides_not_sent_words("old", &plan(n, false, true), &axial).unwrap();
+            assert!(
+                w.contains("the plugin old has no joint-check-welds")
+                    && w.contains("bent about its seam (7.50 kN m)"),
+                "{w}"
+            );
+        }
+        // No moment about the seam: the moment along it matters only with
+        // a length given and two fillets possible.
+        assert!(sides_not_sent_words("old", &plan(None, false, false), &axial).is_none());
+        assert!(sides_not_sent_words("old", &plan(Some(1), true, false), &axial).is_none());
+        for n in [None, Some(2)] {
+            let w = sides_not_sent_words("old", &plan(n, true, false), &axial).unwrap();
+            assert!(w.contains("both sides together"), "{w}");
+        }
+        let mut none = plan(None, true, true);
+        if let Plan::Weld { input, .. } = &mut none {
+            input.size = None;
+        }
+        assert!(sides_not_sent_words("old", &none, &axial).is_none());
     }
 }

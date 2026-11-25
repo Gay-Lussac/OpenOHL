@@ -1289,4 +1289,86 @@ impl jbe::Guest for Asce10 {
     }
 }
 
+use exports::ohl::plugin::joint_check_welds as jwe;
+
+/// One weld of the `joint-check-welds` records as the check takes it.
+fn weld_of(w: &jwe::Weld) -> joints::WeldInput {
+    joints::WeldInput {
+        kind: if w.kind == "full_penetration" {
+            joints::WeldKind::FullPenetration
+        } else {
+            joints::WeldKind::Fillet
+        },
+        size: w.throat,
+        length: w.length,
+        length_given: w.length_given,
+        angle: w.angle,
+        fy: w.fy,
+        thickness: [
+            w.thicknesses.first().copied().unwrap_or(0.0),
+            w.thicknesses.get(1).copied().unwrap_or(0.0),
+        ],
+    }
+}
+
+impl jwe::Guest for Asce10 {
+    fn check_welds(method: String, input: jwe::WeldInput) -> Result<Vec<jgr::GroupResult>, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        Ok(input
+            .welds
+            .iter()
+            .map(|w| {
+                let weld = weld_of(w);
+                let mut notes: Vec<String> = Vec::new();
+                let mut not_safe: Vec<String> = Vec::new();
+                let mut usages = Vec::new();
+                let mut governs = String::new();
+                let mut worst: Option<f64> = None;
+                for (n, case) in input.cases.iter().enumerate() {
+                    let l = w.loads.get(n).copied().unwrap_or(jwe::WeldLoad {
+                        force: 0.0,
+                        in_plane: 0.0,
+                        out_of_plane: 0.0,
+                    });
+                    let x = joints::Extra {
+                        in_plane: l.in_plane.abs(),
+                        out_of_plane: l.out_of_plane.abs(),
+                        ..joints::Extra::default()
+                    };
+                    let checked = joints::weld_sides(&weld, w.sides, l.force, &x);
+                    for note in &checked.notes {
+                        if !notes.contains(note) {
+                            notes.push(note.clone());
+                        }
+                    }
+                    for x in &checked.not_safe {
+                        if !not_safe.contains(x) {
+                            not_safe.push(x.clone());
+                        }
+                    }
+                    if let Some((u, c)) = checked.governing(case.strength) {
+                        if worst.is_none_or(|w| check::usage_order(u, w).is_gt()) {
+                            worst = Some(u);
+                            governs = c.what.clone();
+                        }
+                        usages.push(jgr::CaseUsage {
+                            load_case: n as u32,
+                            usage: u,
+                            check: c.what.clone(),
+                        });
+                    }
+                }
+                jgr::GroupResult {
+                    id: w.id,
+                    usages,
+                    governs,
+                    notes,
+                    not_safe: (!not_safe.is_empty()).then(|| not_safe.join("; ")),
+                }
+            })
+            .collect())
+    }
+}
+
 export!(Asce10);

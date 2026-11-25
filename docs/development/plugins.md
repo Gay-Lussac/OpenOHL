@@ -1217,6 +1217,37 @@ further optional export carries them:
   case); a plugin without it: the bend's row reads "NOT CHECKED by <plugin>,
   NOT ON THE SAFE SIDE (a failure there would not be found): the bend's own bending — … has no check of a bent
   plate's bend", as before. Both bundled plugins have it.
+- `joint-check-welds` (2026-11-25, roadmap O44 J7b, the owner's decision
+  of 2026-11-19: a weld gets its sides and their check; `code.wit`,
+  additive: found by its export name, its records using
+  `joint-check-groups`' `load-case` and `group-result`; the host binds it
+  in the world `joint-check-groups-prying-export`, looked up on its own):
+  `check-welds(method, weld-input) -> result<list<group-result>, string>`.
+  Per weld (`weld`: id, joint, the two plates, `kind`, `throat`, `length`
+  — given, the whole length welded, both fillets together when two; not
+  given, the seam's —, `length-given`, **`sides`** — 1, one fillet on one
+  side of the plate; 2, one on each side; none, not known —, `angle`,
+  `fy`, `thicknesses`, OpenOHL's notes) and per case (`weld-load`) the
+  force it carries and the moments of that force about it (`in-plane`
+  along its length, `out-of-plane` about the seam's own line), as
+  `joint-check-moments` sends them for a weld. The plugin checks the
+  fillets by its code: SIA 263 (6.3.2.2, (87) and (88)) one fillet with its
+  throat bent across by the moment about the seam (its root opened — an
+  engineering model, elastic, on the safe side; 6.3.6.5 asks to avoid it,
+  said), two fillets taking that moment as a couple across the thinner
+  plate's thickness (a lever arm at least that: on the safe side), sides
+  not known the worse of the two; ASCE 10-97 none (no weld rule, said).
+  Called first by `ohl_structure_link` (`plate_checks::weld_results`,
+  through `ohl_member_check::joints::check_welds`, one call with every
+  weld and case); the welds it checks are then not sent to
+  `joint-check-moments`. **A plugin without it** (no change for it): its
+  welds go through `joint-check-moments` (or `joint-check-full`,
+  `joint-check`) as before, and where the sides change the check — a
+  moment about the seam, or a moment along a weld whose length is given and
+  that is not said to be one fillet — OpenOHL adds to its row "NOT ON THE
+  SAFE SIDE: the weld's sides not sent: the plugin … has no
+  joint-check-welds — …" ([theory](../theory/joint-plates.md#a-welds-sides-j7b)).
+  Both bundled plugins have it.
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

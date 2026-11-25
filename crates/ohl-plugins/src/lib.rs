@@ -275,11 +275,13 @@ pub mod joint_check_moments {
 pub const JOINT_CHECK_MOMENTS_EXPORT: &str = "ohl:plugin/joint-check-moments@0.1.0";
 
 // One binding for `joint-check-groups`, `joint-check-groups-tension`,
-// `joint-check-groups-prying` and `joint-check-bends`, whose functions take
-// the first's records (2026-11-19): each export is looked up on its own
+// `joint-check-groups-prying`, `joint-check-bends` and (2026-11-25)
+// `joint-check-welds`, whose functions take the first's records
+// (2026-11-19): each export is looked up on its own
 // ([`joint_check_groups_guest`], [`joint_check_groups_tension_guest`],
-// [`joint_check_groups_prying_guest`], [`joint_check_bends_guest`]), so a
-// plugin without the later ones loads as before.
+// [`joint_check_groups_prying_guest`], [`joint_check_bends_guest`],
+// [`joint_check_welds_guest`]), so a plugin without the later ones loads
+// as before.
 mod joint_check_groups_bindings {
     wasmtime::component::bindgen!({
         world: "joint-check-groups-prying-export",
@@ -341,6 +343,30 @@ pub mod joint_check_bends {
 /// Export name of the optional `joint-check-bends` interface of any
 /// plugin.
 pub const JOINT_CHECK_BENDS_EXPORT: &str = "ohl:plugin/joint-check-bends@0.1.0";
+
+/// The records of the `joint-check-welds` interface (2026-11-25, roadmap
+/// O44 J7b): a weld with its sides — one fillet or two — and what it
+/// carries per load case, checked by the plugin's code; the cases and
+/// results are `joint-check-groups`'.
+pub mod joint_check_welds {
+    pub use super::joint_check_groups_bindings::exports::ohl::plugin::joint_check_welds::{
+        Weld, WeldInput, WeldLoad,
+    };
+}
+
+/// Export name of the optional `joint-check-welds` interface of any
+/// plugin.
+pub const JOINT_CHECK_WELDS_EXPORT: &str = "ohl:plugin/joint-check-welds@0.1.0";
+
+/// The `joint-check-welds` export of an instance, looked up alone.
+fn joint_check_welds_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<joint_check_groups_bindings::exports::ohl::plugin::joint_check_welds::Guest> {
+    let pre = instance.instance_pre(&*store);
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_welds::GuestIndices::new(&pre)?
+        .load(&mut *store, instance)
+}
 
 /// The `joint-check-bends` export of an instance, looked up alone.
 fn joint_check_bends_guest<T: 'static>(
@@ -2849,6 +2875,43 @@ impl WasmHost {
         check_part_results(
             &name,
             input.bends.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The welds of `input` checked by method `method` of the plugin in
+    /// `dir` through its `joint-check-welds` export (2026-11-25, roadmap O44
+    /// J7b), every weld and load case in this one call. None: the plugin has
+    /// no such export (the caller checks its welds through
+    /// `joint-check-moments` as before and says where their sides were not
+    /// sent). Errors as [`WasmHost::check_joints`]'s.
+    pub fn check_welds(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_welds::WeldInput,
+    ) -> Result<Option<Vec<joint_check_groups::GroupResult>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, JOINT_CHECK_WELDS_EXPORT)? else {
+            return Ok(None);
+        };
+        let export = joint_check_welds_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_check_welds(&mut p.store, method, input)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-welds", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.welds.iter().map(|x| x.id),
             input.cases.len(),
             given.iter().map(|r| {
                 (

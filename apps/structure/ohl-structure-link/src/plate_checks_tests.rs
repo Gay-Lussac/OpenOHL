@@ -272,6 +272,74 @@ fn plates_and_welds_are_checked_by_sia263() {
     assert!(j["N2"] >= weld.usage.unwrap());
 }
 
+/// A weld's sides (2026-11-25, roadmap O44 J7b) through the bundled
+/// plugin `sia263`'s `joint-check-welds`, one more call: given as two
+/// fillets, each the seam's length (no length given), its check names both
+/// sides and the moment about the seam, if any, is a couple — never said
+/// not on the safe side; not given, both readings, the worse governing and
+/// said; one fillet, the worst of the three. The plate checks' other parts
+/// are unchanged. The label names the sides.
+#[test]
+fn a_welds_sides_are_checked_by_sia263() {
+    if !sia263_built() {
+        return;
+    }
+    let base = format!("{}\n[analysis]\ncapacity = \"sia263-2013\"\n", welded());
+    let with = |sides: &str| {
+        base.replace(
+            "[[plate.weld]]\nto = \"G1\"\nsize = \"6 mm\"\n",
+            &format!("[[plate.weld]]\nto = \"G1\"\nsize = \"6 mm\"\n{sides}"),
+        )
+    };
+    let forces = axial();
+    let weld_of = |text: &str| {
+        let plans = plate_plans(text, &library(), &Default::default()).unwrap();
+        let rows = crate::plate_usage_cases(&plans, &[("one", 1.0, &forces)]);
+        rows[0]
+            .iter()
+            .find(|p| matches!(&p.part, PlatePart::Weld(_)))
+            .unwrap()
+            .clone()
+    };
+    let two = weld_of(&with("sides = 2\n"));
+    assert!(
+        two.governs.contains("2 × a 6 mm") && two.governs.contains("both sides"),
+        "{two:?}"
+    );
+    assert!(!two.governs.contains("NOT ON THE SAFE SIDE"), "{two:?}");
+    assert!(
+        two.notes
+            .iter()
+            .any(|n| n.contains("each fillet the seam's length")),
+        "{:?}",
+        two.notes
+    );
+    let unknown = weld_of(&base);
+    assert!(
+        unknown.notes.iter().any(|n| n.contains("sides not given")),
+        "{:?}",
+        unknown.notes
+    );
+    assert!(
+        !unknown.governs.contains("NOT ON THE SAFE SIDE"),
+        "{unknown:?}"
+    );
+    let one = weld_of(&with("sides = 1\n"));
+    assert!(one.governs.contains("one side"), "{one:?}");
+    let (u1, u2, un) = (
+        one.usage.unwrap(),
+        two.usage.unwrap(),
+        unknown.usage.unwrap(),
+    );
+    assert!(
+        u1 >= u2 && (un - u1.max(u2)).abs() < 1e-12,
+        "{u1} {u2} {un}"
+    );
+    let d = joint_details(&with("sides = 2\n"), &library(), &Default::default()).unwrap();
+    let w = &d.joint("N2").unwrap().plates[0].welds[0];
+    assert_eq!(w.label().as_deref(), Some("a6, 2 sides"));
+}
+
 /// Under ASCE 10-97 (the default; the bundled plugin `asce10`'s joint
 /// check since 2026-11-18) the weld is not checked (the standard has no
 /// weld rule), said — NOT CHECKED, NOT ON THE SAFE SIDE; the bolts are;

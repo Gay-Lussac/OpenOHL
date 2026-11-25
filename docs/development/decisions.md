@@ -103,6 +103,56 @@ development, not approved yet).
   (without it 2.5–4.6: 72 % below).
 - **Measured** on the offline test's synthetic country (150 pylons, a shared machine): one span's volume (2 m steps, plane ground) 145 s alone → 155 s with the export's lines (6 systems of at most 739 pieces, 1.7 s of it the lines together); a cut in the same span 24 s alone, 22 s with them (the same within the machine's noise), the lines together adding up to 0.076 kV/m; the Structure loads window's 11 shared towers 27.5 s beside its own loads (6.1 s), their usage on every line's loads about 0.3 s of it (the synthetic towers have no type: nothing to check against).
 
+## 2026-11-25 (joint checks: a weld's sides, one fillet or two, and their check, O44 J7b)
+
+**A weld gets its sides — the number of fillets — and the check of each**
+(roadmap O44 J7b; the owner's decision of 2026-11-19: *"a weld gets a
+`sides` (fillet count) field and its check"*;
+[theory](../theory/joint-plates.md#a-welds-sides-j7b)).
+
+- **The field**: `[[plate.weld]] sides`, 1 (one fillet on one side of the
+  plate) or 2 (a fillet on each side; a length given is both together,
+  none each fillet the seam's); any other number refused; structure file
+  version 28 (`WELD_SIDES_VERSION`), written only when a weld gives them,
+  an older reader refuses it.
+- **The default, not given**: the check takes **the worse of one fillet
+  and two**. Today's check was the one fillet's (its throat bent across by
+  a moment about the seam, one line of the whole length along it), so a
+  file of before is never checked weaker than before; but where its weld
+  is really two fillets with the length given both together, each fillet
+  takes up to twice the moment along it that one line of the whole length
+  does — today's check was not on the safe side there, and the default
+  covers it. Usages of such welds with a moment along them may rise; none
+  can fall.
+- **The check** (SIA 263, the bundled plugin's new export; no rule of the
+  standard for a fillet's moment about its own line, so engineering models,
+  each conservative, marked so in the theory): one fillet — its root
+  opened, taken by the throat (contact width) bent across elastically
+  against (87) and (88), as before, with SIA 263 6.3.6.5's "avoid it"
+  said; two fillets — the moment about the seam a couple across the
+  thinner plate's thickness (the real lever arm is larger), the moment
+  along them on both lines, each fillet by (87) and (88). The weld bent
+  about its seam is no longer said NOT ON THE SAFE SIDE where the bundled
+  plugin checks it. ASCE 10-97: no weld rule, not checked, said, as before.
+- **The plugin interface** (needed for this, additive and backwards
+  compatible): a new optional export `joint-check-welds` (each weld with
+  its sides and per case its force and moments, results as
+  `joint-check-groups`'), in the `structure-code-plugin` world; both
+  bundled plugins have it. A plugin without it gets its welds through
+  `joint-check-moments` as before; OpenOHL adds "NOT ON THE SAFE SIDE: the
+  weld's sides not sent …" to such a weld's row where the sides change the
+  check (a moment about the seam; a moment along a weld whose length is
+  given and which is not said to be one fillet).
+- **Where the sides come from**: the user (Joint details › welds, the
+  *Sides* column); the automatic joint layout's welded plate in a member's
+  own plane (step 4), welded from both sides by design: `sides = 2` (a weld
+  given by hand there keeps the user's; files laid out before have none
+  until laid out again, checked as the worse). Plates joined by
+  `welded_to` alone have no weld data and stay not checked; no public
+  importer writes welds.
+- **Validation**: `joints-018` to `joints-021` (`structures.welds`) against
+  the hand calculations in `reference_joint_capacities.py`, at 10⁻⁹.
+
 ## 2026-11-25 (joint layout: an outstanding leg into the flange, a half or quarter turn weighed, L25)
 
 **The members left with an end whose outstanding leg points into the

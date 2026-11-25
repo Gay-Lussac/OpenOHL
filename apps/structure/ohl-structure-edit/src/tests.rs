@@ -1572,6 +1572,39 @@ fn a_weld_gets_its_size_and_length() {
         )
         .is_err()
     );
+    // Its sides (2026-11-25, O44 J7b): written, the file raised to
+    // version 28, read back; cleared (not known); 3 refused.
+    doc["version"] = toml_edit::value(9);
+    let edit = WeldEdit {
+        sides: Some(Some(2)),
+        ..WeldEdit::default()
+    };
+    ce::set_weld(&mut doc, &t, &g1, &g2, edit).unwrap();
+    let text = doc.to_string();
+    assert!(text.contains("sides = 2"), "{text}");
+    let doc2: DocumentMut = text.parse().unwrap();
+    let t = read(&doc2);
+    assert_eq!(t.weld_between(&g1, &g2).unwrap().sides, Some(2));
+    assert_eq!(
+        doc2.get("version").and_then(toml_edit::Item::as_integer),
+        Some(28)
+    );
+    assert!(
+        (t.weld_between(&g1, &g2).unwrap().size.unwrap().si() - 0.006).abs() < 1e-12,
+        "the other fields kept"
+    );
+    let edit = WeldEdit {
+        sides: Some(Some(3)),
+        ..WeldEdit::default()
+    };
+    assert!(ce::set_weld(&mut doc, &t, &g1, &g2, edit).is_err());
+    let edit = WeldEdit {
+        sides: Some(None),
+        ..WeldEdit::default()
+    };
+    ce::set_weld(&mut doc, &t, &g1, &g2, edit).unwrap();
+    let t = read(&doc);
+    assert_eq!(t.weld_between(&g1, &g2).unwrap().sides, None);
     // Unwelded: the weld gone; a plate removed: its welds gone.
     ce::weld_pair(&mut doc, &t, &g1, &g2, false).unwrap();
     let t = read(&doc);

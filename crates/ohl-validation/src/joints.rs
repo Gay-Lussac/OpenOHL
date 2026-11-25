@@ -16,6 +16,7 @@ use ohl_plugins::bolt_distances_full as bd;
 use ohl_plugins::joint_check as jc;
 use ohl_plugins::joint_check_groups as gr;
 use ohl_plugins::joint_check_groups_tension as gt;
+use ohl_plugins::joint_check_welds as we;
 use ohl_structures_fe::model::PluginMethod;
 
 use crate::{Calculation, Inputs, Outputs, Registry};
@@ -24,6 +25,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(JointParts));
     registry.register(Box::new(JointGroups));
     registry.register(Box::new(BoltDistances));
+    registry.register(Box::new(Welds));
 }
 
 /// A value with a unit from a table (`"16 mm"`), SI; none: not given.
@@ -369,6 +371,86 @@ impl Calculation for JointGroups {
         let results = match checked {
             GroupsChecked::Results(r) => r,
             GroupsChecked::NotChecked(e) => return Err(e),
+        };
+        let mut out = Outputs::new();
+        for r in results {
+            if let Some(u) = r.usages.first() {
+                out.insert(format!("usage_{}", r.id), u.usage);
+            }
+        }
+        Ok(out)
+    }
+}
+
+/// `structures.welds`: welds between two plates with their sides (one
+/// fillet, two, or not known; 2026-11-25, roadmap O44 J7b) checked by a
+/// design code's plugin through its `joint-check-welds` export, as a run
+/// checks them.
+struct Welds;
+
+impl Calculation for Welds {
+    fn id(&self) -> &'static str {
+        "structures.welds"
+    }
+
+    fn description(&self) -> &'static str {
+        "Welds with their sides checked by a design code's plugin (inputs: method, welds = \
+         [{weld = fillet|full_penetration, throat, length, length_given (default true), sides \
+         (1, 2 or absent: not known), angle (degrees), fy, thicknesses, force, in_plane, \
+         out_of_plane as numbers in N m}]); outputs usage_<i> (the weld's usage in its one \
+         case, strength 1)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let p = method(inputs)?;
+        let mut welds = Vec::new();
+        for (i, t) in tables(inputs, "welds").into_iter().enumerate() {
+            welds.push(we::Weld {
+                id: i as u32,
+                joint: "J".into(),
+                part: "P1/P2".into(),
+                kind: t
+                    .get("weld")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or("fillet")
+                    .to_owned(),
+                throat: q::<Length>(t, "throat")?,
+                length: need::<Length>(t, "length")?,
+                length_given: t
+                    .get("length_given")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(true),
+                sides: t
+                    .get("sides")
+                    .and_then(toml::Value::as_integer)
+                    .and_then(|n| u32::try_from(n).ok()),
+                angle: number(t, "angle").unwrap_or(90.0),
+                fy: q::<Stress>(t, "fy")?,
+                thicknesses: lengths(t, "thicknesses")?
+                    .into_iter()
+                    .map(|x| x.unwrap_or(0.0))
+                    .collect(),
+                loads: vec![we::WeldLoad {
+                    force: need::<Force>(t, "force")?,
+                    in_plane: number(t, "in_plane").unwrap_or(0.0),
+                    out_of_plane: number(t, "out_of_plane").unwrap_or(0.0),
+                }],
+                notes: Vec::new(),
+            });
+        }
+        let input = we::WeldInput {
+            structure: "validation".into(),
+            parameters: String::new(),
+            cases: vec![gr::LoadCase {
+                name: "case".into(),
+                strength: 1.0,
+            }],
+            welds,
+        };
+        let results = match mc::check_welds(&p, &input) {
+            Some(GroupsChecked::Results(r)) => r,
+            Some(GroupsChecked::NotChecked(e)) => return Err(e),
+            None => return Err(format!("{} has no joint-check-welds export", p.plugin)),
         };
         let mut out = Outputs::new();
         for r in results {

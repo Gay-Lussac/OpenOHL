@@ -493,6 +493,134 @@ fn a_fillet_weld_with_its_moments() {
     assert!(c.not_safe.is_empty());
 }
 
+/// A weld with its sides (2026-11-25, roadmap O44 J7b; invented values, by
+/// hand): a = 5 mm, L = 200 mm given, plates of 10 and 12 mm at 90°,
+/// S355; F = 60 kN, M = 1 kN m about the weld's middle, T = 0.3 kN m about
+/// the seam. (87) per unit length a 0.6 f_uE / γ_M2 = 0.005 × 244.8 =
+/// 1 224 kN/m. **One fillet** (sides 1, L = 200 mm): F/L 300 + 6M/L² 150
+/// + 6T/(L a) 1 800 = 2 250 kN/m, 183.8 % — its root opened, 6.3.6.5 said
+/// (avoid), nothing not safe. **Two fillets** (sides 2, each 100 mm,
+/// e = the thinner plate's 10 mm): F/2l 300 + 6M/(2 l²) 300 + T/(e l) 300
+/// = 900 kN/m, (87) 180 kN of 244.8 kN, 73.53 %; (88) s = 7.071 mm,
+/// 0.8 f_y / γ_M2 = 227.2 N/mm²: 900 / 1 606.5 = 56.02 %. **Not given**:
+/// both, the worse (one fillet's) governing, said. Two fillets with the
+/// seam's length (not given, 200 mm each): 150 + 75 + 150 = 375 kN/m.
+/// Without moments two fillets of L/2 carry what one of L does.
+#[test]
+fn a_welds_sides() {
+    use crate::joints::{Extra, weld_sides};
+    let w = WeldInput {
+        kind: WeldKind::Fillet,
+        size: Some(0.005),
+        length: 0.200,
+        length_given: true,
+        angle: 90.0,
+        fy: Some(355e6),
+        thickness: [0.010, 0.012],
+    };
+    let x = Extra {
+        in_plane: 1e3,
+        out_of_plane: 300.0,
+        ..Default::default()
+    };
+    let per = 0.005 * 0.6 * 510e6 / 1.25;
+    // One fillet: as weld_with, the moment about the seam said avoided.
+    let one = weld_sides(&w, Some(1), 60e3, &x);
+    let (u, g) = one.governing(1.0).unwrap();
+    assert!(
+        g.what.contains("(87)") && g.what.contains("one side"),
+        "{g:?}"
+    );
+    assert!((u - 2250e3 / per).abs() < 1e-12, "{u}");
+    assert!((u - 1.838_235_294_117_647).abs() < 1e-12);
+    assert!(one.not_safe.is_empty(), "{one:?}");
+    assert!(
+        one.notes.iter().any(|n| n.contains("6.3.6.5")
+            && n.contains("root")
+            && n.contains("engineering model")),
+        "{:?}",
+        one.notes
+    );
+    let old = joints::weld_with(&w, 60e3, &x);
+    assert!(
+        (old.governing(1.0).unwrap().0 - u).abs() < 1e-12,
+        "the same model"
+    );
+    // Two fillets: the couple across the thinner plate.
+    let two = weld_sides(&w, Some(2), 60e3, &x);
+    let t87 = find(&two, "(87)");
+    assert!((t87.demand - 180e3).abs() < 1e-6, "{}", t87.demand);
+    assert!((t87.resistance - 244.8e3).abs() < 1e-6);
+    let t88 = find(&two, "(88)");
+    let s = 0.005 * 2f64.sqrt();
+    assert!((t88.resistance - s * 0.2 * 0.8 * 355e6 / 1.25).abs() < 1e-6);
+    let (u2, g2) = two.governing(1.0).unwrap();
+    assert!(
+        g2.what.contains("2 × a 5 mm × 100 mm") && g2.what.contains("(87)"),
+        "{g2:?}"
+    );
+    assert!((u2 - 900e3 / per).abs() < 1e-12 && (u2 - 0.735_294_117_647_058_8).abs() < 1e-12);
+    assert!(two.not_safe.is_empty());
+    assert!(
+        two.notes
+            .iter()
+            .any(|n| n.contains("couple") && n.contains("10 mm")),
+        "{:?}",
+        two.notes
+    );
+    assert!(!two.notes.iter().any(|n| n.contains("6.3.6.5")));
+    // Not given: the worse of the two, said.
+    let both = weld_sides(&w, None, 60e3, &x);
+    let (ub, gb) = both.governing(1.0).unwrap();
+    assert!(
+        (ub - u).abs() < 1e-12 && gb.what.starts_with("one fillet: "),
+        "{gb:?}"
+    );
+    assert_eq!(both.checks.len(), 4);
+    assert!(both.notes.iter().any(|n| n.contains("sides not given")));
+    // The seam's length (not given): each fillet that long.
+    let seam = WeldInput {
+        length_given: false,
+        ..w.clone()
+    };
+    let c = weld_sides(&seam, Some(2), 60e3, &x);
+    assert!((find(&c, "(87)").demand - 375e3 * 0.4).abs() < 1e-6);
+    assert!(
+        c.notes
+            .iter()
+            .any(|n| n.contains("each fillet the seam's length"))
+    );
+    // Without moments two fillets of L/2 carry what one fillet of L does.
+    let plain = Extra::default();
+    let a = weld_sides(&w, Some(1), 60e3, &plain)
+        .governing(1.0)
+        .unwrap()
+        .0;
+    let b = weld_sides(&w, Some(2), 60e3, &plain)
+        .governing(1.0)
+        .unwrap()
+        .0;
+    assert!((a - b).abs() < 1e-12 && (a - 60e3 / (per * 0.2)).abs() < 1e-12);
+    // 6.3.6.2 per fillet: two of 30 mm each below 40 mm.
+    let short = WeldInput {
+        length: 0.060,
+        ..w.clone()
+    };
+    assert!(
+        weld_sides(&short, Some(2), 1e3, &plain)
+            .notes
+            .iter()
+            .any(|n| n.contains("30 mm below 40 mm"))
+    );
+    // Neither one nor two: not checked; full penetration as before.
+    assert!(weld_sides(&w, Some(3), 1e3, &plain).checks.is_empty());
+    let full = WeldInput {
+        kind: WeldKind::FullPenetration,
+        ..w
+    };
+    assert!(weld_sides(&full, Some(2), 1e3, &plain).checks.is_empty());
+}
+
 /// The parameter file's γ_M1 changes the members' design values, and the
 /// standard's values give the core's numbers.
 #[test]

@@ -38,6 +38,10 @@ pub struct Weld {
     pub size: Option<f64>,
     /// Its length given, m (none: the seam's, [`Weld::seam_length`]).
     pub length: Option<f64>,
+    /// Its fillets, the file's `sides` (2026-11-25, roadmap O44 J7b): 1 on
+    /// one side of the plate, 2 one on each side; none: not known (the
+    /// check takes the worse of the two).
+    pub fillets: Option<u32>,
 }
 
 impl Weld {
@@ -60,16 +64,22 @@ impl Weld {
     }
 
     /// Its label on the drawings: "a6 × 220" (the throat and the length,
-    /// mm; "a6" with the seam's length), "full pen.", none without a size.
+    /// mm; "a6" with the seam's length), with its sides when given
+    /// ("a6 × 220, 2 sides"), "full pen.", none without a size.
     pub fn label(&self) -> Option<String> {
         use ohl_structures::connections::WeldKind;
         if self.kind == WeldKind::FullPenetration {
             return Some("full pen.".into());
         }
         let a = self.size?;
-        Some(match self.length {
+        let base = match self.length {
             Some(l) => format!("a{:.0} × {:.0}", a * 1000.0, l * 1000.0),
             None => format!("a{:.0}", a * 1000.0),
+        };
+        Some(match self.fillets {
+            Some(1) => format!("{base}, 1 side"),
+            Some(n) => format!("{base}, {n} sides"),
+            None => base,
         })
     }
 }

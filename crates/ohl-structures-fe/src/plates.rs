@@ -195,6 +195,9 @@ pub struct WeldInput {
     pub fy: Option<f64>,
     /// The two plates' thicknesses, m.
     pub thickness: [f64; 2],
+    /// Its fillets (the file's `sides`, 2026-11-25, roadmap O44 J7b): 1 or
+    /// 2; none: not known (the check takes the worse of the two).
+    pub sides: Option<u32>,
 }
 /// The checks of a weld by `method`: none here — the simple check is no
 /// design code, a design code's weld checks are its plugin's since

@@ -11,6 +11,11 @@
 # not kept). joints-015 to joints-017 (2026-11-24): one bolt's minimum
 # distances without an analysis (structures.bolt_distances), the force per
 # bolt the smaller of its shear capacity and its bearing cap in the part.
+# joints-018 to joints-021 (2026-11-25, roadmap O44 J7b): a weld with its
+# sides (structures.welds, the plugin's joint-check-welds) — one fillet bent
+# about its seam, two fillets taking that moment as a couple across the
+# plate, the sides not known (the worse of the two), two fillets each the
+# seam's length.
 # Run through the plugins (their first call compiles them).
 
 [[case]]
@@ -260,3 +265,55 @@ inputs.bolts = { count = 1, planes = 1, shear_capacity = "94 kN", bolt_ultimate 
 expected.end_m = { value = 0.026, rel_tol = 1e-9 }
 expected.spacing_m = { value = 0.031183673469387756, rel_tol = 1e-9 }
 expected.bolt_force_n = { value = 94000.0, rel_tol = 1e-9 }
+
+[[case]]
+id = "joints-018"
+title = "One fillet bent about its seam (SIA 263 6.3.2.2; its throat bent across, elastic — an engineering model, root opened, 6.3.6.5 said)"
+calculation = "structures.welds"
+reference = "SIA 263:2013 6.3.2.2 (87), (88) on the force per unit length at the most loaded end, F/L + 6M/L2 + 6T/(L a), gamma_M2 1.25 and f_uE 510 MPa as the sia263 plugin takes them, by hand (reference_joint_capacities.py, Q)"
+notes = "a 5 mm x 200 mm, one side, plates 10 and 12 mm at 90 deg, f_y 355 MPa, F 60 kN, M 1 kN m, T 0.3 kN m: 300 + 150 + 1 800 = 2 250 kN/m against a 0.6 f_uE / gamma_M2 = 1 224 kN/m -> 1.83824 (failing, found failing)"
+max_seconds = 30.0
+inputs.method = "sia263-2013"
+inputs.welds = [
+  { weld = "fillet", throat = "5 mm", length = "200 mm", sides = 1, angle = 90, fy = "355 MPa", thicknesses = ["10 mm", "12 mm"], force = "60 kN", in_plane = 1000.0, out_of_plane = 300.0 },
+]
+expected.usage_0 = { value = 1.8382352941176470, rel_tol = 1e-9 }
+
+[[case]]
+id = "joints-019"
+title = "Two fillets, the moment about the seam a couple across the plate (SIA 263 6.3.2.2; the lever arm the thinner plate's thickness, on the safe side)"
+calculation = "structures.welds"
+reference = "As joints-018 on two fillets of L/2 each: F/(2l) + 6M/(2 l2) + T/(t l), t the thinner plate (R)"
+notes = "each fillet 100 mm, t 10 mm: 300 + 300 + 300 = 900 kN/m against 1 224 kN/m -> 0.73529; (88) s 7.071 mm, 0.8 f_y / gamma_M2 = 227.2 MPa: 900 / 1 606.5 = 0.560"
+max_seconds = 30.0
+inputs.method = "sia263-2013"
+inputs.welds = [
+  { weld = "fillet", throat = "5 mm", length = "200 mm", sides = 2, angle = 90, fy = "355 MPa", thicknesses = ["10 mm", "12 mm"], force = "60 kN", in_plane = 1000.0, out_of_plane = 300.0 },
+]
+expected.usage_0 = { value = 0.7352941176470589, rel_tol = 1e-9 }
+
+[[case]]
+id = "joints-020"
+title = "A weld's sides not known: the worse of one fillet and two (on the safe side)"
+calculation = "structures.welds"
+reference = "joints-018 and joints-019, the larger (S)"
+notes = "the one fillet's 1.83824 governs"
+max_seconds = 30.0
+inputs.method = "sia263-2013"
+inputs.welds = [
+  { weld = "fillet", throat = "5 mm", length = "200 mm", angle = 90, fy = "355 MPa", thicknesses = ["10 mm", "12 mm"], force = "60 kN", in_plane = 1000.0, out_of_plane = 300.0 },
+]
+expected.usage_0 = { value = 1.8382352941176470, rel_tol = 1e-9 }
+
+[[case]]
+id = "joints-021"
+title = "Two fillets without a length given: each the seam's length"
+calculation = "structures.welds"
+reference = "As joints-019 with l the seam's length, 200 mm each (T)"
+notes = "150 + 75 + 150 = 375 kN/m against 1 224 kN/m -> 0.30637"
+max_seconds = 30.0
+inputs.method = "sia263-2013"
+inputs.welds = [
+  { weld = "fillet", throat = "5 mm", length = "200 mm", length_given = false, sides = 2, angle = 90, fy = "355 MPa", thicknesses = ["10 mm", "12 mm"], force = "60 kN", in_plane = 1000.0, out_of_plane = 300.0 },
+]
+expected.usage_0 = { value = 0.3063725490196078, rel_tol = 1e-9 }

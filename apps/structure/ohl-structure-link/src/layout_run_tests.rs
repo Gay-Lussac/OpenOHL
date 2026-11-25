@@ -1212,6 +1212,18 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
     assert_eq!(p.welds.len(), 1, "{p:?}");
     assert_eq!(p.welds[0].to, o.plates[own.welded_to]);
     assert!(p.welds[0].size.is_some() && p.welds[0].length.is_some());
+    // J7b (2026-11-25): welded from both sides, as laid out — two
+    // fillets, the file raised to version 28.
+    assert_eq!(p.welds[0].sides, Some(2), "{p:?}");
+    let written: toml_edit::DocumentMut = r.text.parse().unwrap();
+    assert!(
+        written
+            .get("version")
+            .and_then(toml_edit::Item::as_integer)
+            .is_none_or(|v| v >= 28),
+        "{}",
+        r.text
+    );
     // D1 lies flat on it, the plates meet along the seam, no clash.
     let d = joint_details(&r.text, &library(), &Default::default()).unwrap();
     let j = d.joint("N2").unwrap();
@@ -1287,6 +1299,7 @@ fn an_end_no_roll_lays_flat_goes_onto_a_welded_plate_in_its_own_plane() {
         .find(|p| !p.welds.is_empty())
         .expect("the welded plate");
     assert_eq!(w2.welds[0].size.map(|v| v.si()), Some(0.005), "{w2:?}");
+    assert_eq!(w2.welds[0].sides, Some(2), "the sides kept: {w2:?}");
 }
 
 /// J1/J2 (2026-11-19) in a run: a member left for a hand detail for its

@@ -548,20 +548,22 @@ their planes meet — a plate bent there, made of two plates welded.
   that thickness in whole millimetres, at least 3 mm (`weld_throat`: a
   partly penetrated weld from both sides, **the layout's choice, not a
   standard's**), its length both sides together (`[[plate.weld]]` with
-  `size` and `length`, automatic in the record). SIA 263 6.3.3.5 takes a
-  partly penetrated weld as a fillet weld: the weld check of
-  [plates](joint-plates.md) applies as it is (its force, its moments about
-  the seam). The members of each side lie in their plate's plane, so the
-  moment about the seam's own line is nil for one welded plate on each
-  side; where two plates in their own planes are welded to one flat
-  plate, the moment of the other's member about a seam is not nil and the
-  check says it **NOT ON THE SAFE SIDE** as for any weld bent about its
-  seam (6.3.6.5: the data say the weld's length on both sides together,
-  not that it is two fillets — a fillet on one side only bent so can be
-  weaker than the check takes; a field and a check change, not made:
-  a question to the owner; meanwhile weld such a seam on both sides or
-  check it by hand). ASCE 10-97 has no weld rule: not checked,
-  said.
+  `size`, `length` and — since 2026-11-25, J7b — `sides = 2`, automatic
+  in the record; a weld given by hand keeps the user's values). SIA 263
+  6.3.3.5 takes a partly penetrated weld as a fillet weld: the weld check
+  of [plates](joint-plates.md) applies as it is (its force, its moments
+  about the seam), each side a fillet of half the length. The members of
+  each side lie in their plate's plane, so the moment about the seam's
+  own line is nil for one welded plate on each side; where two plates in
+  their own planes are welded to one flat plate, the moment of the
+  other's member about a seam is not nil: the two fillets take it as a
+  couple across the plate, its thickness the lever arm (**on the safe
+  side**, [a weld's sides](joint-plates.md#a-welds-sides-j7b)). Until
+  2026-11-25 the data said the weld's length on both sides together, not
+  that it is two fillets, and such a weld was said **NOT ON THE SAFE
+  SIDE**; a file laid out before keeps no `sides` until laid out again
+  and is checked as the worse of one fillet and two (on the safe side).
+  ASCE 10-97 has no weld rule: not checked, said.
 - **Its line of action.** The member lies on its plate, so farther out of
   the flange than on a flat plate: by the gap's and its leg's rise over
   the tilt. The analysis keeps every member's axis through the work point

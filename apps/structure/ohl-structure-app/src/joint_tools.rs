@@ -2228,7 +2228,7 @@ pub fn weld_rows(
     };
     ui.push_id(("welds", only), |ui| {
         egui::Grid::new("joint-welds").striped(true).show(ui, |ui| {
-            for h in ["Weld", "Kind", "Size a mm", "Length mm", ""] {
+            for h in ["Weld", "Kind", "Sides", "Size a mm", "Length mm", ""] {
                 ui.strong(h);
             }
             ui.end_row();
@@ -2250,6 +2250,39 @@ pub fn weld_rows(
                         b.to_owned(),
                         WeldEdit {
                             kind: Some(k),
+                            ..WeldEdit::default()
+                        },
+                    ));
+                }
+                // Its fillets (2026-11-25, roadmap O44 J7b): one side, both
+                // sides, or not known (the check takes the worse).
+                let sides = w.and_then(|w| w.sides);
+                let words = |n: Option<u32>| match n {
+                    None => "not known",
+                    Some(1) => "1 (one side)",
+                    Some(_) => "2 (both sides)",
+                };
+                let mut n = sides;
+                egui::ComboBox::from_id_salt(("weld-sides", a, b))
+                    .selected_text(words(n))
+                    .show_ui(ui, |ui| {
+                        for x in [None, Some(1), Some(2)] {
+                            ui.selectable_value(&mut n, x, words(x));
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "The fillets: one on one side of the plate, or one on each side. Two \
+                         take a moment about the seam as a couple across the plate; one is bent \
+                         across, its root opened (SIA 263 6.3.6.5: avoid it). Not known: the \
+                         check takes the worse of the two.",
+                    );
+                if n != sides {
+                    acts.push(Act::WeldData(
+                        a.to_owned(),
+                        b.to_owned(),
+                        WeldEdit {
+                            sides: Some(n),
                             ..WeldEdit::default()
                         },
                     ));
@@ -2300,7 +2333,7 @@ pub fn weld_rows(
                     format!("weld-l-{a}-{b}"),
                     &length,
                     "Its whole length (both sides together when welded on both); not given: \
-                     the seam's length where the plates meet, one side",
+                     the seam's length where the plates meet, on each side welded",
                 ) {
                     acts.push(Act::WeldData(
                         a.to_owned(),

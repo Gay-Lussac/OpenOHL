@@ -597,6 +597,13 @@ pub fn weld_with(_w: &WeldInput, _force: f64, _x: &Extra) -> Checked {
     }
 }
 
+/// The checks of a weld with its sides (2026-11-25, roadmap O44 J7b, the
+/// interface's `joint-check-welds`): none — ASCE 10-97 gives no weld
+/// resistance for one fillet or two (5.2.5; said, as [`weld_with`]).
+pub fn weld_sides(w: &WeldInput, _sides: Option<u32>, force: f64, x: &Extra) -> Checked {
+    weld_with(w, force, x)
+}
+
 /// Fillet or full penetration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WeldKind {
@@ -799,5 +806,30 @@ mod tests {
                 .iter()
                 .any(|n| n.contains("one bolt cannot carry"))
         );
+    }
+
+    /// A weld with its sides (2026-11-25, `joint-check-welds`): ASCE 10-97
+    /// gives no weld rule for one fillet or two — not checked, said, as
+    /// every weld.
+    #[test]
+    fn a_welds_sides_are_not_checked_by_asce10() {
+        let w = WeldInput {
+            kind: WeldKind::Fillet,
+            size: Some(0.005),
+            length: 0.2,
+            length_given: true,
+            angle: 90.0,
+            fy: Some(355e6),
+            thickness: [0.01, 0.01],
+        };
+        let x = Extra {
+            out_of_plane: 100.0,
+            ..Extra::default()
+        };
+        for sides in [None, Some(1), Some(2)] {
+            let c = weld_sides(&w, sides, 50e3, &x);
+            assert!(c.checks.is_empty() && c.governing(1.0).is_none());
+            assert_eq!(c.notes, vec![WELD_NOT_CHECKED.to_owned()]);
+        }
     }
 }

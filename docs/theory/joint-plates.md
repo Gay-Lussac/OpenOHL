@@ -239,7 +239,9 @@ The resultant \\( F_{Ed} \\) per unit length is checked on two sections
   welded; both sides together when welded on both); none given: the
   seam's length where the two plates meet, worked out from their
   outlines, **one side only** (**on the safe side** for a weld on both
-  sides).
+  sides). With the weld's **sides** ([below](#a-welds-sides-j7b),
+  2026-11-25): two fillets each half the length given, or each the
+  seam's length when none is given.
 - **The force per unit length at the weld's most loaded end**
   (2026-11-18; before, the force spread evenly and its moment **not
   taken** — not on the safe side). 6.3.1.7 allows a simplified
@@ -261,10 +263,12 @@ The resultant \\( F_{Ed} \\) per unit length is checked on two sections
   checked as \\( F_{Ed}\,L \\) against the whole length's resistance.
   Without moments \\( F_{Ed} = F/L \\), as before. A moment \\( T \\) about
   the seam bends the fillet across; 6.3.6.5 asks to avoid a fillet on one
-  side only loaded so, and the data do not tell whether the weld is on one
-  side or both: whenever \\( T > 0 \\) the result says **NOT ON THE SAFE
-  SIDE** (the throat's elastic bending is on the safe side for a weld on
-  both sides, not proven for one side only).
+  side only loaded so. Until 2026-11-25 the data did not tell whether the
+  weld is on one side or both, and whenever \\( T > 0 \\) the result said
+  **NOT ON THE SAFE SIDE**; since then a weld has its **sides** and the
+  check for each ([below](#a-welds-sides-j7b)). This formula is the one
+  fillet's; a plugin without `joint-check-welds` still checks every weld
+  by it (OpenOHL then says the sides were not sent where they matter).
 - Said when broken: a length below 40 mm (6.3.6.2), \\( a \\) above 0.7
   times the thinner plate (6.3.6.3), a plate thinner than 4 mm (6.3.1.3:
   the chapter does not apply), \\( a \\) below the least recommended for
@@ -310,6 +314,89 @@ were not sent, **NOT ON THE SAFE SIDE** (the weld's most loaded end then
 carries more than checked; a plugin with `joint-check-moments` takes them).
 **ASCE 10-97** has no weld rule,
 with or without moments (5.2.5): the weld stays not checked, said.
+
+### A weld's sides (J7b)
+
+*2026-11-25, roadmap O44 J7b, the owner's decision of 2026-11-19 ("a weld
+gets a `sides` (fillet count) field and its check").* A weld's
+`[[plate.weld]] sides` says how many fillets it is: **1**, one fillet on
+one side of the plate; **2**, a fillet on each side (structure file
+version 28); none, not known. The plugin interface `joint-check-welds`
+sends it with the weld and, per load case, the force \\( F \\) and the
+moments \\( M \\) and \\( T \\) worked out [above](#the-force-a-weld-carries).
+SIA 263 gives (87) and (88) on the resultant per unit length (6.3.2.1,
+6.3.2.2), allows a simplified distribution of the stresses (6.3.1.7) and
+asks a fillet on one side only bent across to be avoided (6.3.6.5); it
+gives no rule for how a fillet takes a moment about its own line. The
+models below are **engineering models, each on the safe side**; the sizes
+at the most loaded end are added (their directions may differ: on the
+safe side) and the check is, as before, the force per unit length at the
+most loaded end times the welded length against the resistance of the
+whole welded length (the throat \\( a \\) for (87), the contact width
+\\( s \\) for (88)).
+
+- **One fillet** (sides 1), length \\( l = L \\): the formula above,
+
+  \\[ F_{Ed} = \frac{F}{l} + \frac{6M}{l^2} + \frac{6T}{l\,w} \\]
+
+  — the moment about the seam opens the fillet's root (puts it in
+  tension), taken by the fillet's smallest section, the throat (resp. the
+  contact width), bent across **elastically**, with no plastic reserve and
+  against (87)'s strength \\( 0.6\,f_{uE} \\) for any direction of the
+  resultant (**conservative assumption**: an engineering model, not a rule
+  of the standard). The result says that 6.3.6.5 asks such a fillet to be
+  avoided — weld both sides — as it says the other detailing rules not
+  kept; the usage stands (it is not marked not on the safe side: the model
+  is a lower bound of the fillet's strength).
+- **Two fillets** (sides 2), each of length \\( l = L/2 \\) (the length
+  given is both together, 6.3.2.5) or, none given, the seam's length each:
+  the force spread over both, the moment along them taken by both lines
+  (each line's section modulus \\( l^2/6 \\)), and the moment about the
+  seam taken by the two fillets **as a couple** across the plate:
+
+  \\[ F_{Ed} = \frac{F}{2l} + \frac{6M}{2\,l^2} + \frac{T}{t\,l} \\]
+
+  per fillet, with \\( t \\) the **thinner plate's thickness** as the lever
+  arm (**conservative assumption**: the fillets lie on the faces of the
+  plate whose edge is welded, their throats outside them, so the real
+  lever arm is larger than that plate's thickness, which is not less than
+  the thinner plate's; the plate's edge bearing on the other plate, which
+  would take the compressed side's share, is not counted). Each fillet is
+  checked by (87) and (88) under it; 6.3.6.2's least length and 6.3.6.3–4's
+  throat apply to each fillet.
+- **Not known** (no `sides`, every file of before): both, each check
+  named for which, the larger governing (**on the safe side**: a weld
+  without its sides is never checked weaker than as one fillet — the check
+  of before — nor than as two of half the length given, whose moment along
+  them is up to twice what one line of the whole length takes). Said in
+  the result ("sides not given: the worse of one fillet … and one on each
+  side"). A file of before therefore reads as it did, its welds checked no
+  weaker than before; welds with a length given and a moment along them
+  may now show a higher usage (the two-fillet reading).
+
+Without moments the two readings agree: two fillets of \\( L/2 \\) carry
+\\( F/L \\) each per unit length, as one fillet of \\( L \\) does.
+
+**Where the sides come from.** The user (Joint details › the welds' row,
+*Sides*: not known, 1 (one side), 2 (both sides)); the automatic joint
+layout's welded plate in a member's own plane (step 4), welded from both
+sides by its design ([layout](joint-layout.md#a-welded-plate-in-the-members-own-plane-step-4)):
+`sides = 2`, its length both together, as written since 2026-11-25 (a weld
+given by hand on such a plate keeps the user's sides). Plates joined by
+`welded_to` alone have no weld data (no size): not checked, said, as
+before.
+
+**A plugin without `joint-check-welds`** (an older or another plugin):
+its welds go through `joint-check-moments` as before (the one-fillet
+formula above, or whatever that plugin does); where the sides change the
+check — a moment about the seam, or a moment along a weld whose length is
+given and which is not said to be one fillet — the row says **NOT ON THE
+SAFE SIDE: the weld's sides not sent** … (what is left out: whether the
+weld is one fillet or two; why it can be unsafe: the plugin cannot know
+that a fillet's root is opened, nor that each of two fillets takes up to
+twice the moment along it; what makes it safe: a plugin with
+`joint-check-welds`, such as both bundled ones). ASCE 10-97 has no weld
+rule: its welds stay not checked, with or without their sides, said.
 
 ## A frame member's end shear and moments
 
@@ -424,7 +511,12 @@ plate round a bolt line between two shear planes (`joints-007`) and torn out
 towards its side edge (`joints-014`), a gusset plate in compression as a
 strut of Whitmore's width (`joints-008`), a fillet weld with the moment of its
 force about its middle (`joints-009`) and bent about its seam (`joints-010`,
-over 100 %); all at 10⁻⁹.
+over 100 %); since 2026-11-25 (J7b, calculation `structures.welds`, the
+plugin's `joint-check-welds`) a weld with its sides: one fillet bent about
+its seam (`joints-018`, over 100 %), two fillets with the couple across the
+plate (`joints-019`), the sides not known (`joints-020`, the one fillet
+governing) and two fillets each the seam's length (`joints-021`); all at
+10⁻⁹.
 
 Unit tests in the plugins `plugins/codes/asce10` (`src/joints.rs`: ASCE
 10-97's, moved with the code) and `plugins/codes/sia263` (`src/tests.rs`:
@@ -469,3 +561,12 @@ compared, core against plugin: identical to the last bit:
   500 = 1 100 kN/m on the throat, (87) 220 kN of 293.76 kN (74.9 %), (88)
   190.7 kN of 385.6 kN; T said not on the safe side (6.3.6.5); without
   moments the force alone, as before.
+- `a_welds_sides` (SIA 263, 2026-11-25, J7b): a 5 × 200 mm fillet (given),
+  plates of 10 and 12 mm at 90°, S355, F = 60 kN, M = 1 kN m, T = 0.3 kN m.
+  (87) per unit length 0.005 × 244.8 = 1 224 kN/m. One fillet: 300 + 150 +
+  1 800 = 2 250 kN/m, 183.8 % (6.3.6.5 said, not marked not on the safe
+  side). Two fillets of 100 mm, t = 10 mm: 300 + 300 + 300 = 900 kN/m,
+  180 kN of 244.8 kN, 73.5 %; (88) 900 of 1 606.5 kN/m. Not known: both,
+  the one fillet governing. Two fillets of the seam's 200 mm each:
+  150 + 75 + 150 = 375 kN/m. Without moments one and two the same.
+  ASCE 10-97: not checked for one fillet or two (`a_welds_sides_are_not_checked_by_asce10`).
