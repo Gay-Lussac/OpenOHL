@@ -444,14 +444,14 @@ pub struct LayoutSettings {
     /// O44 L24: the most a plate welded in its member's own plane may put
     /// its axis farther out of the flange than a flat plate, where the
     /// offset is carried into the analysis (L20 item 2), m. Default
-    /// [`OWN_OUT_MAX`].
+    /// `OWN_OUT_MAX`.
     pub own_out_max: f64,
     /// O44 L24: a bent plate's inside radius the layout makes, in plate
     /// thicknesses. Default [`BEND_RADIUS_RATIO`].
     pub bend_radius_ratio: f64,
     /// O44 L24: the least gap of a built-up member a plate between its
     /// angles is laid out in, in thicknesses of the thickest leg on it
-    /// (L15). Default [`BETWEEN_LEAST`].
+    /// (L15). Default `BETWEEN_LEAST`.
     pub between_least: f64,
     /// O44 L24: the detailing practice these settings were made with and
     /// where it comes from ([`crate::practice::with_practice`]), kept for

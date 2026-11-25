@@ -71,7 +71,7 @@ pub const FLATNESS_RANGE: (f64, f64) = (1.0, FLAT_OFF);
 /// the bent plate is planned for.
 pub const SMALL_BEND_MAX: f64 = BEND_SMALL_MAX;
 /// The welded plate's axis offset a practice may give, m: up to the
-/// program's [`OWN_OUT_MAX`] (what the estimated eccentricities carry).
+/// program's `OWN_OUT_MAX` (what the estimated eccentricities carry).
 pub const OWN_OFFSET_RANGE: (f64, f64) = (0.0, OWN_OUT_MAX);
 /// A bent plate's inside radius a practice may give, in plate thicknesses:
 /// at least one thickness (the code plugins' bend checks check the radius
@@ -79,7 +79,7 @@ pub const OWN_OFFSET_RANGE: (f64, f64) = (0.0, OWN_OUT_MAX);
 pub const BEND_RADIUS_RANGE: (f64, f64) = (1.0, 10.0);
 /// The least gap for a plate between a built-up member's angles a practice
 /// may give, in thicknesses of the thickest leg on it: from the program's
-/// [`BETWEEN_LEAST`].
+/// `BETWEEN_LEAST`.
 pub const BETWEEN_RANGE: (f64, f64) = (BETWEEN_LEAST, 4.0);
 /// The bolts of the picked bolt's pattern a practice may give per end.
 pub const BOLT_COUNT_RANGE: (u32, u32) = (2, 8);
