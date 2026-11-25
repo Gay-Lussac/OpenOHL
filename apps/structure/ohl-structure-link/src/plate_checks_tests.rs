@@ -365,7 +365,7 @@ fn a_splices_covers_share_the_force_by_area() {
 /// `plugins/`) in its `Plugins/`, remembered as a place plugins are
 /// looked for; none: the plugin is not built (a failure with
 /// `OHL_REQUIRE_PLUGIN_TESTS` set).
-fn with_plugin(source: &str, name: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn with_plugin(source: &str, name: &str) -> Option<std::path::PathBuf> {
     let from = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../plugins")
         .join(source);

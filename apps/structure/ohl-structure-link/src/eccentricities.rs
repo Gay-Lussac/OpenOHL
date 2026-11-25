@@ -279,7 +279,7 @@ pub fn settings_for(
     match &record.settings {
         Some(s) => {
             let (areas, fields) = presets_by_class(&s.presets, ask.presets, ask.bolts);
-            (s.layout(areas), fields)
+            (record.with_practice(s.layout(areas)), fields)
         }
         None => {
             let lib = ask
@@ -293,10 +293,10 @@ pub fn settings_for(
                 lib.and_then(|b| b.drawn()[0]),
             );
             (
-                LayoutSettings {
+                record.with_practice(LayoutSettings {
                     bolt: Some(bolt),
                     ..LayoutSettings::default()
-                },
+                }),
                 BTreeMap::new(),
             )
         }

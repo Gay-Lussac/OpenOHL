@@ -173,6 +173,11 @@ pub struct LayoutRecord {
     /// 3 the analysis takes the member ends' eccentricities the layout's
     /// planner estimates ([`crate::eccentricities`]); off by default.
     pub estimated: bool,
+    /// O44 L24: the detailing practice (`[generator.practice]`, as written:
+    /// read and checked by [`LayoutRecord::practice`]) — the structure's own
+    /// (`source = "project"`) or the one the last run took from a code
+    /// plugin (`source = "plugin:<plugin>/<method>"`); none: the default.
+    pub practice: Option<toml::Table>,
 }
 
 /// A turn from the joints' planes not weighed yet (O44 L19, the layout
@@ -399,6 +404,7 @@ impl LayoutRecord {
                 .get(crate::eccentricities::OPTION_KEY)
                 .and_then(toml::Value::as_bool)
                 == Some(true),
+            practice: g.get("practice").and_then(toml::Value::as_table).cloned(),
             ..Default::default()
         };
         for row in rows("ends") {
@@ -479,7 +485,8 @@ impl LayoutRecord {
         for t in keep {
             a.push(t);
         }
-        if !self.is_empty() || self.settings.is_some() || self.estimated {
+        if !self.is_empty() || self.settings.is_some() || self.estimated || self.practice.is_some()
+        {
             let mut t = Table::new();
             t.insert("id", toml_edit::value(RECORD_ID));
             t.insert("kind", toml_edit::value(RECORD_KIND));
@@ -632,10 +639,100 @@ impl LayoutRecord {
                     ),
                 );
             }
+            if let Some(p) = &self.practice {
+                t.insert("practice", practice_item(p));
+            }
             a.push(t);
         }
         if !a.is_empty() {
             doc.insert("generator", Item::ArrayOfTables(a));
+        }
+    }
+}
+
+/// The record's `practice` table (`[generator.practice]`) as `toml_edit`
+/// writes it: a table with its sub-tables (`faces`, `limits`, `plates`,
+/// `bolts`).
+fn practice_item(p: &toml::Table) -> Item {
+    // Built afresh (no positions from another document): written after
+    // the record's own keys, its sub-tables after it.
+    fn value(v: &toml::Value) -> Value {
+        match v {
+            toml::Value::String(s) => Value::from(s.as_str()),
+            toml::Value::Integer(i) => Value::from(*i),
+            toml::Value::Float(f) => Value::from(*f),
+            toml::Value::Boolean(b) => Value::from(*b),
+            toml::Value::Datetime(d) => Value::from(d.to_string()),
+            toml::Value::Array(a) => Value::Array(a.iter().map(value).collect()),
+            toml::Value::Table(t) => {
+                let mut x = toml_edit::InlineTable::new();
+                for (k, v) in t {
+                    x.insert(k, value(v));
+                }
+                Value::InlineTable(x)
+            }
+        }
+    }
+    fn table(p: &toml::Table) -> Table {
+        let mut t = Table::new();
+        for (k, v) in p {
+            match v {
+                toml::Value::Table(sub) => {
+                    t.insert(k, Item::Table(table(sub)));
+                }
+                other => {
+                    t.insert(k, Item::Value(value(other)));
+                }
+            }
+        }
+        t
+    }
+    Item::Table(table(p))
+}
+
+impl LayoutRecord {
+    /// O44 L24: the detailing practice the record holds, read and checked
+    /// ([`crate::practice::RecordedPractice::from_table`]). `Ok(None)`: none
+    /// (the default). Err: it is refused, with why — the default practice
+    /// applies, said, and the record keeps the table as written.
+    pub fn practice(&self) -> Result<Option<crate::practice::RecordedPractice>, String> {
+        self.practice
+            .as_ref()
+            .map(crate::practice::RecordedPractice::from_table)
+            .transpose()
+    }
+
+    /// The structure's own practice (`source = "project"`) the record holds,
+    /// as read: valid or refused. None: no practice, or one a code plugin
+    /// gave.
+    pub fn own_practice(&self) -> Option<Result<crate::practice::RecordedPractice, String>> {
+        let t = self.practice.as_ref()?;
+        let own = t
+            .get("source")
+            .is_none_or(|s| s.as_str() == Some("project"));
+        own.then(|| crate::practice::RecordedPractice::from_table(t))
+    }
+
+    /// The engine's settings `s` with the record's practice applied
+    /// ([`crate::practice::with_practice`]); one refused: `s` as it is (the
+    /// default practice).
+    pub fn with_practice(&self, s: LayoutSettings) -> LayoutSettings {
+        let p = self.practice().ok().flatten();
+        crate::practice::with_practice(s, p.as_ref())
+    }
+
+    /// The record's practice set to `p` (none: the default), as a run
+    /// writes it: a practice the run took is written with its source; with
+    /// none, the structure's own (even one refused, kept as written for the
+    /// user to mend) stays and a plugin's goes.
+    pub fn set_practice(&mut self, p: Option<&crate::practice::RecordedPractice>) {
+        match p {
+            Some(p) => self.practice = Some(p.to_table()),
+            None => {
+                if self.own_practice().is_none() {
+                    self.practice = None;
+                }
+            }
         }
     }
 }
@@ -1394,7 +1491,7 @@ fn lay_out_once(
                 continue;
             }
             let mut turns: Vec<EndTurn> = all.iter().map(|(_, e)| *e).collect();
-            let mut whole = whole_roll(&turns, crate::FLAT_OFF);
+            let mut whole = whole_roll(&turns, settings.flat_off);
             // L13: a name by the plane its axis lies in (onto a member
             // ending at the joint) whose turn no one roll gives with its
             // member's other ends is taken back (today's choice there):
@@ -1422,7 +1519,7 @@ fn lay_out_once(
                         continue;
                     }
                     turns = all.iter().map(|(_, e)| *e).collect();
-                    whole = whole_roll(&turns, crate::FLAT_OFF);
+                    whole = whole_roll(&turns, settings.flat_off);
                 }
             }
             // L1 (a), bottom up, then out (owner 2026-11-19: "More things
@@ -1442,7 +1539,7 @@ fn lay_out_once(
                         .joint(j)
                         .and_then(|j| j.arrivals.iter().find(|a| &a.member == m))
                         .and_then(|a| a.flat)
-                        .is_some_and(|f| f.off > crate::FLAT_OFF)
+                        .is_some_and(|f| f.off > settings.flat_off)
                 })
                 && let Some((j0, e0)) = all
                     .iter()
@@ -1511,7 +1608,7 @@ fn lay_out_once(
                 let alt = if rest.is_empty() {
                     None
                 } else {
-                    whole_roll(&rest, crate::FLAT_OFF)
+                    whole_roll(&rest, settings.flat_off)
                         .map(|(x, _)| ((x.to_degrees() * 100.0).round() / 100.0).to_radians())
                 };
                 plane_alt.insert(m.clone(), alt);
@@ -1718,14 +1815,14 @@ fn lay_out_once(
                             x.arrivals.iter().filter(|b| b.member == m).all(either_leg)
                         })
                     });
-                    if !equal_legs || !a.flat.is_some_and(|f| f.off <= crate::BEND_SMALL_MAX) {
+                    if !equal_legs || !a.flat.is_some_and(|f| f.off <= settings.bend_small_max) {
                         continue;
                     }
                     let q = [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2]
                         .into_iter()
                         .find(|q| {
-                            crate::joint_layout::turned_end(j, a, *q, true)
-                                .is_some_and(|(off, takes)| takes && off <= crate::BEND_SMALL_MAX)
+                            crate::joint_layout::turned_end(j, a, *q, true, settings.flat_off)
+                                .is_some_and(|(off, takes)| takes && off <= settings.bend_small_max)
                         });
                     if let Some(q) = q {
                         mirrors.insert(m.to_owned(), q);
@@ -3819,6 +3916,7 @@ fn write_rounds(
         let mut doc = r.doc0.clone();
         let mut rec = r.record.clone();
         rec.settings = Some(RecordSettings::of(ask.settings));
+        rec.set_practice(ask.settings.practice.as_ref());
         // The rolls (the members of the joints asked): those turned before
         // back, then the turns of this run.
         for (m, roll) in r.restored {
@@ -5668,7 +5766,7 @@ fn follow_parsed(
         record.write(&mut doc);
     }
     let (areas, preset_fields) = presets_by_class(&settings.presets, presets, bolts);
-    let s = settings.layout(areas);
+    let s = record.with_practice(settings.layout(areas));
     let ask = RunAsk {
         library,
         bolts,
