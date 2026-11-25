@@ -4352,8 +4352,8 @@ only where it helps):
   20° off or more) with the web too low under a gusset coming down to the
   flat plate, 10 (nearly flat) needing a web over 150 mm even three plates
   thick, 4 with the axis over 40 mm out, 3 with the web past the heel. The
-  eighth tower's run was stopped for time (its first layout not ended after
-  two hours under a heavy load of other work). Found on the way: laying
+  eighth tower's run ended without a result (stopped before its first
+  layout had ended; not traced). Found on the way: laying
   the base's file out again changed three towers (31 joints better, 6 with
   as many ends on one more plate — each tower's same two joints).
   > **Owner:** (1) The stand-off measured and taken out (none kept on

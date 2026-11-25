@@ -4163,8 +4163,8 @@ The base reproduced L25's result exactly (4 253 joints whole, 15 268 ends,
 | joints whole / member ends / plates | 3 613 / 12 924 / 6 812 | 3 644 / 12 960 / 6 829 (a run again, below) |
 | the weighing's layouts, time | — | one more per tower, 4 411 s on the seven (under a heavy load of other work) |
 
-The eighth tower's run was stopped for time (its first layout had not
-ended after two hours under that load). With no stand-off kept the run is
+The eighth tower's run ended without a result (stopped before its first
+layout had ended; not traced, not measured). With no stand-off kept the run is
 the base's file laid out again — the program then plans as main (no member
 may take a stand-off) —, so the other rows' differences are those of **a
 run again**: on one tower identical, on three of them 31 joints better and

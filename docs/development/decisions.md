@@ -38,7 +38,7 @@ none passed** (roadmap O44 L26; L25's question 2; the owner, 2026-11-24:
   5°–20° off), or the gusset is too steep for a web under it (45, most 20°
   off or more), or nearly flat ends need a web over 150 mm (10), the axis
   would lie over 40 mm out (4), the web would stand past the heel (3). The
-  eighth tower's run was stopped for time.
+  eighth tower's run ended without a result (not measured).
 - **Not kept**: the code taken out again (the rule met only trivially:
   nothing gained, and a part no plugin checks per load case); the members
   stay left for a hand detail as after L25. Next (owner questions in the
