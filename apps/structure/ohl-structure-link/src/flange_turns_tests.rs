@@ -179,3 +179,39 @@ fn an_offered_turn_is_applied_when_ticked_and_kept() {
     let rec = LayoutRecord::of(&t);
     assert!(!rec.flange_turns["D00"].current(&t, &rec.rolled, "D00"));
 }
+
+/// The quarter turn of an unequal angle bolts its other leg: tried only
+/// where no leg is given; with the member's `connected_leg` given, only the
+/// half turn is tried (a value given is never changed silently).
+#[test]
+fn an_unequal_angle_is_turned_a_quarter_only_where_no_leg_is_given() {
+    let unequal = body().replace(
+        "section = \"EA-61x7\"\nkind = \"frame\"\ndesign = { class = \"bracing\" }",
+        "section = \"UA-83x52x6\"\nkind = \"frame\"\ndesign = { class = \"bracing\" }",
+    );
+    assert_ne!(unequal, body(), "the bracing made unequal angles");
+    // The members weighed, and those with a quarter turn tried (their
+    // words name +90° or −90°).
+    let tries = |text: &str| -> (usize, usize) {
+        let r = run(text, &settings(true, true), false);
+        let ours: Vec<&String> = r
+            .notes
+            .iter()
+            .filter(|n| n.contains("into the flange at"))
+            .collect();
+        (
+            ours.len(),
+            ours.iter().filter(|n| n.contains("90°")).count(),
+        )
+    };
+    let (weighed, quarter) = tries(&unequal);
+    assert!(weighed > 0, "members weighed");
+    assert!(quarter > 0, "the quarter turns tried");
+    let given = unequal.replace(
+        "design = { class = \"bracing\" }",
+        "design = { class = \"bracing\", connected_leg = \"long\" }",
+    );
+    let (weighed, quarter) = tries(&given);
+    assert!(weighed > 0, "members weighed");
+    assert_eq!(quarter, 0, "no quarter turn where the leg is given");
+}
