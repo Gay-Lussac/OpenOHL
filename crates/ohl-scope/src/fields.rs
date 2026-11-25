@@ -153,7 +153,7 @@ pub(crate) fn solved(
 ) {
     let mut failed = Vec::new();
     let mut shapes = Vec::new();
-    for (k, r) in ohl_line::solve::solve_line(part, library, case)
+    for (k, r) in ohl_line::solve::solve_line_with(part, library, case, &crate::solve_budget())
         .into_iter()
         .enumerate()
     {

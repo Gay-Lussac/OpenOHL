@@ -725,7 +725,10 @@ impl ElectricFieldWindow {
             let left: usize = v.values.left_out.iter().sum();
             rows.push(ResultRow {
                 kind: "Volume",
-                place: format!("{}–{}", v.from, v.to),
+                place: match &v.label {
+                    Some(l) => format!("{}–{} ({l})", v.from, v.to),
+                    None => format!("{}–{}", v.from, v.to),
+                },
                 max: format!("{} kV/m", levels.join(", ")),
                 note: if left > 0 {
                     format!("{left} thin piece(s) left out")

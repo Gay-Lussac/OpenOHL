@@ -32,6 +32,7 @@ ohl-store-pg = { workspace = true, optional = true }
 ohl-scope = { workspace = true, optional = true }
 ohl-clearance = { workspace = true, optional = true }
 ohl-loads = { workspace = true, optional = true }
+ohl-sections = { workspace = true, optional = true }
 # Phase 13: OIDC sign-in on a network (an ID token's signature, issuer,
 # audience and times checked; the issuer's keys fetched over HTTPS and
 # kept).
@@ -53,6 +54,7 @@ offline-checks = [
     "dep:ohl-scope",
     "dep:ohl-clearance",
     "dep:ohl-loads",
+    "dep:ohl-sections",
 ]
 
 [dev-dependencies]

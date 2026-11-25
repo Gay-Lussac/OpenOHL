@@ -35,7 +35,7 @@
 //! One check at a time (the queue of phase 13 orders them); the offline
 //! export still runs on the authority (phase 12's question 6: next).
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::mpsc as std_mpsc;
 use std::sync::{Arc, OnceLock};
@@ -66,6 +66,9 @@ struct SnapModel {
     cables: Option<Arc<ohl_cables::Library>>,
     weather: Vec<(String, String)>,
     loads: Vec<(String, String)>,
+    /// The working set's model of a check of loads: its structure
+    /// libraries' files, for the shared towers' usage (2026-11-25).
+    checks: Option<BTreeMap<String, Vec<(String, String)>>>,
 }
 
 /// What a check reads, taken on the authority when it starts.
@@ -365,6 +368,17 @@ impl Neighbourhood for SnapNet {
     fn max_margin(&mut self) -> f64 {
         self.snap.max_margin
     }
+
+    fn structure_checks(
+        &mut self,
+        model: &str,
+    ) -> Option<Result<Arc<ohl_scope::loads::StructureChecks>, String>> {
+        let Some(files) = self.snap.models.get(model).and_then(|m| m.checks.as_ref()) else {
+            return Some(Err(format!("line {model}'s structure libraries not read")));
+        };
+        let work = self.snap.work.with_file_name("checks-types");
+        Some(crate::packager::structure_checks(files, &work, false).map(Arc::new))
+    }
 }
 
 impl NetHost {
@@ -415,6 +429,16 @@ impl NetHost {
             };
             let files = |kind: &str| m.session.library_files(kind).map_err(|e| e.to_string());
             let (weather, loads) = (files("weather")?, files("loadcases")?);
+            let checks = if code == ws.model && matches!(check, ScopedCheck::StructureLoads { .. })
+            {
+                let mut kinds = BTreeMap::new();
+                for (kind, _) in crate::packager::CHECK_LIBRARIES {
+                    kinds.insert(kind.to_owned(), files(kind)?);
+                }
+                Some(kinds)
+            } else {
+                None
+            };
             models.insert(
                 code,
                 SnapModel {
@@ -426,6 +450,7 @@ impl NetHost {
                     cables,
                     weather,
                     loads,
+                    checks,
                 },
             );
         }

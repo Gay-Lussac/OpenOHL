@@ -108,18 +108,27 @@ pub enum CheckKind {
     Clearances,
     /// The magnetic field with the lines near.
     Fields,
+    /// The electric field with the lines near, solved together
+    /// (2026-11-25).
+    Electric,
     /// Loads on towers shared with other lines.
     Loads,
 }
 
 impl CheckKind {
-    const ALL: [CheckKind; 3] = [CheckKind::Clearances, CheckKind::Fields, CheckKind::Loads];
+    const ALL: [CheckKind; 4] = [
+        CheckKind::Clearances,
+        CheckKind::Fields,
+        CheckKind::Electric,
+        CheckKind::Loads,
+    ];
 
     fn name(self) -> &'static str {
         match self {
             CheckKind::Clearances => "Clearances between wires",
             CheckKind::Fields => "Magnetic field",
-            CheckKind::Loads => "Loads on shared towers",
+            CheckKind::Electric => "Electric field",
+            CheckKind::Loads => "Loads and usage of shared towers",
         }
     }
 }
@@ -168,6 +177,8 @@ pub struct OfflineWindow {
     pub amps: String,
     /// 2: the field's limit, µT (empty: none).
     pub limit_ut: String,
+    /// 2: the electric field's limit, kV/m (empty: none).
+    pub limit_kv_m: String,
     /// 2: the towers of a check of loads (empty: every shared one).
     pub structures: String,
     /// 3: where the bundle goes.
@@ -202,6 +213,7 @@ impl Default for OfflineWindow {
             distance: 500.0,
             amps: String::new(),
             limit_ut: String::new(),
+            limit_kv_m: String::new(),
             structures: String::new(),
             bundle_out: String::new(),
             bundle_in: String::new(),
@@ -461,6 +473,16 @@ impl OfflineWindow {
                     distance: Some(self.distance),
                     amps: number(&self.amps, "Current")?,
                     limit_ut: number(&self.limit_ut, "Limit")?,
+                }
+            }
+            CheckKind::Electric => {
+                if !(self.distance > 0.0 && self.distance <= 2000.0) {
+                    return Err("The field's distance is more than 0 and at most 2000 m".into());
+                }
+                ScopedCheck::ElectricField {
+                    case: case()?,
+                    distance: Some(self.distance),
+                    limit_kv_m: number(&self.limit_kv_m, "Limit")?,
                 }
             }
             CheckKind::Loads => ScopedCheck::StructureLoads {
@@ -1043,6 +1065,32 @@ fn check_ui(ui: &mut egui::Ui, r: &Ready, w: &mut OfflineWindow) {
                 ui.add(egui::TextEdit::singleline(&mut w.limit_ut).desired_width(80.0));
             });
         }
+        CheckKind::Electric => {
+            ui.horizontal(|ui| {
+                tool_ui::label(
+                    ui,
+                    "Distance (m)",
+                    "How far from your line's wires the other lines are taken in, solved \
+                     together with it (more than 0, at most 2000 m; 500 m by default). A larger \
+                     distance takes more wires into each profile's system: more pieces, longer \
+                     (each profile's system is solved once: on the synthetic country 0.4–7.2 s \
+                     per working set of four sections at 500 m).",
+                );
+                ui.add(
+                    egui::DragValue::new(&mut w.distance)
+                        .range(1.0..=2000.0)
+                        .suffix(" m"),
+                );
+                tool_ui::label(
+                    ui,
+                    "Limit (kV/m)",
+                    "A limit the field is compared with (empty: none, the field is reported). \
+                     Every line at its systems' highest operating voltage where the line gives \
+                     one, else the nominal (said NOT ON THE SAFE SIDE).",
+                );
+                ui.add(egui::TextEdit::singleline(&mut w.limit_kv_m).desired_width(80.0));
+            });
+        }
         CheckKind::Loads => {
             ui.horizontal(|ui| {
                 tool_ui::label(
@@ -1050,7 +1098,8 @@ fn check_ui(ui: &mut egui::Ui, r: &Ready, w: &mut OfflineWindow) {
                     "Towers",
                     "The towers shared with other lines to check, separated by commas (empty: \
                      every shared tower of your working set): each under each line's cases, the \
-                     worst kept.",
+                     worst kept, and each one's usage on every line's loads by your line's \
+                     structure types (the same check as the Structure loads window's).",
                 );
                 ui.add(egui::TextEdit::singleline(&mut w.structures).desired_width(260.0));
             });

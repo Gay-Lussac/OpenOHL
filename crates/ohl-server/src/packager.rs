@@ -581,6 +581,87 @@ pub(crate) fn model_libs(
     libs_for(model, libs_rev, typed, &libs, caches, work)
 }
 
+/// The library kinds a structure's usage check reads, each with the
+/// folder OHL-Design keeps it in (a type's model and pole files beside
+/// it, its bolts below): the same layout, so a type's files find each
+/// other (2026-11-25).
+#[cfg(feature = "offline-checks")]
+pub(crate) const CHECK_LIBRARIES: [(&str, &str); 6] = [
+    ("structures", "structures"),
+    ("poles", "structures"),
+    ("femodels", "structures"),
+    ("loads", "structures"),
+    ("bolts", "structures/Bolts"),
+    ("sections", "sections"),
+];
+
+/// A model's structure types and member sections for its usage checks
+/// (the shared towers on the combined loads, 2026-11-25), from its
+/// library files `files` (kind → files; a kind without files: the shipped
+/// library, as the scenes take them), written into a new folder in
+/// `work` (removed when the answer is dropped: the types' model files
+/// are read from it). `plugins`: whether a type may name a member-check
+/// plugin — **the network's server runs none** (a user's library could
+/// otherwise make it run a program found on it): such a library is
+/// refused, said, and checked in OHL-Design.
+#[cfg(feature = "offline-checks")]
+pub(crate) fn structure_checks(
+    files: &BTreeMap<String, Vec<(String, String)>>,
+    work: &std::path::Path,
+    plugins: bool,
+) -> Result<ohl_scope::loads::StructureChecks, String> {
+    use ohl_core::files::shipped_library;
+    let given = |kind: &str| files.get(kind).filter(|f| !f.is_empty());
+    if !plugins
+        && CHECK_LIBRARIES
+            .iter()
+            .filter_map(|(k, _)| given(k))
+            .flatten()
+            .any(|(_, text)| text.contains("plugin:"))
+    {
+        return Err(
+            "a structure type names a member-check plugin, and the network's server runs no \
+             plugins"
+                .into(),
+        );
+    }
+    crate::private_dir(work).map_err(|e| format!("{}: {e}", work.display()))?;
+    let dir = work.join(format!("types-{}", crate::random_code(8)));
+    crate::private_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let mut out = ohl_scope::loads::StructureChecks::default();
+    out.folder = Some(dir.clone());
+    let mut own = std::collections::BTreeSet::new();
+    for (kind, folder) in CHECK_LIBRARIES {
+        let Some(list) = given(kind) else { continue };
+        let at = dir.join(folder);
+        std::fs::create_dir_all(&at).map_err(|e| format!("{}: {e}", at.display()))?;
+        for (name, text) in list {
+            if !ohl_session::safe_file_name(name) {
+                return Err(format!("library file \"{name}\": not a plain file name"));
+            }
+            std::fs::write(at.join(name), text).map_err(|e| format!("{name}: {e}"))?;
+        }
+        own.insert(folder.split('/').next().unwrap_or(folder));
+    }
+    let structures = if own.contains("structures") {
+        dir.join("structures")
+    } else {
+        shipped_library("structures")
+    };
+    out.types = ohl_structures::StructureLibrary::load_dir(&structures)
+        .map_err(|e| format!("structure types: {e}"))?;
+    let sections = if own.contains("sections") {
+        dir.join("sections")
+    } else {
+        shipped_library("sections")
+    };
+    if sections.exists() {
+        out.sections = ohl_sections::SectionLibrary::load(&sections)
+            .map_err(|e| format!("cross-section library: {e}"))?;
+    }
+    Ok(out)
+}
+
 /// A part of a model's line resolved as a package resolves it (its
 /// structures merged with their types; as drawn when they cannot be),
 /// with what could not be done.

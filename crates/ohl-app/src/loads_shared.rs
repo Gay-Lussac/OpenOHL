@@ -31,6 +31,7 @@ use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use ohl_scope::loads::{StructureChecks, TowerUsage};
 use ohl_server::offline_checks::SharedTowerLoads;
 
 use crate::check_help as help;
@@ -53,6 +54,15 @@ pub struct Computed {
     pub words: Vec<String>,
     /// How long it took.
     pub took: Duration,
+    /// Per shared tower computed, its usage on every line's loads by the
+    /// window's own structure check (none: the loads not computed; an
+    /// error: why the usage was not checked).
+    pub usage: Vec<(String, Result<TowerUsage, String>)>,
+    /// The usage on every line's loads took, s.
+    pub usage_seconds: f64,
+    /// The window's **Use local conditions** was ticked (the combined
+    /// loads are without them: said).
+    pub local: bool,
 }
 
 impl Computed {
@@ -84,10 +94,114 @@ impl Computed {
                 .filter(|w| w.starts_with("NOT ALL CHECKED"))
                 .cloned(),
         );
+        for (s, u) in &self.usage {
+            match u {
+                Err(e) => out.push(format!(
+                    "NOT ALL CHECKED: structure {s}: its usage on every line's loads not \
+                     checked ({e}) — every line's loads can use more of its capacity than this \
+                     line's alone; its usage here is this line's loads only"
+                )),
+                Ok(u) => out.extend(
+                    u.not_all_checked
+                        .iter()
+                        .map(|t| format!("NOT ALL CHECKED: {t}")),
+                ),
+            }
+        }
         out.dedup();
         out
     }
 
+    /// What is said of the shared towers' usage (none: no usage checked):
+    /// NOT ON THE SAFE SIDE with the window's local conditions.
+    pub fn usage_notes(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        if self.local && self.usage.iter().any(|(_, u)| u.is_ok()) {
+            out.push(
+                "NOT ON THE SAFE SIDE: the usage on every line's loads takes the loads without \
+                 the local conditions (the network's check takes each line's cases as written), \
+                 while this line's own usage takes them — where a span's or a structure's local \
+                 factor is above 1 every line's loads can be larger than computed; the larger \
+                 of the two usages is kept, so a tower governed by this line's own loads is \
+                 safe; untick Use local conditions to compare both without them"
+                    .to_owned(),
+            );
+        }
+        out
+    }
+
+    /// Per (line, case) of every line's loads, the shared towers' usage
+    /// in it: what the window adds to its usage, as cases of their own
+    /// named [`combined_case_name`].
+    pub fn usage_cases(&self) -> Vec<ohl_loads::capacity::CaseUsage> {
+        let mut out: Vec<ohl_loads::capacity::CaseUsage> = Vec::new();
+        for (_, u) in &self.usage {
+            let Ok(u) = u else { continue };
+            for (line, case, s) in &u.cases {
+                let name = combined_case_name(line, case);
+                match out.iter_mut().find(|c| c.case == name) {
+                    Some(c) => c.structures.push(s.clone()),
+                    None => out.push(ohl_loads::capacity::CaseUsage {
+                        case: name,
+                        structures: vec![s.clone()],
+                    }),
+                }
+            }
+        }
+        out
+    }
+}
+
+/// The name a case of every line's loads on the shared towers has in the
+/// window's usage: `line L's case C, every line` (2026-11-25).
+pub fn combined_case_name(line: &str, case: &str) -> String {
+    format!("line {line}'s case {case}, every line (shared towers)")
+}
+
+/// What the shared towers' usage is checked with: the window's own
+/// structure check's inputs (the same check as this line's own loads).
+pub struct UsageInputs {
+    /// The line as the window solves it.
+    pub line: ohl_line::Line,
+    /// Its wires.
+    pub library: ohl_cables::Library,
+    /// The structure types.
+    pub types: ohl_structures::StructureLibrary,
+    /// The cross-section library (or why it does not read).
+    pub sections: Result<ohl_sections::SectionLibrary, String>,
+    /// **Use local conditions** ticked.
+    pub local: bool,
+}
+
+/// Each shared tower of `r` checked on every line's loads with `i`.
+fn usages(r: &SharedTowerLoads, i: &UsageInputs) -> Vec<(String, Result<TowerUsage, String>)> {
+    let checks = i.sections.clone().map(|sections| StructureChecks {
+        types: i.types.clone(),
+        sections,
+        folder: None,
+    });
+    r.loads
+        .towers
+        .iter()
+        .map(|t| {
+            let u = match &checks {
+                Err(e) => Err(e.clone()),
+                Ok(c) => ohl_scope::loads::tower_usage(
+                    &i.line,
+                    &t.structure,
+                    c,
+                    &i.library,
+                    &t.combined,
+                    &ohl_loads::capacity::Progress::default(),
+                )
+                .ok_or_else(|| "stopped".to_owned()),
+            };
+            (t.structure.clone(), u)
+        })
+        .collect()
+}
+
+impl Computed {
     /// The structures computed with their other lines.
     pub fn computed(&self) -> Vec<&str> {
         match &self.result {
@@ -147,7 +261,13 @@ impl Shared {
     /// Starts the shared towers of `order` (the structures the run
     /// computes) on an offline working set's file, in the background;
     /// nothing otherwise.
-    pub fn start(&mut self, model: &Model, order: &[String], ctx: &egui::Context) {
+    pub fn start(
+        &mut self,
+        model: &Model,
+        order: &[String],
+        inputs: impl FnOnce() -> UsageInputs,
+        ctx: &egui::Context,
+    ) {
         self.running = None;
         self.last = None;
         let Some(n) = model.offline_neighbours() else {
@@ -170,6 +290,8 @@ impl Shared {
             .collect();
         inside.dedup();
         let path = model.sources.file.clone();
+        let inputs = inputs();
+        let local = inputs.local;
         let (tx, rx) = channel();
         let c = ctx.clone();
         std::thread::spawn(move || {
@@ -179,12 +301,21 @@ impl Shared {
             } else {
                 ohl_server::offline_checks::shared_tower_loads(&path, &inside)
             };
+            // Their usage on every line's loads: the window's own check.
+            let t1 = Instant::now();
+            let usage = match &result {
+                Ok(r) => usages(r, &inputs),
+                Err(_) => Vec::new(),
+            };
             let _ = tx.send(Computed {
                 twins,
                 outside,
                 result,
                 words,
                 took: t0.elapsed(),
+                usage,
+                usage_seconds: t1.elapsed().as_secs_f64(),
+                local,
             });
             c.request_repaint();
         });
@@ -219,17 +350,91 @@ impl Shared {
         self.running.is_some() || self.last.is_some()
     }
 
-    /// The red line the Usage view says for the shared towers (none: no
-    /// shared tower).
-    pub fn usage_words(&self) -> Option<String> {
-        let c = self.last.as_ref()?;
-        let mut ids: Vec<&str> = c.twins.iter().map(|t| t.structure.as_str()).collect();
-        ids.dedup();
-        Some(format!(
-            "NOT ALL CHECKED: the usage of the shared tower(s) {} is this line's loads alone — \
-             the other lines' sections on them are in the Shared towers view, not in this usage",
-            some(&ids)
-        ))
+    /// What the Usage view says of the shared towers (none: no shared
+    /// tower): (text, whether in red).
+    pub fn usage_words(&self) -> Vec<(String, bool)> {
+        if self.running.is_some() {
+            return vec![(
+                "NOT ALL CHECKED yet: the shared towers' usage on every line's loads is being \
+                 computed — until it is, their usage here is this line's loads alone"
+                    .to_owned(),
+                true,
+            )];
+        }
+        let Some(c) = self.last.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        let checked: Vec<&str> = c
+            .usage
+            .iter()
+            .filter(|(_, u)| u.as_ref().is_ok_and(|u| u.governing().is_some()))
+            .map(|(s, _)| s.as_str())
+            .collect();
+        let nothing: Vec<&str> = c
+            .usage
+            .iter()
+            .filter(|(_, u)| u.as_ref().is_ok_and(|u| u.governing().is_none()))
+            .map(|(s, _)| s.as_str())
+            .collect();
+        if !nothing.is_empty() {
+            out.push((
+                format!(
+                    "The shared tower(s) {} have nothing to check against (no structure type, or \
+                     a type without capacity): not checked on every line's loads, as on this \
+                     line's own",
+                    some(&nothing)
+                ),
+                false,
+            ));
+        }
+        if !checked.is_empty() {
+            out.push((
+                format!(
+                    "The shared tower(s) {} are checked on this line's loads and on every line's \
+                     loads (the cases \"…, every line (shared towers)\"): the larger usage \
+                     governs ({:.1} s)",
+                    some(&checked),
+                    c.usage_seconds
+                ),
+                false,
+            ));
+        }
+        let mut missing: Vec<&str> = c
+            .twins
+            .iter()
+            .map(|t| t.structure.as_str())
+            .filter(|s| !checked.contains(s) && !nothing.contains(s))
+            .collect();
+        missing.dedup();
+        if !missing.is_empty() {
+            out.push((
+                format!(
+                    "NOT ALL CHECKED: the usage of the shared tower(s) {} is this line's loads \
+                     alone — every line's loads on them can use more of their capacity; see the \
+                     Shared towers view for why they were not computed",
+                    some(&missing)
+                ),
+                true,
+            ));
+        }
+        for n in c.usage_notes() {
+            out.push((n, true));
+        }
+        for (_, u) in &c.usage {
+            if let Ok(u) = u {
+                for t in &u.not_all_checked {
+                    out.push((format!("NOT ALL CHECKED: {t}"), true));
+                }
+            }
+        }
+        out.dedup();
+        out
+    }
+
+    /// The answer's generation (counts the answers taken).
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// The view; returns a structure to go to.
@@ -349,6 +554,35 @@ impl Shared {
         let Ok(r) = &c.result else {
             return None;
         };
+        // Each tower's usage on every line's loads (its governing case).
+        for (s, u) in &c.usage {
+            let Ok(u) = u else { continue };
+            let Some((g, line, case)) = u
+                .governing()
+                .and_then(|(l, k, su)| su.governing().map(|g| (g, l, k)))
+            else {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "structure {s}: usage on every line's loads not checked (no type or no \
+                         capacity: as in the Usage view)"
+                    ))
+                    .small(),
+                );
+                continue;
+            };
+            let text = format!(
+                "structure {s}: usage on every line's loads {:.0} % — {} ({}: {})",
+                g.usage * 100.0,
+                case_words(line, case),
+                g.method.as_str(),
+                g.governs
+            );
+            if g.usage > 1.0 || !g.usage.is_finite() {
+                ui.colored_label(red, egui::RichText::new(text).small());
+            } else {
+                ui.label(egui::RichText::new(text).small());
+            }
+        }
         let cases = cases(r);
         ui.horizontal(|ui| {
             ui.label("Load case");

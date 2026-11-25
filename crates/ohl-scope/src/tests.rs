@@ -34,6 +34,9 @@ struct Net {
     asked: usize,
     /// Parts give the whole line instead (the whole network's reference).
     whole: bool,
+    /// A line whose wire library is empty: its sections never solve (the
+    /// slow path forced: a neighbour that does not solve).
+    unsolved: Option<String>,
 }
 
 impl Drop for Net {
@@ -70,6 +73,7 @@ fn country(pylons: usize, seed: u64, tag: &str) -> (ohl_synth::Country, Net) {
         margin,
         asked: 0,
         whole: false,
+        unsolved: None,
     };
     (country, net)
 }
@@ -165,7 +169,10 @@ impl Neighbourhood for Net {
         crate::system_potentials(self.line(model))
     }
 
-    fn library(&mut self, _: &str) -> Result<Arc<ohl_cables::Library>, String> {
+    fn library(&mut self, model: &str) -> Result<Arc<ohl_cables::Library>, String> {
+        if self.unsolved.as_deref() == Some(model) {
+            return Ok(Arc::new(ohl_cables::Library::default()));
+        }
         Ok(self.library.clone())
     }
 
@@ -555,6 +562,183 @@ fn shared_tower_loads_equal_the_whole() {
     eprintln!("loads: {towers} towers, {points} points, against one project at most {worst:.2e}");
 }
 
+/// A structure type of every point label `labels` with allowable loads
+/// (Method 2): 50 kN each way, uplift 20 kN.
+fn tower_type(labels: &BTreeSet<String>) -> crate::loads::StructureChecks {
+    #[derive(serde::Deserialize)]
+    struct Doc {
+        capacity: ohl_structures::Capacity,
+    }
+    let ex = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-line");
+    let loaded = ohl_structures::StructureLibrary::load_dir(&ex.join("Structures")).expect("types");
+    let mut t = loaded.get("type-01").expect("type-01").clone();
+    let mut text = String::new();
+    for l in labels {
+        text.push_str(&format!(
+            "[[capacity.attachment]]\npoint = \"{l}\"\ntransverse = \"50 kN\"\n\
+             longitudinal = \"50 kN\"\nvertical = \"50 kN\"\nuplift = \"20 kN\"\n"
+        ));
+    }
+    t.capacity = Some(toml::from_str::<Doc>(&text).expect("capacity").capacity);
+    t.id = "tower".into();
+    let mut types = ohl_structures::StructureLibrary::default();
+    types
+        .insert(&PathBuf::from("tower.ohls"), t)
+        .expect("a type");
+    let mut checks = crate::loads::StructureChecks::default();
+    checks.types = types;
+    checks
+}
+
+/// **The usage of a shared tower on every line's loads** (2026-11-25): by
+/// the same check as the line's own loads — on the line's own loads alone
+/// it is that check's usage, to the bit; on every line's loads the
+/// allowable loads (Method 2) are those of the points the loads add
+/// (the Shared towers view's), by hand.
+#[test]
+fn shared_tower_usage_on_every_lines_loads() {
+    let (_country, mut net) = country(150, 1, "usage");
+    let budget = ohl_loads::default_budget();
+    let cases = net.cases.clone();
+    let known: Vec<String> = cases.loads.iter().map(|c| c.name.clone()).collect();
+    let codes: Vec<String> = net.models.iter().map(|(c, _)| c.clone()).collect();
+    let (mut towers, mut checked, mut alone) = (0, 0, 0);
+    let mut most: f64 = 0.0;
+    for code in &codes {
+        let mut ws = working_set(&net, code, 0);
+        ws.structures.truncate(2);
+        if ws.structures.is_empty() {
+            continue;
+        }
+        let scoped = crate::loads::shared_tower_loads(&mut net, &ws, &budget).expect("scoped");
+        for t in &scoped.towers {
+            towers += 1;
+            assert_eq!(t.combined.len(), t.cases.len());
+            assert!(
+                t.usage.is_none(),
+                "the test's neighbourhood leaves it to its caller"
+            );
+            let sections = net.sections_at(code, &t.structure);
+            let mut part = net
+                .part(code, std::slice::from_ref(&t.structure), &sections)
+                .expect("part");
+            for s in &mut part.structures {
+                s.structure_type = Some("tower".into());
+            }
+            let labels: BTreeSet<String> = t
+                .combined
+                .iter()
+                .flat_map(|c| c.loads.loads.iter().map(|a| a.point.clone()))
+                .filter(|p| !p.is_empty())
+                .collect();
+            let checks = tower_type(&labels);
+            let u = crate::loads::tower_usage(
+                &part,
+                &t.structure,
+                &checks,
+                &net.library,
+                &t.combined,
+                &ohl_loads::capacity::Progress::default(),
+            )
+            .expect("not stopped");
+            assert!(u.not_all_checked.is_empty(), "{:?}", u.not_all_checked);
+            assert_eq!(u.cases.len(), t.cases.len());
+            for ((line, case, s), c) in u.cases.iter().zip(&t.cases) {
+                assert_eq!((line, case), (&c.line, &c.case));
+                let phi = cases
+                    .loads
+                    .iter()
+                    .find(|x| x.name == c.case)
+                    .expect("a case")
+                    .strength;
+                let expected = c
+                    .points
+                    .iter()
+                    .filter(|p| !p.point.is_empty())
+                    .map(|p| {
+                        let [x, y, z] = p.factored;
+                        let v = if z >= 0.0 { z / 50e3 } else { -z / 20e3 };
+                        (x.abs() / 50e3).max(y.abs() / 50e3).max(v) / phi
+                    })
+                    .fold(0.0, f64::max);
+                let got = s.loads.as_ref().expect("Method 2").usage;
+                assert!(
+                    (got - expected).abs() <= 1e-9 * expected.max(1.0),
+                    "{code} {} {line}'s {case}: {got} against {expected}",
+                    t.structure
+                );
+                most = most.max(got);
+                checked += 1;
+            }
+            // This line's case alone through the same path: its own check.
+            let mut own = part.clone();
+            own.structure_groups.clear();
+            let solved = ohl_loads::structure_loads_each(
+                &own,
+                &net.library,
+                &cases.weather,
+                &cases.loads,
+                &known,
+                &budget,
+            );
+            let direct = ohl_loads::capacity::usage_with_sections(
+                &own,
+                &checks.types,
+                &checks.sections,
+                &net.library,
+                &cases.weather,
+                &solved
+                    .iter()
+                    .filter_map(|r| r.as_ref().ok().cloned())
+                    .collect::<Vec<_>>(),
+            );
+            for (k, case) in cases.loads.iter().enumerate() {
+                let Some(Ok(l)) = solved.get(k) else { continue };
+                let weather = cases
+                    .weather
+                    .iter()
+                    .find(|w| w.name == case.weather)
+                    .cloned();
+                let twins = [(code.clone(), t.structure.clone(), l)];
+                let Some(c) = crate::loads::combine(&t.structure, code, &twins, case, weather)
+                else {
+                    continue;
+                };
+                let via = crate::loads::tower_usage(
+                    &own,
+                    &t.structure,
+                    &checks,
+                    &net.library,
+                    std::slice::from_ref(&c),
+                    &ohl_loads::capacity::Progress::default(),
+                )
+                .expect("not stopped");
+                let Some(d) = direct
+                    .iter()
+                    .find(|u| u.case == case.name)
+                    .and_then(|u| u.structures.iter().find(|s| s.structure == t.structure))
+                else {
+                    continue;
+                };
+                assert_eq!(
+                    via.cases[0].2.loads, d.loads,
+                    "{code} {} {}",
+                    t.structure, case.name
+                );
+                alone += 1;
+            }
+        }
+    }
+    assert!(towers >= 2, "{towers}");
+    assert!(checked > 20, "{checked}");
+    assert!(alone > 5, "{alone}");
+    eprintln!(
+        "usage: {towers} towers, {checked} cases of every line's loads (largest {:.0} %), \
+         {alone} alone equal to the line's own check",
+        most * 100.0
+    );
+}
+
 /// The field with the lines within the field distance, against the whole
 /// network's (every line whole, added by size as the scoped check adds
 /// them): what the distance leaves out is said NOT ON THE SAFE SIDE and
@@ -701,4 +885,149 @@ fn electric_field_with_the_lines_near() {
     assert!(sets >= 2, "{sets}");
     assert!(together >= 1, "{together}");
     eprintln!("electric: largest rise over this line alone {largest_gain:.4} kV/m");
+}
+
+/// Along a run (a volume's, 2026-11-25): each point takes its stretch's
+/// system, centred on the run there — the same values, to the bit, as a
+/// profile through those points centred there ([`crate::electric::joint_at`]);
+/// the stretches as long as twice the distance where the pieces start to
+/// grow, so a point lies among the shortest pieces as at a profile's
+/// middle.
+#[test]
+fn electric_field_along_a_run() {
+    let (_, mut net) = country(150, 1, "along");
+    let codes: Vec<String> = net.models.iter().map(|(c, _)| c.clone()).collect();
+    let case = case(&net, "40 °C");
+    let distance = crate::reach::FIELD_DISTANCE;
+    let mut runs = 0;
+    for code in &codes {
+        let mut ws = working_set(&net, code, 0);
+        if ws.structures.is_empty() {
+            continue;
+        }
+        ws.sections.truncate(2);
+        let lines =
+            crate::electric::joint_lines(&mut net, &ws, &case, distance, &[]).expect("lines");
+        if lines.lines.is_empty() {
+            continue;
+        }
+        // A straight run of 160 m from a structure of the working set.
+        let line = net.line(code);
+        let sec = line
+            .sections
+            .iter()
+            .find(|s| s.id == ws.sections[0])
+            .expect("a section");
+        let a = line
+            .structure(&sec.points[0].structure)
+            .expect("a")
+            .position;
+        let b = line
+            .structure(&sec.points[1].structure)
+            .expect("b")
+            .position;
+        let len = (b[0] - a[0]).hypot(b[1] - a[1]);
+        let u = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+        let length = len.min(160.0);
+        let station = move |p: [f64; 2]| (p[0] - a[0]) * u[0] + (p[1] - a[1]) * u[1];
+        let place = move |t: f64| [a[0] + t * u[0], a[1] + t * u[1]];
+        let along = crate::electric::JointAlong::new(&lines, &station, &place, length, distance);
+        let stretch = crate::electric::stretch(&crate::electric::joint_settings(distance));
+        assert!((stretch - 2.0 * 4.0 / 0.15).abs() < 1e-9, "{stretch}");
+        let n = ((length / stretch).ceil() as usize).max(1);
+        let ground = lines.ground.clone();
+        let mut points = Vec::new();
+        for k in 0..n {
+            let t = length * (k as f64 + 0.5) / n as f64;
+            let c = place(t);
+            let side = [-u[1], u[0]];
+            let at: Vec<[f64; 3]> = [-20.0, 0.0, 15.0]
+                .iter()
+                .map(|s| {
+                    let x = c[0] + s * side[0];
+                    let y = c[1] + s * side[1];
+                    [x, y, ground(x, y) + 1.0]
+                })
+                .collect();
+            let profile = crate::electric::joint_at(
+                &lines,
+                &[crate::electric::ProfileAt {
+                    centre: c,
+                    points: at.clone(),
+                }],
+                distance,
+            );
+            let p = profile[0].as_ref().expect("solved");
+            let got = along.worst_kv_m(&at);
+            assert_eq!(got, p.worst_kv_m, "{code} stretch {k}");
+            points.extend(at);
+        }
+        assert!(along.failed().is_empty(), "{:?}", along.failed());
+        let (systems, most) = along.solved();
+        assert_eq!(systems, n);
+        eprintln!(
+            "along: line {code}, {length:.0} m, {systems} system(s) of at most {most} pieces, \
+             {} points",
+            points.len()
+        );
+        runs += 1;
+        if runs >= 2 {
+            break;
+        }
+    }
+    assert!(runs >= 1, "{runs}");
+}
+
+/// **Timing never changes a result** (2026-11-25): every solve of a scoped
+/// check has an iteration limit and no clock; and the slow path forced — a
+/// neighbour line whose sections do not solve (here: its wire library
+/// empty) — is said NOT ALL CHECKED with the line named, never a quietly
+/// lower field.
+#[test]
+fn a_neighbour_not_solved_is_said_never_a_lower_field() {
+    let budget = format!("{:?}", crate::solve_budget());
+    assert!(
+        budget.contains("time_limit: None") && budget.contains("max_iterations: Some(100)"),
+        "{budget}"
+    );
+    let (_, mut net) = country(150, 1, "unsolved");
+    let codes: Vec<String> = net.models.iter().map(|(c, _)| c.clone()).collect();
+    let spec = crate::electric::ElectricSpec {
+        width: 30.0,
+        step: 5.0,
+        ..Default::default()
+    };
+    let case = case(&net, "40 °C");
+    let mut found = 0;
+    for code in &codes {
+        let mut ws = working_set(&net, code, 0);
+        if ws.structures.is_empty() {
+            continue;
+        }
+        ws.sections.truncate(2);
+        let r = crate::electric::electric_field(&mut net, &ws, &case, &spec).expect("electric");
+        let Some(other) = r
+            .taken_in
+            .iter()
+            .skip(1)
+            .find_map(|t| t.strip_prefix("line ").and_then(|t| t.split(':').next()))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        assert!(r.not_all_checked.is_empty(), "{:?}", r.not_all_checked);
+        net.unsolved = Some(other.clone());
+        let slow = crate::electric::electric_field(&mut net, &ws, &case, &spec).expect("electric");
+        net.unsolved = None;
+        assert!(
+            slow.not_all_checked.iter().any(
+                |t| t.starts_with(&format!("line {other}: section ")) && t.contains("left out")
+            ),
+            "{:?}",
+            slow.not_all_checked
+        );
+        found += 1;
+        break;
+    }
+    assert!(found > 0);
 }

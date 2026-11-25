@@ -368,6 +368,27 @@ impl Neighbourhood for HostNet<'_> {
         cases_of(model, &weather, &loads)
     }
 
+    fn structure_checks(
+        &mut self,
+        model: &str,
+    ) -> Option<Result<Arc<ohl_scope::loads::StructureChecks>, String>> {
+        let work = self.host.copies.join("work").join("checks-types");
+        let Some(m) = self.model(model) else {
+            return Some(Err(format!("the network has no line {model}")));
+        };
+        let read = || -> Result<_, String> {
+            let mut kinds = std::collections::BTreeMap::new();
+            for (kind, _) in crate::packager::CHECK_LIBRARIES {
+                kinds.insert(
+                    kind.to_owned(),
+                    m.session.library_files(kind).map_err(|e| e.to_string())?,
+                );
+            }
+            crate::packager::structure_checks(&kinds, &work, false).map(Arc::new)
+        };
+        Some(read())
+    }
+
     fn max_margin(&mut self) -> f64 {
         let mut max: f64 = 0.0;
         let codes: Vec<String> = self.host.models.keys().cloned().collect();

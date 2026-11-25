@@ -711,6 +711,20 @@ impl ElectricNeighbours {
             centre: [q.x, q.y],
             points: vec![[q.x, q.y, q.z]],
         }));
+        // Each cut its own system, centred where it crosses the axis (as a
+        // profile's), at every point of its grid (2026-11-25).
+        at.extend(field.cuts.iter().map(|c| {
+            let v = &c.values;
+            let plan: Vec<[f64; 2]> = v.offsets.iter().map(|o| v.cut.at(*o)).collect();
+            ohl_scope::electric::ProfileAt {
+                centre: v.cut.at(0.0),
+                points: v
+                    .elevations
+                    .iter()
+                    .flat_map(|z| plan.iter().map(move |p| [p[0], p[1], *z]))
+                    .collect(),
+            }
+        }));
         let mut out = Vec::new();
         let f = match ohl_server::offline_checks::electric_neighbours(
             &self.path, &sections, case, distance, given, &at,
@@ -757,6 +771,7 @@ impl ElectricNeighbours {
         let limit = field.limit_kv_m;
         let mut failed = Vec::new();
         let np = field.profiles.len();
+        let nq = np + field.points.len();
         for (k, r) in f.profiles.iter().enumerate() {
             let j = match r {
                 Ok(j) => j,
@@ -766,12 +781,27 @@ impl ElectricNeighbours {
                             "span {}–{}: {e}",
                             field.profiles[k].from, field.profiles[k].to
                         )
-                    } else {
+                    } else if k < nq {
                         format!("point {}: {e}", field.points[k - np].name)
+                    } else {
+                        format!("{}: {e}", cut_name(&field.cuts[k - nq]))
                     });
                     continue;
                 }
             };
+            if k >= nq {
+                // A cut: the larger of this line alone and the lines
+                // together at each of its points.
+                for (x, w) in field.cuts[k - nq]
+                    .values
+                    .values
+                    .iter_mut()
+                    .zip(&j.worst_kv_m)
+                {
+                    *x = x.max(*w);
+                }
+                continue;
+            }
             let points = if k < np {
                 &mut field.profiles[k].points
             } else {
@@ -802,13 +832,16 @@ impl ElectricNeighbours {
         if !f.lines.is_empty() {
             out.extend(f.notes.iter().cloned());
             out.push(ohl_scope::electric::SOLVED_TOGETHER.to_owned());
-            if !field.cuts.is_empty() || !field.volumes.is_empty() {
+            if !field.cuts.is_empty() {
                 out.push(
-                    "NOT ALL CHECKED: the cuts and the volumes' surfaces are this line's field \
-                     alone — the other lines are computed with it at the profiles and the given \
-                     points"
+                    "The cuts: at every point the larger of this line alone and the lines \
+                     solved together (each cut its own system, centred where it crosses the \
+                     axis, as a profile's)."
                         .to_owned(),
                 );
+            }
+            if let Some(lines) = &f.system {
+                out.extend(joint_volumes(lines, distance, field));
             }
             if !field.points.is_empty() {
                 out.push(far_points_note(distance));
@@ -817,6 +850,97 @@ impl ElectricNeighbours {
         out.push(ohl_scope::electric::beyond_note(distance));
         out
     }
+}
+
+/// A cut's name in the notes.
+fn cut_name(c: &ohl_electrical::magnetic::FieldCut) -> String {
+    match &c.label {
+        Some(l) => format!("cut {l}"),
+        None => format!("cut in span {}–{}", c.from, c.to),
+    }
+}
+
+/// The label of a volume of every line near solved together.
+pub const EVERY_LINE: &str = "every line near solved together";
+
+/// Beside each of `field`'s volumes (this line's own field), the same box
+/// with **every line near solved together** (2026-11-25): its run cut into
+/// stretches, each its own system ([`ohl_scope::electric::JointAlong`]),
+/// the worst over the parts' phase angles at the lattice's points, the
+/// surfaces of the same levels — drawn with this line's own, so what lies
+/// inside either is at or above the level: the larger of the two, as at
+/// the profiles. Gives what is said of them.
+fn joint_volumes(
+    lines: &ohl_scope::electric::JointLines,
+    distance: f64,
+    field: &mut ohl_electrical::electric::ElectricField,
+) -> Vec<String> {
+    use ohl_electrical::field_views::{self, VolumeBox};
+    let mut out = Vec::new();
+    let mut added = Vec::new();
+    let mut boxes: Vec<VolumeBox> = Vec::new();
+    let started = std::time::Instant::now();
+    let (mut systems, mut most) = (0, 0);
+    for v in field.volumes.iter().filter(|v| v.label.is_none()) {
+        let b = v.values.bounds.clone();
+        let levels: Vec<f64> = v.values.surfaces.iter().map(|s| s.0).collect();
+        let station = |p: [f64; 2]| b.path.station(p);
+        let place = |t: f64| b.path.place(t, 0.0);
+        let along = ohl_scope::electric::JointAlong::new(
+            lines,
+            &station,
+            &place,
+            b.path.length(),
+            distance,
+        );
+        let pieces = along.wire_pieces();
+        let f = |ps: &[[f64; 3]]| along.worst_kv_m(ps);
+        let name = format!("volume {}–{}, {EVERY_LINE}", v.from, v.to);
+        let before: Vec<&VolumeBox> = boxes.iter().collect();
+        let r = field_views::volume_beside(&b, &levels, &f, &pieces, None, &before, &name);
+        drop(before);
+        for e in along.failed() {
+            out.push(format!(
+                "NOT ALL CHECKED: {name}: {e} — the lines not solved together there: this line's \
+                 own surfaces only (the other lines' field missing there, so the real field can \
+                 be higher)"
+            ));
+        }
+        let (n, m) = along.solved();
+        systems += n;
+        most = most.max(m);
+        match r {
+            Ok(values) => {
+                added.push(ohl_electrical::magnetic::FieldVolume {
+                    from: v.from.clone(),
+                    to: v.to.clone(),
+                    values,
+                    pieces: m,
+                    left_out: None,
+                    label: Some(EVERY_LINE.to_owned()),
+                });
+                boxes.push(b);
+            }
+            Err(e) => out.push(format!(
+                "NOT ALL CHECKED: {name}: not computed ({e}) — this line's own surfaces only \
+                 (the other lines' field missing, so the real field can be higher)"
+            )),
+        }
+    }
+    if !added.is_empty() {
+        out.push(format!(
+            "The volumes: each also with {EVERY_LINE} — the same box and levels, its run cut into \
+             stretches of {:.0} m, each its own system (as a profile's: the wires within \
+             {distance:.0} m of its middle, the shortest pieces near it), drawn with this line's \
+             own surfaces: what lies inside either is at or above the level ({} system(s), at \
+             most {most} pieces; {:.1} s).",
+            ohl_scope::electric::stretch(&ohl_scope::electric::joint_settings(distance)),
+            systems,
+            started.elapsed().as_secs_f64()
+        ));
+    }
+    field.volumes.extend(added);
+    out
 }
 
 /// Adds the field of `others` (wires with their currents) by size to
@@ -946,9 +1070,11 @@ pub fn banner(ui: &mut eframe::egui::Ui, n: &Result<Neighbours, String>, lines: 
              network's server exported them (within the export's reach). The rules to other lines \
              take their wires — each solved in every position checked with its own line's \
              settings and wires. Structure loads computes the towers shared with another line \
-             with that line's sections (its Shared towers view), the Magnetic field adds the \
-             other lines' field. The electric field and plugins do not add them: they say \
-             which lines lie near, and NOT ALL CHECKED for them. The neighbours are \
+             with that line's sections (its Shared towers view) and checks their usage on \
+             every line's loads, the Magnetic field adds the other lines' field, the Electric \
+             field solves them together with this line (profiles, points, cuts and volumes). \
+             Plugins do not add them: they say which lines lie near, and NOT ALL CHECKED for \
+             them. The neighbours are \
              those of the export's date: what changed on the network since is not in the file.",
         );
         guide = ui

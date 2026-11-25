@@ -19,7 +19,8 @@
 //! At every profile point the result is **the larger** of this line alone
 //! in its own model (`ohl_electrical::electric`, the ground plane under
 //! each point) and the lines solved together: the two models differ (the
-//! joint one leaves the jumpers out and takes every wire's charge from the
+//! joint one holds every wire, jumpers among them (2026-11-25), at its
+//! voltage and takes every charge from the
 //! system), and neither is let to lower the other.
 //!
 //! **NOT ON THE SAFE SIDE**: the wires farther than the field distance
@@ -230,14 +231,31 @@ pub fn joint_lines(
                parts: &mut Vec<String>,
                not_all: &mut Vec<String>,
                notes: &mut Vec<String>| {
-        let (shapes, _, failed) = solved(part, lib, case);
+        let (shapes, jumpers, failed) = solved(part, lib, case);
         for f in failed {
             not_all.push(format!("line {model}: {f}: its field left out"));
         }
-        let mut by_freq: BTreeMap<u64, usize> = BTreeMap::new();
-        for (f, mut w) in
-            joint::line_wires(part, lib, &shapes, given, &format!("line {model}"), notes)
+        // A jumper that did not solve: its field missing (2026-11-25).
+        for j in part
+            .jumpers
+            .iter()
+            .filter(|j| !jumpers.iter().any(|s| s.jumper == j.id))
         {
+            not_all.push(format!(
+                "line {model}: jumper {}: not solved: its field left out",
+                j.id
+            ));
+        }
+        let mut by_freq: BTreeMap<u64, usize> = BTreeMap::new();
+        for (f, mut w) in joint::line_wires(
+            part,
+            lib,
+            &shapes,
+            &jumpers,
+            given,
+            &format!("line {model}"),
+            notes,
+        ) {
             if let Some(f) = f {
                 let k = *by_freq.entry(f.to_bits()).or_insert_with(|| {
                     parts.push(format!("line {model} ({f} Hz)"));
@@ -364,10 +382,168 @@ pub fn joint_at(
         .collect()
 }
 
+/// The length of a stretch of a run with a system of its own
+/// ([`JointAlong`]), m: twice the distance at which the pieces start to
+/// grow (shortest piece over grading) — every point of a stretch lies
+/// within half of it of its system's middle (along the run), where the
+/// wires there are cut into the shortest pieces, as at a profile's
+/// middle. Infinite: pieces that never grow (one system).
+pub fn stretch(s: &JointSettings) -> f64 {
+    if s.grading > 0.0 {
+        2.0 * s.min_piece / s.grading
+    } else {
+        f64::INFINITY
+    }
+}
+
+/// The lines solved together along a run (a volume's path; 2026-11-25):
+/// the run cut into stretches of [`stretch`], each with its own system
+/// centred on the run there ([`joint::System`], every wire within the
+/// field distance of that middle), solved when a point of it is first
+/// asked; a point takes its stretch's system — as a profile's points take
+/// their profile's (those to the side of the run included), the worst over
+/// the parts' phase angles (exact for two parts, a bound for more).
+pub struct JointAlong<'a> {
+    lines: &'a JointLines,
+    station: &'a (dyn Fn([f64; 2]) -> f64 + Sync),
+    place: &'a (dyn Fn(f64) -> [f64; 2] + Sync),
+    length: f64,
+    settings: JointSettings,
+    systems: std::sync::Mutex<BTreeMap<usize, Result<Arc<joint::System>, String>>>,
+}
+
+impl<'a> JointAlong<'a> {
+    /// Along a run of `length` m: `station` gives a plan point's station on
+    /// it, `place` the plan point of a station on it; the systems reach
+    /// `distance` from their middles.
+    pub fn new(
+        lines: &'a JointLines,
+        station: &'a (dyn Fn([f64; 2]) -> f64 + Sync),
+        place: &'a (dyn Fn(f64) -> [f64; 2] + Sync),
+        length: f64,
+        distance: f64,
+    ) -> Self {
+        Self {
+            lines,
+            station,
+            place,
+            length,
+            settings: joint_settings(distance),
+            systems: std::sync::Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    /// The stretches of the run.
+    fn stretches(&self) -> usize {
+        let s = stretch(&self.settings);
+        if s.is_finite() {
+            ((self.length / s).ceil() as usize).max(1)
+        } else {
+            1
+        }
+    }
+
+    /// The system of stretch `k` (solved once).
+    fn system(&self, k: usize) -> Result<Arc<joint::System>, String> {
+        let mut systems = self
+            .systems
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(s) = systems.get(&k) {
+            return s.clone();
+        }
+        let n = self.stretches();
+        let t = self.length * (k as f64 + 0.5) / n as f64;
+        let centre = (self.place)(t);
+        let ground = self.lines.ground.clone();
+        let g = move |x: f64, y: f64| ground(x, y);
+        let s = joint::System::solve(
+            &self.lines.wires,
+            self.lines.parts.len(),
+            centre,
+            &g,
+            &self.settings,
+        )
+        .map(Arc::new);
+        systems.insert(k, s.clone());
+        s
+    }
+
+    /// At each of `points` the worst over the parts' phase angles, kV/m —
+    /// 0 where its stretch's system did not solve ([`JointAlong::failed`]
+    /// says where: NOT ALL CHECKED there).
+    pub fn worst_kv_m(&self, points: &[[f64; 3]]) -> Vec<f64> {
+        let n = self.stretches();
+        let mut by: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (i, p) in points.iter().enumerate() {
+            let t = (self.station)([p[0], p[1]]);
+            let k = ((t / self.length.max(1e-9) * n as f64).floor().max(0.0) as usize).min(n - 1);
+            by.entry(k).or_default().push(i);
+        }
+        let ground = self.lines.ground.clone();
+        let g = move |x: f64, y: f64| ground(x, y);
+        let mut out = vec![0.0; points.len()];
+        for (k, idx) in by {
+            let Ok(system) = self.system(k) else { continue };
+            // On this thread: the volume's lattice spreads its blocks of
+            // points over the cores.
+            for &i in &idx {
+                out[i] = joint::worst(&system.field_at(points[i], &g)) * 1e-3;
+            }
+        }
+        out
+    }
+
+    /// The stretches whose system did not solve, with why.
+    pub fn failed(&self) -> Vec<String> {
+        let systems = self
+            .systems
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let n = self.stretches();
+        systems
+            .iter()
+            .filter_map(|(k, s)| {
+                s.as_ref().err().map(|e| {
+                    format!(
+                        "the stretch {:.0}–{:.0} m along it: {e}",
+                        self.length * *k as f64 / n as f64,
+                        self.length * (*k + 1) as f64 / n as f64
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// The systems solved, and the most pieces in one.
+    pub fn solved(&self) -> (usize, usize) {
+        let systems = self
+            .systems
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let ok: Vec<usize> = systems
+            .values()
+            .filter_map(|s| s.as_ref().ok().map(|s| s.pieces()))
+            .collect();
+        (ok.len(), ok.iter().copied().max().unwrap_or(0))
+    }
+
+    /// Every wire's straight pieces as solved (each span's polyline), m:
+    /// where a volume's lattice is refined.
+    pub fn wire_pieces(&self) -> Vec<[[f64; 3]; 2]> {
+        self.lines
+            .wires
+            .iter()
+            .flat_map(|w| w.points.windows(2).map(|p| [p[0], p[1]]))
+            .collect()
+    }
+}
+
 /// The note said whenever lines are solved together.
 pub const SOLVED_TOGETHER: &str = "the lines solved together (charge simulation: every line's \
                                    wires and earth wires one system of potential coefficients \
-                                   over the ground plane under each point, the jumpers left out); \
+                                   over the ground plane under each point, the jumpers each at \
+                                   its section's voltage); \
                                    at every point the larger of this line alone in its own model \
                                    and the lines together";
 

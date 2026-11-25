@@ -248,6 +248,121 @@ pub fn solve(
     ground: &(dyn Fn(f64, f64) -> f64 + Sync),
     s: &JointSettings,
 ) -> Result<JointField, String> {
+    let system = System::solve(wires, parts, centre, ground, s)?;
+    Ok(JointField {
+        parts: system.field(points, ground),
+        pieces: system.pieces(),
+        wires: system.wires,
+    })
+}
+
+/// The lines' charges solved together around one place
+/// ([`System::solve`]), their field taken at any point after
+/// ([`System::field`]): one system serves every point near its place (a
+/// cut's, a volume's stretch's; 2026-11-25). [`solve`] is one and its
+/// field at the points given.
+#[derive(Debug, Clone)]
+pub struct System {
+    ps: Vec<Piece>,
+    /// Per part, each piece's charge (C/m, rms phasor).
+    q: Vec<Vec<C>>,
+    parts: usize,
+    /// The wires in the system (within the reach).
+    pub wires: usize,
+    ground_radius: f64,
+}
+
+impl System {
+    /// The pieces solved.
+    pub fn pieces(&self) -> usize {
+        self.ps.len()
+    }
+
+    /// The pieces' ends (each a straight piece of a wire), m.
+    pub fn segments(&self) -> Vec<[[f64; 3]; 2]> {
+        self.ps.iter().map(|p| [p.a, p.b]).collect()
+    }
+
+    /// Every wire of `parts` parts of `wires` within `s.reach` (in plan) of
+    /// `centre` solved together (see the module's notes); `ground`: the
+    /// ground's elevation at a plan point.
+    ///
+    /// Expected cost: the pieces' potential coefficients (n², n some 50
+    /// per wire of a kilometre with the defaults) and their LU on all
+    /// cores (n³/3).
+    pub fn solve(
+        wires: &[JointWire],
+        parts: usize,
+        centre: [f64; 2],
+        ground: &(dyn Fn(f64, f64) -> f64 + Sync),
+        s: &JointSettings,
+    ) -> Result<Self, String> {
+        solve_system(wires, parts, centre, ground, s)
+    }
+
+    /// Its field at `points` (V/m), per point per part \\( \vec E_k \\): each
+    /// piece's and its image's in the ground plane fitted under the point
+    /// (`ground`: the ground's elevation, as the system was solved with).
+    ///
+    /// Expected cost: n per point and part (on all cores).
+    pub fn field(
+        &self,
+        points: &[[f64; 3]],
+        ground: &(dyn Fn(f64, f64) -> f64 + Sync),
+    ) -> Vec<Vec<[C; 3]>> {
+        if self.ps.is_empty() {
+            return vec![vec![[C::new(0.0, 0.0); 3]; self.parts]; points.len()];
+        }
+        let threads = crate::field_views::threads();
+        let one = |p: &[f64; 3]| self.field_at(*p, ground);
+        std::thread::scope(|scope| {
+            let chunk = points.len().div_ceil(threads).max(1);
+            let one = &one;
+            let handles: Vec<_> = points
+                .chunks(chunk)
+                .map(|c| scope.spawn(move || c.iter().map(one).collect::<Vec<_>>()))
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().expect("a point's field"))
+                .collect()
+        })
+    }
+}
+
+impl System {
+    /// Its field at point `p` alone (V/m), per part — [`System::field`]'s
+    /// for one point, on the calling thread (for callers that spread the
+    /// points over the cores themselves).
+    pub fn field_at(&self, p: [f64; 3], ground: &(dyn Fn(f64, f64) -> f64 + Sync)) -> Vec<[C; 3]> {
+        let (ps, q, parts) = (&self.ps, &self.q, self.parts);
+        let mut out = vec![[C::new(0.0, 0.0); 3]; parts];
+        if ps.is_empty() {
+            return out;
+        }
+        let plane = GroundPlane::fitted(ground, p[0], p[1], self.ground_radius);
+        let mirror = plane.mirror(p);
+        for (j, piece) in ps.iter().enumerate() {
+            let d = segment_field(piece.a, piece.b, p);
+            let m = plane.reflect(segment_field(piece.a, piece.b, mirror));
+            let g: [f64; 3] = std::array::from_fn(|c| d[c] - m[c]);
+            for (k, e) in out.iter_mut().enumerate() {
+                for c in 0..3 {
+                    e[c] += q[k][j] * g[c];
+                }
+            }
+        }
+        out
+    }
+}
+
+fn solve_system(
+    wires: &[JointWire],
+    parts: usize,
+    centre: [f64; 2],
+    ground: &(dyn Fn(f64, f64) -> f64 + Sync),
+    s: &JointSettings,
+) -> Result<System, String> {
     if !(s.reach > 0.0 && s.min_piece > 0.0 && s.grading >= 0.0 && s.ground_radius > 0.0) {
         return Err("a reach, shortest piece and ground radius above 0".into());
     }
@@ -258,10 +373,12 @@ pub fn solve(
     used.sort_unstable();
     used.dedup();
     if n == 0 {
-        return Ok(JointField {
-            parts: vec![vec![[C::new(0.0, 0.0); 3]; parts]; points.len()],
-            pieces: 0,
+        return Ok(System {
+            ps,
+            q: vec![Vec::new(); parts],
+            parts,
             wires: 0,
+            ground_radius: s.ground_radius,
         });
     }
     // Each piece's surface point and the ground plane under it.
@@ -331,40 +448,12 @@ pub fn solve(
             }
         }
     }
-    // The field at each point: every piece's and its image's in the plane
-    // under the point.
-    let one = |p: &[f64; 3]| -> Vec<[C; 3]> {
-        let plane = GroundPlane::fitted(ground, p[0], p[1], s.ground_radius);
-        let mirror = plane.mirror(*p);
-        let mut out = vec![[C::new(0.0, 0.0); 3]; parts];
-        for (j, piece) in ps.iter().enumerate() {
-            let d = segment_field(piece.a, piece.b, *p);
-            let m = plane.reflect(segment_field(piece.a, piece.b, mirror));
-            let g: [f64; 3] = std::array::from_fn(|c| d[c] - m[c]);
-            for (k, e) in out.iter_mut().enumerate() {
-                for c in 0..3 {
-                    e[c] += q[k][j] * g[c];
-                }
-            }
-        }
-        out
-    };
-    let fields: Vec<Vec<[C; 3]>> = std::thread::scope(|scope| {
-        let chunk = points.len().div_ceil(threads).max(1);
-        let one = &one;
-        let handles: Vec<_> = points
-            .chunks(chunk)
-            .map(|c| scope.spawn(move || c.iter().map(one).collect::<Vec<_>>()))
-            .collect();
-        handles
-            .into_iter()
-            .flat_map(|h| h.join().expect("a point's field"))
-            .collect()
-    });
-    Ok(JointField {
-        parts: fields,
-        pieces: n,
+    Ok(System {
+        ps,
+        q,
+        parts,
         wires: used.len(),
+        ground_radius: s.ground_radius,
     })
 }
 
@@ -413,13 +502,19 @@ pub fn method_words(parts: usize) -> String {
 /// A line's wires for the joint system: every solved span of `shapes` of
 /// `line` (a bundle as its equivalent wire), its phases at their circuits'
 /// voltages ([`crate::electric::circuit_voltage`]; `given` first), its
-/// earth wires earthed. Gives each wire with its frequency (`None`:
-/// earthed), and adds to `notes` the voltages used (`label` before them:
-/// the line's name) and what was left out.
+/// earth wires earthed — and **its jumpers** (`jumpers`, as solved;
+/// 2026-11-25): each held at the voltage of the section ending where it
+/// starts (else where it ends), a bundle of that section's as its
+/// equivalent wire with the jumper's own conductor (the section's when the
+/// library has not the jumper's), as the line alone gives them its
+/// phase's charge. Gives each wire with its frequency (`None`: earthed),
+/// and adds to `notes` the voltages used (`label` before them: the line's
+/// name) and what was left out.
 pub fn line_wires(
     line: &ohl_line::Line,
     library: &ohl_cables::Library,
     shapes: &[ohl_line::solve::SectionShape],
+    jumpers: &[ohl_line::jumper::JumperShape],
     given: &[CircuitVoltage],
     label: &str,
     notes: &mut Vec<String>,
@@ -478,6 +573,71 @@ pub fn line_wires(
                 },
             ));
         }
+    }
+    // The jumpers: each at the voltage of the section at one of its ends.
+    let mut no_section = Vec::new();
+    for js in jumpers {
+        let Some(j) = line.jumpers.iter().find(|j| j.id == js.jumper) else {
+            continue;
+        };
+        if js.points.len() < 2 {
+            continue;
+        }
+        let section = [&j.from, &j.to].into_iter().find_map(|e| {
+            let p = e.point()?;
+            line.sections.iter().find(|sec| {
+                let n = sec.points.len();
+                n >= 2 && (sec.points[0] == *p || sec.points[n - 1] == *p)
+            })
+        });
+        let Some(section) = section else {
+            no_section.push(j.id.clone());
+            continue;
+        };
+        let Some(cable) = library
+            .get(&j.cable)
+            .or_else(|| library.get(&section.cable))
+        else {
+            notes.push(format!(
+                "{label}: jumper {}: wire types {} and {} not in the wire library, left out",
+                j.id, j.cable, section.cable
+            ));
+            continue;
+        };
+        let r = 0.5 * cable.diameter.si();
+        let (_, radius) = matrices::bundle(section.bundle.max(1), section.bundle_spacing, r, r);
+        let phase: Option<PhaseData> = phases
+            .get(&section.id)
+            .copied()
+            .flatten()
+            .map(|at| crate::cross_section::phase_data(line, section, at));
+        let volts = match &phase {
+            Some(p) => match phase_voltage(p, given, &mut used) {
+                Some(v) => Some(v),
+                None => {
+                    dc = true;
+                    continue;
+                }
+            },
+            None => None,
+        };
+        out.push((
+            volts.map(|v| v.0),
+            JointWire {
+                points: js.points.clone(),
+                radius,
+                part: None,
+                volts: volts.map_or(C::new(0.0, 0.0), |v| v.1),
+            },
+        ));
+    }
+    if !no_section.is_empty() {
+        notes.push(format!(
+            "NOT ON THE SAFE SIDE: {label}: jumper(s) {} end at no section's end, so their \
+             voltage is not known: left out of the system — a conductor near the ground missing, \
+             the field near them can be higher; join them to a section's end",
+            no_section.join(", ")
+        ));
     }
     if dc {
         notes.push(format!(

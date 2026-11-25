@@ -4670,10 +4670,14 @@ dependencies = [
  "ohl-electrical",
  "ohl-line",
  "ohl-loads",
+ "ohl-sections",
  "ohl-session",
+ "ohl-structures",
+ "ohl-structures-fe",
  "ohl-synth",
  "ohl-weather",
  "serde",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -4700,6 +4704,7 @@ dependencies = [
  "ohl-loads",
  "ohl-pointcloud",
  "ohl-scope",
+ "ohl-sections",
  "ohl-session",
  "ohl-store-pg",
  "ohl-structures",

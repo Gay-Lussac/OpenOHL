@@ -815,6 +815,9 @@ pub struct LoadsPage {
     /// with the export's other lines' sections, by the network's code
     /// (the Shared towers view).
     pub shared: crate::loads_shared::Shared,
+    /// The shared towers' answer whose usage on every line's loads is in
+    /// [`LoadsPage::usage`] (none: not added yet).
+    merged: Option<u64>,
     /// The load case shown.
     pub case: usize,
     /// Structures shown (id contains this text).
@@ -1169,7 +1172,19 @@ impl LoadsPage {
         self.units.1 = plan.pairs();
         // An offline working set's shared towers with the export's other
         // lines, beside (the network's code on the file).
-        self.shared.start(model, &plan.order, ctx);
+        // Their usage on every line's loads: the window's own check.
+        self.shared.start(
+            model,
+            &plan.order,
+            || crate::loads_shared::UsageInputs {
+                line: inputs.line.clone(),
+                library: inputs.library.clone(),
+                types: inputs.types.clone(),
+                sections: inputs.sections.clone(),
+                local: inputs.local,
+            },
+            ctx,
+        );
         let (tx, rx) = channel();
         let c = ctx.clone();
         self.stamp.started(model.revision());
@@ -1228,15 +1243,40 @@ impl LoadsPage {
         }
     }
 
-    /// Takes a finished computation.
+    /// Takes a finished computation, and the shared towers' usage on
+    /// every line's loads into the usage (as cases of their own).
     pub fn poll(&mut self) {
         self.shared.poll();
+        self.poll_run();
+        self.merge_shared_usage();
+    }
+
+    /// Adds the shared towers' usage on every line's loads to the usage
+    /// once both have arrived (each case of every line's loads a case of
+    /// its own: the governing usage is the larger of this line's own and
+    /// every line's, the colours and the CSV take them).
+    fn merge_shared_usage(&mut self) {
+        if self.running.is_some() || self.merged == Some(self.shared.generation()) {
+            return;
+        }
+        let Some(c) = &self.shared.last else {
+            return;
+        };
+        if self.results.as_ref().is_some_and(|r| r.is_ok()) {
+            self.usage.extend(c.usage_cases());
+        }
+        self.merged = Some(self.shared.generation());
+    }
+
+    /// Takes this line's own finished computation.
+    fn poll_run(&mut self) {
         let Some((t, rx, _)) = &self.running else {
             return;
         };
         let r = match rx.try_recv() {
             Ok((Some(run), notes)) => {
                 self.usage = run.usage;
+                self.merged = None;
                 self.failed = run.failed;
                 self.given = run.given;
                 self.notes = notes;
@@ -2049,10 +2089,15 @@ impl LoadsPage {
             return self.shared.ui(ui);
         }
         if self.show_usage {
-            if let Some(w) = self.shared.usage_words() {
-                ui.colored_label(ui.visuals().error_fg_color, egui::RichText::new(w).small());
+            for (w, red) in self.shared.usage_words() {
+                if red {
+                    ui.colored_label(ui.visuals().error_fg_color, egui::RichText::new(w).small());
+                } else {
+                    ui.label(egui::RichText::new(w).small());
+                }
             }
-            let names: Vec<String> = results.iter().map(|r| r.case.name.clone()).collect();
+            // This line's cases, then every line's on the shared towers.
+            let names: Vec<String> = self.usage.iter().map(|c| c.case.clone()).collect();
             // A case with sections not solved misses their loads: said so.
             let incomplete: Vec<String> = results
                 .iter()

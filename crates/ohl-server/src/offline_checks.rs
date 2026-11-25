@@ -43,6 +43,10 @@ struct FileNet<'a> {
     beyond: bool,
     caches: Caches,
     work: std::path::PathBuf,
+    /// Whether the shared towers' usage is checked here (the check on the
+    /// file), else left to the caller (OHL-Design's window checks with its
+    /// own libraries).
+    usage: bool,
 }
 
 /// Another line's neighbours, as exported.
@@ -306,6 +310,32 @@ impl Neighbourhood for FileNet<'_> {
         let own = ohl_scope::bound::max_margin(self.session.line());
         self.meta.max_margin.max(own)
     }
+
+    fn structure_checks(
+        &mut self,
+        model: &str,
+    ) -> Option<Result<Arc<ohl_scope::loads::StructureChecks>, String>> {
+        if !self.usage {
+            return None;
+        }
+        if model != self.own {
+            return Some(Err(format!(
+                "line {model}'s structure libraries are not in the offline working set"
+            )));
+        }
+        let mut kinds = BTreeMap::new();
+        for (kind, _) in crate::packager::CHECK_LIBRARIES {
+            match self.session.library_files(kind) {
+                Ok(f) => {
+                    kinds.insert(kind.to_owned(), f);
+                }
+                Err(e) => return Some(Err(e.to_string())),
+            }
+        }
+        // On the user's own computer: its plugins as OHL-Design runs them.
+        let work = std::env::temp_dir().join(format!("ohl-offline-types-{}", std::process::id()));
+        Some(crate::packager::structure_checks(&kinds, &work, true).map(Arc::new))
+    }
 }
 
 /// Everything in the file may be named: what its user could not see was
@@ -435,6 +465,7 @@ impl FileGaps {
 /// (as `f` left it) and what the file could not give.
 fn on_file<T>(
     path: &Path,
+    usage: bool,
     f: impl FnOnce(&mut FileNet<'_>, &mut WorkingSet) -> Result<T, String>,
 ) -> Result<(T, Session, WorkingSet, FileGaps), String> {
     let mut session = Session::open(path).map_err(|e| e.to_string())?;
@@ -486,6 +517,7 @@ fn on_file<T>(
             beyond: false,
             caches: Caches::new(64, 16),
             work: work.clone(),
+            usage,
         };
         let answer = f(&mut net, &mut ws);
         let _ = std::fs::remove_dir_all(&work);
@@ -510,7 +542,7 @@ fn on_file<T>(
 pub fn check_offline(path: &Path, check: &ScopedCheck) -> Result<ScopedReport, String> {
     let started = Instant::now();
     let name = check.name().to_owned();
-    let (raw, mut session, ws, gaps) = on_file(path, |net, ws| {
+    let (raw, mut session, ws, gaps) = on_file(path, true, |net, ws| {
         crate::scoped_report::run(net, ws, check, |n, m, s| n.has_twin(m, s))
     })?;
     let mut report = crate::scoped_report::report(
@@ -555,7 +587,7 @@ pub fn shared_tower_loads(path: &Path, structures: &[String]) -> Result<SharedTo
     let check = ScopedCheck::StructureLoads {
         structures: structures.to_vec(),
     };
-    let (raw, _, _, gaps) = on_file(path, |net, ws| {
+    let (raw, _, _, gaps) = on_file(path, false, |net, ws| {
         crate::scoped_report::run(net, ws, &check, |n, m, s| n.has_twin(m, s))
     })?;
     let crate::scoped_report::Raw::Loads(loads) = raw else {
@@ -598,7 +630,7 @@ pub fn field_neighbours(
     spec: &ohl_scope::fields::FieldSpec,
 ) -> Result<FieldNeighbours, String> {
     let started = Instant::now();
-    let (others, _, _, gaps) = on_file(path, |net, ws| {
+    let (others, _, _, gaps) = on_file(path, false, |net, ws| {
         if !sections.is_empty() {
             ws.sections = sections.to_vec();
         }
@@ -635,6 +667,9 @@ pub struct ElectricNeighbours {
     pub notes: Vec<String>,
     /// Seconds.
     pub seconds: f64,
+    /// The lines' wires as one system, for systems at other places (a
+    /// volume's stretches, 2026-11-25; none: no other line near).
+    pub system: Option<Arc<ohl_scope::electric::JointLines>>,
 }
 
 /// The lines whose wires can come within `distance` of the wires of
@@ -656,7 +691,7 @@ pub fn electric_neighbours(
     profiles: &[ohl_scope::electric::ProfileAt],
 ) -> Result<ElectricNeighbours, String> {
     let started = Instant::now();
-    let ((lines, model), _, _, gaps) = on_file(path, |net, ws| {
+    let ((lines, model), _, _, gaps) = on_file(path, false, |net, ws| {
         if !sections.is_empty() {
             ws.sections = sections.to_vec();
         }
@@ -681,5 +716,6 @@ pub fn electric_neighbours(
         not_all_checked,
         notes: lines.notes.clone(),
         seconds: started.elapsed().as_secs_f64(),
+        system: (!lines.lines.is_empty()).then(|| Arc::new(lines)),
     })
 }

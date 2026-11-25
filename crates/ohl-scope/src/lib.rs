@@ -187,6 +187,18 @@ pub trait Neighbourhood {
     /// ([`SpanChord::margin`]), m: the candidate search looks this much
     /// further (it may only grow).
     fn max_margin(&mut self) -> f64;
+    /// What the usage check of `model`'s structures reads: its structure
+    /// types and member sections ([`loads::StructureChecks`]), for the
+    /// usage of a shared tower on the combined loads (2026-11-25). `None`
+    /// (the default): this neighbourhood leaves that check to its caller
+    /// (OHL-Design's window checks with its own libraries); an error: not
+    /// checked, said NOT ALL CHECKED.
+    fn structure_checks(
+        &mut self,
+        _model: &str,
+    ) -> Option<Result<Arc<loads::StructureChecks>, String>> {
+        None
+    }
 }
 
 /// Every potential a section of `line` can have: each phase of each of
@@ -209,6 +221,20 @@ pub fn system_potentials(line: &Line) -> Vec<Option<Potential>> {
     out
 }
 
+/// The budget of every solve a scoped check makes (2026-11-25): the wire
+/// solver's iteration limit (`ohl_wirefe::default_fe_budget`'s 100) and
+/// **no clock** — a check's result never depends on how loaded the machine
+/// is. Found: under heavy load (load average ~115) the network's electric
+/// field check on an offline file gave three spans 0.74–1.45 kV/m where
+/// the same check gave 1.16–2.03 kV/m alone — with the solver's 120 s
+/// time limit a neighbour's section could stop on the clock and its wires
+/// be left out (said NOT ALL CHECKED, yet a lower value that depended on
+/// timing). A solve that does not converge now fails the same way every
+/// time, said NOT ALL CHECKED.
+pub fn solve_budget() -> ohl_core::budget::Budget {
+    ohl_core::budget::Budget::new().max_iterations(100)
+}
+
 /// A section's wires solved, or why not.
 pub(crate) type Solved = (Vec<ohl_clearance::Wire>, Vec<String>);
 
@@ -223,7 +249,7 @@ pub(crate) fn solve_wires(
 ) -> Solved {
     let mut failed = Vec::new();
     let mut shapes = Vec::new();
-    for (k, r) in ohl_line::solve::solve_line(part, library, case)
+    for (k, r) in ohl_line::solve::solve_line_with(part, library, case, &solve_budget())
         .into_iter()
         .enumerate()
     {

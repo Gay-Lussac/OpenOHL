@@ -955,6 +955,11 @@ pub struct FieldVolume {
     /// With `modelled_within`: how much the wires left out change the
     /// field at up to [`field_views::CHECKED`] points of the surfaces.
     pub left_out: Option<field_views::Deviation>,
+    /// What it is beside its span, when it is not the line's own field
+    /// (2026-11-25: the electric field of every line near solved together,
+    /// on an offline working set's file); none: the line's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// The wires' straight pieces in a 3D model, and how far they may lie off
@@ -3481,6 +3486,7 @@ pub fn run_keeping(
                 pieces: wires.count(),
                 left_out: left_out(&w, &pts),
                 values,
+                label: None,
             });
         }
     }

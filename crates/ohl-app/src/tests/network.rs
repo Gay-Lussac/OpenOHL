@@ -1147,16 +1147,30 @@ fn offline_files_neighbours_in_the_check_windows(
         "{:?}",
         outside.not_all_checked()
     );
+    // Their usage on every line's loads (2026-11-25): the synthetic
+    // country's towers have no structure type — nothing to check against,
+    // said as in the line's own usage (not red), never "checked".
+    let words = h.state_mut().ready().unwrap().loads.shared.usage_words();
     assert!(
-        h.state_mut()
-            .ready()
-            .unwrap()
-            .loads
-            .shared
-            .usage_words()
-            .unwrap()
-            .starts_with("NOT ALL CHECKED: the usage of the shared tower(s)")
+        words
+            .iter()
+            .any(|(w, red)| !red && w.contains("have nothing to check against")),
+        "{words:?}"
     );
+    assert!(!words.iter().any(|(_, red)| *red), "{words:?}");
+    assert_eq!(c.usage.len(), c.computed().len());
+    // The network's check on the file says the same of each tower.
+    for t in c.computed() {
+        assert!(
+            server
+                .notes
+                .iter()
+                .any(|n| n.starts_with(&format!("structure {t}: "))
+                    && n.contains("usage on every line's loads not checked")),
+            "{t}: {:?}",
+            server.notes
+        );
+    }
 
     // The Magnetic field window (2026-11-24): the export's lines within
     // 500 m of the spans computed, each solved in the case with its own
@@ -1476,6 +1490,15 @@ fn offline_files_neighbours_in_the_check_windows(
         .map(|p| (format!("span {}–{}", p.from, p.to), p.max_kv_m))
         .collect();
     assert!(!on_server.is_empty(), "{server:?}");
+    // Both complete (2026-11-25: under heavy load the network's check once
+    // left a neighbour's section out — its solve stopped on the clock —
+    // and its values were lower; the solves carry no clock now, and an
+    // incomplete side is said, never compared as if whole).
+    assert!(
+        server.not_all_checked.is_empty(),
+        "the network's check: {:?}",
+        server.not_all_checked
+    );
     assert_eq!(
         on_server.keys().collect::<Vec<_>>(),
         here.keys().collect::<Vec<_>>()
@@ -1568,4 +1591,126 @@ fn offline_files_neighbours_in_the_check_windows(
         "{notes:?}"
     );
     shot(h, "Electric field", "offline-neighbours-electric");
+
+    // The cuts and volumes with the other lines (2026-11-25): one span of
+    // the working set at the shared tower, its cuts every 100 m and its
+    // volume (2 m steps) — alone, then with the export's lines solved
+    // together: every cut point at least alone, a second volume of every
+    // line near, said; the time measured.
+    let k = {
+        let r = h.state_mut().ready().unwrap();
+        let spans = r.electric_field.common.spans(&r.model);
+        let sec = r
+            .model
+            .line
+            .sections
+            .iter()
+            .find(|s| {
+                wanted.contains(&s.id) && s.points.iter().any(|p| p.structure == twin.structure)
+            })
+            .expect("a section at the shared tower");
+        let at = sec
+            .points
+            .iter()
+            .position(|p| p.structure == twin.structure)
+            .unwrap();
+        let next = if at + 1 < sec.points.len() {
+            at + 1
+        } else {
+            at - 1
+        };
+        let (a, b) = (
+            sec.points[at].structure.clone(),
+            sec.points[next].structure.clone(),
+        );
+        let k = spans
+            .iter()
+            .position(|s| (s.0 == a && s.1 == b) || (s.0 == b && s.1 == a))
+            .expect("the span");
+        r.electric_field.tick_only(&r.model, k);
+        // Its volume (the Volumes page: a run computes its page's).
+        r.electric_field.set_views(None, Some(2.0));
+        k
+    };
+    h.run_steps(3);
+    let answer = |h: &mut Harness<'_, App>| match &h
+        .state_mut()
+        .ready()
+        .unwrap()
+        .electric_field
+        .common
+        .job
+        .result
+    {
+        Some(Ok(a)) => a.field.clone(),
+        other => panic!("{:?}", other.as_ref().map(|r| r.as_ref().err())),
+    };
+    let both = |h: &mut Harness<'_, App>| {
+        crate::offline_neighbours::IGNORED.with(|c| c.set(true));
+        h.run_steps(3);
+        let alone = run_electric(h);
+        let own = answer(h);
+        crate::offline_neighbours::IGNORED.with(|c| c.set(false));
+        h.run_steps(3);
+        let together = run_electric(h);
+        (own, answer(h), alone, together)
+    };
+    let (own, with, alone, together) = both(h);
+    assert_eq!(own.volumes.len(), 1, "{:?}", own.notes);
+    let every: Vec<_> = with
+        .volumes
+        .iter()
+        .filter(|v| v.label.as_deref() == Some(crate::offline_neighbours::EVERY_LINE))
+        .collect();
+    assert_eq!(every.len(), 1, "{:?}", with.notes);
+    assert_eq!(with.volumes.len(), 2);
+    let volume_note = with
+        .notes
+        .iter()
+        .find(|n| n.starts_with("The volumes:"))
+        .cloned()
+        .unwrap_or_else(|| panic!("{:?}", with.notes));
+    assert!(
+        !with.notes.iter().any(|n| n.starts_with("NOT ALL CHECKED")),
+        "{:?}",
+        with.notes
+    );
+    eprintln!(
+        "the Electric field window, one span's volume (2 m steps): {alone:.2?} alone, \
+         {together:.2?} with the export's lines near solved together; {volume_note}"
+    );
+    // A cut in its middle (the Cuts page).
+    {
+        let r = h.state_mut().ready().unwrap();
+        r.electric_field
+            .common
+            .add_cut(&r.model, k, crate::span_pick::CutAt::Mid);
+    }
+    h.run_steps(3);
+    let (own, with, alone, together) = both(h);
+    assert!(!own.cuts.is_empty(), "{:?}", own.notes);
+    assert_eq!(own.cuts.len(), with.cuts.len());
+    let mut rise: f64 = 0.0;
+    for (a, b) in own.cuts.iter().zip(&with.cuts) {
+        assert_eq!(a.values.values.len(), b.values.values.len());
+        for (x, y) in a.values.values.iter().zip(&b.values.values) {
+            assert!(y >= x, "{y} below {x}");
+            rise = rise.max(y - x);
+        }
+    }
+    assert!(
+        with.notes.iter().any(|n| n.starts_with("The cuts:")),
+        "{:?}",
+        with.notes
+    );
+    assert!(
+        !with.notes.iter().any(|n| n.starts_with("NOT ALL CHECKED")),
+        "{:?}",
+        with.notes
+    );
+    eprintln!(
+        "the Electric field window, {} cut(s): {alone:.2?} alone, {together:.2?} with the \
+         export's lines near solved together (up {rise:.3} kV/m at most)",
+        own.cuts.len()
+    );
 }

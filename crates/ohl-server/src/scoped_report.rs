@@ -124,7 +124,8 @@ pub(crate) fn run<N: Neighbourhood>(
             Raw::Loads(Box::new(ohl_scope::loads::shared_tower_loads(
                 net,
                 ws,
-                &ohl_loads::default_budget(),
+                // No clock: the result never depends on the load.
+                &ohl_scope::solve_budget(),
             )?))
         }
     })
@@ -322,6 +323,14 @@ pub(crate) fn report(
                 for c in &t.cases {
                     results += c.points.len();
                 }
+                // Its usage on every line's loads (2026-11-25).
+                if let Some(u) = &t.usage {
+                    let (f, n, over) = usage_finding(v, ws, t, u);
+                    findings.extend(f);
+                    notes.extend(n);
+                    violations += over;
+                    results += u.cases.len();
+                }
                 let measures = [
                     "factored transverse (N)",
                     "factored longitudinal (N)",
@@ -412,6 +421,96 @@ pub(crate) fn report(
         notes,
         seconds,
     }
+}
+
+/// A shared tower's usage on every line's loads as a finding (its
+/// governing case, against 100 %), its notes (what was not checked, not
+/// a plain pass) and whether it is over its capacity.
+fn usage_finding(
+    v: &mut dyn Viewer,
+    ws: &WorkingSet,
+    t: &ohl_scope::loads::TowerLoads,
+    u: &ohl_scope::loads::TowerUsage,
+) -> (Vec<Finding>, Vec<String>, usize) {
+    use ohl_loads::capacity::UsageStatus;
+    let mut notes = Vec::new();
+    let line_words = |v: &mut dyn Viewer, line: &str, case: &str| -> (String, bool) {
+        let own = line == ws.model;
+        let seen = own || t.twins.iter().filter(|n| n.model == line).any(|n| v.see(n));
+        let words = if own {
+            format!("case {case}")
+        } else if seen {
+            format!("line {line}'s case {case}")
+        } else {
+            "a case of a line you may not see".into()
+        };
+        (words, seen)
+    };
+    // Per reason, the cases it holds in (one note each).
+    let mut by_why: Vec<(String, Vec<String>)> = Vec::new();
+    for (line, case, s) in &u.cases {
+        let (words, _) = line_words(v, line, case);
+        let why = match s.status() {
+            UsageStatus::NotChecked => Some(format!(
+                "not checked{}",
+                s.notes.first().map_or(String::new(), |n| format!(" ({n})"))
+            )),
+            UsageStatus::Incomplete => Some(s.incomplete_text()),
+            UsageStatus::Approximate => Some(s.approximate_text()),
+            UsageStatus::NotSafe => Some(format!(
+                "{} member check(s) not on the safe side (part of them not done)",
+                s.not_safe()
+            )),
+            UsageStatus::Pass | UsageStatus::Over => None,
+        };
+        if let Some(why) = why {
+            match by_why.iter_mut().find(|(w, _)| *w == why) {
+                Some((_, cases)) => cases.push(words),
+                None => by_why.push((why, vec![words])),
+            }
+        }
+    }
+    for (why, cases) in by_why {
+        let named: Vec<&str> = cases.iter().take(4).map(String::as_str).collect();
+        notes.push(format!(
+            "structure {}: usage on every line's loads {why} — in {}{}",
+            t.structure,
+            named.join(", "),
+            if cases.len() > named.len() {
+                format!(" and {} more case(s)", cases.len() - named.len())
+            } else {
+                String::new()
+            }
+        ));
+    }
+    let Some((line, case, s)) = u.governing() else {
+        return (Vec::new(), notes, 0);
+    };
+    let Some(g) = s.governing() else {
+        return (Vec::new(), notes, 0);
+    };
+    let (against, seen) = line_words(v, line, case);
+    let over = usize::from(s.status() == UsageStatus::Over);
+    (
+        vec![Finding {
+            what: "structure usage on every line's loads (governing)".into(),
+            on: format!(
+                "structure {} ({}: {})",
+                t.structure,
+                g.method.as_str(),
+                g.governs
+            ),
+            against: Some(against),
+            measure: "usage (1 = 100 %)".into(),
+            value: g.usage,
+            required: Some(1.0),
+            violates: over > 0,
+            at: None,
+            hidden: !seen,
+        }],
+        notes,
+        over,
+    )
 }
 
 /// One clearance result as findings (radial, vertical), its target

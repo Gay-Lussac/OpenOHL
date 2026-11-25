@@ -1749,6 +1749,7 @@ pub fn run_keeping(
                 pieces: pieces.len(),
                 left_out: None,
                 values,
+                label: None,
             });
         }
     }
