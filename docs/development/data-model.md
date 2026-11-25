@@ -2634,7 +2634,10 @@ joint where the joint has rotations (`offsets::rigid`, the element
 between its offset ends), else leaves it out. Since 2026-11-19 (the
 owner's decision on O45 A1) `Member::free_offsets` (`[Vec<[f64; 3]>; 2]`,
 m, structure axes, per end; empty by default, never written to a file,
-set by the estimated eccentricities only): offsets whose **sign is not
+set by the estimated eccentricities and, since 2026-11-25, at level 4 by
+`ohl_structure_link::eccentricities::cover_offsets` for an end bolted
+through a splice's outer cover — the cover's thickness along its bolts):
+offsets whose **sign is not
 known**, each part its own — never in the solve, only in the member's own
 check (`offsets::uncarried_moments`: about each local axis the sizes of
 the parts' moments added, with a part of known sign left out of the solve
