@@ -173,10 +173,10 @@ pub struct LayoutRecord {
     /// 3 the analysis takes the member ends' eccentricities the layout's
     /// planner estimates ([`crate::eccentricities`]); off by default.
     pub estimated: bool,
-    /// O44 L24: the detailing practice (`[generator.practice]`, as written:
-    /// read and checked by [`LayoutRecord::practice`]) — the structure's own
-    /// (`source = "project"`) or the one the last run took from a code
-    /// plugin (`source = "plugin:<plugin>/<method>"`); none: the default.
+    /// O44 L24: the code plugin's detailing practice the last run took, as
+    /// it answered it (`[generator.practice]` with `source =
+    /// "plugin:<plugin>/<method>"`; [`LayoutRecord::plugin_practice`]); the
+    /// structure's own is its file's `[layout_practice]`. None: none.
     pub practice: Option<toml::Table>,
 }
 
@@ -691,49 +691,58 @@ fn practice_item(p: &toml::Table) -> Item {
 }
 
 impl LayoutRecord {
-    /// O44 L24: the detailing practice the record holds, read and checked
-    /// ([`crate::practice::RecordedPractice::from_table`]). `Ok(None)`: none
-    /// (the default). Err: it is refused, with why — the default practice
-    /// applies, said, and the record keeps the table as written.
-    pub fn practice(&self) -> Result<Option<crate::practice::RecordedPractice>, String> {
-        self.practice
-            .as_ref()
-            .map(crate::practice::RecordedPractice::from_table)
-            .transpose()
-    }
-
-    /// The structure's own practice (`source = "project"`) the record holds,
-    /// as read: valid or refused. None: no practice, or one a code plugin
-    /// gave.
-    pub fn own_practice(&self) -> Option<Result<crate::practice::RecordedPractice, String>> {
+    /// O44 L24: the code plugin's detailing practice the last run took, as
+    /// it answered it (the record's `[generator.practice]`, `source =
+    /// "plugin:<plugin>/<method>"`). None: none, or a table without such a
+    /// source.
+    pub fn plugin_practice(&self) -> Option<crate::practice::PluginAnswer> {
         let t = self.practice.as_ref()?;
-        let own = t
+        let crate::practice::PracticeSource::Plugin { plugin, method } = t
             .get("source")
-            .is_none_or(|s| s.as_str() == Some("project"));
-        own.then(|| crate::practice::RecordedPractice::from_table(t))
+            .and_then(toml::Value::as_str)
+            .and_then(crate::practice::PracticeSource::parse)?
+        else {
+            return None;
+        };
+        let mut table = t.clone();
+        table.remove("source");
+        Some(crate::practice::PluginAnswer {
+            plugin,
+            method,
+            table,
+        })
     }
 
-    /// The engine's settings `s` with the record's practice applied
-    /// ([`crate::practice::with_practice`]); one refused: `s` as it is (the
-    /// default practice).
-    pub fn with_practice(&self, s: LayoutSettings) -> LayoutSettings {
-        let p = self.practice().ok().flatten();
-        crate::practice::with_practice(s, p.as_ref())
+    /// The record's plugin practice set to `p` (none: none), as a run
+    /// writes it.
+    pub fn set_practice(&mut self, p: Option<&crate::practice::PluginAnswer>) {
+        self.practice = p.map(|p| {
+            let mut t = p.table.clone();
+            t.insert(
+                "source".into(),
+                toml::Value::from(format!("plugin:{}/{}", p.plugin, p.method)),
+            );
+            t
+        });
     }
 
-    /// The record's practice set to `p` (none: the default), as a run
-    /// writes it: a practice the run took is written with its source; with
-    /// none, the structure's own (even one refused, kept as written for the
-    /// user to mend) stays and a plugin's goes.
-    pub fn set_practice(&mut self, p: Option<&crate::practice::RecordedPractice>) {
-        match p {
-            Some(p) => self.practice = Some(p.to_table()),
-            None => {
-                if self.own_practice().is_none() {
-                    self.practice = None;
-                }
-            }
-        }
+    /// O44 L24: the detailing practice in force for structure `t` as this
+    /// record knows it — the file's own `[layout_practice]` over the
+    /// plugin's practice the last run took, value by value
+    /// ([`crate::practice::in_force`]): for an edit's follow and the
+    /// estimated eccentricities, which ask no plugin.
+    pub fn practice_of(
+        &self,
+        t: &StructureType,
+    ) -> Result<Option<crate::practice::RecordedPractice>, String> {
+        crate::practice::in_force(t.layout_practice.as_ref(), self.plugin_practice().as_ref())
+    }
+
+    /// The engine's settings `s` with [`Self::practice_of`] applied; one
+    /// refused: `s` with the default practice, the refusal kept for the
+    /// run's notes.
+    pub fn with_practice(&self, t: &StructureType, s: LayoutSettings) -> LayoutSettings {
+        crate::practice::with_given(s, &self.practice_of(t))
     }
 }
 
@@ -839,6 +848,17 @@ pub struct RunAsk<'a> {
 /// every joint it reaches is laid out better
 /// ([`crate::weighed_turns::weigh_turns`], [`LayoutSettings::weigh_turns`]).
 pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
+    // (L24) A detailing practice refused: said in the run's notes (the
+    // default used).
+    let mut run = lay_out_turns(text, ask)?;
+    if let Some(n) = &ask.settings.practice_refused {
+        run.notes.insert(0, n.clone());
+    }
+    Ok(run)
+}
+
+/// [`lay_out`]'s work.
+fn lay_out_turns(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     if ask.settings.weigh_turns && text.contains("plane_turns") {
         let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
             .map_err(|e| e.message)?;
@@ -3916,7 +3936,12 @@ fn write_rounds(
         let mut doc = r.doc0.clone();
         let mut rec = r.record.clone();
         rec.settings = Some(RecordSettings::of(ask.settings));
-        rec.set_practice(ask.settings.practice.as_ref());
+        rec.set_practice(
+            ask.settings
+                .practice
+                .as_ref()
+                .and_then(|p| p.plugin.as_ref()),
+        );
         // The rolls (the members of the joints asked): those turned before
         // back, then the turns of this run.
         for (m, roll) in r.restored {
@@ -5766,7 +5791,7 @@ fn follow_parsed(
         record.write(&mut doc);
     }
     let (areas, preset_fields) = presets_by_class(&settings.presets, presets, bolts);
-    let s = record.with_practice(settings.layout(areas));
+    let s = record.with_practice(&t1, settings.layout(areas));
     let ask = RunAsk {
         library,
         bolts,

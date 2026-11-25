@@ -2314,26 +2314,27 @@ world structure-code-plugin {
 /// of its range is refused with why, and the default practice used).
 /// Without the export the default practice applies. The text's format:
 /// OpenOHL's `docs/development/plugins.md`, "Detailing practice".
-interface detailing-practice {
+interface layout-practice {
     /// The detailing practice of method `method` (the plugin's
-    /// `member-check` methods) as the text of a practice file (TOML,
-    /// `format = "ohl-detailing-practice"`); none: the method gives none
+    /// `member-check` methods) as TOML text: the same table as a structure
+    /// file's `[layout_practice]` (`format = "ohl-layout-practice"`; the
+    /// structure's own table wins over it, value by value); none: the method gives none
     /// (OpenOHL's default practice). `parameters`: the text of the
     /// structure's parameter file for the plugin ("" none), as
     /// `member-check-full` gets it. The error says why.
-    detailing-practice: func(method: string, parameters: string) -> result<option<string>, string>;
+    layout-practice: func(method: string, parameters: string) -> result<option<string>, string>;
 }
 
-/// The `detailing-practice` export alone: how the host finds it in any
+/// The `layout-practice` export alone: how the host finds it in any
 /// plugin (not a world to build plugins for).
-world detailing-practice-export {
-    export detailing-practice;
+world layout-practice-export {
+    export layout-practice;
 }
 
 /// A plugin giving a design code for structures and a detailing practice
 /// for the joint layout (2026-11-25, O44 L24): `structure-code-plugin`
-/// and `detailing-practice`.
+/// and `layout-practice`.
 world structure-code-practice-plugin {
     include structure-code-plugin;
-    export detailing-practice;
+    export layout-practice;
 }

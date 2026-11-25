@@ -412,7 +412,10 @@ impl LayoutWindow {
             // L24 (2026-11-25): the detailing practice's values, below.
             ..LayoutSettings::default()
         };
-        ohl_structure_link::with_practice(s, self.practice.as_ref())
+        LayoutSettings {
+            practice_refused: self.practice_note.clone(),
+            ..ohl_structure_link::with_practice(s, self.practice.as_ref())
+        }
     }
 
     fn key(&self, revision: u64, libs: u64, targets: &BTreeSet<String>) -> u64 {
@@ -501,34 +504,32 @@ impl StructureApp {
     }
 
     /// O44 L24: the detailing practice a run of the layout takes, and why
-    /// one given is not used: the structure's own (the layout record's,
-    /// `source = "project"`), else its code plugin's (its member check's
-    /// method, asked once per session), else the default (none). A practice
-    /// refused, or a plugin failing, leaves the default, said.
+    /// one given is not used: the structure file's own `[layout_practice]`
+    /// over its code plugin's (its member check's method, asked once per
+    /// session), value by value, over the default (none). A practice
+    /// refused, or a plugin failing, leaves the default, said here and in
+    /// the run's notes.
     pub(crate) fn layout_practice(
         &self,
-        record: &LayoutRecord,
+        _record: &LayoutRecord,
     ) -> (Option<ohl_structure_link::RecordedPractice>, Option<String>) {
         let Some(f) = self.file.as_ref() else {
             return (None, None);
         };
-        match record.own_practice() {
-            Some(Ok(p)) => (Some(p), None),
-            Some(Err(e)) => (
-                None,
-                Some(format!(
-                    "this structure's own detailing practice is not used: {e}. The default \
-                     practice is used until it is mended (the layout record's \
-                     [generator.practice])."
-                )),
+        let own = f.structure().layout_practice.clone();
+        let (plugin, failed) = match ohl_structure_link::plugin_practice(
+            f.text_ref(),
+            f.path().and_then(std::path::Path::parent),
+        ) {
+            Ok(p) => (p, None),
+            Err(e) => (None, Some(e)),
+        };
+        match ohl_structure_link::practice::in_force(own.as_ref(), plugin.as_ref()) {
+            Ok(p) => (
+                p,
+                failed.map(|e| format!("{e}. The code plugin's detailing practice is not used.")),
             ),
-            None => match ohl_structure_link::plugin_practice(
-                f.text_ref(),
-                f.path().and_then(std::path::Path::parent),
-            ) {
-                Ok(p) => (p, None),
-                Err(e) => (None, Some(format!("{e}. The default practice is used."))),
-            },
+            Err(e) => (None, Some(ohl_structure_link::practice::refused_note(&e))),
         }
     }
 
@@ -1402,10 +1403,11 @@ fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
         "Detailing practice",
         "The shop's preferences the layout follows (O44 L24): which kinds of parts it may make \
          and in which order, the faces tried first, the limits, the flatness, the plates' shapes \
-         and bend, the picked bolt's pattern. From this structure's own practice (the layout \
-         record's [generator.practice]), else from the code plugin of its member check, else \
-         the program's default (the layout as before L24). OpenOHL checks every value and \
-         refuses a practice out of range; the clash checks, joint checks and the guard that no \
+         and bend, the picked bolt's pattern (per member class too). This structure file's own \
+         [layout_practice] over the code plugin of its member check, value by value, over the \
+         program's default (the layout as before L24); each value says where it comes from. \
+         OpenOHL checks every value and refuses a practice out of range (said here and in the \
+         run's notes); the clash checks, joint checks and the guard that no \
          joint ends worse stay in force whatever it says.",
     );
     let name = if practice.name.is_empty() {
@@ -1425,11 +1427,20 @@ fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
         .default_open(false)
         .show(ui, |ui| {
             egui::Grid::new("layout-practice-grid")
-                .num_columns(2)
+                .num_columns(3)
                 .show(ui, |ui| {
-                    for (what, value, effect) in practice.rows() {
+                    for (keys, what, value, effect) in practice.rows() {
                         ohl_ui::tool_window::label(ui, what, effect);
                         ui.label(value);
+                        ui.label(
+                            egui::RichText::new(
+                                w.practice
+                                    .as_ref()
+                                    .map_or("the default", |p| p.source_of(keys)),
+                            )
+                            .small()
+                            .weak(),
+                        );
                         ui.end_row();
                     }
                 });

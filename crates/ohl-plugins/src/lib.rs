@@ -432,21 +432,21 @@ pub mod bolt_distances_full {
 /// plugin.
 pub const BOLT_DISTANCES_FULL_EXPORT: &str = "ohl:plugin/bolt-distances-full@0.1.0";
 
-mod detailing_practice_bindings {
+mod layout_practice_bindings {
     wasmtime::component::bindgen!({
-        world: "detailing-practice-export",
+        world: "layout-practice-export",
         path: "wit",
     });
 }
 
-/// Export name of the optional `detailing-practice` interface of any
+/// Export name of the optional `layout-practice` interface of any
 /// plugin (2026-11-25, O44 L24): a detailing practice for the joint layout,
 /// as the text of a practice file.
-pub const DETAILING_PRACTICE_EXPORT: &str = "ohl:plugin/detailing-practice@0.1.0";
+pub const LAYOUT_PRACTICE_EXPORT: &str = "ohl:plugin/layout-practice@0.1.0";
 
 /// The longest practice text a plugin may give, bytes (a practice is a few
 /// dozen lines; more is refused, naming the plugin).
-pub const DETAILING_PRACTICE_MAX: usize = 64 * 1024;
+pub const LAYOUT_PRACTICE_MAX: usize = 64 * 1024;
 
 // One binding for `member-check-full` and `member-check-bracing`, whose
 // function takes the former's records (2026-11-19): each export is looked
@@ -3053,30 +3053,29 @@ impl WasmHost {
     }
 
     /// The detailing practice of method `method` of the plugin in `dir`
-    /// (its `detailing-practice` export; 2026-11-25, O44 L24), with the
+    /// (its `layout-practice` export; 2026-11-25, O44 L24), with the
     /// structure's parameter file `parameters` ("" none). None: the plugin
     /// has no such export; `Some(None)`: the method gives none. The text is
     /// not read here (the structure application reads and checks it);
     /// errors name the plugin: its own error, an empty text, a text longer
-    /// than [`DETAILING_PRACTICE_MAX`].
-    pub fn detailing_practice(
+    /// than [`LAYOUT_PRACTICE_MAX`].
+    pub fn layout_practice(
         &self,
         dir: &Path,
         method: &str,
         parameters: &str,
     ) -> Result<Option<Option<String>>, PluginError> {
-        let Some((mut p, instance)) = self.optional_export(dir, DETAILING_PRACTICE_EXPORT)? else {
+        let Some((mut p, instance)) = self.optional_export(dir, LAYOUT_PRACTICE_EXPORT)? else {
             return Ok(None);
         };
-        let export =
-            detailing_practice_bindings::DetailingPracticeExport::new(&mut p.store, &instance)
-                .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let export = layout_practice_bindings::LayoutPracticeExport::new(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
         let name = p.manifest.plugin.name.clone();
         p.store.set_epoch_deadline(p.limits.deadline_ticks());
         let given = export
-            .ohl_plugin_detailing_practice()
-            .call_detailing_practice(&mut p.store, method, parameters)
-            .map_err(|e| classify(e, &p.manifest, "detailing-practice", p.limits))?
+            .ohl_plugin_layout_practice()
+            .call_layout_practice(&mut p.store, method, parameters)
+            .map_err(|e| classify(e, &p.manifest, "layout-practice", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         if let Some(t) = &given {
             if t.trim().is_empty() {
@@ -3084,12 +3083,12 @@ impl WasmHost {
                     "plugin {name}: an empty detailing practice (give none instead)"
                 )));
             }
-            if t.len() > DETAILING_PRACTICE_MAX {
+            if t.len() > LAYOUT_PRACTICE_MAX {
                 return Err(PluginError::Runtime(format!(
                     "plugin {name}: a detailing practice of {} bytes, more than the {} a \
                      practice may have",
                     t.len(),
-                    DETAILING_PRACTICE_MAX
+                    LAYOUT_PRACTICE_MAX
                 )));
             }
         }

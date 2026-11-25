@@ -6,7 +6,7 @@
 //! OHL-Structure runs it, on an invented K-brace (two diagonals meeting a
 //! leg at N2, two horizontals at its foot, the example sections; diagonal
 //! D1 turned so that its leg lies off the flange): the default practice
-//! given as the structure's own lays the tower out exactly as no practice
+//! given as the structure file's own `[layout_practice]` lays the tower out exactly as no practice
 //! does — the same plans, the same file but for the record's practice
 //! table, the same estimated eccentricities; a shop that makes neither
 //! bent nor welded plates gets no plate in a member's own plane and never
@@ -17,7 +17,7 @@ use std::path::Path;
 use ohl_structure_link::eccentricities::{EstimateAsk, estimate};
 use ohl_structure_link::{
     BoltArea, DetailingPractice, Fabrication, LayoutRecord, LayoutRun, LayoutSettings,
-    PracticeSource, RecordedPractice, RunAsk, lay_out_whole, with_practice,
+    PracticeSource, RunAsk, in_force, lay_out_whole, with_practice,
 };
 use ohl_structures::{LibraryItem, StructureType};
 
@@ -109,18 +109,15 @@ fn library() -> ohl_sections::SectionLibrary {
     .unwrap()
 }
 
-/// The structure's own practice `p` written into its layout record, as a
-/// user's file holds it.
+/// The structure's own practice `p` written as its `[layout_practice]`
+/// table (structure file version 27), as a user's file holds it.
 fn with_own(text: &str, p: &DetailingPractice) -> String {
-    let own = RecordedPractice {
-        source: PracticeSource::Project,
-        practice: p.clone(),
-    };
-    let t = StructureType::parse(Path::new("k.ohls"), text).unwrap();
-    let mut rec = LayoutRecord::of(&t);
-    rec.practice = Some(own.to_table());
+    let own = toml::to_string(&p.to_table()).unwrap();
     let mut doc: toml_edit::DocumentMut = text.parse().unwrap();
-    rec.write(&mut doc);
+    let t: toml_edit::DocumentMut = own.parse().unwrap();
+    let mut table = t.as_table().clone();
+    table.set_implicit(false);
+    doc.insert("layout_practice", toml_edit::Item::Table(table));
     doc.to_string()
 }
 
@@ -128,7 +125,7 @@ fn with_own(text: &str, p: &DetailingPractice) -> String {
 /// structure's own practice (none: the default).
 fn run(text: &str) -> LayoutRun {
     let t = StructureType::parse(Path::new("k.ohls"), text).unwrap();
-    let own = LayoutRecord::of(&t).own_practice().map(Result::unwrap);
+    let own = in_force(t.layout_practice.as_ref(), None).unwrap();
     let s = with_practice(
         LayoutSettings {
             bolt: Some(BoltArea::picked(None, 0.016, None)),
@@ -152,17 +149,10 @@ fn run(text: &str) -> LayoutRun {
     .unwrap()
 }
 
-/// The file without the layout record's practice table.
+/// The file without its `[layout_practice]` table.
 fn without_practice(text: &str) -> String {
     let mut doc: toml_edit::DocumentMut = text.parse().unwrap();
-    if let Some(a) = doc
-        .get_mut("generator")
-        .and_then(toml_edit::Item::as_array_of_tables_mut)
-    {
-        for g in a.iter_mut() {
-            g.remove("practice");
-        }
-    }
+    doc.remove("layout_practice");
     doc.to_string()
 }
 
@@ -175,10 +165,18 @@ fn the_default_practice_lays_the_tower_out_as_before() {
         let b = run(&given);
         assert_eq!(a.joints, b.joints, "roll {roll}");
         assert_eq!(a.notes, b.notes, "roll {roll}");
-        assert_eq!(without_practice(&b.text), a.text, "roll {roll}");
+        // The same file but for its table (the tables' order in the text may
+        // differ where the table was put in).
+        let read = |x: &str| StructureType::parse(Path::new("k.ohls"), x).unwrap();
+        assert_eq!(
+            read(&without_practice(&b.text)),
+            read(&a.text),
+            "roll {roll}"
+        );
         // The record keeps the structure's own practice with its source.
         let t = StructureType::parse(Path::new("k.ohls"), &b.text).unwrap();
-        let rec = LayoutRecord::of(&t).practice().unwrap().unwrap();
+        let rec = LayoutRecord::of(&t).practice_of(&t).unwrap().unwrap();
+
         assert_eq!(rec.source, PracticeSource::Project);
         assert!(rec.practice.is_default());
         // The estimated eccentricities take the record's practice: the
@@ -199,7 +197,10 @@ fn the_default_practice_lays_the_tower_out_as_before() {
 #[test]
 fn a_shop_without_bent_or_welded_plates_leaves_those_ends_by_hand() {
     let neither = DetailingPractice {
-        fabrication: vec![Fabrication::Direct, Fabrication::Plate],
+        fabrication: Fabrication::ALL
+            .iter()
+            .map(|f| (*f, !matches!(f, Fabrication::Bend | Fabrication::Welded)))
+            .collect(),
         ..Default::default()
     };
     let ends = |r: &LayoutRun| -> usize { r.joints.iter().map(|j| j.plan.ends.len()).sum() };

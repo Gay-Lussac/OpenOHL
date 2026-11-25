@@ -273,13 +273,14 @@ pub fn presets_beside(dir: &Path) -> Vec<(String, Table)> {
 /// bolt ([`BOLT_START`], the library's bolt of that diameter where there
 /// is one).
 pub fn settings_for(
+    t: &StructureType,
     record: &LayoutRecord,
     ask: &EstimateAsk<'_>,
 ) -> (LayoutSettings, BTreeMap<String, Table>) {
     match &record.settings {
         Some(s) => {
             let (areas, fields) = presets_by_class(&s.presets, ask.presets, ask.bolts);
-            (record.with_practice(s.layout(areas)), fields)
+            (record.with_practice(t, s.layout(areas)), fields)
         }
         None => {
             let lib = ask
@@ -293,10 +294,13 @@ pub fn settings_for(
                 lib.and_then(|b| b.drawn()[0]),
             );
             (
-                record.with_practice(LayoutSettings {
-                    bolt: Some(bolt),
-                    ..LayoutSettings::default()
-                }),
+                record.with_practice(
+                    t,
+                    LayoutSettings {
+                        bolt: Some(bolt),
+                        ..LayoutSettings::default()
+                    },
+                ),
                 BTreeMap::new(),
             )
         }
@@ -313,7 +317,7 @@ pub fn estimate(text: &str, ask: &EstimateAsk<'_>) -> Result<Estimates, String> 
     let start = std::time::Instant::now();
     let t = StructureType::parse(Path::new("structure.ohls"), text).map_err(|e| e.message)?;
     let record = LayoutRecord::of(&t);
-    let (settings, preset_fields) = settings_for(&record, ask);
+    let (settings, preset_fields) = settings_for(&t, &record, ask);
     let run = crate::layout_run::plan_relaxed(
         text,
         &RunAsk {

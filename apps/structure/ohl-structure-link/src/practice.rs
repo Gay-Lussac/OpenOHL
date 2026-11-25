@@ -13,17 +13,23 @@
 //! the layout's clash checks, joint checks and "no joint worse" guards stay
 //! in force whatever it says.
 //!
-//! **Where it comes from**, first found: the structure's own (the layout
-//! record's `[generator.practice]` with `source = "project"`); the code
-//! plugin of the structure's member check (its optional
-//! `detailing-practice` export, [`plugin_practice`]); else the default
-//! ([`DetailingPractice::default`]), which is the layout as it was before
-//! L24 exactly — every value the constant the code had.
+//! **Where it comes from** (the owner's design questions of 2026-11-24,
+//! built as recommended): the structure file's own `[layout_practice]`
+//! table (structure file version 27) over the code plugin's answer (its
+//! optional `layout-practice` export, [`plugin_practice`]), **value by
+//! value** ([`in_force`]), over the default ([`DetailingPractice::default`]),
+//! which is the layout as it was before L24 exactly — every value the
+//! constant the code had, so that an empty practice lays out as today.
+//! Per member class first ([`ClassPractice`]): the picked bolt's pattern
+//! per class, as the connection presets are; per joint kind later.
 //!
 //! **Checked here, every value** ([`DetailingPractice::parse`]): a key
-//! not known, a value out of its range or a fabrication order the engine
-//! does not follow is refused with what, why and what to give instead; a
-//! refused practice is not used (the default is, said). The ranges keep
+//! not known, a value out of its range or a fabrication list that is not
+//! the five forms once each is refused with what, why and what to give
+//! instead; a refused practice is not used (the default is), said in Lay
+//! out joints and in the run's notes. The core's checks are no values of a
+//! practice (the clash check, the code's distances, holes overlapping, the
+//! bend check, the NOT ON THE SAFE SIDE words). The ranges keep
 //! the layout on the safe side: the flatness never looser than the joint
 //! details' 2°, the shift and the welded plate's axis offset never beyond
 //! what the estimated eccentricities take as their upper bounds (O45, until
@@ -42,7 +48,7 @@ use crate::joint_layout::{
 use crate::joints::FLAT_OFF;
 
 /// The format name of a practice's text (a plugin's answer, a file).
-pub const FORMAT: &str = "ohl-detailing-practice";
+pub const FORMAT: &str = "ohl-layout-practice";
 /// The format's version.
 pub const VERSION: i64 = 1;
 
@@ -78,7 +84,7 @@ pub const BETWEEN_RANGE: (f64, f64) = (BETWEEN_LEAST, 4.0);
 /// The bolts of the picked bolt's pattern a practice may give per end.
 pub const BOLT_COUNT_RANGE: (u32, u32) = (2, 8);
 
-/// A kind of fabrication, in the engine's order (fewer parts, no weld to
+/// A form of fabrication, in the default order (fewer parts, no weld to
 /// inspect, first; the owner's order of 2026-11-23).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Fabrication {
@@ -98,7 +104,7 @@ pub enum Fabrication {
 }
 
 impl Fabrication {
-    /// Every kind, in the engine's order.
+    /// Every form, in the default order.
     pub const ALL: [Self; 5] = [
         Self::Direct,
         Self::Plate,
@@ -159,9 +165,12 @@ impl FacePattern {
 pub struct DetailingPractice {
     /// Its name, shown with its source ("" none).
     pub name: String,
-    /// The kinds of fabrication the shop makes, in the engine's order
-    /// (`direct` and `plate` always; `bend`, `bends`, `welded` optional).
-    pub fabrication: Vec<Fabrication>,
+    /// The fabrication order: the five forms, each once, in the shop's
+    /// order, each allowed or not (`direct` and `plate` always allowed).
+    /// The layout's weighing keeps its rule (more ends, or as many on fewer
+    /// plates); the order decides only ties — today between a plate bent by
+    /// a few degrees and one welded in the member's own plane.
+    pub fabrication: Vec<(Fabrication, bool)>,
     /// Which face of a leg's flange is tried first (L10).
     pub face_pattern: FacePattern,
     /// Members on either side of a leg's flange (L10's other face).
@@ -193,19 +202,30 @@ pub struct DetailingPractice {
     pub bolt_count: u32,
     /// The picked bolt's pattern: gauge lines (1 only, for now).
     pub bolt_lines: u32,
+    /// Per member class (`leg`, `bracing`, `redundant`, `crossing`; the
+    /// connection presets' classes): what differs for that class.
+    pub classes: std::collections::BTreeMap<String, ClassPractice>,
 }
+
+/// What a practice gives for one member class (per member class first,
+/// the owner's design question 5): the picked bolt's pattern. Other values
+/// per class are refused (not built yet).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ClassPractice {
+    /// Bolts per end of the picked bolt, for ends of this class without
+    /// bolts or a connection preset (none: the practice's).
+    pub bolt_count: Option<u32>,
+}
+
+/// The member classes a practice may name (the connection presets').
+pub const CLASSES: [&str; 4] = ["leg", "bracing", "redundant", "crossing"];
 
 impl Default for DetailingPractice {
     /// The layout as it was before L24, exactly.
     fn default() -> Self {
         Self {
             name: String::new(),
-            fabrication: vec![
-                Fabrication::Direct,
-                Fabrication::Plate,
-                Fabrication::Bend,
-                Fabrication::Welded,
-            ],
+            fabrication: Fabrication::ALL.iter().map(|f| (*f, true)).collect(),
             face_pattern: FacePattern::DiagonalInner,
             both_sides_of_flange: true,
             both_faces_of_plate: true,
@@ -220,6 +240,7 @@ impl Default for DetailingPractice {
             short_plates: true,
             bolt_count: 2,
             bolt_lines: 1,
+            classes: Default::default(),
         }
     }
 }
@@ -229,15 +250,22 @@ impl Default for DetailingPractice {
 pub enum PracticeSource {
     /// The program's default.
     Default,
-    /// A code plugin's `detailing-practice` export.
+    /// A code plugin's `layout-practice` export.
     Plugin {
         /// The plugin's name.
         plugin: String,
         /// Its method.
         method: String,
     },
-    /// The structure's own (the layout record's).
+    /// The structure file's own `[layout_practice]`.
     Project,
+    /// The structure file's own over a code plugin's, value by value.
+    ProjectOverPlugin {
+        /// The plugin's name.
+        plugin: String,
+        /// Its method.
+        method: String,
+    },
 }
 
 impl PracticeSource {
@@ -247,6 +275,9 @@ impl PracticeSource {
             Self::Default => "default".to_owned(),
             Self::Plugin { plugin, method } => format!("plugin:{plugin}/{method}"),
             Self::Project => "project".to_owned(),
+            Self::ProjectOverPlugin { plugin, method } => {
+                format!("project over plugin:{plugin}/{method}")
+            }
         }
     }
 
@@ -272,19 +303,40 @@ impl PracticeSource {
             Self::Plugin { plugin, method } => {
                 format!("the code plugin {plugin} (method {method})")
             }
-            Self::Project => "this structure's own".to_owned(),
+            Self::Project => "this structure file's own [layout_practice]".to_owned(),
+            Self::ProjectOverPlugin { plugin, method } => format!(
+                "this structure file's own [layout_practice] over the code plugin {plugin} \
+                 (method {method}), value by value"
+            ),
         }
     }
 }
 
-/// A practice and where it comes from: what a run uses and the record
-/// keeps.
+/// A code plugin's practice as it answered it (its table, checked alone):
+/// what a run records, so that an edit's follow and the estimated
+/// eccentricities take the same.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PluginAnswer {
+    /// The plugin's name.
+    pub plugin: String,
+    /// Its method.
+    pub method: String,
+    /// Its practice's table.
+    pub table: Table,
+}
+
+/// The practice in force and where it comes from: what a run uses.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordedPractice {
     /// Where it comes from.
     pub source: PracticeSource,
-    /// The practice.
+    /// The practice in force (the file's over the plugin's over the
+    /// default, value by value), checked.
     pub practice: DetailingPractice,
+    /// The structure file's own table, as written (none: none).
+    pub own: Option<Table>,
+    /// The code plugin's answer (none: none), recorded by a run.
+    pub plugin: Option<PluginAnswer>,
 }
 
 /// The keys a practice's text may have, by table.
@@ -292,12 +344,12 @@ const TOP_KEYS: [&str; 9] = [
     "format",
     "version",
     "name",
-    "source",
     "fabrication",
     "faces",
     "limits",
     "plates",
     "bolts",
+    "classes",
 ];
 const FACE_KEYS: [&str; 3] = ["pattern", "both_sides_of_flange", "both_faces_of_plate"];
 const LIMIT_KEYS: [&str; 6] = [
@@ -350,19 +402,37 @@ impl DetailingPractice {
         if let Some(f) = t.get("fabrication") {
             match f.as_array() {
                 Some(a) => {
-                    let mut kinds = Vec::new();
+                    let mut forms = Vec::new();
                     for v in a {
-                        match v.as_str().and_then(Fabrication::parse) {
-                            Some(k) => kinds.push(k),
-                            None => errs.push(format!(
-                                "fabrication: {v} is not a kind the layout knows (give \
-                                 \"direct\", \"plate\", \"bend\", \"bends\", \"welded\")"
+                        // A form allowed ("bend"), or { form = "bend",
+                        // allowed = false }.
+                        let (word, allowed) = match v {
+                            Value::String(w) => (Some(w.as_str()), Some(true)),
+                            Value::Table(x) => (
+                                x.get("form").and_then(Value::as_str),
+                                x.get("allowed").map_or(Some(true), Value::as_bool),
+                            ),
+                            _ => (None, None),
+                        };
+                        if let Value::Table(x) = v
+                            && x.keys().any(|k| k != "form" && k != "allowed")
+                        {
+                            errs.push(format!(
+                                "fabrication: {v} — an entry has only `form` and `allowed`"
+                            ));
+                        }
+                        match (word.and_then(Fabrication::parse), allowed) {
+                            (Some(k), Some(on)) => forms.push((k, on)),
+                            _ => errs.push(format!(
+                                "fabrication: {v} is not a form the layout knows (give \
+                                 \"direct\", \"plate\", \"bend\", \"bends\", \"welded\", or \
+                                 {{ form = \"bend\", allowed = false }})"
                             )),
                         }
                     }
-                    p.fabrication = kinds;
+                    p.fabrication = forms;
                 }
-                None => errs.push("fabrication: a list of kinds expected".to_owned()),
+                None => errs.push("fabrication: a list of the five forms expected".to_owned()),
             }
         }
         let table = |k: &str, errs: &mut Vec<String>| -> Option<Table> {
@@ -446,16 +516,52 @@ impl DetailingPractice {
             count(&b, "count", "bolts.", &mut p.bolt_count, &mut errs);
             count(&b, "lines", "bolts.", &mut p.bolt_lines, &mut errs);
         }
+        if let Some(c) = table("classes", &mut errs) {
+            for (name, v) in &c {
+                let at = format!("classes.{name}");
+                if !CLASSES.contains(&name.as_str()) {
+                    errs.push(format!(
+                        "{at}: not a member class (give {})",
+                        CLASSES.join(", ")
+                    ));
+                    continue;
+                }
+                let Some(x) = v.as_table() else {
+                    errs.push(format!("{at}: a table expected"));
+                    continue;
+                };
+                for k in x.keys().filter(|k| *k != "bolts") {
+                    errs.push(format!(
+                        "{at}.{k}: not per member class yet — per member class only the \
+                         picked bolt's pattern ([{at}.bolts] count) for now; give it for the \
+                         whole structure"
+                    ));
+                }
+                let mut cp = ClassPractice::default();
+                if let Some(b) = x.get("bolts") {
+                    match b.as_table() {
+                        Some(b) => {
+                            let at_b = format!("{at}.bolts.");
+                            unknown(b, &["count"], &at_b, &mut errs);
+                            let mut n = 0;
+                            count(b, "count", &at_b, &mut n, &mut errs);
+                            if b.contains_key("count") {
+                                cp.bolt_count = Some(n);
+                            }
+                        }
+                        None => errs.push(format!("{at}.bolts: a table expected")),
+                    }
+                }
+                p.classes.insert(name.clone(), cp);
+            }
+        }
         if errs.is_empty() {
             errs = p.refusals();
         }
         if errs.is_empty() {
             Ok(p)
         } else {
-            Err(format!(
-                "the detailing practice is refused: {}",
-                errs.join("; ")
-            ))
+            Err(errs.join("; "))
         }
     }
 
@@ -473,29 +579,40 @@ impl DetailingPractice {
         // The fabrication order.
         let f = &self.fabrication;
         for k in Fabrication::ALL {
-            if f.iter().filter(|x| **x == k).count() > 1 {
-                errs.push(format!("fabrication: \"{}\" given twice", k.word()));
+            match f.iter().filter(|x| x.0 == k).count() {
+                1 => {}
+                0 => errs.push(format!(
+                    "fabrication: \"{}\" missing — give the five forms, each once, in the \
+                     shop's order (a form not made: {{ form = \"{}\", allowed = false }})",
+                    k.word(),
+                    k.word()
+                )),
+                _ => errs.push(format!("fabrication: \"{}\" given twice", k.word())),
             }
         }
         for k in [Fabrication::Direct, Fabrication::Plate] {
-            if !f.contains(&k) {
+            if f.iter().any(|x| x.0 == k && !x.1) {
                 errs.push(format!(
-                    "fabrication: \"{}\" left out — the layout's first two steps are bolting \
-                     directly and one flat plate, and it has no way without them (a joint it \
-                     cannot lay out so is left for a hand detail): give \"direct\" and \"plate\"",
+                    "fabrication: \"{}\" not allowed — the layout's first two steps are \
+                     bolting directly and one flat plate, and it has no way without them (a \
+                     joint it cannot lay out so is left for a hand detail): allow \"direct\" \
+                     and \"plate\"",
                     k.word()
                 ));
             }
         }
-        if f.windows(2).any(|w| w[0] > w[1]) {
-            errs.push(
-                "fabrication: the kinds out of the engine's order — the layout tries them as \
-                 direct, plate, bend, bends, welded (fewer parts, no weld to inspect, first) \
-                 and does not follow another order yet: give them in that order, leaving out \
-                 those the shop does not make"
-                    .to_owned(),
-            );
+        for (c, x) in &self.classes {
+            if let Some(n) = x.bolt_count
+                && !(BOLT_COUNT_RANGE.0..=BOLT_COUNT_RANGE.1).contains(&n)
+            {
+                errs.push(format!(
+                    "classes.{c}.bolts.count {n}: give {} to {} — one bolt per end is the \
+                     codes' question (J8: where the code's text allows it), not a practice's",
+                    BOLT_COUNT_RANGE.0, BOLT_COUNT_RANGE.1
+                ));
+            }
         }
+
         range(
             &mut errs,
             self.gap,
@@ -617,21 +734,22 @@ impl DetailingPractice {
         } == Self::default()
     }
 
-    /// Makes `kind`.
-    pub fn makes(&self, kind: Fabrication) -> bool {
-        self.fabrication.contains(&kind)
+    /// Makes `form` (it is allowed).
+    pub fn makes(&self, form: Fabrication) -> bool {
+        self.fabrication.iter().any(|x| x.0 == form && x.1)
+    }
+
+    /// The place of `form` in the fabrication order (0 first).
+    pub fn place(&self, form: Fabrication) -> usize {
+        self.fabrication
+            .iter()
+            .position(|x| x.0 == form)
+            .unwrap_or(usize::MAX)
     }
 
     /// What is said with the practice (accepted, not acted on).
     pub fn notes(&self) -> Vec<String> {
         let mut out = Vec::new();
-        if self.makes(Fabrication::Bends) {
-            out.push(
-                "\"bends\" (plates with several bends) is accepted but not built yet: the layout \
-                 makes none"
-                    .to_owned(),
-            );
-        }
         if !self.makes(Fabrication::Welded) {
             out.push(
                 "no welding: no plate welded in a member's own plane, and the plates of a joint \
@@ -639,15 +757,30 @@ impl DetailingPractice {
                     .to_owned(),
             );
         }
+        if !self.makes(Fabrication::Bend) {
+            out.push(
+                "no bent plates: an end off its flange only on a welded plate (where allowed), \
+                 else left for a hand detail"
+                    .to_owned(),
+            );
+        }
+        if self.place(Fabrication::Bends) != 3 || !self.makes(Fabrication::Bends) {
+            out.push(
+                "\"bends\" (plates with several bends) is not built yet: its place and whether \
+                 it is allowed change nothing today"
+                    .to_owned(),
+            );
+        }
         out
     }
 
-    /// The engine's settings `s` with this practice: the kinds it leaves
-    /// out turned off, its values in place of the program's. It only
-    /// restricts what `s` turns on — a setting off in `s` stays off — so the
-    /// default practice leaves `s` exactly as it is. The gap, pull-back and
-    /// shift are starting values (the window's own, recorded with a run),
-    /// not set here.
+    /// The engine's settings `s` with this practice: the forms it does not
+    /// allow turned off, its values in place of the program's, the order
+    /// where the engine breaks a tie by form. It only restricts what `s`
+    /// turns on — a setting off in `s` stays off — so the default practice
+    /// leaves `s` exactly as it is. The gap, pull-back and shift are
+    /// starting values (the window's own, recorded with a run), not set
+    /// here.
     pub fn apply(&self, s: &mut LayoutSettings) {
         let bend = self.makes(Fabrication::Bend);
         s.bent_plates &= bend;
@@ -657,6 +790,7 @@ impl DetailingPractice {
         let welded = self.makes(Fabrication::Welded);
         s.own_plane_welded &= welded;
         s.welded &= welded;
+        s.weld_before_bend = self.place(Fabrication::Welded) < self.place(Fabrication::Bend);
         s.face_pattern &= self.face_pattern == FacePattern::DiagonalInner;
         s.other_face &= self.both_sides_of_flange;
         s.both_faces &= self.both_faces_of_plate;
@@ -674,9 +808,14 @@ impl DetailingPractice {
         {
             *b = BoltArea::picked_count(b.bolt.clone(), b.diameter, b.flats, self.bolt_count);
         }
+        s.class_bolts = self
+            .classes
+            .iter()
+            .filter_map(|(c, x)| x.bolt_count.map(|n| (c.clone(), n)))
+            .collect();
     }
 
-    /// The practice as a practice file's table (every value written).
+    /// The practice as a practice table (every value written).
     pub fn to_table(&self) -> Table {
         let mut t = Table::new();
         t.insert("format".into(), Value::from(FORMAT));
@@ -689,7 +828,16 @@ impl DetailingPractice {
             Value::Array(
                 self.fabrication
                     .iter()
-                    .map(|f| Value::from(f.word()))
+                    .map(|(f, on)| {
+                        if *on {
+                            Value::from(f.word())
+                        } else {
+                            let mut x = Table::new();
+                            x.insert("form".into(), Value::from(f.word()));
+                            x.insert("allowed".into(), Value::from(false));
+                            Value::Table(x)
+                        }
+                    })
                     .collect(),
             ),
         );
@@ -727,31 +875,54 @@ impl DetailingPractice {
         bolts.insert("count".into(), Value::from(i64::from(self.bolt_count)));
         bolts.insert("lines".into(), Value::from(i64::from(self.bolt_lines)));
         t.insert("bolts".into(), Value::Table(bolts));
+        let mut classes = Table::new();
+        for (c, x) in &self.classes {
+            let mut ct = Table::new();
+            if let Some(n) = x.bolt_count {
+                let mut b = Table::new();
+                b.insert("count".into(), Value::from(i64::from(n)));
+                ct.insert("bolts".into(), Value::Table(b));
+            }
+            classes.insert(c.clone(), Value::Table(ct));
+        }
+        if !classes.is_empty() {
+            t.insert("classes".into(), Value::Table(classes));
+        }
         t
     }
 
-    /// The practice as a practice file's text.
+    /// The practice as a practice table's text.
     pub fn to_text(&self) -> String {
         toml::to_string(&self.to_table()).unwrap_or_default()
     }
 
-    /// Its values for the window, each with its effect on the results and
-    /// on the time: (what, value, effect).
-    pub fn rows(&self) -> Vec<(&'static str, String, &'static str)> {
+    /// Its values for the window, each with the keys it is read from (to
+    /// say where each value comes from), and its effect on the results and
+    /// on the time: (keys, what, value, effect).
+    pub fn rows(&self) -> Vec<(&'static [&'static str], &'static str, String, &'static str)> {
         let yes = |b: bool| if b { "yes" } else { "no" }.to_owned();
         vec![
             (
+                &["fabrication"],
                 "Fabrication order",
                 self.fabrication
                     .iter()
-                    .map(|f| f.word())
+                    .map(|(f, on)| {
+                        if *on {
+                            f.word().to_owned()
+                        } else {
+                            format!("({} not allowed)", f.word())
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join(" → "),
-                "the kinds of parts an end may go onto, tried in this order; a kind left out \
-                 is never made, and an end needing it is left for a hand detail (a run a \
-                 little faster, never slower)",
+                "the forms an end may go onto; a form not allowed is never made (an end \
+                 needing it is left for a hand detail, a run a little faster); the order \
+                 decides only ties — today between a plate bent by a few degrees and one \
+                 welded in the member's own plane",
             ),
             (
+                &["faces.pattern"],
                 "Faces of a leg's flange",
                 match self.face_pattern {
                     FacePattern::DiagonalInner => "diagonal onto the inner face first".to_owned(),
@@ -761,18 +932,21 @@ impl DetailingPractice {
                  change in time",
             ),
             (
+                &["faces.both_sides_of_flange"],
                 "Members on either side of a flange",
                 yes(self.both_sides_of_flange),
                 "no: no end is turned onto a flange's other face (L10) — fewer ends laid out \
                  where two meet on one face; a run a little faster",
             ),
             (
+                &["faces.both_faces_of_plate"],
                 "Both faces of one plate",
                 yes(self.both_faces_of_plate),
                 "no: an end on the inner side of a flange's plane stays on its own welded \
                  plate (L11); no change in time",
             ),
             (
+                &["limits.gap", "limits.pull_back", "limits.shift"],
                 "Gap, pull-back, shift (to start with)",
                 format!(
                     "{}, {}, {}",
@@ -784,6 +958,7 @@ impl DetailingPractice {
                  detail and lowers the estimated eccentricities' upper bound; no change in time",
             ),
             (
+                &["limits.flatness_deg"],
                 "Flatness",
                 format!("{}°", self.flatness_deg),
                 "the most an end's leg may lie off its flange and still bolt flat; stricter: \
@@ -791,12 +966,14 @@ impl DetailingPractice {
                  time",
             ),
             (
+                &["limits.small_bend_deg"],
                 "Small bend, at most",
                 format!("{}°", self.small_bend_deg),
                 "the most a plate is bent by a few degrees (L3) before a welded plate; smaller: \
                  more welded plates; no change in time",
             ),
             (
+                &["limits.own_plane_offset"],
                 "Welded plate's axis offset, at most",
                 crate::mm_text(self.own_plane_offset),
                 "the most a plate in a member's own plane may put its axis out beyond a plate's \
@@ -804,24 +981,28 @@ impl DetailingPractice {
                  details, smaller eccentricities; no change in time",
             ),
             (
+                &["plates.bend_radius"],
                 "Bend's inside radius",
                 format!("{} × the plate's thickness", self.bend_radius),
                 "a bent plate's inside radius; larger: the bend reaches farther (a few ends \
                  less room); the bend checks take it; no change in time",
             ),
             (
+                &["plates.between_least"],
                 "Plate between angles, least gap",
                 format!("{} × the thickest leg", self.between_least),
                 "the least gap of a built-up member a plate between its angles is laid out in \
                  (L15); larger: more such ends by hand; no change in time",
             ),
             (
+                &["plates.short"],
                 "Plates may stop short of the work point",
                 yes(self.short_plates),
                 "no: every plate reaches round the work point, or the ends on it are left for \
                  a hand detail where it would run into something; no change in time",
             ),
             (
+                &["bolts.count", "bolts.lines"],
                 "Picked bolt's pattern",
                 format!(
                     "{} in {} line{}",
@@ -832,35 +1013,125 @@ impl DetailingPractice {
                 "the provisional bolts of an end without bolts or a class preset; more bolts: \
                  longer ends and plates, more pulled back; no change in time",
             ),
+            (
+                &["classes"],
+                "Per member class",
+                if self.classes.is_empty() {
+                    "none".to_owned()
+                } else {
+                    self.classes
+                        .iter()
+                        .map(|(c, x)| {
+                            x.bolt_count
+                                .map_or(format!("{c}: —"), |n| format!("{c}: {n} bolts"))
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+                "the picked bolt's pattern for ends of that class (as the connection presets \
+                 are given per class); no change in time",
+            ),
         ]
     }
 }
 
-impl RecordedPractice {
-    /// The record's `practice` table: the practice's with its source.
-    pub fn to_table(&self) -> Table {
-        let mut t = self.practice.to_table();
-        t.insert("source".into(), Value::from(self.source.word()));
-        t
+/// Table `over` laid over table `under`, value by value: a sub-table key by
+/// key (so that the structure's `[layout_practice.limits] shift` replaces
+/// only the plugin's shift), every other value whole (a list as one value).
+pub fn merged(under: &Table, over: &Table) -> Table {
+    let mut out = under.clone();
+    for (k, v) in over {
+        match (out.get_mut(k), v) {
+            (Some(Value::Table(a)), Value::Table(b)) => {
+                *a = merged(a, b);
+            }
+            _ => {
+                out.insert(k.clone(), v.clone());
+            }
+        }
     }
+    out
+}
 
-    /// From the record's `practice` table: its source (none or not read:
-    /// the structure's own) and the practice, checked.
-    pub fn from_table(t: &Table) -> Result<Self, String> {
-        let source = match t.get("source") {
-            None => PracticeSource::Project,
-            Some(v) => v.as_str().and_then(PracticeSource::parse).ok_or_else(|| {
-                format!(
-                    "the detailing practice is refused: source {v} is not \"project\", \
-                         \"default\" or \"plugin:<plugin>/<method>\""
-                )
-            })?,
-        };
-        Ok(Self {
-            source,
-            practice: DetailingPractice::from_table(t)?,
-        })
+/// Whether table `t` gives the value at `path` ("limits.shift").
+pub fn gives(t: &Table, path: &str) -> bool {
+    let mut at = t;
+    let mut keys = path.split('.').peekable();
+    while let Some(k) = keys.next() {
+        match at.get(k) {
+            None => return false,
+            Some(Value::Table(x)) if keys.peek().is_some() => at = x,
+            Some(_) => return keys.peek().is_none(),
+        }
     }
+    true
+}
+
+impl RecordedPractice {
+    /// Where the value read from `keys` comes from, in words: "this file",
+    /// "the code plugin", "the default".
+    pub fn source_of(&self, keys: &[&str]) -> &'static str {
+        if self
+            .own
+            .as_ref()
+            .is_some_and(|t| keys.iter().any(|k| gives(t, k)))
+        {
+            "this file"
+        } else if self
+            .plugin
+            .as_ref()
+            .is_some_and(|p| keys.iter().any(|k| gives(&p.table, k)))
+        {
+            "the code plugin"
+        } else {
+            "the default"
+        }
+    }
+}
+
+/// The practice in force (the owner's design question 1, built as
+/// recommended): the structure file's own table `own` over the code
+/// plugin's answer `plugin`, value by value, over the default; checked as
+/// a whole. `Ok(None)`: neither (the default). Err: refused — whose table,
+/// what, why and what to give instead; the default practice then applies,
+/// said in Lay out joints and in the run's notes.
+pub fn in_force(
+    own: Option<&Table>,
+    plugin: Option<&PluginAnswer>,
+) -> Result<Option<RecordedPractice>, String> {
+    if own.is_none() && plugin.is_none() {
+        return Ok(None);
+    }
+    if let Some(p) = plugin {
+        DetailingPractice::from_table(&p.table).map_err(|e| {
+            format!(
+                "the detailing practice of the code plugin {} (method {}) is refused: {e}",
+                p.plugin, p.method
+            )
+        })?;
+    }
+    let empty = Table::new();
+    let under = plugin.map_or(&empty, |p| &p.table);
+    let all = merged(under, own.unwrap_or(&empty));
+    let practice = DetailingPractice::from_table(&all)
+        .map_err(|e| format!("this structure file's [layout_practice] is refused: {e}"))?;
+    let source = match (own, plugin) {
+        (Some(_), Some(p)) => PracticeSource::ProjectOverPlugin {
+            plugin: p.plugin.clone(),
+            method: p.method.clone(),
+        },
+        (None, Some(p)) => PracticeSource::Plugin {
+            plugin: p.plugin.clone(),
+            method: p.method.clone(),
+        },
+        _ => PracticeSource::Project,
+    };
+    Ok(Some(RecordedPractice {
+        source,
+        practice,
+        own: own.cloned(),
+        plugin: plugin.cloned(),
+    }))
 }
 
 /// The settings `s` with practice `p` applied ([`DetailingPractice::apply`])
@@ -873,19 +1144,40 @@ pub fn with_practice(mut s: LayoutSettings, p: Option<&RecordedPractice>) -> Lay
     s
 }
 
+/// [`in_force`] of what was given (its result or its refusal): the settings
+/// `s` with it applied, a refusal kept for the run's notes
+/// ([`LayoutSettings::practice_refused`]).
+pub fn with_given(
+    s: LayoutSettings,
+    given: &Result<Option<RecordedPractice>, String>,
+) -> LayoutSettings {
+    match given {
+        Ok(p) => with_practice(s, p.as_ref()),
+        Err(e) => LayoutSettings {
+            practice_refused: Some(refused_note(e)),
+            ..with_practice(s, None)
+        },
+    }
+}
+
+/// The run's note for a refused practice.
+pub fn refused_note(why: &str) -> String {
+    format!("{why}. The default detailing practice was used (the layout as before L24).")
+}
+
 /// The detailing practice the code plugin of structure file `text` (its
-/// member check's method; the bundled default where it names none) gives,
-/// read and checked (2026-11-25, O44 L24). `Ok(None)`: the plugin gives
-/// none (the default practice applies). Err: the plugin failed or its
-/// practice is refused — why, to be said; the default practice applies.
-/// `dir`: the structure's folder (its `Plugins/`, the parameter file).
+/// member check's method; the bundled default where it names none) gives
+/// (2026-11-25, O44 L24), as it answered it. `Ok(None)`: the plugin gives
+/// none. Err: the plugin failed or its answer does not read as TOML — why,
+/// to be said; the default practice applies. `dir`: the structure's folder
+/// (its `Plugins/`, the parameter file).
 ///
 /// Expected cost: the structure file read (no model built) and one plugin
 /// call per plugin, method and parameter file in a session (kept).
 pub fn plugin_practice(
     text: &str,
     dir: Option<&std::path::Path>,
-) -> Result<Option<RecordedPractice>, String> {
+) -> Result<Option<PluginAnswer>, String> {
     use ohl_structures::LibraryItem;
     use ohl_structures_fe::model::{DEFAULT_METHOD, PluginMethod};
     let t = ohl_structures::StructureType::parse(std::path::Path::new("structure.ohls"), text)
@@ -903,17 +1195,19 @@ pub fn plugin_practice(
     };
     crate::plugin_check::roots(dir);
     p.parameters = crate::plugin_check::parameters(&p.plugin, dir)?;
-    let Some(given) = crate::plugin_check::joints::detailing_practice(&p)? else {
+    let Some(given) = crate::plugin_check::joints::layout_practice(&p)? else {
         return Ok(None);
     };
-    let practice = DetailingPractice::parse(&given)
-        .map_err(|e| format!("{} (from the code plugin {}): {e}", p.method, p.plugin))?;
-    Ok(Some(RecordedPractice {
-        source: PracticeSource::Plugin {
-            plugin: p.plugin,
-            method: p.method,
-        },
-        practice,
+    let table: Table = toml::from_str(&given).map_err(|e| {
+        format!(
+            "the detailing practice of the code plugin {} (method {}) does not read as TOML: {e}",
+            p.plugin, p.method
+        )
+    })?;
+    Ok(Some(PluginAnswer {
+        plugin: p.plugin,
+        method: p.method,
+        table,
     }))
 }
 

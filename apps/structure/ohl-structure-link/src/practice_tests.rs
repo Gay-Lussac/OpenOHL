@@ -4,20 +4,47 @@
 
 //! The detailing practice (O44 L24): the default is the layout as before
 //! exactly, a practice changes the layout the way it says on invented
-//! joints, values out of range are refused with why, the record keeps it,
-//! and a code plugin's practice is read through the real host.
+//! joints, the structure's own table wins over the plugin's value by value,
+//! values out of range are refused with why (in the run's notes too), the
+//! record keeps the plugin's answer, and a code plugin's practice is read
+//! through the real host.
+
+use toml::Table;
 
 use crate::joint_layout::{LayoutSettings, NO_WELD};
 use crate::layout_run::LayoutRecord;
 use crate::layout_run_tests::{d1_spoiled, parse, run, settings};
 use crate::practice::{
-    DetailingPractice, Fabrication, FacePattern, PracticeSource, RecordedPractice, with_practice,
+    ClassPractice, DetailingPractice, Fabrication, FacePattern, PluginAnswer, PracticeSource,
+    RecordedPractice, in_force, with_given, with_practice,
 };
 
 fn recorded(p: DetailingPractice) -> RecordedPractice {
     RecordedPractice {
         source: PracticeSource::Project,
         practice: p,
+        own: None,
+        plugin: None,
+    }
+}
+
+/// The five forms in the default order, those of `off` not allowed.
+fn forms_without(off: &[Fabrication]) -> Vec<(Fabrication, bool)> {
+    Fabrication::ALL
+        .iter()
+        .map(|f| (*f, !off.contains(f)))
+        .collect()
+}
+
+fn table(text: &str) -> Table {
+    toml::from_str(text).unwrap()
+}
+
+fn answer(text: &str) -> PluginAnswer {
+    PluginAnswer {
+        plugin: "invented-code".into(),
+        method: "m".into(),
+        table: table(text),
     }
 }
 
@@ -41,6 +68,7 @@ fn the_default_practice_is_the_layout_as_before() {
     assert_eq!(p.own_plane_offset, crate::joint_layout::OWN_OUT_MAX);
     assert_eq!(p.bend_radius, crate::BEND_RADIUS_RATIO);
     assert_eq!(p.between_least, crate::joint_layout::BETWEEN_LEAST);
+    assert_eq!(p.fabrication, forms_without(&[]));
     assert!(p.refusals().is_empty(), "{:?}", p.refusals());
     assert!(p.notes().is_empty(), "{:?}", p.notes());
     let off = LayoutSettings {
@@ -62,18 +90,24 @@ fn the_default_practice_is_the_layout_as_before() {
         assert_eq!(with.practice, Some(recorded(p.clone())));
         assert_eq!(with_practice(s.clone(), None), s);
     }
+    // An empty table, the structure's or a plugin's: the default.
+    let empty = in_force(Some(&Table::new()), None).unwrap().unwrap();
+    assert!(empty.practice.is_default());
+    assert_eq!(in_force(None, None), Ok(None));
 }
 
-/// The default practice written and read back is the default; an empty
-/// text and the record's own table are too.
+/// A practice written and read back is the same; lengths and angles read
+/// in their units.
 #[test]
 fn a_practice_reads_back_as_written() {
     let p = DetailingPractice::default();
     assert_eq!(DetailingPractice::parse(&p.to_text()).unwrap(), p);
     assert_eq!(DetailingPractice::parse("").unwrap(), p);
+    let mut fab = forms_without(&[Fabrication::Welded]);
+    fab.swap(2, 4);
     let q = DetailingPractice {
         name: "invented".into(),
-        fabrication: vec![Fabrication::Direct, Fabrication::Plate, Fabrication::Bends],
+        fabrication: fab,
         face_pattern: FacePattern::LaterClassFirst,
         both_sides_of_flange: false,
         shift: 0.015,
@@ -82,34 +116,35 @@ fn a_practice_reads_back_as_written() {
         bend_radius: 3.0,
         short_plates: false,
         bolt_count: 4,
+        classes: [(
+            "redundant".to_owned(),
+            ClassPractice {
+                bolt_count: Some(3),
+            },
+        )]
+        .into(),
         ..p.clone()
     };
     assert_eq!(DetailingPractice::parse(&q.to_text()).unwrap(), q);
-    let r = RecordedPractice {
-        source: PracticeSource::Plugin {
-            plugin: "invented-code".into(),
-            method: "m".into(),
-        },
-        practice: q.clone(),
-    };
-    assert_eq!(RecordedPractice::from_table(&r.to_table()).unwrap(), r);
-    assert!(
-        q.notes().iter().any(|n| n.contains("not built")),
-        "{:?}",
-        q.notes()
-    );
     assert!(
         q.notes().iter().any(|n| n.contains("no welding")),
         "{:?}",
         q.notes()
     );
-    // Units: a length as text or metres, an angle in degrees or as text.
     let x = DetailingPractice::parse(
         "[limits]\ngap = 0.012\nshift = \"20 mm\"\nflatness_deg = \"0.025 rad\"\n",
     )
     .unwrap();
     assert!((x.gap - 0.012).abs() < 1e-12 && (x.shift - 0.02).abs() < 1e-12);
     assert!((x.flatness_deg - 0.025f64.to_degrees()).abs() < 1e-9);
+    // The fabrication list: a form not allowed as a table.
+    let y = DetailingPractice::parse(
+        "fabrication = [\"direct\", \"plate\", \"welded\", { form = \"bend\", allowed = false }, \
+         \"bends\"]\n",
+    )
+    .unwrap();
+    assert!(!y.makes(Fabrication::Bend) && y.makes(Fabrication::Welded));
+    assert!(y.place(Fabrication::Welded) < y.place(Fabrication::Bend));
 }
 
 /// Every value out of its range is refused, each with what, why and what
@@ -138,15 +173,30 @@ fn values_out_of_range_are_refused_with_why() {
     assert!(e.contains("J8"), "{e}");
     let e = refused("[bolts]\nlines = 2\n");
     assert!(e.contains("give 1"), "{e}");
-    // The fabrication order.
-    let e = refused("fabrication = [\"direct\", \"bend\"]\n");
-    assert!(e.contains("\"plate\" left out"), "{e}");
-    let e = refused("fabrication = [\"plate\", \"direct\"]\n");
-    assert!(e.contains("engine's order"), "{e}");
+    // The fabrication list.
+    let e = refused("fabrication = [\"direct\", \"plate\", \"bend\"]\n");
+    assert!(
+        e.contains("\"bends\" missing") && e.contains("\"welded\" missing"),
+        "{e}"
+    );
+    let e = refused(
+        "fabrication = [\"direct\", { form = \"plate\", allowed = false }, \"bend\", \"bends\", \
+         \"welded\"]\n",
+    );
+    assert!(e.contains("\"plate\" not allowed"), "{e}");
     let e = refused("fabrication = [\"direct\", \"plate\", \"glued\"]\n");
-    assert!(e.contains("\"glued\" is not a kind"), "{e}");
-    let e = refused("fabrication = [\"direct\", \"plate\", \"plate\"]\n");
+    assert!(e.contains("\"glued\" is not a form"), "{e}");
+    let e = refused(
+        "fabrication = [\"direct\", \"plate\", \"plate\", \"bend\", \"bends\", \"welded\"]\n",
+    );
     assert!(e.contains("given twice"), "{e}");
+    // Per member class: only the picked bolt's pattern.
+    let e = refused("[classes.bracing.limits]\nshift = \"10 mm\"\n");
+    assert!(e.contains("not per member class yet"), "{e}");
+    let e = refused("[classes.girder.bolts]\ncount = 3\n");
+    assert!(e.contains("not a member class"), "{e}");
+    let e = refused("[classes.redundant.bolts]\ncount = 1\n");
+    assert!(e.contains("classes.redundant.bolts.count 1"), "{e}");
     // Keys and kinds.
     let e = refused("[limits]\nshfit = \"20 mm\"\n");
     assert!(e.contains("limits.shfit: not a key"), "{e}");
@@ -156,23 +206,58 @@ fn values_out_of_range_are_refused_with_why() {
     assert!(e.contains("format"), "{e}");
     let e = refused("version = 2\n");
     assert!(e.contains("version"), "{e}");
-    // Several at once: all said.
     let e = refused("[limits]\nshift = \"50 mm\"\nflatness_deg = 5\n");
     assert!(
         e.contains("limits.shift") && e.contains("limits.flatness_deg"),
         "{e}"
     );
-    // Not a number at all.
     let e = refused("[limits]\nshift = \"far\"\n");
     assert!(e.contains("a length expected"), "{e}");
 }
 
-/// A changed practice changes the layout the way it says, on an invented
-/// K-brace whose diagonal D1 lies 10° off its flange: by default on a plate
-/// bent by as much (L3); without "bend" on a plate welded in its own plane
-/// (step 4); without "bend" and "welded" left for a hand detail, said.
+/// The structure's own table over the plugin's, value by value: its shift
+/// replaces the plugin's alone, the plugin's other values stay; each value
+/// says where it comes from; a refusal names whose table.
 #[test]
-fn leaving_a_fabrication_kind_out_changes_the_layout_as_it_says() {
+fn the_structures_own_values_win_over_the_plugins_value_by_value() {
+    let plugin = answer(
+        "fabrication = [\"direct\", \"plate\", \"bend\", \"bends\", { form = \"welded\", \
+         allowed = false }]\n[limits]\nshift = \"20 mm\"\nflatness_deg = 1.5\n",
+    );
+    let own = table("[limits]\nshift = \"10 mm\"\n");
+    let p = in_force(Some(&own), Some(&plugin)).unwrap().unwrap();
+    assert!((p.practice.shift - 0.010).abs() < 1e-12);
+    assert!((p.practice.flatness_deg - 1.5).abs() < 1e-12);
+    assert!(!p.practice.makes(Fabrication::Welded));
+    assert!(matches!(p.source, PracticeSource::ProjectOverPlugin { .. }));
+    assert_eq!(p.source_of(&["limits.shift"]), "this file");
+    assert_eq!(p.source_of(&["limits.flatness_deg"]), "the code plugin");
+    assert_eq!(p.source_of(&["plates.bend_radius"]), "the default");
+    assert_eq!(p.source_of(&["fabrication"]), "the code plugin");
+    // The plugin's alone, the file's alone.
+    let q = in_force(None, Some(&plugin)).unwrap().unwrap();
+    assert!(matches!(q.source, PracticeSource::Plugin { .. }));
+    assert!((q.practice.shift - 0.020).abs() < 1e-12);
+    let r = in_force(Some(&own), None).unwrap().unwrap();
+    assert_eq!(r.source, PracticeSource::Project);
+    // Refused: whose table.
+    let bad = answer("[limits]\nflatness_deg = 4\n");
+    let e = in_force(Some(&own), Some(&bad)).unwrap_err();
+    assert!(
+        e.contains("code plugin invented-code") && e.contains("flatness_deg 4°"),
+        "{e}"
+    );
+    let e = in_force(Some(&table("[limits]\nshift = \"40 mm\"\n")), Some(&plugin)).unwrap_err();
+    assert!(e.contains("structure file's [layout_practice]"), "{e}");
+}
+
+/// A practice that changes the layout changes it the way it says, on an
+/// invented K-brace whose diagonal D1 lies 10° off its flange: by default on
+/// a plate bent by as much (L3); bends not allowed, on a plate welded in its
+/// own plane (step 4); neither allowed, left for a hand detail, said; the
+/// welded plate before the bent one in the order (a tie: both fit), welded.
+#[test]
+fn the_fabrication_forms_and_their_order_change_the_layout_as_they_say() {
     let text = d1_spoiled(10.0);
     let d1 = |p: Option<DetailingPractice>| {
         let s = with_practice(settings(), p.map(recorded).as_ref());
@@ -181,32 +266,39 @@ fn leaving_a_fabrication_kind_out_changes_the_layout_as_it_says() {
         let end = o.plan.ends.iter().find(|e| e.member == "D1").cloned();
         (o, end)
     };
+    let own_of = |o: &crate::JointOutcome, e: Option<crate::EndPlan>| {
+        let crate::Onto::Plate(k) = e.expect("D1 laid out").onto else {
+            panic!()
+        };
+        o.plan.plates[k].own.clone().expect("in its own plane")
+    };
     // The default: bent.
     let (o, e) = d1(None);
-    let crate::Onto::Plate(k) = e.expect("D1 laid out").onto else {
-        panic!()
-    };
-    assert!(o.plan.plates[k].own.as_ref().unwrap().bend.is_some());
+    assert!(own_of(&o, e).bend.is_some());
     // The default practice given: the same plan.
     let (o2, _) = d1(Some(DetailingPractice::default()));
     assert_eq!(o2.plan, o.plan);
     // No bends: welded in its own plane.
-    let no_bend = DetailingPractice {
-        fabrication: vec![Fabrication::Direct, Fabrication::Plate, Fabrication::Welded],
+    let (o, e) = d1(Some(DetailingPractice {
+        fabrication: forms_without(&[Fabrication::Bend]),
         ..Default::default()
-    };
-    let (o, e) = d1(Some(no_bend));
-    let crate::Onto::Plate(k) = e.expect("D1 laid out").onto else {
-        panic!()
-    };
-    let own = o.plan.plates[k].own.as_ref().unwrap();
+    }));
+    let own = own_of(&o, e);
+    assert!(own.bend.is_none() && own.weld_size > 0.0, "{own:?}");
+    // Welded before bent in the order: welded (the tie decided by it).
+    let mut fab = forms_without(&[]);
+    fab.swap(2, 4);
+    let (o, e) = d1(Some(DetailingPractice {
+        fabrication: fab,
+        ..Default::default()
+    }));
+    let own = own_of(&o, e);
     assert!(own.bend.is_none() && own.weld_size > 0.0, "{own:?}");
     // Neither: a hand detail, said.
-    let neither = DetailingPractice {
-        fabrication: vec![Fabrication::Direct, Fabrication::Plate],
+    let (o, e) = d1(Some(DetailingPractice {
+        fabrication: forms_without(&[Fabrication::Bend, Fabrication::Welded]),
         ..Default::default()
-    };
-    let (o, e) = d1(Some(neither));
+    }));
     assert!(e.is_none(), "{:?}", o.plan);
     assert!(
         o.hand
@@ -244,91 +336,96 @@ fn a_smaller_offset_limit_leaves_the_far_end_by_hand() {
     );
 }
 
-/// The picked bolt's pattern: three bolts per end where an end has none.
+/// The picked bolt's pattern: three bolts per end where an end has none;
+/// per member class: the diagonals' class four.
 #[test]
-fn the_picked_bolts_pattern_gives_the_ends_their_bolts() {
+fn the_picked_bolts_pattern_gives_the_ends_their_bolts_per_class_too() {
     let text = d1_spoiled(0.0);
-    let count = |s: &LayoutSettings| {
+    let counts = |s: &LayoutSettings| {
         let r = run(&text, s, Some(&["N2"]), false);
         let o = r.joints.iter().find(|j| j.joint == "N2").unwrap().clone();
         o.plan
             .ends
             .iter()
-            .filter_map(|e| e.bolts.as_ref().map(|b| b.count))
+            .filter_map(|e| e.bolts.as_ref().map(|b| (e.member.clone(), b.count)))
             .collect::<Vec<_>>()
     };
-    let before = count(&settings());
+    let before = counts(&settings());
     assert!(
-        !before.is_empty() && before.iter().all(|c| *c == 2),
+        !before.is_empty() && before.iter().all(|c| c.1 == 2),
         "{before:?}"
     );
-    let p = DetailingPractice {
+    let three = DetailingPractice {
         bolt_count: 3,
         ..Default::default()
     };
-    let after = count(&with_practice(settings(), Some(&recorded(p))));
+    let after = counts(&with_practice(settings(), Some(&recorded(three.clone()))));
     assert_eq!(after.len(), before.len());
-    assert!(after.iter().all(|c| *c == 3), "{after:?}");
+    assert!(after.iter().all(|c| c.1 == 3), "{after:?}");
+    // The K-brace's diagonals are of class bracing.
+    let per_class = DetailingPractice {
+        classes: [(
+            "bracing".to_owned(),
+            ClassPractice {
+                bolt_count: Some(4),
+            },
+        )]
+        .into(),
+        ..three
+    };
+    let by_class = counts(&with_practice(settings(), Some(&recorded(per_class))));
+    assert!(by_class.iter().all(|c| c.1 == 4), "{by_class:?}");
 }
 
-/// The record keeps the practice a run took, with its source; read back it
-/// is the same, a run again changes nothing, and a run with the default
-/// keeps the structure's own practice but drops a plugin's.
+/// A run records the code plugin's answer it took; read back, the file's
+/// own table over it gives the practice for an edit's follow and the
+/// estimates; a run again changes nothing; a refused practice is said in
+/// the run's notes and the default used.
 #[test]
-fn the_record_keeps_the_practice_a_run_took() {
-    let p = DetailingPractice {
-        name: "invented shop".into(),
-        flatness_deg: 1.5,
-        ..Default::default()
-    };
-    let own = recorded(p.clone());
-    let s = with_practice(settings(), Some(&own));
+fn the_record_keeps_the_plugins_answer_and_a_refusal_is_in_the_notes() {
+    let plugin = answer("[limits]\nflatness_deg = 1.5\n");
+    let p = in_force(None, Some(&plugin));
+    let s = with_given(settings(), &p);
     let r = run(&d1_spoiled(10.0), &s, None, false);
-    let rec = LayoutRecord::of(&parse(&r.text));
-    assert_eq!(rec.practice().unwrap(), Some(own.clone()));
-    assert_eq!(rec.own_practice(), Some(Ok(own.clone())));
+    let t = parse(&r.text);
+    let rec = LayoutRecord::of(&t);
+    assert_eq!(rec.plugin_practice(), Some(plugin.clone()));
     assert!(r.text.contains("[generator.practice]"), "{}", r.text);
-    assert!(r.text.contains("source = \"project\""), "{}", r.text);
+    assert!(
+        r.text.contains("source = \"plugin:invented-code/m\""),
+        "{}",
+        r.text
+    );
+    assert_eq!(rec.practice_of(&t), p);
     assert_eq!(run(&r.text, &s, None, false).text, r.text);
-    // A run with the default keeps the structure's own.
-    let again = run(&r.text, &settings(), None, false);
-    let rec2 = LayoutRecord::of(&parse(&again.text));
-    assert_eq!(rec2.practice().unwrap(), Some(own));
-    // A plugin's goes with a run that takes none.
-    let theirs = RecordedPractice {
-        source: PracticeSource::Plugin {
-            plugin: "invented-code".into(),
-            method: "m".into(),
-        },
-        practice: p,
-    };
-    let r = run(
-        &d1_spoiled(10.0),
-        &with_practice(settings(), Some(&theirs)),
-        None,
-        false,
-    );
+    // With the file's own table too (structure file version 27).
+    let own = format!("{}\n[layout_practice.limits]\nshift = \"10 mm\"\n", r.text);
+    let t = parse(&own);
+    let q = LayoutRecord::of(&t).practice_of(&t).unwrap().unwrap();
+    assert!((q.practice.shift - 0.010).abs() < 1e-12);
+    assert!((q.practice.flatness_deg - 1.5).abs() < 1e-12);
+    // A run that takes no plugin's practice drops the record's.
+    let r2 = run(&r.text, &settings(), None, false);
+    assert_eq!(LayoutRecord::of(&parse(&r2.text)).practice, None);
+    // Refused: the default used, said in the run's notes.
+    let bad = in_force(Some(&table("[limits]\nflatness_deg = 4\n")), None);
+    assert!(bad.is_err());
+    let s = with_given(settings(), &bad);
     assert_eq!(
-        LayoutRecord::of(&parse(&r.text)).practice().unwrap(),
-        Some(theirs)
+        LayoutSettings {
+            practice_refused: None,
+            ..s.clone()
+        },
+        settings()
     );
-    let r = run(&r.text, &settings(), None, false);
-    assert_eq!(LayoutRecord::of(&parse(&r.text)).practice, None);
-    // One refused (written by hand out of range): kept as written, the
-    // default used, said by `practice()`.
-    let bad = format!(
-        "{}\n[[generator]]\nid = \"joint-layout\"\nkind = \"joint_layout\"\n\n\
-         [generator.practice]\nsource = \"project\"\n\n[generator.practice.limits]\n\
-         flatness_deg = 4\n",
-        d1_spoiled(10.0)
+    let r = run(&d1_spoiled(10.0), &s, None, false);
+    assert!(
+        r.notes
+            .first()
+            .is_some_and(|n| n.contains("flatness_deg 4°") && n.contains("default")),
+        "{:?}",
+        r.notes
     );
-    let rec = LayoutRecord::of(&parse(&bad));
-    let e = rec.practice().unwrap_err();
-    assert!(e.contains("flatness_deg 4°"), "{e}");
-    let s = rec.with_practice(settings());
-    assert_eq!(s, settings());
-    let r = run(&bad, &settings(), None, false);
-    assert!(r.text.contains("flatness_deg = 4"), "{}", r.text);
 }
 
 /// A code plugin's practice through the real host: the example plugin's
@@ -347,23 +444,21 @@ fn a_code_plugins_practice_is_read_and_checked() {
         "{}\n[analysis]\ncapacity = \"plugin:member-check-example/example-yield-euler\"\n",
         d1_spoiled(10.0)
     );
-    let p = crate::practice::plugin_practice(&text, Some(&dir))
+    let a = crate::practice::plugin_practice(&text, Some(&dir))
         .unwrap()
         .expect("the example's practice");
     assert_eq!(
-        p.source,
-        PracticeSource::Plugin {
-            plugin: "member-check-example".into(),
-            method: "example-yield-euler".into(),
-        }
+        (a.plugin.as_str(), a.method.as_str()),
+        ("member-check-example", "example-yield-euler")
     );
+    let p = in_force(None, Some(&a)).unwrap().unwrap();
     let x = &p.practice;
     assert_eq!(x.name, "example practice (invented)");
     assert!(!x.makes(Fabrication::Welded) && x.makes(Fabrication::Bend));
     assert!((x.shift - 0.020).abs() < 1e-12);
     assert!(!x.short_plates);
     assert_eq!(x.bolt_count, 3);
-    // The layout with it: no weld anywhere, three bolts per end given.
+    // The layout with it: no weld anywhere.
     let s = with_practice(settings(), Some(&p));
     assert!(!s.own_plane_welded && !s.welded && !s.short_plates);
     let r = run(&text, &s, Some(&["N2"]), false);

@@ -195,8 +195,8 @@ pub use plate_checks::{
 };
 pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
 pub use practice::{
-    DetailingPractice, Fabrication, FacePattern, PracticeSource, RecordedPractice, plugin_practice,
-    with_practice,
+    ClassPractice, DetailingPractice, Fabrication, FacePattern, PluginAnswer, PracticeSource,
+    RecordedPractice, in_force, plugin_practice, with_practice,
 };
 pub use quantities::{
     SelfWeight, apply_counted, counted_self_weight, structure_quantities, undefined_joints,

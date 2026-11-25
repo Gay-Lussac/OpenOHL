@@ -457,6 +457,18 @@ pub struct LayoutSettings {
     /// where it comes from ([`crate::practice::with_practice`]), kept for
     /// the layout's record; none: the default practice.
     pub practice: Option<crate::practice::RecordedPractice>,
+    /// O44 L24 (the practice's fabrication order, used only on ties): a
+    /// plate welded in its member's own plane before one bent by a few
+    /// degrees, where both fit an end. Off by default (the bent one first,
+    /// as before).
+    pub weld_before_bend: bool,
+    /// O44 L24 (per member class first): the picked bolt's count for ends
+    /// of a class without bolts or a connection preset for the class
+    /// (empty: [`LayoutSettings::bolt`]'s for every class).
+    pub class_bolts: BTreeMap<String, u32>,
+    /// O44 L24: why the detailing practice given was refused (none: not
+    /// refused) — the default used, said in the run's notes.
+    pub practice_refused: Option<String>,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -520,6 +532,9 @@ impl Default for LayoutSettings {
             bend_radius_ratio: BEND_RADIUS_RATIO,
             between_least: BETWEEN_LEAST,
             practice: None,
+            weld_before_bend: false,
+            class_bolts: BTreeMap::new(),
+            practice_refused: None,
         }
     }
 }
@@ -3659,6 +3674,8 @@ fn plan_avoiding(
                         continue;
                     }
                     let rank = match room {
+                        // (L24) The practice's order on this tie.
+                        Room::Weld if s.weld_before_bend => -1.0,
                         Room::Weld => f64::INFINITY,
                         Room::Bend { down } => geo.out_more.abs() + if down { 1e-6 } else { 0.0 },
                     };
@@ -5912,13 +5929,21 @@ fn strip_of(
             None,
         ),
         _ => {
-            let pick = a
+            let preset = a.class.as_ref().and_then(|c| s.presets.get(c));
+            // (L24) The practice's picked bolt's pattern for its class.
+            let by_class = a
                 .class
                 .as_ref()
-                .and_then(|c| s.presets.get(c))
-                .or(s.bolt.as_ref())
+                .and_then(|c| s.class_bolts.get(c))
+                .zip(s.bolt.as_ref())
+                .filter(|(_, b)| b.preset.is_none())
+                .map(|(n, b)| BoltArea::picked_count(b.bolt.clone(), b.diameter, b.flats, *n));
+            let pick = preset
+                .cloned()
+                .or(by_class)
+                .or(s.bolt.clone())
                 .ok_or("no bolts, no preset for its class and no bolt picked")?;
-            (pick.clone(), Some(pick.clone()))
+            (pick.clone(), Some(pick))
         }
     };
     let d = area.diameter;
@@ -6388,9 +6413,14 @@ fn rooms_for(t: &Tilted, s: &LayoutSettings) -> Vec<Room> {
         out.push(Room::Bend { down: false });
         out.push(Room::Bend { down: true });
     }
-    // (L24) Not where the detailing practice makes no welds.
+    // (L24) Not where the detailing practice makes no welds; first where its
+    // order puts the welded plate before the bent one (a tie between them).
     if s.own_plane_welded {
-        out.push(Room::Weld);
+        if s.weld_before_bend {
+            out.insert(0, Room::Weld);
+        } else {
+            out.push(Room::Weld);
+        }
     }
     out
 }

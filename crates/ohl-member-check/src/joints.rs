@@ -690,14 +690,14 @@ type Practices = HashMap<(PathBuf, String, String), Result<Option<String>, Strin
 static PRACTICES: Mutex<Option<Practices>> = Mutex::new(None);
 
 /// The detailing practice the plugin `p` names gives for the joint layout
-/// (its optional `detailing-practice` export, 2026-11-25, O44 L24), as the
+/// (its optional `layout-practice` export, 2026-11-25, O44 L24), as the
 /// text of a practice file — not read here: the structure application
 /// reads and checks it. `Ok(None)`: the plugin has no such export or its
 /// method gives none (the default practice applies). Err: why there is
 /// none — the plugin not found, failing, or refusing — "no detailing
 /// practice from the plugin: …". Asked once per plugin, method and
 /// parameter file in a session.
-pub fn detailing_practice(p: &PluginMethod) -> Result<Option<String>, String> {
+pub fn layout_practice(p: &PluginMethod) -> Result<Option<String>, String> {
     let none = |why: String| format!("no detailing practice from {}: {why}", p.plugin);
     let dir = installed(p).map_err(none)?;
     let parameters = p
@@ -713,7 +713,7 @@ pub fn detailing_practice(p: &PluginMethod) -> Result<Option<String>, String> {
         .entry(key)
         .or_insert_with(|| {
             let host = crate::host().map_err(|e| format!("the plugin host does not start: {e}"))?;
-            match host.detailing_practice(&dir, &p.method, &parameters) {
+            match host.layout_practice(&dir, &p.method, &parameters) {
                 Ok(Some(t)) => Ok(t),
                 Ok(None) => Ok(None),
                 Err(e) => Err(e.to_string()),
