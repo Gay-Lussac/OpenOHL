@@ -2301,3 +2301,39 @@ world structure-code-plugin {
     export bolt-distances;
     export bolt-distances-full;
 }
+
+/// A **detailing practice** for OpenOHL's automatic joint layout
+/// (optional export of any plugin beside `member-check`, found by its
+/// export name; 2026-11-25, roadmap O44 L24, approved by the owner on
+/// 2026-11-24): the shop's preferences the layout follows — the
+/// fabrication order (direct, one plate, one bend, several bends, welded),
+/// the face preferences, the shift and pull-back limits, the flatness, the
+/// plates' shapes and bend radius, the picked bolt's pattern. Data only:
+/// the layout engine, its clash checks, joint checks and guards stay
+/// OpenOHL's, and OpenOHL checks every value (a practice with a value out
+/// of its range is refused with why, and the default practice used).
+/// Without the export the default practice applies. The text's format:
+/// OpenOHL's `docs/development/plugins.md`, "Detailing practice".
+interface detailing-practice {
+    /// The detailing practice of method `method` (the plugin's
+    /// `member-check` methods) as the text of a practice file (TOML,
+    /// `format = "ohl-detailing-practice"`); none: the method gives none
+    /// (OpenOHL's default practice). `parameters`: the text of the
+    /// structure's parameter file for the plugin ("" none), as
+    /// `member-check-full` gets it. The error says why.
+    detailing-practice: func(method: string, parameters: string) -> result<option<string>, string>;
+}
+
+/// The `detailing-practice` export alone: how the host finds it in any
+/// plugin (not a world to build plugins for).
+world detailing-practice-export {
+    export detailing-practice;
+}
+
+/// A plugin giving a design code for structures and a detailing practice
+/// for the joint layout (2026-11-25, O44 L24): `structure-code-plugin`
+/// and `detailing-practice`.
+world structure-code-practice-plugin {
+    include structure-code-plugin;
+    export detailing-practice;
+}
