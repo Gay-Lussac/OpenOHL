@@ -56,10 +56,14 @@ reported as the base point's, its lever kept (`AttachmentLoad::lever`,
 labelled "A1 (post, 1.60 m)"), and its moment summed per point with the
 factored forces. The structure analysis puts the moment at the base
 point's joint where a frame member meets it. **NOT ON THE SAFE SIDE
-where it cannot**: at a joint only trusses meet, and in the pole check
-(forces at points only), the moment is left out and the result says so —
-the members near the joint, or the pole, then carry more than computed;
-a frame joint there takes it (the pole: add it by hand).
+where it cannot**: at a joint only trusses meet, the moment is left out
+and the result says so — the members near the joint then carry more than
+computed; a frame joint there takes it. **The pole check takes it**
+(since 2026-11-25; before, left out and said NOT ON THE SAFE SIDE): the
+moment at its point bends every section of the pole below it (about the
+two horizontal axes) and twists it (about the vertical one; a design
+code's check takes the torsion), and it is in the P-Delta model with the
+force — exactly the couple of forces it is, nothing assumed.
 
 **Its own weight and wind**, at its middle (lever \\( \mathbf r / 2 \\)):
 its weight, and the wind on its wind area — the line's, across the line,
@@ -79,7 +83,9 @@ the transverse factor, and so on, the clamp's moment times the largest
 factor — so the factored moment is exact, not estimated. The finite-element
 check puts it at the post's base joint **where a frame member meets it**;
 where only trusses meet, it is left out and the result says **NOT ON THE
-SAFE SIDE**. The pole check takes forces at points only and says the same.
+SAFE SIDE**. The pole check takes it at its point (since 2026-11-25:
+[the pole check](structures-fe.md)), bending and twisting the pole below
+it; before, it was left out there and said NOT ON THE SAFE SIDE.
 A **hinged** (braced) post sends no moment: its force and its brace's reach
 their points as plain forces. A share of the spans' pull (back / ahead below
 100 %) does not scale the post's moment: from the whole pulls, on the safe

@@ -657,6 +657,7 @@ fn pole_check() {
     let loads = [PoleLoad {
         point: [0.0, 0.0, 9.0],
         force: [f, 0.0, 0.0],
+        moment: [0.0; 3],
     }];
     let c = check_pole(&pole, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
     assert!(close(c.ground_moment, f * 9.0, 1e-12));
@@ -680,6 +681,7 @@ fn pole_check() {
         &[PoleLoad {
             point: [1.5, 0.0, 9.0],
             force: [0.0, 0.0, -4e3],
+            moment: [0.0; 3],
         }],
         [0.0, 0.0],
         1.0,
@@ -694,6 +696,7 @@ fn pole_check() {
     loads.push(PoleLoad {
         point: [0.0, 0.0, 10.0],
         force: [0.0, 0.0, -10e3],
+        moment: [0.0; 3],
     });
     let c = check_pole(&stiff, &loads, [0.0, 0.0], 1.0, true, &default_budget()).unwrap();
     assert!(c.amplification > 1.01 && c.amplification < 1.5, "{c:?}");
@@ -708,6 +711,7 @@ fn pole_check() {
         &[PoleLoad {
             point: [0.0, 0.0, 10.0],
             force: [0.0, 4e3, 0.0],
+            moment: [0.0; 3],
         }],
         [0.0, 0.0],
         0.8,
@@ -717,6 +721,115 @@ fn pole_check() {
     .unwrap();
     assert!(close(c.usage, 40e3 / (0.8 * 100e3), 1e-12), "{c:?}");
     assert!(Pole::parse("id = \"x\"\nmaterial = \"steel\"\nlength = \"10 m\"\ntop_diameter = \"1 m\"\nground_diameter = \"1 m\"\n").is_err());
+}
+
+/// A post insulator's moment at its point (2026-11-25; before, left out
+/// and said NOT ON THE SAFE SIDE): the pole check takes it as the couple
+/// of forces it is — bending (about x and y) and twisting (about z) every
+/// section below the point, in the P-Delta model too. By hand: 4 kN m
+/// about y at 9 m on the wood pole is the couple of ±4 kN down/up at
+/// x = ∓0.5 m; 4 kN m at the ground line, none above 9 m. A torsion of
+/// 3 kN m on the steel shaft checked by ASCE/SEI 48-19 is the couple of
+/// ±3 kN across at y = ±0.5 m: the same usage.
+#[test]
+fn a_post_insulators_moment_bends_and_twists_the_pole() {
+    let text = "id = \"p\"\nmaterial = \"wood\"\nlength = \"12 m\"\nembedment = \"2 m\"\n\
+                top_diameter = \"200 mm\"\nground_diameter = \"300 mm\"\nfibre_stress = \"50 MPa\"\n\
+                elasticity = \"10 GPa\"\n";
+    let pole = Pole::parse(text).unwrap();
+    let v = 4e3;
+    let down = PoleLoad {
+        point: [0.0, 0.0, 10.0],
+        force: [2e3, 0.0, -10e3],
+        moment: [0.0; 3],
+    };
+    let moment = [
+        down,
+        PoleLoad {
+            point: [0.0, 0.0, 9.0],
+            force: [0.0; 3],
+            moment: [0.0, v, 0.0],
+        },
+    ];
+    let couple = [
+        down,
+        PoleLoad {
+            point: [0.5, 0.0, 9.0],
+            force: [0.0, 0.0, -v],
+            moment: [0.0; 3],
+        },
+        PoleLoad {
+            point: [-0.5, 0.0, 9.0],
+            force: [0.0, 0.0, v],
+            moment: [0.0; 3],
+        },
+    ];
+    let without = check_pole(&pole, &[down], [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    for p_delta in [false, true] {
+        let a = check_pole(&pole, &moment, [0.0, 0.0], 1.0, p_delta, &default_budget()).unwrap();
+        let b = check_pole(&pole, &couple, [0.0, 0.0], 1.0, p_delta, &default_budget()).unwrap();
+        assert!(
+            close(a.ground_moment, b.ground_moment, 1e-12),
+            "{a:?} {b:?}"
+        );
+        assert!(close(a.usage, b.usage, 1e-9), "{a:?} {b:?}");
+        assert!(close(a.amplification, b.amplification, 1e-9), "{a:?} {b:?}");
+        // The moment adds: 2 kN × 10 m + 4 kN m at the ground line.
+        if !p_delta {
+            assert!(close(a.ground_moment, 2e3 * 10.0 + v, 1e-12), "{a:?}");
+            assert!(a.usage > without.usage);
+        }
+    }
+    // Torsion, by ASCE/SEI 48-19 (shear and torsion taken).
+    let steel = Pole::parse(
+        "format = \"ohl-pole\"\nversion = 1\nid = \"s\"\nmaterial = \"steel\"\n\
+         length = \"12 m\"\nembedment = \"2 m\"\ntop_diameter = \"400 mm\"\n\
+         ground_diameter = \"400 mm\"\nwall = \"8 mm\"\nyield = \"345 MPa\"\n",
+    )
+    .unwrap();
+    assert!(steel.by_code());
+    let top = PoleLoad {
+        point: [0.0, 0.0, 10.0],
+        force: [10e3, 0.0, -20e3],
+        moment: [0.0; 3],
+    };
+    let t = 3e3;
+    let twisted = [
+        top,
+        PoleLoad {
+            point: [0.0, 0.0, 10.0],
+            force: [0.0; 3],
+            moment: [0.0, 0.0, t],
+        },
+    ];
+    let pair = [
+        top,
+        PoleLoad {
+            point: [0.0, 0.5, 10.0],
+            force: [-t, 0.0, 0.0],
+            moment: [0.0; 3],
+        },
+        PoleLoad {
+            point: [0.0, -0.5, 10.0],
+            force: [t, 0.0, 0.0],
+            moment: [0.0; 3],
+        },
+    ];
+    let plain = check_pole(&steel, &[top], [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    let a = check_pole(&steel, &twisted, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    let b = check_pole(&steel, &pair, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
+    assert!(close(a.usage, b.usage, 1e-9), "{a:?} {b:?}");
+    assert!(a.usage > plain.usage, "{a:?} {plain:?}");
+    // A moment that is not a finite number is refused, named.
+    let bad = [PoleLoad {
+        moment: [f64::NAN, 0.0, 0.0],
+        ..down
+    }];
+    let e = check_pole(&pole, &bad, [0.0, 0.0], 1.0, true, &default_budget()).unwrap_err();
+    assert!(
+        e.contains("not a finite number") && e.contains("moment"),
+        "{e}"
+    );
 }
 
 /// A load, the wind or a factor that is not a finite number is refused
@@ -731,6 +844,7 @@ fn a_pole_load_that_is_not_finite_is_refused() {
     let good = PoleLoad {
         point: [0.0, 0.0, 9.0],
         force: [5e3, 0.0, -10e3],
+        moment: [0.0; 3],
     };
     for bad in [
         PoleLoad {
@@ -794,6 +908,7 @@ fn the_poles_own_weight_takes_the_vertical_factor() {
     let loads = [PoleLoad {
         point: [0.0, 0.0, 9.0],
         force: [5e3, 0.0, -10e3],
+        moment: [0.0; 3],
     }];
     let b = default_budget();
     let one = check_pole(&pole, &loads, [0.0, 0.0], 1.0, true, &b).unwrap();

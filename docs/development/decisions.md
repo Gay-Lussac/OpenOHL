@@ -8,6 +8,81 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (safety gaps of the "not on the safe side" audit closed)
+
+The audit of 2026-11-24 (every NOT ON THE SAFE SIDE text says why) listed
+places where a check leaves something out and **no input makes it
+safe**. Each is turned into a check on the safe side where that needs no
+owner's decision (built, in active development, not approved yet; the
+owner busy: built on its own, reported):
+
+- **The pole check takes a post insulator's moment**
+  ([post insulators](../theory/post-insulators.md),
+  [the pole check](../theory/structures-fe.md)). Before: a fixed post's
+  moment about its base (its top's forces at their lever, its clamp's
+  moment) was left out of the pole check — said NOT ON THE SAFE SIDE in
+  the line's checks and in OHL-Structure ("add it by hand"). Now: the
+  moment at its point (`PoleLoad::moment`) bends every section below it,
+  twists it (a design code's check takes the torsion) and is in the
+  P-Delta model with the force — exactly the couple of forces it is,
+  nothing assumed. The note now says it is taken. No file format or
+  plugin interface changed (the pole check is the core's). Tested: the
+  moment against the couple of forces (usage, ground moment, P-Delta
+  ratio equal; a torsion by ASCE/SEI 48-19 the same), a moment that is
+  not a number refused.
+- **More than six forces a level plate may pass: exact for the bolts**
+  ([joint bolt groups](../theory/joint-groups.md#the-force-a-level-plate-passes-between-its-two-holders-l21)).
+  Before: beyond `PASSED_EACH` (six) the rest were taken together, none or
+  all — a mix in between, which can load a bolt more, not tried (said NOT
+  ON THE SAFE SIDE on the rows). Now: each bolt's shear in the plane at
+  its exact largest over every share (the corners of a zonotope found by
+  one direction in each arc between the generators' normals, at most 2 n
+  of them — no 2ⁿ loadings), its pull out of the plane likewise (a
+  number: each share where it adds); a plate's row, a member's own steel
+  and a weld add each further force's size to the largest of the first
+  six's (a bound, on the safe side). Up to six, as before, bit for bit:
+  results change only at a place with more (rare: two holders and a few
+  ends laid onto the other). Tested against every corner (2¹⁰ invented vectors; 2⁸
+  corners of a three-bolt group's shear and pull).
+- **ASCE 10-97: bolts beyond the leg's centre line**
+  ([ASCE 10-97](../theory/asce10.md#bolts-beyond-the-legs-centre-line)).
+  Before: a single angle bolted by one leg whose bolt pattern's centroid
+  lies beyond the connected leg's centre line was checked by the curve for
+  normal framing eccentricity (commentary C3.7.4 ties that to a centroid
+  between the heel and the centre line) — said NOT ON THE SAFE SIDE in the
+  joint layout's theory only. Now, inside the asce10 plugin (its own code;
+  the gauges it already received): the part beyond, Δe = ḡ − w/2, bends
+  the angle by P·Δe about its principal axes, the stresses at both axes'
+  farthest fibres added, amplified by 1/(1 − P/P_e) (C_m = 1, P_e at the
+  member's governing KL/r), against F_y — added to the curve's P/P_a by
+  Eq. 3.12-1's form; uniform along the member and whole (C3.7.4's "due
+  consideration", on the safe side). What it still leaves out is said on
+  the member (NOT ON THE SAFE SIDE: the angle's lateral-torsional buckling
+  under that moment — ASCE 10-97 3.14 has no rule for angles). Tension
+  unchanged. SIA 263 already takes the real gauge in its N·e (5.4.1.2):
+  unchanged. No plugin interface changed. Tested by hand (an invented
+  L 80 × 8, 15 mm beyond).
+- **An end bolted through a splice's outer cover: its offset taken; the
+  packing an owner question**
+  ([joint layout](../theory/joint-layout.md#bracing-bolted-through-the-outer-cover)).
+  Before: the end lies the cover's thickness farther out of the leg — in
+  neither the analysis nor the member's check — and the cover is a
+  packing, the bolt's bending across it not checked; both said NOT ON THE
+  SAFE SIDE in the theory only. Now: where the joint details are taken
+  (level 4) the cover's thickness is an offset of unknown sign at that end
+  (`eccentricities::cover_offsets`, the core's `free_offsets`, along its
+  bolts' axis): never in the solve, its moment N·t whole and sign-free in
+  the member's own check (on the safe side for the member; the others
+  relieved of nothing), said in the run's notes. The packing: no rule in
+  ASCE 10-97 or SIA 263, another standard's values not in the documents —
+  **not built**, said NOT ON THE SAFE SIDE on the cover's row (before, in
+  the theory only), the question with a recommendation in the roadmap
+  (O19). At level 3 the joint details are not read: the offset is not
+  analysed there, as an end's on a gusset plate (O45 D). Tested on the
+  invented spliced leg (`leg_splices` tests: D through a 15 mm cover, its
+  offset 15 mm along its bolts, its moment at least 50 kN × 15 mm; none
+  without the joint details).
+
 ## 2026-11-25 (joint layout: a detailing practice as data, O44 L24)
 
 **The owner's approval** (2026-11-24, the plan in roadmap O44 L24): make

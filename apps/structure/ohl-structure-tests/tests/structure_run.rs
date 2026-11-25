@@ -226,6 +226,7 @@ fn the_pole_check_of_the_line() {
             &[PoleLoad {
                 point: t.point_local("A1", None).unwrap(),
                 force: [5000.0, 1000.0, -8000.0],
+                moment: [0.0; 3],
             }],
             wind,
             0.9,

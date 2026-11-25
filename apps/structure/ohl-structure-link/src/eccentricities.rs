@@ -620,6 +620,69 @@ pub fn apply(model: &mut Model, offsets: &[EndOffset]) {
     }
 }
 
+/// The ends bolted through a splice's outer cover (O44 J7) when the joint
+/// details are taken (level 4; 2026-11-25): each is seated on the cover,
+/// its line of action the cover's thickness farther out of the leg it
+/// laps than lapped directly — an eccentricity at the work point that was
+/// in neither the analysis nor the member's check (said NOT ON THE SAFE
+/// SIDE before). Taken as an offset of unknown sign
+/// ([`ohl_structures_fe::Member::free_offsets`]: along the end's bolts'
+/// axis, the outer covers' thickness on that leg): never in the solve, its
+/// moment N·t whole and sign-free in the member's own check — on the safe
+/// side for the member, the joint's other members relieved of nothing, as
+/// the estimated eccentricities' plate offsets. The note says how many
+/// and the largest; none: no such end, or the joint details not taken.
+pub(crate) fn cover_offsets(
+    model: &mut Model,
+    text: &str,
+    library: &SectionLibrary,
+    bolts: &BoltLibrary,
+) -> Option<String> {
+    if !model.joint_use.taken() {
+        return None;
+    }
+    let t = StructureType::parse(Path::new("structure.ohls"), text).ok()?;
+    let outer = |s: &ohl_structures::connections::TypeSplice| {
+        s.covers
+            .iter()
+            .any(|c| c.face == ohl_structures::connections::CoverFace::Outer)
+    };
+    if !t.splices.iter().any(outer) {
+        return None;
+    }
+    let details = crate::joint_details(text, library, bolts).ok()?;
+    let (mut n, mut largest) = (0usize, 0.0f64);
+    for j in &details.joints {
+        for a in j.arrivals.iter().filter(|a| a.through.is_some()) {
+            let Some(c) = crate::joints::through_cover(a, &j.arrivals, &t.splices, &j.id) else {
+                continue;
+            };
+            let Some(idx) = model.members.iter().position(|m| m.id == a.member) else {
+                continue;
+            };
+            let axis = a.bolt_axis;
+            let l = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+            if !(l > 1e-9 && c.outer > 0.0) || a.end > 1 {
+                continue;
+            }
+            let r = axis.map(|x| x / l * c.outer);
+            model.members[idx].free_offsets[a.end].push(r);
+            n += 1;
+            largest = largest.max(c.outer);
+        }
+    }
+    (n > 0).then(|| {
+        format!(
+            "{n} member end(s) bolted through a splice's outer cover: each seated on the cover, \
+             its line of action the cover's thickness (up to {:.0} mm) farther out of the leg — \
+             taken as an offset of unknown sign in the member's own check (the moment N·t whole \
+             and sign-free, never in the solve: on the safe side for the member, the joint's \
+             other members relieved of nothing)",
+            largest * 1e3
+        )
+    })
+}
+
 /// The ends' sources of member `id` in words, for its eccentric words:
 /// "estimated at N2; upper bound at N3".
 fn sources_of(estimates: &Estimates, id: &str) -> Option<String> {

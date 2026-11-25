@@ -1687,6 +1687,7 @@ impl Calculation for StructurePole {
         let load = ohl_structures_fe::PoleLoad {
             point: [at.x, at.y, at.z],
             force: [f.x, f.y, f.z],
+            moment: [0.0; 3],
         };
         let wind = quantity_input::<Stress>(inputs, "wind_pressure")?.si();
         let p_delta = inputs

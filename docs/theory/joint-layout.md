@@ -297,12 +297,15 @@ the end eccentric). Nothing new enters the analysis.
 gauge used is the end's own (given), else the leg's middle (the drawing's
 assumption, one gauge line). Commentary C3.7.4 asks for due consideration
 when the bolts' centroid lies outside the heel–centre-line band; a gauge
-given beyond the leg's centre line is kept as given and checked as
-before — **NOT ON THE SAFE SIDE** where that extra eccentricity is large
-(its moment is beyond what the code's curve for an angle bolted by one
-leg covers, so the member's usage can be too low; give a gauge within
-the band, else check that member by hand — the extra moment is not
-modelled yet); the layout never moves a gauge.
+given beyond the leg's centre line is kept as given (the layout never
+moves a gauge) and, since 2026-11-25, the ASCE 10-97 check adds the
+bending of the part beyond the centre line to the curve's compression
+(P·Δe about the angle's principal axes, amplified, Eq. 3.12-1's form;
+[ASCE 10-97](asce10.md#bolts-beyond-the-legs-centre-line)) — before,
+checked as normal framing eccentricity, NOT ON THE SAFE SIDE. What that
+still leaves out (the angle's lateral-torsional buckling under the
+moment: no rule in the standard) is said on the member. SIA 263 takes
+the real gauge in its N·e already.
 
 ## Pulled back: the cut
 
@@ -905,16 +908,24 @@ cover** bolts **through the cover** (`Arrival::through`):
 - the **end's own checks are unchanged**: one shear plane (lapped), the
   bearing on its own leg and on the leg it bolts onto (the cover's
   thickness not added: *on the safe side*);
-- **NOT ON THE SAFE SIDE**: (1) the cover is a **packing** between the end
+- **The end's extra offset** (since 2026-11-25): the end lies the cover's
+  thickness **farther out of the leg** than lapped directly. Where the
+  joint details are taken (level 4) that offset is an **offset of unknown
+  sign** in the member's own check (`eccentricities::cover_offsets`, the
+  core's `free_offsets`: along its bolts' axis, the outer covers'
+  thickness on that leg; never in the solve) — its moment N·t whole and
+  sign-free, *on the safe side* for the member, the joint's other members
+  relieved of nothing; said in the run's notes ("… bolted through a
+  splice's outer cover …"). Before, left out and said NOT ON THE SAFE
+  SIDE. At level 3 the joint details are not read: as an end on a gusset
+  plate there (O45 D), the offset is not analysed.
+- **NOT ON THE SAFE SIDE**: the cover is a **packing** between the end
   and the leg: the bolt's bending across it is not checked — neither
   ASCE 10-97 nor SIA 263 gives a reduction for packings (searched, none
-  found), other codes do for thick ones; (2) the end lies the cover's
-  thickness **farther out of the leg**: that offset is not in the analysis
-  (as for an end on a gusset plate: O45 D) nor in the member's check
-  beyond the codes' rules for an angle bolted by one leg. Either can make
-  the real stress larger than checked (the bolt's bending, the offset's
-  moment); not modelled yet — keep covers thin or check such ends by
-  hand.
+  found), other codes do for thick ones. A thick packing bends the bolt
+  more, so its shear resistance can be lower than checked; until the
+  owner chooses a rule (roadmap O44, the question of 2026-11-25), keep
+  covers thin under such ends or check their bolts by hand.
 
 In the layout such an end's plane is the cover's face: the cover is no
 obstacle to it, the splice's own bolts (their nuts on the cover) are — the
