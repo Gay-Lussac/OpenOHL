@@ -120,6 +120,9 @@ mod plate_checks;
 #[cfg(test)]
 mod plate_checks_tests;
 mod plate_frame;
+pub mod practice;
+#[cfg(test)]
+mod practice_tests;
 mod reduce;
 /// The member check by a plugin: the core crate `ohl-member-check`
 /// (shared with `ohl structures fe` and the line's structure check).
@@ -194,6 +197,10 @@ pub use plate_checks::{
     plate_usage_cases, plate_usage_cases_with,
 };
 pub use plate_frame::{PlateFrame, insert_corner, offset_outline, plane_normal};
+pub use practice::{
+    ClassPractice, DetailingPractice, Fabrication, FacePattern, PluginAnswer, PracticeSource,
+    RecordedPractice, in_force, plugin_practice, with_practice,
+};
 pub use quantities::{
     SelfWeight, apply_counted, counted_self_weight, structure_quantities, undefined_joints,
 };

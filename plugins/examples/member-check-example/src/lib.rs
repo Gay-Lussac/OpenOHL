@@ -33,6 +33,10 @@
 //!   NOT CHECKED);
 //! - `bolt-distances`: end 2 × diameter, spacing 4 × diameter, edge
 //!   2 × diameter — invented for the example.
+//! - `layout-practice` (2026-11-25, OpenOHL O44 L24): a detailing
+//!   practice for the joint layout — no welding, plates that always reach
+//!   the work point, a 20 mm shift limit, three bolts per end — invented
+//!   for the example and the tests, not a shop's.
 //!
 //! Build with `cargo build --release --target wasm32-wasip2`.
 
@@ -43,6 +47,7 @@ wit_bindgen::generate!({
             include ohl:plugin/member-check-plugin@0.1.0;
             export ohl:plugin/joint-check@0.1.0;
             export ohl:plugin/bolt-distances@0.1.0;
+            export ohl:plugin/layout-practice@0.1.0;
         }
     "#,
     path: "../../../crates/ohl-plugins/wit",
@@ -255,5 +260,30 @@ impl exports::ohl::plugin::bolt_distances::Guest for Example {
         }))
     }
 }
+
+impl exports::ohl::plugin::layout_practice::Guest for Example {
+    fn layout_practice(method: String, _parameters: String) -> Result<Option<String>, String> {
+        if method != METHOD {
+            return Err(format!("no method \"{method}\" (it gives: {METHOD})"));
+        }
+        Ok(Some(PRACTICE.to_owned()))
+    }
+}
+
+/// The example's detailing practice (invented, not a shop's).
+const PRACTICE: &str = r#"format = "ohl-layout-practice"
+version = 1
+name = "example practice (invented)"
+fabrication = ["direct", "plate", "bend", "bends", { form = "welded", allowed = false }]
+
+[limits]
+shift = "20 mm"
+
+[plates]
+short = false
+
+[bolts]
+count = 3
+"#;
 
 export!(Example);

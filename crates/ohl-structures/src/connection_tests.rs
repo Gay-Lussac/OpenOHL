@@ -722,5 +722,5 @@ fn a_plates_own_bolts_onto_a_second_member_are_read() {
     let plain = format!("{BODY}[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n");
     assert!(parse(&plain).unwrap().plates[0].also_bolts.is_none());
     assert_eq!(crate::connections::PLATE_ALSO_BOLTS_VERSION, 26);
-    assert!(parse(&text.replace("version = 26", "version = 27")).is_err());
+    assert!(parse(&text.replace("version = 26", "version = 28")).is_err());
 }

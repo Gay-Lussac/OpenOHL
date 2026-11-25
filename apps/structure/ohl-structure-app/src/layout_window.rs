@@ -22,10 +22,7 @@ use std::sync::mpsc::{Receiver, channel};
 
 use eframe::egui;
 use ohl_structure_edit::Handle;
-use ohl_structure_link::{
-    BoltArea, GAP_START, JointDetails, LayoutRecord, LayoutRun, LayoutSettings, PULL_BACK_START,
-    RunAsk, SHIFT_LIMIT_START,
-};
+use ohl_structure_link::{BoltArea, JointDetails, LayoutRecord, LayoutRun, LayoutSettings, RunAsk};
 
 use crate::app::StructureApp;
 
@@ -294,6 +291,13 @@ pub struct LayoutWindow {
     /// O44 L25: the offered turns for an outstanding leg pointing into the
     /// flange ticked (by member): applied with the run; none by default.
     pub flange_ticks: BTreeSet<String>,
+    /// O44 L24: the detailing practice the run takes and where it comes
+    /// from (none: the default) — the structure's own, else its code
+    /// plugin's, else the default ([`StructureApp::layout_practice`]).
+    pub practice: Option<ohl_structure_link::RecordedPractice>,
+    /// O44 L24: why a practice given is not used (refused, or the plugin
+    /// failed): the default is used, said.
+    pub practice_note: Option<String>,
 }
 
 impl LayoutWindow {
@@ -301,7 +305,7 @@ impl LayoutWindow {
     pub fn settings(&self, bolts: &ohl_structures::bolts::BoltLibrary) -> LayoutSettings {
         let lib = self.bolt.as_deref().and_then(|id| bolts.get(id));
         let d = lib.map_or(self.diameter_mm / 1000.0, |b| b.diameter.si());
-        LayoutSettings {
+        let s = LayoutSettings {
             gap: self.gap_mm / 1000.0,
             pull_back: self.pull_mm / 1000.0,
             shift_limit: self.shift_mm / 1000.0,
@@ -423,6 +427,12 @@ impl LayoutWindow {
             // where the roll is the program's, else offered).
             flange_half: true,
             flange_quarter: true,
+            // L24 (2026-11-25): the detailing practice's values, below.
+            ..LayoutSettings::default()
+        };
+        LayoutSettings {
+            practice_refused: self.practice_note.clone(),
+            ..ohl_structure_link::with_practice(s, self.practice.as_ref())
         }
     }
 
@@ -436,6 +446,10 @@ impl LayoutWindow {
             v.to_bits().hash(&mut h);
         }
         (&self.bolt, &self.presets, self.welded, self.replace).hash(&mut h);
+        self.practice
+            .as_ref()
+            .map(|p| (p.source.word(), p.practice.to_text()))
+            .hash(&mut h);
         self.turns.hash(&mut h);
         self.plane_ticks.hash(&mut h);
         self.flange_ticks.hash(&mut h);
@@ -455,7 +469,13 @@ impl StructureApp {
     /// the clashes runs the layout with.
     pub(crate) fn new_layout_window(&mut self, scope: Scope) -> Option<LayoutWindow> {
         let f = self.file.as_ref()?;
-        let rec = LayoutRecord::of(f.structure()).settings;
+        let record = LayoutRecord::of(f.structure());
+        let rec = record.settings.clone();
+        let (practice, practice_note) = self.layout_practice(&record);
+        let start = practice
+            .as_ref()
+            .map(|p| p.practice.clone())
+            .unwrap_or_default();
         let bolts = self.bolt_library();
         let first = bolts
             .0
@@ -471,9 +491,9 @@ impl StructureApp {
         Some(LayoutWindow {
             scope,
             similar: true,
-            gap_mm: rec.as_ref().map_or(GAP_START, |r| r.gap) * 1000.0,
-            pull_mm: rec.as_ref().map_or(PULL_BACK_START, |r| r.pull_back) * 1000.0,
-            shift_mm: rec.as_ref().map_or(SHIFT_LIMIT_START, |r| r.shift_limit) * 1000.0,
+            gap_mm: rec.as_ref().map_or(start.gap, |r| r.gap) * 1000.0,
+            pull_mm: rec.as_ref().map_or(start.pull_back, |r| r.pull_back) * 1000.0,
+            shift_mm: rec.as_ref().map_or(start.shift, |r| r.shift_limit) * 1000.0,
             bolt,
             diameter_mm: d,
             presets: rec.as_ref().map(|r| r.presets.clone()).unwrap_or_default(),
@@ -498,7 +518,39 @@ impl StructureApp {
             turns: BTreeSet::new(),
             plane_ticks: BTreeMap::new(),
             flange_ticks: BTreeSet::new(),
+            practice,
+            practice_note,
         })
+    }
+
+    /// O44 L24: the detailing practice a run of the layout takes, and why
+    /// one given is not used: the structure file's own `[layout_practice]`
+    /// over its code plugin's (its member check's method, asked once per
+    /// session), value by value, over the default (none). A practice
+    /// refused, or a plugin failing, leaves the default, said here and in
+    /// the run's notes.
+    pub(crate) fn layout_practice(
+        &self,
+        _record: &LayoutRecord,
+    ) -> (Option<ohl_structure_link::RecordedPractice>, Option<String>) {
+        let Some(f) = self.file.as_ref() else {
+            return (None, None);
+        };
+        let own = f.structure().layout_practice.clone();
+        let (plugin, failed) = match ohl_structure_link::plugin_practice(
+            f.text_ref(),
+            f.path().and_then(std::path::Path::parent),
+        ) {
+            Ok(p) => (p, None),
+            Err(e) => (None, Some(e)),
+        };
+        match ohl_structure_link::practice::in_force(own.as_ref(), plugin.as_ref()) {
+            Ok(p) => (
+                p,
+                failed.map(|e| format!("{e}. The code plugin's detailing practice is not used.")),
+            ),
+            Err(e) => (None, Some(ohl_structure_link::practice::refused_note(&e))),
+        }
     }
 
     /// The layout's settings as the Lay out joints window would run them
@@ -1121,6 +1173,10 @@ impl StructureApp {
                             layout_usage(ui, w.usage.as_ref(), p.key, w.usage_job.is_some());
                     }
                 }
+                // (L24) The detailing practice in force, below the preview (its
+                // settings above stay where they were).
+                ui.separator();
+                layout_practice_ui(ui, &mut w);
                 });
                 let ready = w
                     .preview
@@ -1389,6 +1445,89 @@ impl StructureApp {
         }
         self.follow_stamp = Some(stamp);
     }
+}
+
+/// O44 L24: the detailing practice the run takes — where it comes from,
+/// why one given is not used, what is said with it, and its values
+/// (read-only, each with its effect on the results and its time); the
+/// practice's gap, pull-back and shift taken into the settings above on
+/// request.
+fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
+    let source = w
+        .practice
+        .as_ref()
+        .map_or_else(|| "the program's default".to_owned(), |p| p.source.label());
+    let practice = w
+        .practice
+        .as_ref()
+        .map(|p| p.practice.clone())
+        .unwrap_or_default();
+    ohl_ui::tool_window::heading(
+        ui,
+        "Detailing practice",
+        "The shop's preferences the layout follows (O44 L24): which kinds of parts it may make \
+         and in which order, the faces tried first, the limits, the flatness, the plates' shapes \
+         and bend, the picked bolt's pattern (per member class too). This structure file's own \
+         [layout_practice] over the code plugin of its member check, value by value, over the \
+         program's default (the layout as before L24); each value says where it comes from. \
+         OpenOHL checks every value and refuses a practice out of range (said here and in the \
+         run's notes); the clash checks, joint checks and the guard that no \
+         joint ends worse stay in force whatever it says.",
+    );
+    let name = if practice.name.is_empty() {
+        String::new()
+    } else {
+        format!(" — \"{}\"", practice.name)
+    };
+    ui.label(egui::RichText::new(format!("From {source}{name}")).small());
+    if let Some(n) = &w.practice_note {
+        crate::app::error_label(ui, egui::RichText::new(n.as_str()).small());
+    }
+    for n in practice.notes() {
+        ui.label(egui::RichText::new(n).small().weak());
+    }
+    egui::CollapsingHeader::new("Its values")
+        .id_salt("layout-practice")
+        .default_open(false)
+        .show(ui, |ui| {
+            egui::Grid::new("layout-practice-grid")
+                .num_columns(3)
+                .show(ui, |ui| {
+                    for (keys, what, value, effect) in practice.rows() {
+                        ohl_ui::tool_window::label(ui, what, effect);
+                        ui.label(value);
+                        ui.label(
+                            egui::RichText::new(
+                                w.practice
+                                    .as_ref()
+                                    .map_or("the default", |p| p.source_of(keys)),
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.end_row();
+                    }
+                });
+            let start = (
+                practice.gap * 1000.0,
+                practice.pull_back * 1000.0,
+                practice.shift * 1000.0,
+            );
+            let now = (w.gap_mm, w.pull_mm, w.shift_mm);
+            if ((start.0 - now.0).abs() > 1e-6
+                || (start.1 - now.1).abs() > 1e-6
+                || (start.2 - now.2).abs() > 1e-6)
+                && ui
+                    .button("Take its gap, pull-back and shift")
+                    .on_hover_text(
+                        "The settings above are the last run's (kept in the layout record); \
+                         this puts the practice's starting values in their place.",
+                    )
+                    .clicked()
+            {
+                (w.gap_mm, w.pull_mm, w.shift_mm) = start;
+            }
+        });
 }
 
 /// The numbers of a preview.

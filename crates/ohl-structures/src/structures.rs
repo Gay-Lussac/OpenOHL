@@ -306,8 +306,16 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// plate across two horizontals, `[plate.also_bolts]`:
 /// [`crate::connections::TypePlate::also_bolts`],
 /// [`crate::connections::PLATE_ALSO_BOLTS_VERSION`]); a file is written at
-/// 26 only when a plate gives them.
-pub const STRUCTURE_FILE_VERSION: u32 = 26;
+/// 26 only when a plate gives them. Version 27 (2026-11-25, the automatic
+/// joint layout's L24) adds the structure's own detailing practice
+/// (`[layout_practice]`: [`StructureType::layout_practice`],
+/// [`LAYOUT_PRACTICE_VERSION`]); a file is written at 27 only when it has
+/// one.
+pub const STRUCTURE_FILE_VERSION: u32 = 27;
+
+/// The structure file version of the joint layout's detailing practice
+/// (`[layout_practice]`, O44 L24, 2026-11-25).
+pub const LAYOUT_PRACTICE_VERSION: u32 = 27;
 
 /// The structure file version of the bolt grades (`[[bolt_grade]]`, a
 /// member's `bolt_grade`; owner 2026-11-19).
@@ -1377,6 +1385,14 @@ pub struct StructureType {
     /// `ohl_structures_fe`).
     #[serde(default)]
     pub analysis: Option<toml::Table>,
+    /// Version 27 (2026-11-25, the automatic joint layout's L24): the
+    /// structure's own **detailing practice** for the joint layout
+    /// (`[layout_practice]`), read and checked by the structure application
+    /// (`ohl_structure_link::practice`; the core passes it through). None:
+    /// today's defaults (or a code plugin's practice). A file is written at
+    /// 27 only when it has one ([`LAYOUT_PRACTICE_VERSION`]).
+    #[serde(default)]
+    pub layout_practice: Option<toml::Table>,
     /// Materials of the sections (read by `ohl_structures_fe`).
     #[serde(rename = "material", default)]
     pub materials: Vec<toml::Table>,

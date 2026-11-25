@@ -439,6 +439,50 @@ pub struct LayoutSettings {
     /// where no leg is given), the one laying out more member ends kept,
     /// on a tie the half turn. On by default; off: not tried.
     pub flange_quarter: bool,
+    /// O44 L24 (the detailing practice's fabrication order without
+    /// `welded`): an end no roll lays flat may go onto a plate in its own
+    /// plane welded to the flat plate (step 4). On by default; off: such an
+    /// end only on a plate bent by a few degrees (L3), else left for a hand
+    /// detail, said.
+    pub own_plane_welded: bool,
+    /// O44 L24 (the detailing practice's flatness): the most an end's leg
+    /// may lie off its flange and still be planned as bolting flat on it,
+    /// degrees — where the planner chooses between flat and a bent or
+    /// welded plate, and the run turns a member flat at its ends. The
+    /// joint details, the clash check, the joints' planes and groups keep
+    /// [`FLAT_OFF`] (a practice may only be stricter). Default [`FLAT_OFF`].
+    pub flat_off: f64,
+    /// O44 L24: the most an end's leg may lie off its flange for a plate
+    /// bent by as much (L3), degrees. Default [`BEND_SMALL_MAX`].
+    pub bend_small_max: f64,
+    /// O44 L24: the most a plate welded in its member's own plane may put
+    /// its axis farther out of the flange than a flat plate, where the
+    /// offset is carried into the analysis (L20 item 2), m. Default
+    /// `OWN_OUT_MAX`.
+    pub own_out_max: f64,
+    /// O44 L24: a bent plate's inside radius the layout makes, in plate
+    /// thicknesses. Default [`BEND_RADIUS_RATIO`].
+    pub bend_radius_ratio: f64,
+    /// O44 L24: the least gap of a built-up member a plate between its
+    /// angles is laid out in, in thicknesses of the thickest leg on it
+    /// (L15). Default `BETWEEN_LEAST`.
+    pub between_least: f64,
+    /// O44 L24: the detailing practice these settings were made with and
+    /// where it comes from ([`crate::practice::with_practice`]), kept for
+    /// the layout's record; none: the default practice.
+    pub practice: Option<crate::practice::RecordedPractice>,
+    /// O44 L24 (the practice's fabrication order, used only on ties): a
+    /// plate welded in its member's own plane before one bent by a few
+    /// degrees, where both fit an end. Off by default (the bent one first,
+    /// as before).
+    pub weld_before_bend: bool,
+    /// O44 L24 (per member class first): the picked bolt's count for ends
+    /// of a class without bolts or a connection preset for the class
+    /// (empty: [`LayoutSettings::bolt`]'s for every class).
+    pub class_bolts: BTreeMap<String, u32>,
+    /// O44 L24: why the detailing practice given was refused (none: not
+    /// refused) — the default used, said in the run's notes.
+    pub practice_refused: Option<String>,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -497,6 +541,16 @@ impl Default for LayoutSettings {
             holds_clear: true,
             flange_half: true,
             flange_quarter: true,
+            own_plane_welded: true,
+            flat_off: FLAT_OFF,
+            bend_small_max: BEND_SMALL_MAX,
+            own_out_max: OWN_OUT_MAX,
+            bend_radius_ratio: BEND_RADIUS_RATIO,
+            between_least: BETWEEN_LEAST,
+            practice: None,
+            weld_before_bend: false,
+            class_bolts: BTreeMap::new(),
+            practice_refused: None,
         }
     }
 }
@@ -512,7 +566,14 @@ pub const BEND_RADIUS_RATIO: f64 = 2.0;
 /// The inside bend radius of a bent plate `t` thick the layout makes, m:
 /// [`BEND_RADIUS_RATIO`] thicknesses, up to the millimetre.
 pub fn bend_radius(t: f64) -> f64 {
-    ceil_to(BEND_RADIUS_RATIO * t, 0.001)
+    bend_radius_by(t, BEND_RADIUS_RATIO)
+}
+
+/// The inside bend radius of a bent plate `t` thick, `ratio` thicknesses
+/// (the detailing practice's, [`LayoutSettings::bend_radius_ratio`]), up to
+/// the millimetre, m.
+pub fn bend_radius_by(t: f64, ratio: f64) -> f64 {
+    ceil_to(ratio * t, 0.001)
 }
 
 /// The bolts the layout gives an end that has none (provisional).
@@ -563,6 +624,20 @@ impl BoltArea {
             pitch: None,
             end: None,
         }
+    }
+
+    /// The bolt picked, `count` in one line (the detailing practice's
+    /// pattern, O44 L24); two: [`Self::picked`].
+    pub fn picked_count(id: Option<String>, d: f64, flats: Option<f64>, count: u32) -> Self {
+        let mut b = Self::picked(id.clone(), d, flats);
+        if count != 2 {
+            b.count = count;
+            b.from = format!(
+                "the bolt picked ({}), {count} in one line",
+                id.unwrap_or_else(|| format!("{:.0} mm", d * 1000.0))
+            );
+        }
+        b
     }
 }
 
@@ -1007,8 +1082,8 @@ struct Over {
 /// How far beyond the other leg's outer face (m) the steel of an end
 /// leaving over the heel keeps for a bent plate `tp` thick (J2b): the
 /// plate, its inside radius and half the gap.
-fn over_steel(tp: f64, gap: f64) -> f64 {
-    tp + bend_radius(tp) + gap / 2.0
+fn over_steel(tp: f64, s: &LayoutSettings) -> f64 {
+    tp + bend_radius_by(tp, s.bend_radius_ratio) + s.gap / 2.0
 }
 
 /// The least cut (from the work point, on the plane) that takes end `x`,
@@ -1137,7 +1212,7 @@ fn bent_over(
         .iter()
         .map(|p| strips[p.k].own_t)
         .fold(into.map_or(0.0, |i| plates[i].thickness), f64::max);
-    let r = bend_radius(tp);
+    let r = bend_radius_by(tp, s.bend_radius_ratio);
     // (J2b fix) The member it bolts onto as it will be drawn: where its own
     // end is laid out in this plan, moved across by its move and lifted onto
     // its plate (structure axes, m; with L2's clash-aware planning the
@@ -1173,7 +1248,7 @@ fn bent_over(
     for p in group {
         let x = &strips[p.k];
         let keep = x.over.as_ref().map_or(o.keep, |v| v.keep);
-        let (need, _) = over_cut(x, p.moved, over_steel(tp, s.gap) - dy, tp + r + keep.0 - dy);
+        let (need, _) = over_cut(x, p.moved, over_steel(tp, s) - dy, tp + r + keep.0 - dy);
         let need = ceil_to(need, 0.001);
         if need <= p.cut + 1e-9 {
             placed.push(p.clone());
@@ -1669,7 +1744,7 @@ fn plate_holds(
     };
     // (A seam: on the flat plate's side of it — the run cuts the plate
     // there —, its plate's thickness and bend beside it.)
-    let seam_keep = (head + bend_radius(x0.own_t) + x0.own_t).max(ring);
+    let seam_keep = (head + bend_radius_by(x0.own_t, s.bend_radius_ratio) + x0.own_t).max(ring);
     let ok = |q: [f64; 2]| -> bool {
         if !(lo_y - 1e-9..=hi_y + 1e-9).contains(&q[1]) || !inside(q) {
             return false;
@@ -2310,6 +2385,11 @@ struct Tilted {
     /// L3b: bent away from the flange even running towards the bend away
     /// from the joint ([`LayoutSettings::bend_back`]).
     back: bool,
+    /// L24: the flatness it is planned by, degrees ([`LayoutSettings::flat_off`]).
+    flat: f64,
+    /// L24: a bent plate's inside radius, in plate thicknesses
+    /// ([`LayoutSettings::bend_radius_ratio`]).
+    bend_ratio: f64,
 }
 
 impl Strip {
@@ -2579,7 +2659,7 @@ fn plan_joint_searched(
     if s.own_offset_analysed
         && j.arrivals
             .iter()
-            .any(|a| a.flat.is_some_and(|f| f.off > FLAT_OFF))
+            .any(|a| a.flat.is_some_and(|f| f.off > s.flat_off))
     {
         let s1 = LayoutSettings {
             own_offset_analysed: false,
@@ -2593,7 +2673,7 @@ fn plan_joint_searched(
         // (An end still left off its flange: such a plate may put it as
         // far out — the estimates' upper bound that far either way.)
         for x in plan.off_flange.iter_mut() {
-            x.1 = x.1.max(OWN_OUT_MAX);
+            x.1 = x.1.max(s.own_out_max);
         }
     }
     if !s.more_plates || ctx.plain || plan.hand_members.is_empty() {
@@ -2972,7 +3052,7 @@ fn plan_avoiding(
         // caller's to turn; still off, onto a plate in its own plane
         // welded to a flat plate on the flange (the owner's step 4), else
         // a hand detail.
-        let off = a.flat.filter(|f| f.off > FLAT_OFF).map(|f| f.off);
+        let off = a.flat.filter(|f| f.off > s.flat_off).map(|f| f.off);
         // Off: on the flange in whose plane its axis lies most nearly, else
         // on the other.
         // (L15) Across a gap between a built-up member's angles: onto a
@@ -3610,6 +3690,8 @@ fn plan_avoiding(
                         continue;
                     }
                     let rank = match room {
+                        // (L24) The practice's order on this tie.
+                        Room::Weld if s.weld_before_bend => -1.0,
                         Room::Weld => f64::INFINITY,
                         Room::Bend { down } => geo.out_more.abs() + if down { 1e-6 } else { 0.0 },
                     };
@@ -3641,7 +3723,7 @@ fn plan_avoiding(
             // where that is at least BETWEEN_LEAST of the thickest leg on it.
             let between = strips[placed[0].k].between;
             if let Some((gap, _)) = between {
-                if gap + 1e-9 < BETWEEN_LEAST * thickness {
+                if gap + 1e-9 < s.between_least * thickness {
                     let host = strips[placed[0].k].host.clone();
                     for p in &placed {
                         let m = strips[p.k].member.clone();
@@ -3652,7 +3734,7 @@ fn plan_avoiding(
                                  them would be {} thick (the gap), less than {:.0} % of the \
                                  thickest leg on it ({}; lay it out by hand)",
                                 mm_text(gap),
-                                BETWEEN_LEAST * 100.0,
+                                s.between_least * 100.0,
                                 mm_text(thickness)
                             ),
                         );
@@ -3871,7 +3953,7 @@ fn plan_avoiding(
                         0.0,
                         Some(BendPlan {
                             angle: round_to(geo.angle, 0.01),
-                            inner_radius: bend_radius(thickness),
+                            inner_radius: bend_radius_by(thickness, s.bend_radius_ratio),
                             line: [abs(geo.middle[0]), abs(geo.middle[1])],
                         }),
                     ),
@@ -4296,14 +4378,14 @@ fn plan_avoiding(
         .iter()
         .filter_map(|m| {
             let a = find(m.as_str())?;
-            a.flat.filter(|f| f.off > FLAT_OFF)?;
+            a.flat.filter(|f| f.off > s.flat_off)?;
             let t = a.profile.as_ref()?.angle.as_ref()?.t;
             // (L20 item 2: such a plate may put it up to the most the
             // analysis takes farther out — the upper bound that far.)
             Some((
                 m.clone(),
                 if s.own_offset_analysed {
-                    t.max(OWN_OUT_MAX)
+                    t.max(s.own_out_max)
                 } else {
                     t
                 },
@@ -5612,11 +5694,14 @@ pub fn flat_turns(j: &JointDetail) -> Vec<(String, f64)> {
 /// no single angle drawn here (onto a plate, nothing named, or not an
 /// angle). A prediction from the geometry, for choosing a member's turn;
 /// the plan decides.
+/// `flat_off`: the flatness within which it lies flat, degrees (the
+/// detailing practice's, [`LayoutSettings::flat_off`]; L24).
 pub(crate) fn turned_end(
     j: &JointDetail,
     a: &Arrival,
     turn: f64,
     either: bool,
+    flat_off: f64,
 ) -> Option<(f64, bool)> {
     let p = a.profile.as_ref()?;
     p.angle?;
@@ -5649,7 +5734,7 @@ pub(crate) fn turned_end(
         .filter_map(|n| crate::welds::flat_roll(axes, leg_y, n).map(|f| (across(n), f.off)))
         .min_by(|u, v| u.0.total_cmp(&v.0).then(u.1.total_cmp(&v.1)))?
         .1;
-    if off <= FLAT_OFF {
+    if off <= flat_off {
         return Some((off, true));
     }
     let mut turned = a.clone();
@@ -5860,13 +5945,21 @@ fn strip_of(
             None,
         ),
         _ => {
-            let pick = a
+            let preset = a.class.as_ref().and_then(|c| s.presets.get(c));
+            // (L24) The practice's picked bolt's pattern for its class.
+            let by_class = a
                 .class
                 .as_ref()
-                .and_then(|c| s.presets.get(c))
-                .or(s.bolt.as_ref())
+                .and_then(|c| s.class_bolts.get(c))
+                .zip(s.bolt.as_ref())
+                .filter(|(_, b)| b.preset.is_none())
+                .map(|(n, b)| BoltArea::picked_count(b.bolt.clone(), b.diameter, b.flats, *n));
+            let pick = preset
+                .cloned()
+                .or(by_class)
+                .or(s.bolt.clone())
                 .ok_or("no bolts, no preset for its class and no bolt picked")?;
-            (pick.clone(), Some(pick.clone()))
+            (pick.clone(), Some(pick))
         }
     };
     let d = area.diameter;
@@ -6023,6 +6116,8 @@ fn strip_of(
                 },
                 band: (f.across, f.width),
                 back: s.bend_back && s.small_bends,
+                flat: s.flat_off,
+                bend_ratio: s.bend_radius_ratio,
             };
             // Its footprint on the flange's plane: its section where it is
             // drawn and its plate's (to the seam), across the plane's `v`.
@@ -6330,13 +6425,26 @@ pub const BEND_SMALL_MAX: f64 = 20.0;
 /// [`LayoutSettings::small_bends`]), then welded (step 4).
 fn rooms_for(t: &Tilted, s: &LayoutSettings) -> Vec<Room> {
     let mut out = Vec::new();
-    if s.small_bends && t.off <= BEND_SMALL_MAX {
+    if s.small_bends && t.off <= s.bend_small_max {
         out.push(Room::Bend { down: false });
         out.push(Room::Bend { down: true });
     }
-    out.push(Room::Weld);
+    // (L24) Not where the detailing practice makes no welds; first where its
+    // order puts the welded plate before the bent one (a tie between them).
+    if s.own_plane_welded {
+        if s.weld_before_bend {
+            out.insert(0, Room::Weld);
+        } else {
+            out.push(Room::Weld);
+        }
+    }
     out
 }
+
+/// Said for an end off its flange where the detailing practice makes no
+/// welds (O44 L24; [`LayoutSettings::own_plane_welded`] off).
+pub const NO_WELD: &str = "no plate welded in its own plane (the detailing practice makes no \
+                           welds)";
 
 /// Why each plate tried for an end off its flange does not fit, in words:
 /// the welded plate's (as before L3), then the bent ones' (L3).
@@ -6344,7 +6452,8 @@ fn rooms_words(errs: &[(Room, String)]) -> String {
     let weld = errs
         .iter()
         .find(|(r, _)| *r == Room::Weld)
-        .map_or("", |x| x.1.as_str());
+        // (L24) Not tried: the detailing practice makes no welds.
+        .map_or(NO_WELD, |x| x.1.as_str());
     let bent: Vec<String> = errs
         .iter()
         .filter_map(|(r, e)| match r {
@@ -6372,7 +6481,7 @@ fn rooms_words(errs: &[(Room, String)]) -> String {
 /// (L3), at most that nearer either.
 fn within(room: Room, more: f64, t: f64, s: &LayoutSettings) -> bool {
     match room {
-        Room::Weld => more <= t + 1e-9 || (s.own_offset_analysed && more <= OWN_OUT_MAX + 1e-9),
+        Room::Weld => more <= t + 1e-9 || (s.own_offset_analysed && more <= s.own_out_max + 1e-9),
         Room::Bend { .. } => more.abs() <= t + 1e-9,
     }
 }
@@ -6452,7 +6561,7 @@ fn own_geometry(
     };
     let q = unit(cross(t.nb, d)).ok_or("its leg lies parallel to the flange")?;
     let q = if dot(q, out) < 0.0 { scale(q, -1.0) } else { q };
-    if dot(q, out) < FLAT_OFF.to_radians().sin() / 2.0 {
+    if dot(q, out) < t.flat.to_radians().sin() / 2.0 {
         return Err("its leg lies parallel to the flange".to_owned());
     }
     // (L3) Bent towards the flange: down its plate from the bend.
@@ -6464,8 +6573,8 @@ fn own_geometry(
     let back = !down
         && t.back
         && matches!(room, Room::Bend { .. })
-        && dot(q, t.dir) < -FLAT_OFF.to_radians().sin();
-    if dot(q, t.dir) < -FLAT_OFF.to_radians().sin() && !back {
+        && dot(q, t.dir) < -t.flat.to_radians().sin();
+    if dot(q, t.dir) < -t.flat.to_radians().sin() && !back {
         return Err(if down {
             "it runs up towards its bend away from the joint".to_owned()
         } else {
@@ -6477,7 +6586,9 @@ fn own_geometry(
     // The bend's curved part from the seam (L3): (r + t) tan(θ/2).
     let curved = match room {
         Room::Weld => 0.0,
-        Room::Bend { .. } => (bend_radius(tf) + tf) * (angle.to_radians() / 2.0).tan(),
+        Room::Bend { .. } => {
+            (bend_radius_by(tf, t.bend_ratio) + tf) * (angle.to_radians() / 2.0).tan()
+        }
     };
     // What keeps clear of the seam, each by how much along the plate:
     // its leg's two edges where its steel stops and past its bolts (the
@@ -6760,7 +6871,7 @@ fn farther_out(more: f64, t: f64, room: Room, s: &LayoutSettings) -> String {
             "its axis would lie {:.0} mm farther out of the flange than on a flat plate (more \
              than the {:.0} mm the analysis takes for a plate in its own plane)",
             more * 1000.0,
-            OWN_OUT_MAX * 1000.0
+            s.own_out_max * 1000.0
         );
     }
     format!(
@@ -7003,8 +7114,8 @@ fn cut_need(
     // Over the heel onto a bent plate (J2b): past the other leg's
     // outer face, the plate and its bend.
     if let Some(o) = &x.over {
-        let r = bend_radius(o.tp);
-        let (c, w) = over_cut(x, moved, over_steel(o.tp, s.gap), o.tp + r + o.keep.0);
+        let r = bend_radius_by(o.tp, s.bend_radius_ratio);
+        let (c, w) = over_cut(x, moved, over_steel(o.tp, s), o.tp + r + o.keep.0);
         need = c;
         by = Some(w.to_owned());
     }
@@ -8362,6 +8473,8 @@ mod back_tests {
             face: [0.0; 3],
             band: (across_f, width),
             back,
+            flat: crate::FLAT_OFF,
+            bend_ratio: crate::BEND_RADIUS_RATIO,
         };
         let room = Room::Bend { down: false };
         let cut = 0.02;

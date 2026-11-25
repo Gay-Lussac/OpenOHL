@@ -15,14 +15,19 @@ use crate::joints::joint_details;
 use crate::joints_tests::library;
 use crate::layout_run::{LayoutRecord, RunAsk, follow, lay_out, provisional_bolts};
 
-fn settings() -> LayoutSettings {
+pub(crate) fn settings() -> LayoutSettings {
     LayoutSettings {
         bolt: Some(BoltArea::picked(None, 0.016, None)),
         ..Default::default()
     }
 }
 
-fn run(text: &str, s: &LayoutSettings, joints: Option<&[&str]>, replace: bool) -> crate::LayoutRun {
+pub(crate) fn run(
+    text: &str,
+    s: &LayoutSettings,
+    joints: Option<&[&str]>,
+    replace: bool,
+) -> crate::LayoutRun {
     let lib = library();
     let bolts = Default::default();
     let ask = RunAsk {
@@ -36,7 +41,7 @@ fn run(text: &str, s: &LayoutSettings, joints: Option<&[&str]>, replace: bool) -
     lay_out(text, &ask).unwrap()
 }
 
-fn parse(text: &str) -> StructureType {
+pub(crate) fn parse(text: &str) -> StructureType {
     StructureType::parse(std::path::Path::new("s.ohls"), text).unwrap()
 }
 
@@ -1074,7 +1079,7 @@ fn a_plate_marked_short_is_drawn_short_of_the_work_point() {
     assert!(area(&short.outline) < area(&round.outline));
 }
 
-fn d1_spoiled(deg: f64) -> String {
+pub(crate) fn d1_spoiled(deg: f64) -> String {
     format!(
         "{}\n[[node]]\nid = \"N6\"\npoint = [\"5 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\
          \n[[member]]\nid = \"H0\"\nnodes = [\"N1\", \"N4\"]\nsection = \"EA-61x7\"\n\
@@ -1789,7 +1794,9 @@ fn a_half_or_quarter_turn_decides_whether_a_bent_plate_takes_an_end() {
         off > crate::FLAT_OFF && off < crate::BEND_SMALL_MAX,
         "{off}"
     );
-    let at = |t: f64, either: bool| crate::joint_layout::turned_end(j, a, t, either).unwrap();
+    let at = |t: f64, either: bool| {
+        crate::joint_layout::turned_end(j, a, t, either, crate::FLAT_OFF).unwrap()
+    };
     let (o0, k0) = at(0.0, false);
     let (o1, k1) = at(PI, false);
     assert!(
