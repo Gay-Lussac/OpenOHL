@@ -451,7 +451,8 @@ pub(crate) fn weigh_flange_turns(
     let mut layouts = 0usize;
     // 1. Each way: every member that may take it turned so, laid out.
     // (member → the ways helping its own joints: (ends, plates), blamed).
-    let mut passing: BTreeMap<usize, Vec<(Way, (usize, usize), bool)>> = BTreeMap::new();
+    type Passing = (Way, (usize, usize), bool);
+    let mut passing: BTreeMap<usize, Vec<Passing>> = BTreeMap::new();
     // (Each way tried: its ends and plates, its joints worse, and whether
     // a joint elsewhere was worse where a member turned otherwise meets.)
     type Tried = (Way, (usize, usize), Vec<String>, bool);
