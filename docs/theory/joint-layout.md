@@ -4085,6 +4085,126 @@ plate. The weighing laid each tower out four or five more times — about
 as long again as L19's weighing of Orient angles' turns (measured under a
 varying load of other work; once per tower).
 
+## A stand-off where neither turn helps: built, measured, not kept (L26)
+
+(L25's question 2; the owner, 2026-11-24: *"probably a half turn if
+possible then other options"*. Built and measured 2026-11-25, then taken
+out again: on the private towers no stand-off passed. No change to the
+program.)
+
+**Why.** An end whose outstanding leg points into the flange cannot lie on
+a plate in its own plane welded to the flat plate (step 4): its
+outstanding leg would stand on the flat plate. L25 turns such a member by
+half or a quarter turn where that helps every joint it reaches; on the
+eight private towers 174 members (335 ends) were left where neither turn
+helps.
+
+**The form tried: a welded assembly of three parts.**
+
+1. The plane's **flat plate** on the flange (as step 4's).
+2. A **web**: a plate square to the flat plate, in the plane of the
+   member's axis and the flat plate's normal, centred on the axis, from
+   the gap short of where the member's steel stops towards the joint,
+   welded to the flat plate along its foot (both sides).
+3. A **gusset** in the member's own plane on the back of its leg bolted
+   (away from the flange), round its bolts with their end and edge
+   distances and over the web's top, welded on the web (both sides); the
+   member hangs under it, its outstanding leg towards the flange.
+
+The member was **lifted** the least that keeps its corners (the
+outstanding leg's toe among them) and its bolts' heads inside the angle
+the gap clear of the flat plate, and **pulled back** (within the longest
+pull-back) only so far that the web's foot, with its welds' room, stays on
+the flange clear of its heel side (found on a private tower: a web past
+the heel made the flat plate under it run into the angle's other leg).
+Member size, work point and roll were never changed.
+
+**Limits and checks, as built** (all on the safe side, or said):
+
+- its axis offset (against the same member flat on a flat plate) at most
+  the 40 mm the analysis takes (L20 item 2's limit), recorded for the
+  estimated eccentricities; beyond, refused;
+- the **web sized** so that its root carries the member's whole gross
+  section at yield: under a force A·fy on the member's line, the part along
+  the web shearing the root (parabolic, 1.5 times the mean), the part square
+  to the flat plate pressing or pulling it, its moment about the root's
+  middle bending it in its plane — the largest von Mises stress over 21
+  points of the root's depth at most the web's yield strength (elastic;
+  the area taken as t (b + h), at least the angle's gross area); as thick
+  as the plates or thicker in half steps up to three times, at most 150 mm
+  long (the program's value), its ends at least two fillet legs high;
+- the gusset's bolts and both welds by the existing checks (the code
+  plugin; the welds with the moments of the member's force about them);
+- **NOT ON THE SAFE SIDE, said on a row of the joint checks**: the web's
+  own section per load case — no code plugin export checks a plate's
+  section in its own plane (a new export would change what OpenOHL sends a
+  plugin); what made it safe: the sizing above, with the web's steel at
+  least the member's and a plate's yield taken with the member's factor.
+
+**Weighed** as L25 weighs the turns: only members whose `flange_turns`
+row says neither turn helps; the tower laid out once with all of them
+allowed a stand-off, a member passing where every joint it reaches is laid
+out no worse and one better after writing (and no joint elsewhere worse
+where a member turned otherwise meets one of its joints), then confirmed
+together. Off by default (it changes the default layout), a tick in Lay
+out joints, the detailing practice able to forbid it.
+
+**Measured** (2026-11-25, kept privately): the eight private towers of
+L21–L25 (6 852 joints), the base main (L25 kept) with the bundled ASCE
+10-97 plugin built fresh and checked to load (the code's distances in
+force), the same settings as L23–L25; the stand-off run on each tower file
+the base laid out (its L25 rows in place: only the stand-off weighed).
+The base reproduced L25's result exactly (4 253 joints whole, 15 268 ends,
+8 196 plates).
+
+| seven towers, 5 794 joints | base | stand-offs weighed |
+|---|---|---|
+| members weighed for a stand-off | — | 138 |
+| … a stand-off kept | — | **0** (none written) |
+| ends left with the outstanding leg into the flange | 252 | 252 |
+| joints whole / member ends / plates | 3 613 / 12 924 / 6 812 | 3 644 / 12 960 / 6 829 (a run again, below) |
+| the weighing's layouts, time | — | one more per tower, 4 411 s on the seven (under a heavy load of other work) |
+
+The eighth tower's run ended without a result (stopped before its first
+layout had ended; not traced, not measured). With no stand-off kept the run is
+the base's file laid out again — the program then plans as main (no member
+may take a stand-off) —, so the other rows' differences are those of **a
+run again**: on one tower identical, on three of them 31 joints better and
+6 laid out with as many ends on one more plate (each tower's same two
+joints; not checked against main's own run again on those three, stopped
+for time — an owner question).
+
+The ends tried, by why the stand-off did not take them (144 ends, by how
+far their leg lies off the flange):
+
+| why | under 5° | 5°–10° | 10°–20° | 20°–45° | 45° or more |
+|---|---|---|---|---|---|
+| the joint laid out no better with it (the plan without such plates kept) | 6 | 49 | 24 | 3 | — |
+| the web too low for its welds (the gusset down to the flat plate) | — | — | 6 | 8 | 31 |
+| the web longer than 150 mm, three plates thick | 8 | 2 | — | — | — |
+| its axis more than 40 mm out | — | — | 2 | 2 | — |
+| the web past the flange's heel side (pulling back does not help) | — | 3 | — | — | — |
+
+**Why none passed.** Most of these ends lie in crowded joints: the joint
+was laid out no better with the stand-off allowed — the plan without such
+plates kept (L20 item 2 weighs them so; what stopped the plan with it is
+then not recorded) — at about six in ten of the ends tried, most of them
+5°–20° off (one traced on a private tower: the joint's
+members already ran into each other as drawn; the stand-off did not change
+that). Where the gusset is steep (most ends 20° off or more) it comes down
+to the flat plate before the web can stand under it ("too low for its
+welds"). Near the flange's plane (under 5°–10° off) the member's whole
+gross section at yield, carried at the lever of a lifted member, needs a
+web longer than 150 mm even three plates thick. A few would put the axis
+more than 40 mm out. **Not kept**: the code was taken out again; the
+members stay left for a hand detail as after L25.
+
+**Next** (an owner question): a lighter web is possible only with a check
+per load case (the member's actual force, not its gross section at yield)
+— a code plugin export for a plate's section in its own plane (additive,
+asked first) — and the crowded joints need their members' places solved
+first (L11's *Solve the clashes*), not a new part.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
