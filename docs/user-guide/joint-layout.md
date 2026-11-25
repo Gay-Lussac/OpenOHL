@@ -28,20 +28,24 @@ themselves are not chosen here (that comes with the design codes).
    limit, the bolt for ends without bolts (and a connection preset per
    member class), the plates of a corner bolted to their flanges or welded
    together, and whether values given by hand are replaced.
-   Below them, **Detailing practice** (2026-11-25, L24) says which shop
-   practice the layout follows and where it comes from — this
-   structure's own, the code plugin of its member check, or the program's
-   default — and, under *Its values*, each preference with its effect:
-   the kinds of parts it may make (bolted directly, one flat plate, a
-   plate with one bend, a plate welded in the member's own plane), the
-   faces tried first, the flatness, the bend, the plates' shapes, the
-   picked bolt's pattern. A practice given with a value out of range is
-   not used (red, with why; the default is used). *Take its gap,
-   pull-back and shift* puts the practice's starting values into the
-   settings above. A structure's own practice is the layout record's
-   `[generator.practice]` in the structure file
+   Below the preview, **Detailing practice** (2026-11-25, L24) says which
+   shop practice the layout follows and where it comes from — this
+   structure file's own `[layout_practice]` over the code plugin of its
+   member check, value by value, over the program's default — and, under
+   *Its values*, each preference with where it comes from (this file, the
+   code plugin, the default) and its effect: the fabrication order (the
+   forms bolted directly, one flat plate, a plate with one bend, several
+   bends, a plate welded in the member's own plane, each allowed or not;
+   the order decides only ties), the faces tried first, the flatness, the
+   bend, the plates' shapes, the picked bolt's pattern (per member class
+   too). A practice given with a value out of range is not used (red,
+   with why; the default is used, and the run's notes say so). *Take its
+   gap, pull-back and shift* puts the practice's starting values into the
+   settings above. A structure's own practice is written in its file as
+   `[layout_practice]`
    ([theory](../theory/joint-layout.md#the-detailing-practice-l24),
-   [the text](../development/plugins.md#detailing-practice)).
+   [the table](../development/plugins.md#detailing-practice)).
+
 5. Read the **preview**: how many joints are laid out, how many plates,
    how many member ends of how many are laid out,
    the joints that need a hand detail — which members, the rest laid out,

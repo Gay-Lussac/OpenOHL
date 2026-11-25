@@ -4002,23 +4002,28 @@ the same towers:
 ## The detailing practice (L24)
 
 (The owner, 2026-11-24: the layout's detailing rules pluggable as data,
-the engine staying in the program; roadmap O44 L24, built 2026-11-25, in
-active development, not approved yet;
+the engine staying in the program, with six design questions answered by
+their recommendations; roadmap O44 L24, built 2026-11-25 as recommended,
+in active development, not approved yet;
 [plugins](../development/plugins.md#detailing-practice).)
 
 **Why.** Shops and utilities detail towers differently: some never weld,
 some keep every gusset round the work point, some bolt three bolts where
 others bolt two. Until L24 those preferences were constants in the code.
-A **detailing practice** holds them as data — the structure's own, or
-given by the code plugin of its member check, else the default — and the
-layout follows it.
+A **detailing practice** holds them as data and the layout follows it.
 
-**What it holds** (each with its default, which is the layout as it was
-before L24 exactly):
+**Where it comes from.** The structure file's own `[layout_practice]`
+table (structure file version 27) over the answer of the code plugin of
+its member check (its optional `layout-practice` export), **value by
+value**, over the default — the layout as it was before L24 exactly
+(every value the constant the code had), so that an empty table lays out
+as today.
+
+**What it holds** (each with its default):
 
 | Preference | Default | What the layout does with it |
 |---|---|---|
-| Fabrication order | direct → plate → bend → welded | the kinds of parts tried, in this order; a kind left out is never made (an end needing it is left for a hand detail, said); "bends" (several bends) accepted, not built |
+| Fabrication order | direct → plate → bend → bends → welded, all allowed | a form not allowed is never made (an end needing it is left for a hand detail, said); the order decides only ties — the weighing keeps its rule, more ends or as many on fewer plates — today between a plate bent by a few degrees and one welded in the member's own plane (both fit an end: the earlier in the order is taken); "bends" (several bends) not built |
 | Faces of a leg's flange | a diagonal onto the inner face first | L10's order of the ends tried on the other face |
 | Members on either side of a flange | yes | L10's half turn onto the other face |
 | Both faces of one plate | yes | L11 |
@@ -4030,14 +4035,18 @@ before L24 exactly):
 | Plate between angles, least gap | 0.5 × the thickest leg | L15 |
 | Plates may stop short of the work point | yes | L2's follow-up (a) |
 | The picked bolt's pattern | 2 in one line | the provisional bolts of an end without bolts or a class preset |
+| Per member class | none | the picked bolt's pattern per class (as the connection presets are); per joint kind later |
 
 **On the safe side.** A practice only chooses among what the engine does
-already: it turns kinds off and changes the program's numbers, never adds
-a way of detailing. The clash check, the joint checks after writing and
-the guard that no step leaves a joint worse run whatever it says. Every
-value is checked and a practice with one out of its range is refused —
-not used, the default used instead, said — with what, why and what to
-give instead:
+already: it turns forms off, orders a tie and changes the program's
+numbers, never adds a way of detailing. The core's checks are no values
+of a practice: the clash check, the joint checks after writing (the
+code's distances, holes overlapping, the bend check, the NOT ON THE SAFE
+SIDE words) and the guard that no step leaves a joint worse run whatever
+it says. Every value is checked and a practice with one out of its range
+is refused — not used, the default used instead, said in Lay out joints
+and in the run's notes — with what, why, what to give instead and whose
+table:
 
 - the flatness 1° to 2°: the joint details take an end as lying flat up
   to 2° (the owner's value, 2026-11-19); a looser practice would bolt
@@ -4058,34 +4067,36 @@ give instead:
   before);
 - the plate between a built-up member's angles at least half the
   thickest leg on it (the program's least, L15);
-- 2 to 8 bolts in one gauge line: one bolt per end is the codes' question
-  (J8), two lines for the picked bolt wait on the codes' bolt choice;
-- "direct" and "plate" always: the layout has no way without them; the
-  kinds in the engine's order (it does not follow another order yet).
+- 2 to 8 bolts in one gauge line, for the structure and per class: one
+  bolt per end is the codes' question (J8), two lines for the picked bolt
+  wait on the codes' bolt choice;
+- "direct" and "plate" always allowed: the layout has no way without
+  them; the five forms each once.
 
-**Where it comes from, and the record.** The Lay out joints window takes
-the structure's own practice (the layout record's `[generator.practice]`,
-`source = "project"`), else asks the structure's code plugin (its
-`detailing-practice` export, once per session), else the default; it
-shows where it comes from and its values, each with its effect, and why a
-practice given is not used. A run writes the practice it took into the
-record with its source; an edit's follow and the estimated eccentricities
-take the record's, so that they plan as the run planned.
+**Shown, and recorded.** Lay out joints shows, below its preview, the
+practice in force, where it comes from, why one given is not used, and
+each value with where it comes from (this file, the code plugin, the
+default) and its effect. A run records the plugin's answer in the layout
+record; an edit's follow and the estimated eccentricities lay the file's
+table over it, as the run did. **Expected cost**: none measurable —
+reading a practice is microseconds; a form not allowed makes a run a
+little faster, never slower. The effect of each value on the private
+real towers is not measured yet (each value's measured effect is the
+owner's sixth recommendation: next, with the bundled `asce10` built
+fresh, L23's finding).
 
 **Tested** (`practice_tests.rs`, `ohl-structure-tests/tests/detailing_practice.rs`):
 the default practice leaves the engine's settings exactly as they were
 (also with switches off) and lays an invented K-brace out to the same
-plans, the same file (but for the record's practice table) and the same
-estimated eccentricities, its diagonal flat, 10° and 30° off; a shop
-without bends puts the 10° diagonal on a welded plate instead of a bent
-one, one without bends and welds leaves it for a hand detail, said; an
-axis offset limit of 0 leaves the 30° diagonal by hand; three bolts per
-end given where ends have none; every refusal; the record's round trip;
-the example plugin's practice through the real host. **Expected cost**:
-none measurable — reading a practice is microseconds, and a kind left out
-makes a run a little faster, never slower. Not measured on the private
-real towers: the default changes nothing there by construction (the same
-values), which the tests above prove on invented towers.
+plans, the same file (but for its `[layout_practice]` table) and the
+same estimated eccentricities, its diagonal flat, 10° and 30° off; the
+file's values over the plugin's value by value, each value's source; a
+shop without bends puts the 10° diagonal on a welded plate, one whose
+order puts the welded plate first too, one without bends and welds
+leaves it for a hand detail, said; an axis offset limit of 0 leaves the
+30° diagonal by hand; three bolts per end, four for the bracing class;
+every refusal, in the run's notes too; the record's plugin answer; the
+example plugin's practice through the real host.
 
 ## Measured (J1 and J2, 2026-11-19)
 

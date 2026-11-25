@@ -1320,43 +1320,47 @@ further optional export carries them:
 *2026-11-25, roadmap O44 L24; built, in active development, not approved
 yet. The owner, 2026-11-24, approved making the joint layout's detailing
 rules pluggable as data, the engine that builds, checks and validates
-the layout staying in the program.* A code plugin may give the **detailing
-practice** OHL-Structure's automatic joint layout follows — a shop's or a
-utility's preferences, as data. The layout engine, its clash checks,
-joint checks and the guard that no joint ends worse stay OpenOHL's: a
-practice only chooses among what the engine already does, and a plugin
-never certifies its own result.
+the layout staying in the program, with six design questions answered by
+their recommendations (built so, awaiting the owner's confirmation).* A
+code plugin may give the **detailing practice** OHL-Structure's
+automatic joint layout follows — a shop's or a utility's preferences, as
+data. The layout engine, its clash checks, joint checks and the guard
+that no joint ends worse stay OpenOHL's: a practice only chooses among
+what the engine already does, and a plugin never certifies its own
+result.
 
-**The export.** `detailing-practice` (`code.wit`; optional, beside
+**The export.** `layout-practice` (`code.wit`; optional, beside
 `member-check`, found by its export name: a plugin without it loads as
-before and gives none; world `detailing-practice-export`, and for plugins
+before and gives none; world `layout-practice-export`, and for plugins
 built against the whole code interface `structure-code-practice-plugin`,
 which includes `structure-code-plugin`; additive to 0.3):
 
-- `detailing-practice(method, parameters) -> result<option<string>,
+- `layout-practice(method, parameters) -> result<option<string>,
   string>`: `method` is the structure's member-check method of this
   plugin (`[analysis] capacity = "plugin:<plugin>/<method>"`, or the
   bundled default), `parameters` the text of the structure's parameter
-  file for the plugin (`Plugins/<plugin>.toml`, "" none). Back: a
-  practice file's text, none (the default practice), or an error in
-  words.
-- The host (`WasmHost::detailing_practice`) refuses an empty text and one
-  over 64 KiB, naming the plugin; `ohl_member_check::joints::detailing_practice`
+  file for the plugin (`Plugins/<plugin>.toml`, "" none). Back: TOML text
+  holding the same table as a structure file's `[layout_practice]`, none
+  (the default practice), or an error in words.
+- The host (`WasmHost::layout_practice`) refuses an empty text and one
+  over 64 KiB, naming the plugin; `ohl_member_check::joints::layout_practice`
   asks once per plugin, method and parameter file in a session.
 
-**The text** (TOML; every key optional — a key left out takes the
-default's value, which is the layout as it was before L24):
+**The table** (TOML; every key optional — a key left out takes the
+default's value, which is the layout as it was before L24, so that an
+empty table lays out exactly as today):
 
 ```toml
-format = "ohl-detailing-practice"
+format = "ohl-layout-practice"
 version = 1
 name = "invented shop"         # shown with where it comes from
-# The kinds of parts an end may go onto, in the engine's order (fewer
-# parts, no weld to inspect, first): "direct" and "plate" always;
-# "bend" (a plate with one bend: round the heel, or by a few degrees),
-# "bends" (several bends: accepted, not built yet), "welded" (a plate in
-# the member's own plane welded to the flat plate) optional.
-fabrication = ["direct", "plate", "bend", "welded"]
+# The fabrication order: the five forms, each once, in the shop's order,
+# each allowed (a word) or not ({ form = "…", allowed = false }); "direct"
+# and "plate" always allowed. The layout's weighing keeps its rule (more
+# ends, or as many on fewer plates); the order decides only ties — today
+# a plate bent by a few degrees against one welded in the member's own
+# plane. "bends" (several bends) is not built yet.
+fabrication = ["direct", "plate", "bend", "bends", "welded"]
 
 [faces]
 pattern = "diagonal-inner"     # or "later-class-first" (L10)
@@ -1379,31 +1383,46 @@ short = true                   # plates may stop short of the work point
 [bolts]
 count = 2                      # the picked bolt: bolts per end
 lines = 1                      # gauge lines (1 only, for now)
+
+# Per member class first (leg, bracing, redundant, crossing — the
+# connection presets' classes): the picked bolt's pattern only, for now.
+[classes.redundant.bolts]
+count = 2
 ```
 
-**OpenOHL checks every value** (`ohl_structure_link::practice`): an
-unknown key, a value of the wrong kind or out of its range, a kind given
-twice or out of the engine's order, "direct" or "plate" left out — each
-refused with what, why and what to give instead; a refused practice is
-not used (the default is, said in the window). The ranges keep the
-layout on the safe side: the flatness 1° to 2° (never looser than the
-joint details' 2°); the shift up to 30 mm and the welded plate's axis
-offset up to 40 mm (what the estimated eccentricities take as their
-upper bounds, until J5); the bend radius at least one thickness (the
-plugins' bend checks check it against their code); the plate between
-angles at least half the thickest leg; 2 to 8 bolts in one line (one
-bolt is J8's, the codes' question). A practice only restricts what the
-engine tries (a switch off stays off); its numbers replace the program's.
+**Where a run takes it from.** The structure file's own
+`[layout_practice]` (structure file version 27) **over** the code
+plugin's answer, **value by value** (a sub-table key by key: the file's
+`[layout_practice.limits] shift` replaces only the plugin's shift; a list
+as one value), over the default. Lay out joints shows the practice in
+force, where it comes from and, for each value, whether it is the file's,
+the plugin's or the default. A run records the plugin's answer in the
+layout record (`[generator.practice]`, `source = "plugin:<plugin>/<method>"`);
+an edit's follow and the estimated eccentricities lay the file's table
+over it as the run did, without asking the plugin.
 
-**Where a run takes it from**, first found: the structure's own
-(`[generator.practice]` with `source = "project"` in the layout record),
-the structure's code plugin, the default. The run writes the practice it
-took with its source into the record; an edit's follow and the estimated
-eccentricities take the record's. The bundled `asce10` and `sia263` give
-none (a practice is a shop's, not a code's). The example plugin
-`plugins/examples/member-check-example` gives an invented one (no
-welding, plates always round the work point, a 20 mm shift, three bolts),
-read through the real host in
+**OpenOHL checks every value** (`ohl_structure_link::practice`): an
+unknown key, a value of the wrong kind or out of its range, a form
+missing or given twice, "direct" or "plate" not allowed, another value
+per class than the picked bolt's — each refused with what, why, what to
+give instead and whose table; a refused practice is not used (the
+default is), said in Lay out joints and in the run's notes. The core's
+checks are no values of a practice (the clash check, the code's
+distances, holes overlapping, the bend check, the NOT ON THE SAFE SIDE
+words). The ranges keep the layout on the safe side: the flatness 1° to
+2° (never looser than the joint details' 2°); the shift up to 30 mm and
+the welded plate's axis offset up to 40 mm (what the estimated
+eccentricities take as their upper bounds, until J5); the bend radius at
+least one thickness (the plugins' bend checks check it against their
+code); the plate between angles at least half the thickest leg; 2 to 8
+bolts in one line (one bolt is J8's, the codes' question). A practice
+only restricts what the engine tries (a switch off stays off); its
+numbers replace the program's.
+
+The bundled `asce10` and `sia263` give none (a practice is a shop's, not
+a code's). The example plugin `plugins/examples/member-check-example`
+gives an invented one (no welding, plates always round the work point, a
+20 mm shift, three bolts), read through the real host in
 `apps/structure/ohl-structure-link/src/practice_tests.rs`.
 
 ## Field presets

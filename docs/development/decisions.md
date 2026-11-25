@@ -10,53 +10,75 @@ of Parts A, B and C).
 
 ## 2026-11-25 (joint layout: a detailing practice as data, O44 L24)
 
-**The owner's approval** (2026-11-24): make the joint layout's detailing
-*rules* pluggable as data; keep the engine that builds, checks and
-validates the layout in the program (thousands of joints per tower; one
-source of truth with the joint details; safety stays with the core — a
-plugin never certifies its own result). Step 1, this entry: a "detailing
-practice" preset, as data, with the plugin interface change it needs.
-Step 2 (a "propose a joint" hook for joints left for a hand detail):
-later. Built (`ohl_structure_link::practice`; built, in active
-development, not approved yet;
-[theory](../theory/joint-layout.md#the-detailing-practice-l24),
+**The owner's approval** (2026-11-24, the plan in roadmap O44 L24): make
+the joint layout's detailing *rules* pluggable as data; keep the engine
+that builds, checks and validates the layout in the program (thousands
+of joints per tower; one source of truth with the joint details; safety
+stays with the core — a plugin never certifies its own result). Step 1,
+this entry: a "detailing practice" preset, as data, with the plugin
+interface change it needs. Step 2 (a "propose a joint" hook for joints
+left for a hand detail): later. **The plan's six design questions were
+built as recommended, awaiting the owner's confirmation** (the owner
+approved the plan "go with what you said"). Built
+(`ohl_structure_link::practice`; built, in active development, not
+approved yet; [theory](../theory/joint-layout.md#the-detailing-practice-l24),
 [plugins](plugins.md#detailing-practice)).
 
-- **The data**: `DetailingPractice` — the fabrication order (direct,
-  plate, bend, bends, welded; "direct" and "plate" always, the engine's
-  order, "bends" accepted and not built), the face preferences (L10's
-  pattern, L10's other face, L11's both faces of one plate), the gap,
-  pull-back and shift (the window's starting values), the flatness, the
-  small bend's and the welded plate's axis offset's limits, the bend's
-  inside radius, the least gap for a plate between angles, plates
-  stopping short of the work point, the picked bolt's pattern.
-- **The default is the layout as before, exactly**: every value the
-  constant the code had; applying a practice only turns switches off and
-  replaces the program's numbers, so the default leaves the engine's
-  settings equal (tested, also with switches off) and an invented
-  K-brace laid out to the same plans and file (but for the record's
-  table) and the same estimated eccentricities.
-- **Where it comes from**: the structure's own (the layout record's
-  `[generator.practice]`, `source = "project"`), else the structure's
-  code plugin (the new optional export `detailing-practice`, additive to
-  interface 0.3: a plugin without it loads as before), else the default.
-  A run records the practice it took with its source; the follow and the
-  estimated eccentricities take the record's. No structure file version
-  change (the core passes the record through).
-- **Checked by the program, every value**; a practice out of range is
-  refused (not used, the default used, said) with what, why and what to
-  give instead. The safety-relevant ranges: the flatness never looser
-  than the joint details' 2°; the shift at most 30 mm and the welded
-  plate's axis offset at most 40 mm (the estimated eccentricities' upper
-  bounds, until J5); the bend radius at least one thickness; no single
-  bolt (J8). The clash checks, joint checks and the "no joint worse"
-  guards run whatever a practice says.
+- **(1) Where it lives**: a table `[layout_practice]` in the structure
+  file (structure file version 27, `LAYOUT_PRACTICE_VERSION`, written at
+  27 only when present; older files read as today's defaults) and the
+  same table answered by a code plugin's optional export
+  `layout-practice` (additive to interface 0.3: a plugin without it loads
+  as before); the structure's own table wins over the plugin's **value by
+  value** (`practice::merged`, `in_force`). A run records the plugin's
+  answer in the layout record (`[generator.practice]`); an edit's follow
+  and the estimated eccentricities lay the file's table over it.
+- **(2) Which values**: only today's settings and constants, each with
+  its present value as the default — the fabrication forms (bend, welded
+  allowed or not), the face preferences (L10's pattern and other face,
+  L11's both faces), the gap, pull-back and shift (the window's starting
+  values), the flatness, the small bend's and the welded plate's axis
+  offset's limits, the bend's inside radius, the least gap for a plate
+  between angles, plates stopping short of the work point, the picked
+  bolt's pattern. **An empty preset lays out exactly as today**: applying
+  a practice only turns switches off and replaces the program's numbers
+  by the same numbers (tested: the engine's settings equal, also with
+  switches off; an invented K-brace laid out to the same plans, file and
+  estimated eccentricities). Not measured on the private towers yet.
+- **(3) The fabrication order**: an ordered list of the five forms
+  (direct, plate, bend, bends, welded), each allowed or not; the weighing
+  keeps its rule (more ends, or as many on fewer plates) and the order is
+  used only on ties — today the one tie between forms, a plate bent by a
+  few degrees against one welded in the member's own plane
+  (`LayoutSettings::weld_before_bend`); "bends" is not built.
+- **(4) Limits**: the core's checks are no values of a practice (the
+  clash check, the code's distances, holes overlapping, the bend check,
+  the NOT ON THE SAFE SIDE words); every value is range-checked and a
+  value beyond what the core can check is refused with the reason, whose
+  table, in Lay out joints and in the run's notes
+  (`LayoutSettings::practice_refused`), the default then used. The
+  safety-relevant ranges: the flatness never looser than the joint
+  details' 2°; the shift at most 30 mm and the welded plate's axis offset
+  at most 40 mm (the estimated eccentricities' upper bounds, until J5);
+  the bend radius at least one thickness; no single bolt (J8); "direct"
+  and "plate" always allowed.
+- **(5) Per member class first**: `[layout_practice.classes.<class>]` for
+  the connection presets' classes, with the picked bolt's pattern
+  (`LayoutSettings::class_bolts`); other values per class refused (not
+  built yet); per joint kind later if asked.
+- **(6) Shown**: Lay out joints shows, below its preview, the practice in
+  force, its source (the file, the plugin, the defaults), why one given
+  is not used, and each value with where it comes from and its effect.
+  **Not yet**: each value's effect *measured* on the private towers
+  (next, with the bundled `asce10` built fresh, as L23 found necessary).
 - **Not in the practice** (kept in code, listed in the roadmap with why):
   the search bounds and rounds, the geometric tolerances (the joint
   details', clash check's, planes' and groups' 2°, the 75° tilt, the
   in-line angles), the switches that make the plan agree with the check,
-  the plate's thickness rule (as thick as the thickest leg on it), the
-  plates' own holding bolts, the class order.
+  the plate's thickness rule (as thick as the thickest leg on it; a least
+  thickness and steps of thickness, in the plan's list, not yet), a
+  plate grown along its holder, the plates' own holding bolts, the class
+  order.
 - **The bundled codes** give no practice (a practice is a shop's, not a
   code's); the example plugin gives an invented one for the tests.
 
