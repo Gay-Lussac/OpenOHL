@@ -690,3 +690,103 @@ fn a_truss_with_the_moment_of_its_shift() {
     assert!(u1.governs.contains("Mz 0.2 kN m of 2.0"), "{u1:?}");
     assert!(!u0.governs.contains("Mz"), "{u0:?}");
 }
+
+/// 2026-11-25 (C3.7.4: the bolt pattern's centroid beyond the connected
+/// leg's centre line is not normal framing eccentricity; before, checked
+/// as if it were, said NOT ON THE SAFE SIDE in the theory). An invented
+/// L 80 × 8 (no root radius), 2.5 m, bolted by one leg at both ends: one
+/// gauge line at 35 mm from the heel (within the 40 mm centre line) adds
+/// nothing; at 55 mm, Δe = 15 mm beyond it bends the angle by P·Δe about
+/// its principal axes (Δe/√2 along each for an equal angle), the stresses
+/// at both axes' farthest fibres added, × 1/(1 − P/P_e) with P_e =
+/// π² E A/(KL/r)², over F_y — added to the compression's usage.
+#[test]
+fn bolts_beyond_the_legs_centre_line_bend_the_angle() {
+    use crate::check::member_usage;
+    use crate::model::{Analysis, EndDesign, MemberForces};
+    let (s, q) = profiled(ohl_sections::Shape::EqualAngle {
+        h: 0.08,
+        t: 0.008,
+        r: 0.0,
+    });
+    let end = |g: f64| EndDesign {
+        leg: Some(ConnectedLeg::Long),
+        gauges: vec![g],
+        ..EndDesign::default()
+    };
+    let with = |g: f64| {
+        member(
+            "D",
+            s.clone(),
+            2.5,
+            MemberDesign {
+                connected_leg: Some(ConnectedLeg::Long),
+                ends: [Some(end(g)), Some(end(g))],
+                ..MemberDesign::default()
+            },
+            Some(Ends::BothEnds),
+        )
+    };
+    let a = Analysis {
+        single_angle_moments: false,
+        no_compression: false,
+        redundant_force: None,
+    };
+    let f = MemberForces {
+        axial: -40e3,
+        end_forces: [0.0; 12],
+        slack: false,
+        bowed: false,
+        length: 2.5,
+        span_load: [0.0; 3],
+        lumped_load: [0.0; 3],
+    };
+    let within = with(0.035);
+    let c = capacity(&within, None);
+    assert!(c.beyond_centre.is_none(), "{c:?}");
+    let u_within = member_usage(&a, &within, &f, None, false, 1.0, None, None);
+    let beyond = with(0.055);
+    let c = capacity(&beyond, None);
+    let b = c.beyond_centre.clone().expect("beyond the centre line");
+    assert!((b.e - 0.015).abs() < 1e-12, "{b:?}");
+    // By hand.
+    let th = q.principal_angle;
+    let (eu, ev) = (0.015 * th.cos(), -0.015 * th.sin());
+    let per_n = ev.abs() / q.wel_u.unwrap() + eu.abs() / q.wel_v.unwrap();
+    let kl_r = c.kl_r.unwrap();
+    let pe = std::f64::consts::PI.powi(2) * E * q.area / (kl_r * kl_r);
+    assert!((b.euler - pe).abs() < 1e-6 * pe, "{b:?} {pe}");
+    let bend = 40e3 * per_n / ((1.0 - 40e3 / pe) * 355e6);
+    let u = member_usage(&a, &beyond, &f, None, false, 1.0, None, None);
+    let (cap, _) = c.compression.clone().unwrap();
+    assert!(
+        (u.usage.unwrap() - (40e3 / cap + bend)).abs() < 1e-9,
+        "{u:?} {bend}"
+    );
+    assert!(
+        (u.usage.unwrap() - u_within.usage.unwrap() - bend).abs() < 1e-9,
+        "{u:?} {u_within:?}"
+    );
+    assert!(
+        u.governs
+            .contains("beyond the connected leg's centre line at a 15 mm"),
+        "{u:?}"
+    );
+    // What it leaves out, said (never a pass).
+    assert!(
+        u.governs.contains("not on the safe side")
+            && u.governs
+                .contains("lateral-torsional buckling of the angle"),
+        "{u:?}"
+    );
+    assert!(
+        !u_within.governs.contains("lateral-torsional"),
+        "{u_within:?}"
+    );
+    // Tension: unchanged (the curves are compression's).
+    let t = MemberForces { axial: 40e3, ..f };
+    assert_eq!(
+        member_usage(&a, &beyond, &t, None, false, 1.0, None, None).usage,
+        member_usage(&a, &within, &t, None, false, 1.0, None, None).usage
+    );
+}

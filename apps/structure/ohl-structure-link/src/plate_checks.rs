@@ -468,9 +468,10 @@ pub fn plate_plans_in(
                 }
                 if passed.len() > PASSED_EACH {
                     notes.push(format!(
-                        "NOT ON THE SAFE SIDE: more than {PASSED_EACH} forces a level plate may \
-                         pass to {}: the rest taken together (none or all), so a mix of them \
-                         in between, which can load it more, is not tried (not covered yet)",
+                        "more than {PASSED_EACH} forces a level plate may pass to {}: each \
+                         further one's size added to the largest resultant of the first \
+                         {PASSED_EACH}, along it (a sum's size is at most the sum of the sizes: \
+                         on the safe side)",
                         a.member
                     ));
                 }
@@ -729,6 +730,17 @@ fn cover_plans(j: &JointDetail, model: &Model, library: &SectionLibrary, out: &m
                     a.member,
                     a.onto.value.as_deref().unwrap_or("?"),
                     a.member
+                ));
+                // Said where it applies (2026-11-25; before, in the theory
+                // only): the packing.
+                notes.push(format!(
+                    "NOT ON THE SAFE SIDE: {name} ({:.0} mm) is a packing between {} and the \
+                     leg of {} — its bolts' bending across it is not checked (ASCE 10-97 and \
+                     SIA 263 give no rule for packings), so a thick cover can lower their shear \
+                     resistance; keep the cover thin or check those bolts by hand",
+                    c.thickness * 1e3,
+                    a.member,
+                    a.onto.value.as_deref().unwrap_or("?"),
                 ));
                 let Some(group) = bolt_group(a, &name, &c.outline, j, model, steel, &mut notes)
                 else {
@@ -1194,6 +1206,7 @@ pub fn plate_usage(
             &plans.structure,
             None,
             &[("", strength, axial)],
+            &[],
         )
         .into_iter()
         .flatten(),
@@ -1385,7 +1398,7 @@ pub fn plate_usage_cases_with(
     };
     // The bent plates' bends (2026-11-19): one more call with every bend
     // and case.
-    let mut bends = crate::bends::bend_rows(&plans.bends, &plans.structure, Some(p), cases);
+    let mut bends = crate::bends::bend_rows(&plans.bends, &plans.structure, Some(p), cases, ends);
     cases
         .iter()
         .enumerate()
@@ -1591,27 +1604,34 @@ fn bolted_resultant(
         base.push(own);
     }
     let pass: Vec<[f64; 3]> = passed.iter().map(|(m, d, _)| scale(*d, n(m))).collect();
+    let k = pass.len().min(PASSED_EACH);
     let mut best = with;
-    for v in corners(base, &pass) {
+    for v in corners(base, &pass[..k]) {
         if norm(v) > norm(best) + 1e-9 {
             best = v;
         }
+    }
+    // Beyond PASSED_EACH (2026-11-25; before, the rest together, none or
+    // all — NOT ON THE SAFE SIDE): each further one's size added along
+    // the largest (a sum's size is at most the sum of the sizes).
+    let rest: f64 = pass[k..].iter().map(|x| norm(*x)).sum();
+    if rest > 0.0 {
+        let size = norm(best);
+        best = if size > 1e-12 {
+            scale(best, (size + rest) / size)
+        } else {
+            scale(along, rest)
+        };
     }
     best
 }
 
 /// Each of `base` alone and with every choice of `passed` (each added or
 /// not; L21): the corners whose largest is the largest over every share.
-/// Beyond [`PASSED_EACH`] the rest are added together as one.
+/// At most [`PASSED_EACH`] of them (the caller bounds any more).
 fn corners(base: Vec<[f64; 3]>, passed: &[[f64; 3]]) -> Vec<[f64; 3]> {
-    let mut each: Vec<[f64; 3]> = passed.iter().take(PASSED_EACH).copied().collect();
-    if passed.len() > PASSED_EACH {
-        each.push(
-            passed[PASSED_EACH..]
-                .iter()
-                .fold([0.0; 3], |a, b| add(a, *b)),
-        );
-    }
+    debug_assert!(passed.len() <= PASSED_EACH);
+    let each: Vec<[f64; 3]> = passed.iter().take(PASSED_EACH).copied().collect();
     let mut v = base;
     for p in each {
         let more: Vec<[f64; 3]> = v.iter().map(|x| add(*x, p)).collect();
@@ -1621,7 +1641,8 @@ fn corners(base: Vec<[f64; 3]>, passed: &[[f64; 3]]) -> Vec<[f64; 3]> {
 }
 
 /// At most this many forces a level plate may pass are each taken from
-/// none to whole one by one ([`corners`]); any more together. The program's
+/// none to whole one by one ([`corners`]); any more, each one's size added
+/// (2026-11-25; before, together — NOT ON THE SAFE SIDE). The program's
 /// value: a level plate has two holders, the ends laid onto the other one
 /// are few.
 const PASSED_EACH: usize = 6;

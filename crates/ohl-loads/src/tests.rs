@@ -1503,6 +1503,7 @@ fn the_structures_take_the_load_cases_own_wind() {
         .map(|(label, [tr, lo, ve])| ohl_structures_fe::PoleLoad {
             point: t5.point_local(&label, None).unwrap(),
             force: [tr, lo, -ve],
+            moment: [0.0; 3],
         })
         .collect();
     let by_hand = ohl_structures_fe::check_pole(

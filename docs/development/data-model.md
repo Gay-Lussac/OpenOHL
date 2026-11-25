@@ -2637,7 +2637,10 @@ joint where the joint has rotations (`offsets::rigid`, the element
 between its offset ends), else leaves it out. Since 2026-11-19 (the
 owner's decision on O45 A1) `Member::free_offsets` (`[Vec<[f64; 3]>; 2]`,
 m, structure axes, per end; empty by default, never written to a file,
-set by the estimated eccentricities only): offsets whose **sign is not
+set by the estimated eccentricities and, since 2026-11-25, at level 4 by
+`ohl_structure_link::eccentricities::cover_offsets` for an end bolted
+through a splice's outer cover — the cover's thickness along its bolts):
+offsets whose **sign is not
 known**, each part its own — never in the solve, only in the member's own
 check (`offsets::uncarried_moments`: about each local axis the sizes of
 the parts' moments added, with a part of known sign left out of the solve
@@ -3041,7 +3044,10 @@ check sums `lever × factored force` per point, with `couple_factored`
 (`analysis::Factored` = label, force, moment): the structure analysis
 puts it at the point's joint where a frame member meets it, else leaves
 it out and says **NOT ON THE SAFE SIDE** (as an offset's moment); the
-pole check takes forces at points only and says the same.
+pole check takes it at its point (`ohl_structures_fe::PoleLoad::moment`,
+`[f64; 3]`, structure axes, N·m; 2026-11-25 — before, left out and said
+NOT ON THE SAFE SIDE): bending and twisting the pole below it, in the
+P-Delta model too. No file format changed.
 `AttachmentLoad::couple` and `couple_factored` (`[f64; 3]`, structure
 axes, N·m; 2026-11-14): a moment of the load's own — the jumpers' moment
 on a fixed post's clamp (`JumperShape::end_moments`) at the post's base

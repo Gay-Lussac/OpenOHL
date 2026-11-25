@@ -551,6 +551,7 @@ fn the_pole_check_takes_the_lean() {
     let loads = [crate::PoleLoad {
         point: [0.0, 0.0, h],
         force: [pull, 0.0, -p],
+        moment: [0.0; 3],
     }];
     let b = default_budget();
     let upright = crate::check_pole_factored(&pole, &loads, [0.0; 2], 1.0, 1.0, false, &b)

@@ -665,13 +665,22 @@ pub fn load_poles(dir: &Path) -> Result<Vec<Pole>, String> {
 }
 
 /// A load on the pole: where (structure axes, z above ground) and the
-/// force (x right, y ahead, z up), N, factored.
+/// force (x right, y ahead, z up), N, factored; and a moment of its own
+/// at that point, N·m, factored.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PoleLoad {
     /// Point of application, m.
     pub point: [f64; 3],
     /// Force, N.
     pub force: [f64; 3],
+    /// A moment of its own at the point, structure axes (x right, y
+    /// ahead, z up), N·m (2026-11-25): a fixed post insulator's moment
+    /// about its base — its top's forces at their lever and its clamp's
+    /// moment (`ohl_loads::AttachmentLoad::lever`, `couple`). It bends
+    /// every section of the pole below the point (x, y) and twists it (z),
+    /// and goes into the P-Delta model with the force. Zero for every
+    /// other load.
+    pub moment: [f64; 3],
 }
 
 /// Result of the pole check.
@@ -708,6 +717,10 @@ fn moment_at(pole: &Pole, loads: &[PoleLoad], wind: [f64; 2], h: f64) -> ([f64; 
         // r × F, the horizontal components.
         m[0] += r[1] * f[2] - r[2] * f[1];
         m[1] += r[2] * f[0] - r[0] * f[2];
+        // Its own moment (a post insulator's), the same at every section
+        // below it.
+        m[0] += l.moment[0];
+        m[1] += l.moment[1];
     }
     // Wind: q(z) = p·drag·D(z) along the wind, moment ∫ q (z − h) dz.
     let top = pole.height();
@@ -780,7 +793,7 @@ fn forces_at(
         p -= l.force[2];
         v[0] += l.force[0];
         v[1] += l.force[1];
-        t += l.point[0] * l.force[1] - l.point[1] * l.force[0];
+        t += l.point[0] * l.force[1] - l.point[1] * l.force[0] + l.moment[2];
     }
     let top = pole.height();
     if top > h {
@@ -944,13 +957,21 @@ fn check_pole_first(
     // P-Delta model and give no usage: refused, named (code review
     // 2026-10-26).
     for (k, l) in loads.iter().enumerate() {
-        if !l.point.iter().chain(&l.force).all(|v| v.is_finite()) {
+        if !l
+            .point
+            .iter()
+            .chain(&l.force)
+            .chain(&l.moment)
+            .all(|v| v.is_finite())
+        {
             return Err(format!(
-                "pole {}: load {} is not a finite number (at {:?} m, force {:?} N)",
+                "pole {}: load {} is not a finite number (at {:?} m, force {:?} N, moment {:?} \
+                 N·m)",
                 pole.id,
                 k + 1,
                 l.point,
-                l.force
+                l.force,
+                l.moment
             ));
         }
     }
@@ -1321,18 +1342,23 @@ pub(crate) fn node_at(z: &[f64], top: f64, h: f64) -> usize {
 
 /// `loads` on the axis of [`frame_model`] (node heights `z`, the pole
 /// `top` high): each at its height's node, its offset from the axis as
-/// the moment (r, 0) × F.
+/// the moment (r, 0) × F, plus its own moment ([`PoleLoad::moment`]).
 pub(crate) fn axis_loads(z: &[f64], top: f64, loads: &[PoleLoad]) -> Vec<NodalLoad> {
     loads
         .iter()
         .map(|l| {
             let r = [l.point[0], l.point[1]];
             let f = l.force;
+            let m = l.moment;
             NodalLoad {
                 node: node_at(z, top, l.point[2]),
                 force: f,
-                // The offset from the axis: (r, 0) × F.
-                moment: [r[1] * f[2], -r[0] * f[2], r[0] * f[1] - r[1] * f[0]],
+                // The offset from the axis: (r, 0) × F; and its own.
+                moment: [
+                    r[1] * f[2] + m[0],
+                    -r[0] * f[2] + m[1],
+                    r[0] * f[1] - r[1] * f[0] + m[2],
+                ],
             }
         })
         .collect()

@@ -45,6 +45,7 @@ fn the_example_pole_brought_in_checks_the_same() {
     let loads = [PoleLoad {
         point: t.point_local("A1", None).unwrap(),
         force: [5e3, 1e3, -8e3],
+        moment: [0.0; 3],
     }];
     for wind in [[0.0, 0.0], [-800.0, 0.0]] {
         let a = check_pole(&ohlp, &loads, wind, 1.0, true, &default_budget()).unwrap();

@@ -293,6 +293,7 @@ impl Analyses {
                         Some(PoleLoad {
                             point: t.point_local(l, None)?,
                             force: *f,
+                            moment: [0.0; 3],
                         })
                     })
                     .collect()
@@ -458,6 +459,7 @@ impl Analyses {
                         Some(PoleLoad {
                             point: t.point_local(l, None)?,
                             force: *f,
+                            moment: [0.0; 3],
                         })
                     })
                     .collect()

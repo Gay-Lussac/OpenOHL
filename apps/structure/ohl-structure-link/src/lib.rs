@@ -1593,13 +1593,17 @@ fn model_of(
 ) -> Result<Model, String> {
     match &structure.model {
         Some(file) => Model::load_with(&dir.unwrap_or(Path::new(".")).join(file), sections),
-        None => Model::from_structure_type_with_bolts(
-            text,
-            sections,
-            &dir.map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
-                .unwrap_or_default(),
-            None,
-        ),
+        None => {
+            let bolts = dir
+                .map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
+                .unwrap_or_default();
+            Model::from_structure_type_with_bolts(text, sections, &bolts, None).map(|mut m| {
+                // Ends seated on a splice's outer cover (level 4,
+                // 2026-11-25): its thickness an offset in their checks.
+                eccentricities::cover_offsets(&mut m, text, sections, &bolts);
+                m
+            })
+        }
     }
     // A plugin's member check: found now, or the run refused.
     .and_then(|m| plugin_check::find(m, dir))

@@ -1873,6 +1873,46 @@ Six stages, the questions per stage and per detail level:
   > two holes) → Recommended: the default bolt the largest the leg's
   > usual gauge takes, or the structure's most used bolt, sent with the
   > members (an interface change, to ask).
+- [x] **Safety gaps of the 2026-11-24 audit** (2026-11-25; built, in
+  active development, not approved yet — the owner busy: built on its
+  own, reported; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md)):
+  places where a check left something out and no input made it safe,
+  each turned into a check on the safe side. (1) The pole check takes a
+  post insulator's moment (bending and torsion, P-Delta). (2) More than
+  six forces a level plate may pass: each bolt's largest over every share
+  exact (the zonotope's corners), the rest bounded. (3) ASCE 10-97: bolts
+  beyond the leg's centre line bend the angle (C3.7.4's due
+  consideration: P·Δe about the principal axes, amplified, added to the
+  curve's compression); the angle's lateral-torsional buckling under it
+  said NOT ON THE SAFE SIDE (no rule for angles). (4) An end through a
+  splice's outer cover: the cover's thickness an offset of unknown sign in
+  the member's own check at level 4; the packing said on the cover's row.
+  (6) A bent plate's bend takes a frame member's end shear and moments
+  where the case's end forces are known. (5) A plate in compression lying
+  on a flange: not built, a question below.
+  > **Owner:** (2026-11-25) (1) The cover under a brace bolted through it
+  > is a packing; the bolt's bending across it is not checked — ASCE
+  > 10-97 and SIA 263 give no rule (searched). → Recommended: take the
+  > Eurocode for joints' packing reduction of a bolt's shear resistance
+  > (SN EN 1993-1-8) as an assumption on the safe side, once its text is
+  > in local-data/documents (its values are not in the documents we
+  > have, so not built); until then, said NOT ON THE SAFE SIDE on the
+  > cover's row, as now. (2) A gusset plate in compression is checked as
+  > a strut (Thornton's method, an assumption): from the member's bolts to
+  > the nearest leg's bolt within the spread, else to the plate's edge,
+  > K = 2. A plate lying on a flange (a short plate, a level plate on its
+  > holders) is taken as held there — by contact on one side where it has
+  > no bolts of its own onto that flange (said NOT ON THE SAFE SIDE in the
+  > theory: the plate can lift off, so its free length, and its buckling,
+  > can be worse). The fix changes how many plates read "not checked", so
+  > it is the owner's: → Recommended: where a plate in compression has no
+  > bolts of its own onto the flange it lies on and no leg bolted onto it,
+  > its strut check reads NOT CHECKED, NOT ON THE SAFE SIDE ("how plate …
+  > is held", as its holding bolts' row already does), never a usage;
+  > a plate with its own bolts onto the flange (a level plate's
+  > `[plate.leg_bolts]` and `[plate.also_bolts]`, L5o's bolts) keeps K = 2
+  > to its edge, the holding bolts its fixed end; measured on the private
+  > towers before it is made the default.
 > **Owner:** (2026-11-02) "a roadmap for a tool to show and allow to
 > define the joints in the OHL structure in details for a pylon that
 > isn't a pole … where the bars are coming from, what's their condition

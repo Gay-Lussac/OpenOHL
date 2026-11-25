@@ -194,8 +194,64 @@ fn the_brace_bolts_through_the_outer_cover_once_the_splice_is_confirmed() {
             "{:?}",
             p.notes
         );
+        // The packing, said on the row (2026-11-25).
+        assert!(
+            p.notes
+                .iter()
+                .any(|n| n.starts_with("NOT ON THE SAFE SIDE") && n.contains("is a packing")),
+            "{:?}",
+            p.notes
+        );
     }
     assert_eq!(run(&r2.text).text, r2.text);
+    // (2026-11-25) Seated on the 15 mm outer cover: with the joint details
+    // taken, the cover's thickness is an offset of unknown sign at D's end
+    // in J, along its bolts — its moment N·t in D's own check, whole.
+    let mut model = ohl_structures_fe::Model::from_structure_type_with_joint_details(
+        &r2.text,
+        &library(),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    let note =
+        crate::eccentricities::cover_offsets(&mut model, &r2.text, &library(), &Default::default())
+            .expect("said");
+    assert!(
+        note.starts_with("1 member end(s)") && note.contains("15 mm"),
+        "{note}"
+    );
+    let idx = model.members.iter().position(|m| m.id == "D").unwrap();
+    let ends = model.eccentric_ends(idx);
+    assert_eq!(ends.len(), 1, "{ends:?}");
+    assert!((ends[0].free_e() - 0.015).abs() < 1e-12, "{ends:?}");
+    let axis = a.bolt_axis;
+    let r = ends[0].free[0];
+    let along = (r[0] * axis[0] + r[1] * axis[1] + r[2] * axis[2]).abs();
+    assert!((along - 0.015).abs() < 1e-9, "{r:?} {axis:?}");
+    // Its moment in D's own check: N·t about axes square to it, 50 kN ×
+    // 15 mm = 0.75 kN m in size.
+    let m = ohl_structures_fe::offsets::uncarried_moments(&model, idx, 50e3).expect("taken");
+    assert!(m[0] + m[1] >= 750.0 - 1e-6, "{m:?}");
+    // Not taken where the joint details are not (level 3): nothing.
+    let mut plain = ohl_structures_fe::Model::from_structure_type_with_bolts(
+        &r2.text,
+        &library(),
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    if !plain.joint_use.taken() {
+        assert!(
+            crate::eccentricities::cover_offsets(
+                &mut plain,
+                &r2.text,
+                &library(),
+                &Default::default()
+            )
+            .is_none()
+        );
+    }
 }
 
 /// Pieces without bolts: provisional bolts written when confirmed, listed
