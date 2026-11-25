@@ -364,8 +364,10 @@ pub fn weigh_turns(
 /// that lays out the file several ways (the proposals' effects): weighed
 /// once, the rest laid out from the settled file. O44 L25: then the half
 /// and quarter turns for an outstanding leg pointing into the flange
-/// weighed on the whole tower too ([`crate::flange_turns`]; their rows
-/// written, so that a run of the settled file weighs them no more).
+/// weighed too ([`crate::flange_turns`]; after the plane turns on the
+/// whole tower, else on the joints asked and every joint their members
+/// reach; their rows written, so that a run of the settled file weighs
+/// them no more).
 pub fn settle_turns(text: &str, ask: &RunAsk<'_>) -> Result<Option<(String, LayoutRun)>, String> {
     let whole = RunAsk {
         joints: None,
@@ -388,15 +390,38 @@ pub fn settle_turns(text: &str, ask: &RunAsk<'_>) -> Result<Option<(String, Layo
     match (r0, flange) {
         (None, false) => Ok(None),
         (Some(r), false) => Ok(Some((text1, r))),
-        (r0, true) => {
-            let weighed_before = r0.is_some();
-            let r0 = match r0 {
-                Some(r) => r,
-                None => lay_out_plain(&text1, &whole)?,
-            };
+        (Some(r0), true) => {
             let (run, settled) =
                 crate::flange_turns::weigh_flange_turns(&text1, r0, &extra, &whole)?;
-            if !weighed_before && settled == text1 {
+            Ok(Some((settled, run)))
+        }
+        (None, true) => {
+            // (Nothing weighed before: L25's on the joints asked and the
+            // other ends of the members meeting there — every joint such a
+            // member reaches — not on the whole tower, for the window's
+            // time; the whole tower where every joint is asked.)
+            let near = match &ask.joints {
+                None => None,
+                Some(js) => {
+                    let t = StructureType::parse(std::path::Path::new("structure.ohls"), &text1)
+                        .map_err(|e| e.message)?;
+                    let mut all = js.clone();
+                    for m in &t.members {
+                        if m.nodes.iter().any(|n| js.contains(n)) {
+                            all.extend(m.nodes.iter().cloned());
+                        }
+                    }
+                    Some(all)
+                }
+            };
+            let near = RunAsk {
+                joints: near,
+                ..ask.clone()
+            };
+            let r0 = lay_out_plain(&text1, &near)?;
+            let (run, settled) =
+                crate::flange_turns::weigh_flange_turns(&text1, r0, &extra, &near)?;
+            if settled == text1 {
                 return Ok(None);
             }
             Ok(Some((settled, run)))
