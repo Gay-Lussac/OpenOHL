@@ -3740,6 +3740,13 @@ only where it helps):
   > three parts) or a half turn — the owner to choose; each weighed per
   > joint with the fabrication order direct → one plate → one bend →
   > several bends → welded (fewer parts, no weld to inspect, first).
+  > **Approved by the owner, 2026-11-24** (every recommendation; 7c
+  > answered: *"probably a half turn if possible then other options"*,
+  > and added the same day: *"maybe a 90 degrees turn might be better so
+  > you could also consider it"* — for an end whose outstanding leg points
+  > into the flange both a half turn and a quarter turn tried, weighed
+  > over every joint the member reaches, the better kept; a stand-off
+  > later, where neither works; L23's question 6, L25).
 - [x] L20. **A level plate across two horizontals; the welded plate's axis
   offset carried into the analysis** (L19's questions 6 and 7a, and
   the owner's "go ahead to improve" of 2026-11-23 for plates with several
@@ -3804,6 +3811,7 @@ only where it helps):
   > level 4 too (the analysis's end offsets: a core change, asked first).
   > (6) 40 mm as the most such a plate may put the axis out → Recommended:
   > keep (measured; beyond, a hand detail as before).
+  > **Approved by the owner, 2026-11-24** (every recommendation).
 - [x] L21. **The force a level plate passes between its two holders; a
   plate's own holding bolts in the clash check** (L20's questions 2 and 3;
   the owner busy: built on its own, reported). **Built 2026-11-24, in
@@ -3872,6 +3880,7 @@ only where it helps):
   > that the guard rarely has to take ends back. (5) Clashes of those
   > bolts with members left for a hand detail stay said, not acted on (as
   > for every part) → Recommended: keep.
+  > **Approved by the owner, 2026-11-24** (every recommendation).
 - [x] L22. **A plate's own holding bolts placed clear of what the plan
   lays out** (L21's question 4; the owner busy: built on its own,
   reported). **Built 2026-11-24, in active development, not approved yet**
@@ -3926,88 +3935,206 @@ only where it helps):
   > again with (2). (4) Members in line with the holder not tested by the
   > plan's check (the check after writing tests their heads and nuts) →
   > Recommended: keep until (2) (testing them changed nothing measured).
-- [x] L24. **A detailing practice, as data** (the owner, 2026-11-24:
-  the layout's detailing rules pluggable as data, the engine that builds,
-  checks and validates the layout staying in the program — step 1; step
-  2, a "propose a joint" hook for joints left for a hand detail, later).
-  **Built 2026-11-25, in active development, not approved yet**
-  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-detailing-practice-l24),
-  [plugins](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/plugins.md#detailing-practice),
-  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-a-detailing-practice-as-data-o44-l24);
-  `ohl_structure_link::practice`; no structure file version change). A
-  `DetailingPractice` — the structure's own (the layout record's
-  `[generator.practice]`, `source = "project"`), else the structure's code
-  plugin's (the new optional export `detailing-practice`, additive to
-  interface 0.3), else the default — read, every value checked, and
-  applied to the engine's settings; a run records the practice it took
-  with its source, the follow and the estimated eccentricities take the
-  record's. Lay out joints shows where it comes from, why one given is
-  not used, and its values read-only, each with its effect.
-  **The default is the layout as before, exactly** (every value the
-  constant the code had; applying a practice only turns switches off and
-  replaces numbers): proved by tests — the engine's settings equal with
-  the default applied (also with switches off), an invented K-brace laid
-  out to the same plans, the same file but for the record's table and
-  the same estimated eccentricities (its diagonal flat, 10° and 30° off),
-  every existing layout test unchanged. **Inventory** of the detailing
-  preferences the layout code hard-coded — **now in the practice**: the
-  kinds made (`bent_plates`, `small_bends`, `bend_facing`, `bend_back`:
-  "bend"; step 4's welded plate in its own plane, `rooms_for`, and the
-  corner plates welded together, `welded`: "welded"; "bends": accepted,
-  not built); the face preferences (`face_pattern`, `other_face`,
-  `both_faces`); `GAP_START`, `PULL_BACK_START`, `SHIFT_LIMIT_START` (the
-  window's starting values); `FLAT_OFF` where the planner decides an end
-  lies flat (`plan_joint_searched`, `plan_avoiding`, `own_geometry`'s
-  guards, `turned_end`, the run's whole roll and L3b's turns);
-  `BEND_SMALL_MAX`; `OWN_OUT_MAX`; `BEND_RADIUS_RATIO`; `BETWEEN_LEAST`;
-  `short_plates`; the picked bolt's "two in one line". **Kept in code**
-  (not preferences, or not yet): the search bounds and rounds
-  (`NODE_LIMIT` 400, `PLATE_TRIES`, `HOLD_TRIES`, `CUT_TRIES`,
-  `CLASH_ROUNDS`, `PULLS`, `ONTO_TRIES`, `AS_DRAWN_PASSES`, `FACE_ROUNDS`,
-  `CHORD_ROUNDS`, `WEIGH_ROUNDS`, Solve the clashes' `FIX_TRIES`); the
-  geometric tolerances (`CLASH_TOLERANCE` 1 mm; `FLAT_OFF` 2° in the joint
-  details, the clash check, the joints' planes and groups, Orient angles,
-  the level plates' in-plane tests and J9's roll tolerance;
-  `HORIZONTAL_OFF` 5°, `NESTED_ANGLE_DEG` 5°, the in-line angles 5°/10°,
-  `NEAR_PLANE_DEG` 16°, `PLANE_HOST_OFF` 10°, `TILT_MAX` 75°,
-  `ROLL_WINDOW_DEG` 22.5°, the joint kinds' 2 mm and 0.1°, `OVER_HEEL`,
-  `RESULTANT_TURN` 15°); the switches that make the plan agree with the
-  check or are measurement options (`exact_plan`, `plate_on`,
-  `seat_as_drawn`, `nothing_joined`, `partner_bolts`, `holds_clear`, …);
-  the plate's thickness (as thick as the thickest leg on it); the plates'
-  own holding bolts (two provisional, L5o, J2b, L15); the weld's throat;
-  the class order (the owner's) and the planes' order; direct bolting
-  winning a tie (L1 b). **The checks** (refused with what, why and what to
-  give instead; a refused practice not used, said): flatness 1°–2° (never
-  looser than the joint details'), shift 0–30 mm and axis offset 0–40 mm
-  (the estimated eccentricities' upper bounds until J5), bend radius 1–10
-  thicknesses, plate between 0.5–4, small bend from the flatness to 20°,
-  gap 2–100 mm, pull-back 10–2000 mm, 2–8 bolts in one line, "direct" and
-  "plate" always, the kinds in the engine's order, no unknown key. Tests:
-  `practice_tests.rs` (default = today, a kind left out changes the
-  layout as it says, a smaller offset limit, three bolts, every refusal,
-  the record, the example plugin's practice through the real host) and
-  `ohl-structure-tests/tests/detailing_practice.rs`. Not measured on the
-  private real towers: the default is the same values by construction.
-  > **Owner:** (1) The window's own gap, pull-back and shift may go beyond
-  > a practice's ranges (the shift up to 200 mm, as before) → Recommended:
-  > keep them the user's choice per run, but say it in the window where
-  > they exceed the practice's (a run's shift is recorded and the estimates
-  > take it). (2) The plate's thickness rule (a least thickness, stock
-  > thicknesses rounded up) is not in the practice yet → Recommended: next,
-  > as data with the same checks (thicker only, never thinner than the
-  > thickest leg). (3) The fabrication order is the engine's (a different
-  > order, e.g. a plate before direct bolting, is refused) → Recommended:
-  > keep until a shop asks; it needs an engine change. (4) The practice is
-  > read-only in the window (a structure's own is written in the file) →
-  > Recommended: a small editor following the tool-window pattern next,
-  > with "make it this structure's own" and "back to the plugin's /
-  > default". (5) One practice per structure → Recommended: keep; a
-  > project-wide default later with the country server. (6) The bundled
-  > codes give none → Recommended: keep (a practice is a shop's, not a
-  > code's). (7) The flatness only stricter than 2° → Recommended: keep (a
-  > looser one needs the joint details to follow, a forced fit no check
-  > takes).
+  > **Approved by the owner, 2026-11-24** (every recommendation; (2) and
+  > (3) tried in L23, measured, not kept).
+- [x] L23. **Three steps tried and measured, none kept; the joggle not
+  built; the joint layout and plugins planned** (L22's questions 2 and 3,
+  L21's item 3 and L19's question 7b, approved by the owner on
+  2026-11-24; the owner busy: built on its own, reported). **Measured
+  2026-11-25; no change to the program**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plates-own-holding-bolts-tested-by-the-clash-check-after-writing-tried-not-kept-l23),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-three-steps-measured-none-kept-l23)).
+  Measured on four of the eight private towers of L21 and L22 (3 111
+  joints; the same settings — without the code plugin's distances, see
+  4.; L22 main as the base — main reproduced it exactly):
+
+  | | joints whole | member ends | plates | a plate's own bolts in a clash after writing (joints) | plates' own holding ends | joints better / worse |
+  |---|---|---|---|---|---|---|
+  | L22 main | 2 093 | 7 103 | 3 756 | 78 (28) | 1 345 | — |
+  | 1: planned again where the check after writing finds a plate's own bolt in a clash | 2 093 | 7 103 | 3 756 | 78 (28) | 1 351 | 0 / 0 |
+  | 1 with the plate grown along its holder (L22's question 3) | 2 078 | 7 088 | 3 747 | 78 (28) | 1 321 | 12 / 15 |
+  | 1 not for clashes with members left as they were, only the bolts moving | 2 090 | 7 100 | 3 759 | 87 (31) | 1 357 | 0 / 3 |
+  | 2: the turns chosen without the far-out welded plates | 2 085 | 7 073 | 3 707 | 100 (34) | 1 354 | 24 / 28 |
+
+  **1. A plate's own holding bolts tested by the joint details' clash
+  check** (L22's question 2): testing each candidate inside the plan
+  would cost a joint's whole detail per candidate (the run's check after
+  writing costs about that per joint and round), so the run's own check
+  after writing tested the plan's bolts, and the plan was told the parts
+  they ran into (as drawn, the check's own pieces) and planned again first,
+  before the plate's members were pulled back. No form lays out an end
+  more; the first changes no joint (six more holding ends) at a run about
+  1.8 times as long (under varying load); the plate grown along its
+  holder again loses an end at L22's joint kind (15 worse); the stricter
+  forms leave one joint kind on three towers an end short and nine more
+  such clashes; the last form's time about +8 % against a run beside it.
+  The clashes left are where no place inside the plate is clear (a head
+  into another piece of the leg in line, a plate of a member left as it
+  was over the whole flange): moving the bolts only moves the clash. Not
+  kept. **2. The joints L20 item 2 left worse** (L21's item 3): the half
+  and quarter turns and L10's other faces chosen on plans without L20 item
+  2's welded plates (as without L15's plates between since L16), the
+  joints planned with them afterwards where the rolls let them: worse
+  (24 better, 28 worse, 30 ends and 49 plates fewer) — those plates gain
+  mostly through turns (a member turned onto a welded plate lets the
+  joint's other ends onto plates: one joint three ends with the turn,
+  none without). Not kept. **3. The joggle** (L19's question 7b): not
+  built — a straight leg tilted θ over the flange lies a plate's
+  thickness above it at its lowest point and rises along its slope to its
+  bolts, whatever the plate under it does; the welded plate already comes
+  within the seam's room of that bound. On the eight private towers, of
+  60 ends at most 15° off refused for their axis, 5 would come within a
+  plate's thickness with no room at the seam at all (20 if their bolts
+  also needed no edge distance from the bend — no plate allows that).
+  **4. After the code plugins' bolt distances** (the ASCE 10-97 plugin's
+  force per bolt capped by its bearing without an analysis, and the
+  member checks' changes of the same day; the rolled toe not built by
+  them), measured with the bundled plugin before and after (four private
+  towers, 3 111 joints): plates held by their own bolts 1 126 → 1 209
+  holding ends, "no place for 2" notes 1 000 → 1 010, level plates
+  across two horizontals 0 → 0, joints whole 2 070 → 2 065, member ends
+  7 028 → 7 025, plates 3 472 → 3 508 (24 joints better, 54 worse: 24
+  with an end fewer, 30 as many ends on more plates), a plate's own bolts
+  in a clash after writing 66 → 67. **Found on the way**: L21's, L22's and
+  this step's other measurements ran without the code plugin's distances —
+  the measuring setup's copy of the plugin had lost its WebAssembly file,
+  so the layout took the structure's default minimums. The comparisons
+  within each step hold (the same setup on both sides); with the plugin
+  the same four towers lay out 2 070 joints whole instead of 2 093, 7 028
+  ends instead of 7 103, on 3 472 plates instead of 3 756, 1 126 holding
+  ends instead of 1 345 (202 joints better, 149 worse).
+  **5. The joint layout and plugins**: the plan below (L24), approved by
+  the owner on 2026-11-24.
+  > **Owner:** (1) A plate's own bolts tested by the check after writing:
+  > no end gained in any form, one joint kind worse in the stricter ones →
+  > Recommended: drop it; where no place inside the plate is clear, next
+  > hold the plate by the member's own end bolts where they reach it (L14)
+  > or leave it for a hand detail, said as now. (2) The plate grown along
+  > its holder (measured worse twice, L22 and L23) → Recommended: drop it.
+  > (3) The joints L20 item 2 leaves worse (22 on four private towers in
+  > L20): the turns chosen without its plates lose more than they save → Recommended: next, each turn the welded plates change decided
+  > with and without them, the one with them kept only where every joint
+  > its member reaches is laid out no worse and one better (L19's rule;
+  > a layout run more per tower); until then keep L20 item 2 as it is.
+  > (4) The measurements without the code plugin's distances (L21–L23,
+  > found in L23) → Recommended: L24 and later measured with the bundled
+  > plugin (the setup checked to load it before each run); L21's and
+  > L22's decisions stand (each compared both sides alike). (5) The
+  > joggle → Recommended: drop it (it cannot bring the axis back);
+  > instead, as the fabrication order puts one bend before a weld, let a
+  > plate bent once carry its axis offset into the analysis up to 40 mm as
+  > the welded plate does (L20 item 2) — measured first. (6) The half or
+  > quarter turn for an outstanding leg into the flange (the owner's
+  > answer to 7c) → planned as L25, below.
+- [ ] L24. **The joint layout and plugins: a detailing practice as data,
+  the core the validator** (the owner's idea of 2026-11-24, after L22; the
+  plan written in L23; **approved by the owner on 2026-11-24**: *"For the
+  joint in plugin go with what you said"* — step 1 next, as its own step
+  after L23; step 2 later, once the layout settles). Not built yet.
+  **Why not the whole layout in a plugin.** (a) Speed: a tower has
+  thousands of joints, and a layout run plans each several times (the
+  searched orders, L5's, L11's, L15's, L20's plans with and without, the
+  clash rounds, L22's plans again) and lays the tower out about five and a
+  half times when it weighs the turns (L19) — a plugin call costs a
+  sandboxed call with its records copied in and out, and a user plugin
+  has 5 s per call by default (the bundled codes 120 s); (b) one source of
+  truth: what the layout plans must be what Joint details draws, clash
+  checks and checks — the same geometry code (plates seated off the
+  flange, outlines grown round bolts, the bolts' heads and nuts), which a
+  plugin would have to copy and keep in step; (c) safety: the checks that
+  make a layout safe (clashes, edge and end distances against the steel as
+  written, holes overlapping, the bolts' groups, the bend check, the
+  NOT ON THE SAFE SIDE words) stay in the core, whatever proposes the
+  detail; (d) the layout still changes with every step (L1–L23): an
+  interface fixed now would freeze it too early.
+  **Step 1 (next, L24): a detailing practice preset as data.** What a
+  fabricator or utility does differently is mostly a choice among what the
+  layout already does, and its limits: a preset (a table of values, no
+  code) that the layout reads — the fabrication order (direct → one plate
+  → one bend → several bends → welded, today fixed in the code), the face
+  preferences (an end on the outer or inner face of a leg's flange; L10's
+  other face allowed or not), the shift and pull-back limits (today the
+  settings' starting values), the flatness within which an end counts as
+  flat (2°, `FLAT_OFF`), the plate shapes and thickness rules (the
+  thickest leg on it, a least thickness, steps of thickness, short plates
+  allowed, a plate grown along its holder), bent plates (the inside
+  radius in thicknesses, `BEND_RADIUS_RATIO`; the largest bend,
+  `BEND_SMALL_MAX`; bends allowed or not), welded plates allowed or not and
+  the largest axis offset they may make (`OWN_OUT_MAX`), and the bolt
+  patterns (the gauge lines, the least pitch and end distance, the
+  provisional bolt). Supplied by a **code plugin** (a new optional export
+  answering the preset for its code, as it answers the minimum bolt
+  distances today) or by the **project's file** (a preset written with the
+  structure, chosen in Lay out joints), the user's values winning; the
+  core stays the validator — every value is a choice inside what the core
+  checks, never a way round a check (a preset can ask for a smaller gap
+  only down to the clash check's tolerance, never for a bolt nearer an
+  edge than the code allows).
+  **Step 2 (later): a "propose a joint" hook.** For the joints the
+  built-in layout leaves for a hand detail only (some per cent of a
+  tower's joints): the plugin is given the joint as the layout sees it
+  (its members, their legs and bolts, what is fixed) and answers
+  candidate details (ends onto members or plates, plates, bolts); each
+  candidate is written, drawn, clash-checked and checked by the core
+  exactly as a layout's plan, weighed per joint as the layout's own steps
+  (kept only where it lays out more ends, or as many on fewer plates, and
+  no joint worse), and marked as the plugin's in the record. Called once
+  per joint left, not inside the layout's search.
+  > **Owner** (approved 2026-11-24; the open design questions of step 1,
+  > each with the recommendation after the arrow): (1) Where a preset
+  > lives → Recommended: a table `[layout_practice]` in the structure file
+  > (a format version step, older files read as today's defaults) and the
+  > same table answered by a code plugin's optional export
+  > `layout-practice` (additive, a plugin without it as today); the
+  > structure's own table wins over the plugin's, value by value.
+  > (2) Which values in the first preset → Recommended: those already
+  > settings or the program's constants listed above (no new behaviour,
+  > only made choosable), each with its present value as the default, so
+  > that a preset with nothing in it lays out exactly as today (tested on
+  > the private towers: identical files). (3) The fabrication order as
+  > data → Recommended: an ordered list of the five forms, each allowed or
+  > not; the layout's weighing keeps its rule (more ends, or as many on
+  > fewer plates) and uses the order only on ties, as today. (4) Limits a
+  > preset may not pass → Recommended: the core's checks are not settings
+  > of the preset (the clash check, the code's distances, holes
+  > overlapping, the bend check, the NOT ON THE SAFE SIDE words); a value
+  > beyond what the core can check is refused with the reason, in Lay out
+  > joints and in the run's notes. (5) Presets per member class or per
+  > joint kind → Recommended: per member class first (as the connection
+  > presets are), per joint kind later if asked. (6) Shown to the user →
+  > Recommended: Lay out joints shows the preset in force (its source:
+  > the file, the plugin, the defaults) and each value's effect measured
+  > as for the other settings (the owner's rule: every setting explains
+  > its effect and its time).
+- [ ] L25. **An outstanding leg pointing into the flange: a half or a
+  quarter turn, weighed** (L19's question 7c; the owner, 2026-11-24:
+  *"probably a half turn if possible then other options"* and *"maybe a 90
+  degrees turn might be better so you could also consider it"*). Not
+  built yet (L23 ran out of time; the owner to order it before or after
+  L24). Today a plate in the end's own plane is refused where the end's
+  outstanding leg points into the flange (it would stand on the flat
+  plate): 450 such ends on the eight private towers L21–L23 measure (29
+  under 5°, 115 at 5°–10°, 95 at 10°–20°, 116 at 20°–45°, 95 at 45° or
+  more). Built already, in part: the run's half turn (step 2b) and, for an
+  equal-leg angle at most 20° off, the quarter turn (L3b), each kept for a
+  member where more of its ends are planned laid out with it and its
+  joints no worse in sum. **Planned**: for every member with such an end
+  (not a leg or chord, not one part with another, its roll the
+  program's on an imported tower), both a half turn and a quarter turn
+  (either way; an equal-leg angle then bolts its other leg onto the
+  flange; an unequal angle its other leg — wider or narrower, with its
+  own bolts, gauges and edge distances, said on the proposal) laid out
+  and weighed over every joint the member reaches as L19 weighs turns
+  (each joint no worse, one better, after writing), the one laying out
+  more ends kept (on a tie the half turn: the same leg bolted); on a
+  designed tower proposed in Lay out joints, never applied silently; how
+  often each wins reported. Where neither helps, the other options later
+  (a stand-off: a welded assembly of three parts).
+  > **Owner:** (1) Order → Recommended: L25 before L24 (it lays out
+  > measured ends now; the preset only makes today's choices choosable).
+  > (2) The quarter turn of an unequal angle (its other leg bolted: other
+  > bolts and gauges, the member's own check unchanged as its section is)
+  > → Recommended: allowed, said on the proposal with the leg it bolts.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

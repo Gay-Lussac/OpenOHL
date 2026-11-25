@@ -60,6 +60,77 @@ development, not approved yet;
 - **The bundled codes** give no practice (a practice is a shop's, not a
   code's); the example plugin gives an invented one for the tests.
 
+## 2026-11-25 (joint layout: three steps measured, none kept, L23)
+
+**L22's questions 2 and 3, L21's item 3 and L19's question 7b tried and
+measured; none changes the program** (roadmap O44 L23; the owner busy:
+built on its own, reported;
+[theory](../theory/joint-layout.md#a-plates-own-holding-bolts-tested-by-the-clash-check-after-writing-tried-not-kept-l23)).
+
+- **A plate's own holding bolts tested by the clash check after writing**
+  (L22's question 2; testing each candidate inside the plan would cost a
+  joint's whole detail per candidate, so the run's own check after
+  writing was used, the plan told what it found and planned again first):
+  in four forms on four private towers no end more; the first changes no
+  joint at a much longer run, the others leave one joint kind an end short
+  on three towers. With the plate grown along its holder (L22's question
+  3) again 15 joints worse. **Not kept** (no joint worse is the rule).
+- **The members' turns weighed without the far-out welded plates** (L21's
+  item 3, the joints L20 item 2 left worse): the half and quarter turns
+  and L10's other faces chosen as if L20 item 2's plates did not exist
+  (as L16 does for the plates between): 24 joints better, 28 worse, 30
+  ends fewer — those plates gain mostly through turns. **Not kept**; next
+  (an owner question): each turn they change weighed over every joint its
+  member reaches, as L19 weighs the plane turns.
+- **The joggle** (L19's question 7b): **not built** — a straight leg tilted
+  over the flange lies a plate's thickness above it at its lowest point
+  and rises along its slope to its bolts whatever the plate under it does;
+  the welded plate is already within the seam's room of that bound (of 60
+  such ends at most 15° off on eight private towers, 5 could come within a
+  plate's thickness with no room at the seam at all).
+- **The measuring setup** (found on the way): L21's, L22's and this
+  step's comparisons ran without the code plugin's minimum distances (the
+  setup's copy of the plugin had lost its WebAssembly file; the layout
+  took the structure's default minimums) — each comparison alike on both
+  sides, so its decision stands; the code plugin's change of the same day
+  (the force per bolt capped by its bearing) measured with the plugin
+  loaded (roadmap L23 item 4).
+- **Measured** (private towers): in the roadmap block and the theory page.
+
+## 2026-11-24 (joint layout: the owner's answers to L19–L22, the joint layout and plugins)
+
+**The owner approved every recommendation of L19's, L20's, L21's and
+L22's questions** (roadmap O44; 2026-11-24). Answers given the same day:
+
+- **L19's question 7c** (an end whose outstanding leg points into the
+  flange, so that a plate in its own plane would have it stand on the
+  flat plate): *"probably a half turn if possible then other options"*,
+  and added: *"maybe a 90 degrees turn might be better so you could also
+  consider it"*. So: for such members both a half turn and a quarter turn
+  (either way; an equal-leg angle then bolts its other leg onto the
+  flange, an unequal one its other, wider or narrower, leg — its bolts,
+  gauges and the plate change with it) tried and the one laying out more
+  ends with no joint worse kept, weighed over every joint the member
+  reaches as L19 weighs turns — automatic only on imported towers where
+  the roll is the program's, else proposed, never silently on a designed
+  tower; a stand-off (a welded assembly of three parts) later, where
+  neither turn works. Not built in L23 (time): planned as its own step
+  (roadmap O44 L25).
+- **The joint layout and plugins** (the owner's idea of 2026-11-24; the
+  plan written in L23, roadmap O44 L24): *"For the joint in plugin go with
+  what you said"* — approved as proposed: step 1, a "detailing practice"
+  preset as data (the fabrication order, face preferences, shift and
+  pull-back limits, the 2° flatness, plate shapes and thickness rules,
+  bolt patterns), supplied by code plugins or the project's file, the
+  core staying the validator — the next step after L23, its own step
+  (L24); step 2, a "propose a joint" plugin hook called only for the
+  joints the built-in layout leaves for a hand detail, its candidates
+  checked and weighed by the core — later, once the layout settles. Not
+  the whole layout in a plugin: thousands of joints per tower planned
+  many times (a user plugin has 5 s per call by default), one source of
+  truth with the joint details, the safety checks staying in the core,
+  and the layout still changing every step. Step 1's open design
+  questions are in the roadmap with recommendations.
 ## 2026-11-24 (clearance reports: the rigid-structures note by the line's calculation level)
 
 **The owner's answer** (2026-11-24) on the clearance reports' note
