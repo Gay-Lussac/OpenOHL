@@ -1873,6 +1873,8 @@ Six stages, the questions per stage and per detail level:
   > two holes) → Recommended: the default bolt the largest the leg's
   > usual gauge takes, or the structure's most used bolt, sent with the
   > members (an interface change, to ask).
+  > **Owner, 2026-11-25** ("Ok for plugin fixes"): (3) keep one ply, approved; (4) the
+  > default bolt sent with the members, approved, to build.
 - [x] **Safety gaps of the 2026-11-24 audit** (2026-11-25; built, in
   active development, not approved yet — the owner busy: built on its
   own, reported; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md)):
@@ -2008,7 +2010,8 @@ the code checks once on the converged state), its phases:
   at level 4 no", the note dropped at level 4 only where that level really
   takes the flexibility; no clearance check takes the level yet, so at
   levels 3 and 4 the note now names the level and that the check still
-  solves rigid — built, in active development, not approved yet;
+  solves rigid (the clearance checks taking the level kept under this
+  item, owner 2026-11-25: "Ok for plugin fixes") — built, in active development, not approved yet;
   [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-clearance-reports-the-rigid-structures-note-by-the-lines-calculation-level));
   OHL-Design updated
   near moved structures only; a level per structure group and per check;
@@ -3545,6 +3548,7 @@ only where it helps):
   > edge unless its connection says otherwise? Recommended: yes (the
   > profile is rolled; a flame-cut or sheared toe is then given as
   > `rolled_edge = false`).
+  > **Owner, 2026-11-25** ("Ok for plugin fixes"): approved, to build.
 - [x] L17. **One plate in one gap; a turn refused after writing tried as
   before the plates between** (L16's questions 2 and 3; the owner busy:
   built on its own, reported). **Built 2026-11-23, in active development,
@@ -4092,6 +4096,8 @@ only where it helps):
   > the welded plate does (L20 item 2) — measured first. (6) The half or
   > quarter turn for an outstanding leg into the flange (the owner's
   > answer to 7c) → planned as L25, below.
+  > **Owner, 2026-11-25**: "use recommendations for l23 to l25" — every
+  > recommendation above taken.
 - [x] L24. **The joint layout and plugins: a detailing practice as data,
   the core the validator** (the owner's idea of 2026-11-24, after L22; the
   plan written in L23; **approved by the owner on 2026-11-24**: *"For the
@@ -4255,6 +4261,8 @@ only where it helps):
   > one needs the joint details to follow; a forced fit no check takes).
   > (7) The bundled codes give no practice → Recommended: keep (a
   > practice is a shop's, not a code's).
+  > **Owner, 2026-11-25**: "use recommendations for l23 to l25" — every
+  > recommendation above taken.
 - [x] L25. **An outstanding leg pointing into the flange: a half or a
   quarter turn, weighed** (L19's question 7c; the owner, 2026-11-24:
   *"probably a half turn if possible then other options"* and *"maybe a 90
@@ -4323,6 +4331,8 @@ only where it helps):
   > member weighed and left is not weighed again until its roll changes
   > (its `none` row) → Recommended: keep (the time); a "weigh again" in
   > Lay out joints later if asked.
+  > **Owner, 2026-11-25**: "use recommendations for l23 to l25" — every
+  > recommendation above taken.
   **The plan, as it stood**: Today a plate in the end's own plane is refused where the end's
   outstanding leg points into the flange (it would stand on the flat
   plate): 450 such ends on the eight private towers L21–L23 measure (29

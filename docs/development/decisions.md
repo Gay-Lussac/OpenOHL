@@ -8,6 +8,33 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (owner answers: the plugin fixes' questions; the joint layout's L23 to L25 recommendations)
+
+**The plugin fixes' open questions** (roadmap O19 stage 5 and O44 L16
+question 4; owner, 2026-11-25: "Ok for plugin fixes"): a built-up member's
+bearing on one ply until the plate between is defined, kept; the default
+bolt for a member without bolts in its data — the largest its leg's usual
+gauge takes, or the structure's most used bolt — sent with the members to
+the code plugins (an interface change, approved, to build); a rolled
+angle's own leg sent as a rolled edge unless its connection says
+`rolled_edge = false` (a core change, approved, to build); the clearance
+checks taking the calculation level kept under O7 item 7.
+
+**The joint layout's L23 to L25 questions** (roadmap O44; owner,
+2026-11-25: "use recommendations for l23 to l25"), each as recommended:
+L23 — the held plate's bolts re-planned and the plate grown along its
+holder dropped; each turn the welded plates change decided with and
+without them next; measuring with the bundled code plugin loaded; the
+joggle dropped, a plate bent once carrying its axis offset up to 40 mm
+measured first. L24 — the six design questions confirmed; each value's
+effect measured next; the plate's thickness rules as data next; the
+window's gap, pull-back and shift kept the user's per run, said where
+they exceed the practice's; a small editor next; the flatness only
+stricter; the bundled codes give no practice. L25 — the weighed turns on
+by default; the 23 members passing alone left for now; the plates'
+rise accepted; a member weighed and left not weighed again until its roll
+changes.
+
 ## 2026-11-25 (country server: one model per line, decided at the network's design; twins stay as they are)
 
 **A line and its branches are one model; separate lines are separate
