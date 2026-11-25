@@ -5701,9 +5701,14 @@ or three, L four or more. The phases, in order:
   (only connected at substations but not the same line)", and "for the
   model merging this has to be dealt with at the network design level and
   then corrected with the app that has the capabilities for it. Keep the
-  function with "twin" as is"). **Decided, not built**; the join command's
-  three questions answered "Ok with recommendations" (owner, 2026-11-25):
-  to build.
+  function with "twin" as is"). **Decided**; the join command's three
+  questions answered "Ok with recommendations" (owner, 2026-11-25). **The
+  join command built 2026-11-25** (built, in active development, not
+  approved yet): OHL-Design's File › *Join routes from another project…*
+  and `ohl project join` (`ohl_session::join`; the renaming, the twin
+  criterion and the library entries' matching shared with `ohl network
+  import`; [user guide](docs/user-guide/join-routes.md),
+  [decisions](docs/development/decisions.md)).
   1. **The rule**: one model per line, its branches included — a line
      branching (a Y or T connection, two or more routes sharing a tower)
      is one model, its shared towers one object each (towers shared by
@@ -5738,6 +5743,29 @@ or three, L four or more. The phases, in order:
   > project's tower kept, the other line's sections re-attached to its
   > points by label, those without a matching label refused and listed?
   > → yes: nothing guessed.
+  > **Owner (questions of the built join, 2026-11-25; recommendations
+  > given, not yet answered):**
+  > 4. A library entry the other file has with other values: the join is
+  > refused unless the user ticks *use this project's entry for the joined
+  > routes* (listed under *To look at*). Keep the tick, or always refuse?
+  > → recommended: keep the tick (none ticked by default, the change of
+  > the joined routes' data listed; refusing always forces editing one of
+  > the files first for a weather case named alike).
+  > 5. Electrical systems, circuits and structure groups of the same id
+  > (or circuit name) are always renamed, never taken as the same — a
+  > branch carrying the same circuit then has two circuits. Keep? →
+  > recommended: yes (nothing guessed); join the circuits afterwards with
+  > the circuit tools where they are one.
+  > 6. A joined structure in no structure group may fall into one of the
+  > open project's groups by its rules (fewer load cases): listed under
+  > *To look at* only. Keep, or put such structures into a group of their
+  > own keeping their cases? → recommended: list only for now (the user
+  > sees each change before Join); a group of their own as an option later
+  > if it happens on real lines.
+  > 7. The revision *joined routes from FILE* is made at once on the
+  > project line worked on (Undo takes the line back, the revision stays in
+  > the history). Keep, or leave committing to the user? → recommended:
+  > keep (the owner's "one revision").
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile (the merge of twin towers dropped, owner 2026-11-25: twins stay

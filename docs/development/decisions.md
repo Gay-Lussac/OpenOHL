@@ -8,6 +8,65 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (one model per line: the Join routes command built)
+
+**File › Join routes from another project… and `ohl project join`**
+(roadmap O17, *One model per line*; owner, 2026-11-25: "Ok with
+recommendations"; built, in active development, not approved yet;
+[user guide](../user-guide/join-routes.md)).
+
+- **What**: the main project line of another project file — its routes,
+  alignments, alignment points, structures (strings, wire points),
+  sections, jumpers, spacers, electrical systems, circuits and circuit
+  starts, structure groups — joined into the project line worked on as
+  **one command** (the library files changed and the merged line,
+  `batch` of `put library` and `replace_line`: one undo step) and **one
+  revision** "joined routes from FILE". The other file is read in
+  memory, never changed (an older schema upgraded in memory only).
+  Refused: a part of a line, another coordinate system, a library
+  conflict not accepted, a merged line that is not valid.
+- **Reused from the network import, now shared** (`ohl_session::join`,
+  called by `ohl_store_pg::import` and `ohl_store_pg::library::map_import`
+  too, the desktop not depending on the server): the renaming of
+  clashing ids (`fresh_id`: `PREFIX-id`, `PREFIX-id-2`…, with the
+  session's own rename so references follow; `NETWORK_KINDS`), the
+  prefix rule (`check_prefix`, the line code's), the twin criterion
+  (`twin_distance`: the same type within `TWIN_TOLERANCE`, 0.5 m) and the
+  library entries' matching (`match_entry`: same / differs / new / a
+  one-entry file's name taken). The network import's behaviour is
+  unchanged.
+- **Decided in the build** (each an owner question in the roadmap with
+  its recommendation): electrical systems, circuits (by id or name) and
+  structure groups of the same id are renamed like the network kinds,
+  never taken as the same; a load case's own list (one per case) is
+  joined into the open project's (its picked and excluded structures
+  added, the open project's rules kept, other rules listed); a library
+  entry that differs refuses the join unless the user ticks *use this
+  project's entry for the joined routes*; a new entry of a one-entry file
+  whose name the open project has is added under a free name
+  (`type-2.ohls`) — the network asks a maintainer there; the other
+  file's line settings are not taken (each that differs listed).
+- **Twins** (none ticked by default): listed with their distance, height
+  (the highest point, wire point or member above the ground point,
+  resolved with each project's own structure types), level and
+  orientation difference. A ticked twin keeps the open project's tower
+  unchanged; the other line's sections, jumpers and circuit starts are
+  re-attached by wire point label, its jumper clamps by their wire
+  point's label, its tied alignment points tied to the kept tower; a
+  label missing (or without a set) on the kept tower refuses that twin
+  (two towers, listed). Where the alignments alone would not put the
+  merged tower on both lines' routes, its routes are given on it
+  (listed). **NOT ON THE SAFE SIDE** when a twin that is not one tower is
+  ticked (the other line's wires on wire points at other heights or
+  turned: other sags, clearances and loads); what makes it safe: the
+  height, level and turn shown before the tick, and the checks run after
+  the join (said in the user guide).
+- **Listed, never silent**: every joined structure whose load cases
+  change by the open project's structure groups (and the kept towers'),
+  every line setting that differs, every library entry accepted or left.
+- **Data model**: no format change, no new table or key (data-model.md,
+  *Joining another project's routes*).
+
 ## 2026-11-25 (country server: one model per line, decided at the network's design; twins stay as they are)
 
 **A line and its branches are one model; separate lines are separate

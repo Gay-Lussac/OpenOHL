@@ -62,6 +62,7 @@ mod tests {
             ("user-guide/desktop-app", "cross-section-view"),
             crate::sign_in::GUIDE,
             crate::network_offline::GUIDE,
+            crate::join_routes::GUIDE,
         ];
         let tools = Tool::ALL.map(guide);
         let all = tools

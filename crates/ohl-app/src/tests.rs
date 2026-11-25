@@ -27,6 +27,7 @@ mod edit_window;
 mod edit_window_cases;
 mod field_setup;
 mod in_place_line;
+mod join_routes;
 mod kept;
 mod lidar;
 mod load_case_defaults;

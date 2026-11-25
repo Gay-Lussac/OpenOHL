@@ -75,6 +75,21 @@ pub(super) fn file_entries(ui: &mut egui::Ui, r: &mut Ready, out: &mut Vec<crate
         ui.separator();
         crate::backgrounds::import_entries(ui, r);
     });
+    if ui
+        .add_enabled(
+            r.model.session().is_some(),
+            egui::Button::new("Join routes from another project…"),
+        )
+        .on_hover_text(
+            "One model for a line and its branches: another project file's routes joined into \
+             this project — ids clashing renamed, library entries mapped, twin towers offered \
+             to become one shared tower (none ticked); one change, one revision",
+        )
+        .clicked()
+    {
+        r.join_routes.show(None);
+        ui.close();
+    }
     ui.menu_button("Export", |ui| {
         if ui
             .button("The line…")

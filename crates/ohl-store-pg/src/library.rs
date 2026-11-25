@@ -2647,30 +2647,30 @@ pub(crate) fn map_import(
                 continue;
             }
         };
-        let referenced = REFERENCED_KINDS.contains(&kind.as_str());
         for e in entries {
             // Phase 14: each file's entries known by its text's SHA-256;
             // only a file holding the entry read again for its version.
             let ids_now = head_entry_ids(&mut c, kind)?;
-            let mut found: Option<(String, String)> = None;
-            for (f, ids) in &ids_now {
-                if !(referenced || f == name) || !ids.contains(&e.id) {
-                    continue;
-                }
+            let files: Vec<(String, BTreeSet<String>)> = ids_now
+                .iter()
+                .map(|(f, ids)| (f.clone(), ids.iter().cloned().collect()))
+                .collect();
+            // The matching shared with the join (`ohl_session::join`).
+            let found = ohl_session::join::match_entry(kind, name, &e, &files, |f| {
                 let t: String = c
                     .query_one(
                         "SELECT text FROM lib_file WHERE kind = $1 AND name = $2",
-                        &[kind, f],
+                        &[kind, &f],
                     )?
                     .get(0);
-                if let Some(x) = country::entries(f, &t)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .find(|x| x.id == e.id)
-                {
-                    found = Some((f.clone(), x.version));
-                }
-            }
+                Ok::<_, NetError>(
+                    country::entries(f, &t)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|x| x.id == e.id)
+                        .map(|x| x.version),
+                )
+            })?;
             let draft = country::only_entry(name, text, &e.id).map_err(refused)?;
             let ask = |c: &mut Conn, file: &str, why: &str| -> Result<i64, NetError> {
                 Ok(c.query_one(
@@ -2681,19 +2681,20 @@ pub(crate) fn map_import(
                 )?
                 .get(0))
             };
-            match found {
-                Some((_, v)) if v == e.version => push(&e.id, "same".into()),
-                Some((f, _)) => {
+            use ohl_session::join::EntryMatch;
+            match &found {
+                EntryMatch::Same(_) => push(&e.id, "same".into()),
+                EntryMatch::Differs(f) => {
                     let id = ask(
                         &mut c,
-                        &f,
+                        f,
                         &format!("import of {source}: differs from the network's"),
                     )?;
                     changed = true;
                     push(&e.id, format!("differs, requested #{id}"));
                 }
-                None => {
-                    let single_taken = e.list.is_none() && ids_now.iter().any(|(f, _)| f == name);
+                EntryMatch::New | EntryMatch::NameTaken => {
+                    let single_taken = found == EntryMatch::NameTaken;
                     if file_locked(&mut c, kind, name)? || single_taken {
                         let id = ask(&mut c, name, &format!("import of {source}"))?;
                         changed = true;

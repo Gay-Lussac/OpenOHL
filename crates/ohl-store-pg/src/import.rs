@@ -46,21 +46,10 @@ use serde::Serialize;
 
 use crate::{NetError, Network, PgStore, check_code, lock};
 
-/// The kinds whose ids are unique in the network.
-pub const NETWORK_KINDS: [&str; 7] = [
-    "route",
-    "alignment",
-    "alignment_point",
-    "structure",
-    "section",
-    "jumper",
-    "spacer",
-];
-
-/// Twin towers: the largest distance in plan between two structures of
-/// different models taken for one tower (with the same type), m (plan
-/// §3.5, an estimate to be set by the owner).
-pub const TWIN_TOLERANCE: f64 = 0.5;
+/// The kinds whose ids are unique in the network, and the twin
+/// tolerance: shared with OHL-Design's join of another project's routes
+/// (`ohl_session::join`, owner 2026-11-25).
+pub use ohl_session::join::{NETWORK_KINDS, TWIN_TOLERANCE};
 
 /// How to import.
 #[derive(Debug, Clone, PartialEq)]
@@ -313,20 +302,12 @@ pub fn import(
         let ids: Vec<String> = ids.iter().cloned().collect();
         let clashes = taken(kind, &ids)?;
         for id in clashes {
-            let mut n = 1;
-            let new_id = loop {
-                let candidate = if n == 1 {
-                    format!("{code}-{id}")
-                } else {
-                    format!("{code}-{id}-{n}")
-                };
-                let in_file = file_ids[kind].contains(&candidate)
+            // The renaming shared with the join (`ohl_session::join`).
+            let new_id = ohl_session::join::fresh_id(code, &id, |candidate| {
+                let in_file = file_ids[kind].contains(candidate)
                     || renamed.iter().any(|r| &r.kind == kind && r.to == candidate);
-                if !in_file && taken(kind, std::slice::from_ref(&candidate))?.is_empty() {
-                    break candidate;
-                }
-                n += 1;
-            };
+                Ok::<_, NetError>(in_file || !taken(kind, &[candidate.to_owned()])?.is_empty())
+            })?;
             renamed.push(Renamed {
                 kind: kind.clone(),
                 from: id,
@@ -719,15 +700,21 @@ pub fn twins(net: &Network, code: &str, tolerance: f64) -> Result<Vec<Twin>, Net
         let (Some(ax), Some(ay), Some(bx), Some(by)) = (ax, ay, bx, by) else {
             continue;
         };
-        let d = (ax - bx).hypot(ay - by);
         let (ta, tb): (Option<String>, Option<String>) = (r.get(7), r.get(8));
-        if d <= tolerance && ta == tb {
+        // The criterion shared with the join (`ohl_session::join`).
+        if let Some(d) = ohl_session::join::twin_distance(
+            [ax, ay],
+            ta.as_deref(),
+            [bx, by],
+            tb.as_deref(),
+            tolerance,
+        ) {
             out.push(Twin {
                 structure: r.get(0),
                 id_in_file: r.get(0),
                 other_line: r.get(1),
                 other: r.get(2),
-                distance_m: (d * 1000.0).round() / 1000.0,
+                distance_m: d,
                 structure_type: ta,
             });
         }
