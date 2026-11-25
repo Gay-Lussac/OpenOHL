@@ -293,10 +293,29 @@ split** — a statically safe bound, no load path counted on:
   plasticity) — the bolts' own deformation capacity is taken as enough
   for it, as everywhere a group's force is shared elastically.
 - Beyond six such forces at one place (`PASSED_EACH`, the program's
-  value; two holders and a few ends laid onto the other: never met) a bolt
-  group or a plate's row takes the rest together, said NOT ON THE SAFE
-  SIDE on the row; a member's own steel and a weld add each one's size
-  (a sum's size is at most the sum of the sizes: on the safe side).
+  value; two holders and a few ends laid onto the other: never met) the
+  \\( 2^n \\) corners are not tried one by one. Since 2026-11-25 (before,
+  the rest taken together, none or all, said NOT ON THE SAFE SIDE: a mix
+  of them in between, which can load a bolt more, was not tried):
+  - **a bolt group, exact**: for each bolt the sums
+    \\( \mathbf a + \sum_i s_i \mathbf g_i \\) (its shear in the plane,
+    \\( s_i \in [0, 1] \\)) fill a zonotope; its size, convex, is largest at
+    a corner, and each corner takes every \\( \mathbf g_i \\) pointing into
+    one direction \\( \mathbf u \\) (\\( \mathbf g_i \cdot \mathbf u > 0 \\))
+    — the same corner for every \\( \mathbf u \\) between two directions
+    square to some \\( \mathbf g_i \\). One \\( \mathbf u \\) in each such arc
+    finds every corner (at most \\( 2n \\)): the exact largest, bolt by
+    bolt (`joint_groups::box_max_2d`). Its pull out of the plies' plane, a
+    number, is largest taking each share where it adds to that sign;
+  - **a plate's row, a member's own steel and a weld**: each further
+    force's size added to the largest of the first six's corners, along it
+    (a sum's size is at most the sum of the sizes: *on the safe side*, a
+    bound).
+
+  Tested against every one of the \\( 2^{10} \\) corners of invented
+  vectors and every one of the \\( 2^8 \\) corners of a group of three
+  bolts (`joint_groups` tests); the rest taken together found less on the
+  invented vectors — what the old treatment missed.
 
 Hand-checked on invented joints (`joint_groups` tests): a holding group
 under a 10 kN end and the other holder's 10 kN square to it, 5 kN per

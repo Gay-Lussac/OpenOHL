@@ -136,6 +136,118 @@ pub struct Capacity {
     /// conditions and where each comes from, in words ("N2 eccentric
     /// (worked out: one leg bolted), restrained (given)"); empty without.
     pub joints: Vec<String>,
+    /// A single angle bolted by one leg whose bolts' centroid lies beyond
+    /// the connected leg's centre line at an eccentric end (C3.7.4: not
+    /// normal framing eccentricity; [`BeyondCentre`]); none: within it.
+    pub beyond_centre: Option<BeyondCentre>,
+}
+
+/// The extra eccentricity of a single angle whose bolt pattern's centroid
+/// lies beyond the connected leg's centre line (2026-11-25). ASCE 10-97's
+/// curves for an angle bolted by one leg cover *normal framing
+/// eccentricity*, which commentary C3.7.4 ties to a bolt pattern whose
+/// centroid lies between the heel and the centre line of the connected
+/// leg; beyond it, "due consideration should be given to the additional
+/// stresses induced in the member". Taken so, on the safe side: the force
+/// at the part of the gauge beyond the centre line, Δe = g − w/2 (the
+/// largest over the member's eccentric ends; g the gauges' mean from the
+/// heel, w the leg's width), bends the angle by P·Δe about its principal
+/// axes, checked with the compression by Eq. 3.12-1's form — the bending
+/// stress at the farthest fibres of both principal axes added,
+/// P (|e_v|/W_u + |e_u|/W_v), against F_y (3.14.3, the allowable moment of
+/// a member supported laterally; 3.14 has no rule for an angle's
+/// lateral-torsional buckling), amplified by 1/(1 − P/P_e) with C_m = 1
+/// (the largest) and P_e = π² E A/(KL/r)² at the member's governing
+/// effective slenderness (the smallest Euler load the check uses): the
+/// moment taken uniform along the member, whole.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BeyondCentre {
+    /// The largest distance beyond the centre line, m.
+    pub e: f64,
+    /// The bending stress per newton of compression, Pa/N:
+    /// |e_v|/W_u + |e_u|/W_v (e the offset Δe along the leg, in the
+    /// principal axes).
+    pub stress_per_newton: f64,
+    /// The Euler load P_e, N.
+    pub euler: f64,
+    /// The yield stress F_y, Pa.
+    pub fy: f64,
+    /// Where, in words ("at N2 31 mm").
+    pub at: String,
+}
+
+impl BeyondCentre {
+    /// The share of the capacity the extra bending takes under compression
+    /// `p` (N, positive) and the case's strength factor: its stress,
+    /// amplified, over strength × F_y (infinite where P reaches P_e).
+    pub fn usage(&self, p: f64, strength: f64) -> f64 {
+        if p <= 0.0 {
+            return 0.0;
+        }
+        if p >= self.euler {
+            return f64::INFINITY;
+        }
+        p * self.stress_per_newton / ((1.0 - p / self.euler) * strength * self.fy)
+    }
+}
+
+/// The [`BeyondCentre`] of member `m` with its governing effective
+/// slenderness `kl_r` (none: not a single angle bolted by one leg, no
+/// gauges given, its principal moduli not known, or every eccentric end's
+/// bolts' centroid within the heel and the centre line).
+fn beyond_centre(m: &Member, kl_r: f64, fy: f64) -> Option<BeyondCentre> {
+    let s = &m.section;
+    let d = &m.design;
+    let (h, b) = match s.profile.as_ref()?.shape {
+        ohl_sections::Shape::EqualAngle { h, .. } => (h, h),
+        ohl_sections::Shape::UnequalAngle { h, b, .. } => (h, b),
+        _ => return None,
+    };
+    let q = s.properties.as_ref()?;
+    let (wu, wv) = (q.wel_u?, q.wel_v?);
+    if !(wu > 0.0 && wv > 0.0 && kl_r > 0.0) {
+        return None;
+    }
+    let mut worst: Option<(f64, f64, usize)> = None;
+    for end in 0..2 {
+        if m.conditions.eccentric[end].value == Some(false) {
+            continue;
+        }
+        let Some(e) = d.ends[end].as_ref() else {
+            continue;
+        };
+        if e.gauges.is_empty() {
+            continue;
+        }
+        let leg = e.leg.or(d.connected_leg);
+        // The leg along y has the width b, along z h (as the sections'
+        // outline); a leg not given: the short one of an unequal angle
+        // (as the tension check assumes), else either.
+        let along_y = match leg {
+            Some(ConnectedLeg::Long) => b >= h,
+            Some(ConnectedLeg::Short) => b < h || h == b,
+            Some(ConnectedLeg::Both | ConnectedLeg::None) => continue,
+            None => b <= h,
+        };
+        let width = if along_y { b } else { h };
+        let g = e.gauges.iter().sum::<f64>() / e.gauges.len() as f64;
+        let beyond = g - width / 2.0;
+        if beyond > 1e-6 && worst.is_none_or(|w| beyond > w.0) {
+            worst = Some((beyond, if along_y { 1.0 } else { 0.0 }, end));
+        }
+    }
+    let (e, y, end) = worst?;
+    let (dy, dz) = (e * y, e * (1.0 - y));
+    let th = q.principal_angle;
+    let eu = dy * th.cos() + dz * th.sin();
+    let ev = -dy * th.sin() + dz * th.cos();
+    Some(BeyondCentre {
+        e,
+        stress_per_newton: ev.abs() / wu + eu.abs() / wv,
+        euler: std::f64::consts::PI.powi(2) * s.e * s.area / (kl_r * kl_r),
+        fy,
+        at: format!("at {} {:.0} mm", m.joints[end], e * 1e3),
+    })
 }
 
 /// The effective slenderness KL/r from L/r and the ends (ASCE 10-97,
@@ -470,6 +582,7 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
         }
     };
     out.kl_r = Some(kl_r);
+    out.beyond_centre = beyond_centre(m, kl_r, fy);
     if let Some((limit, class)) = class_limit(d.class)
         && kl_r > limit
     {

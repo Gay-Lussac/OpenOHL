@@ -1004,31 +1004,149 @@ fn plain_source(e: &Arrival, at: V3) -> Source {
     }
 }
 
-/// At most this many forces a level plate may pass are each taken from
-/// none to whole one by one ([`with_passed`]); any more together (said).
-/// The program's value: a level plate has two holders, the ends laid onto
-/// the other one are few.
+/// Up to this many forces a level plate may pass, each is taken from none
+/// to whole by trying every corner ([`with_passed`], 2ⁿ loadings); beyond,
+/// a bolt's forces are found exact by [`widen_exact`] (2026-11-25; before,
+/// the rest were taken together, none or all — NOT ON THE SAFE SIDE) and
+/// a member's own steel adds each further one's size (a bound). The
+/// program's value: a level plate has two holders, the ends laid onto the
+/// other one are few.
 const PASSED_EACH: usize = 6;
 
 /// The loadings whose larger, bolt by bolt, a group takes (L21): each of
 /// `base` alone and with every choice of the forces `passed` (each added
 /// or not — from none to the whole of it: a bolt's force is linear in each
 /// share, so its largest over every share lies at one of these corners).
-/// Beyond [`PASSED_EACH`] the rest are added together as one.
+/// At most [`PASSED_EACH`] of them (the callers take any more exact, or
+/// bounded); a longer list is cut there (never met: the callers do not
+/// pass one).
 fn with_passed(base: Vec<(V3, V3)>, passed: &[(V3, V3)]) -> Vec<(V3, V3)> {
-    let mut each: Vec<(V3, V3)> = passed.iter().take(PASSED_EACH).copied().collect();
-    if passed.len() > PASSED_EACH {
-        let rest = passed[PASSED_EACH..]
-            .iter()
-            .fold(([0.0; 3], [0.0; 3]), |s, x| (add(s.0, x.0), add(s.1, x.1)));
-        each.push(rest);
-    }
+    debug_assert!(passed.len() <= PASSED_EACH);
+    let each: Vec<(V3, V3)> = passed.iter().take(PASSED_EACH).copied().collect();
     let mut v = base;
     for p in each {
         let more: Vec<(V3, V3)> = v.iter().map(|x| (add(x.0, p.0), add(x.1, p.1))).collect();
         v.extend(more);
     }
     v
+}
+
+/// The vector of largest size among `base + Σ sᵢ gᵢ` over every share
+/// `sᵢ` from 0 to 1 (2026-11-25: beyond [`PASSED_EACH`] forces a level
+/// plate may pass, exact instead of the rest taken together). The set of
+/// such sums is a zonotope; the size, a convex function, is largest at one
+/// of its corners, and each corner is the sum taking every `gᵢ` pointing
+/// into one direction `u` (`gᵢ · u > 0`) — the same for all `u` between
+/// two of the directions square to some `gᵢ`. So the corners are found by
+/// one `u` in each arc between those directions: exact, at most 2 n
+/// corners for n shares (no 2ⁿ corners tried).
+fn box_max_2d(base: V2, gens: &[V2]) -> V2 {
+    let gens: Vec<V2> = gens
+        .iter()
+        .copied()
+        .filter(|g| g[0] != 0.0 || g[1] != 0.0)
+        .collect();
+    // The directions square to each gᵢ, as angles in [0, 2π).
+    let tau = std::f64::consts::TAU;
+    let mut cuts: Vec<f64> = gens
+        .iter()
+        .flat_map(|g| {
+            let a = g[1].atan2(g[0]);
+            [
+                a + std::f64::consts::FRAC_PI_2,
+                a - std::f64::consts::FRAC_PI_2,
+            ]
+        })
+        .map(|a| a.rem_euclid(tau))
+        .collect();
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
+    let corner = |u: V2| -> V2 {
+        let mut v = base;
+        for g in &gens {
+            if g[0] * u[0] + g[1] * u[1] > 0.0 {
+                v = [v[0] + g[0], v[1] + g[1]];
+            }
+        }
+        v
+    };
+    let mut best = base;
+    let size = |v: V2| v[0].hypot(v[1]);
+    let n = cuts.len();
+    for k in 0..n.max(1) {
+        // The middle of the arc from cut k to the next one (round the
+        // circle); no cuts: any direction (no gᵢ, the base itself).
+        let mid = if n == 0 {
+            0.0
+        } else {
+            let (a, b) = (
+                cuts[k],
+                if k + 1 < n {
+                    cuts[k + 1]
+                } else {
+                    cuts[0] + tau
+                },
+            );
+            0.5 * (a + b)
+        };
+        let v = corner([mid.cos(), mid.sin()]);
+        if size(v) > size(best) {
+            best = v;
+        }
+    }
+    best
+}
+
+/// The largest size of `base + Σ sᵢ cᵢ` over every share `sᵢ` from 0 to 1
+/// (a number: each share where it adds to that sign), exact.
+fn box_max_1d(base: f64, gens: &[f64]) -> f64 {
+    let up = base + gens.iter().map(|c| c.max(0.0)).sum::<f64>();
+    let down = base + gens.iter().map(|c| c.min(0.0)).sum::<f64>();
+    up.abs().max(down.abs())
+}
+
+/// Each bolt of `pts` (in `plane`) under the larger, bolt by bolt, over
+/// every loading of `base` with every share of every force of `passed`
+/// from none to whole (2026-11-25, beyond [`PASSED_EACH`]): the shear
+/// force in the plane at its exact largest ([`box_max_2d`]) widening
+/// `forces`, its pull out of the plane at its exact largest
+/// ([`box_max_1d`]) widening `tension` — a bolt's forces are linear in
+/// each share under the elastic sharing.
+fn widen_exact(
+    plane: &Plane,
+    pts: &[V2],
+    base: &[(V3, V3)],
+    passed: &[(V3, V3)],
+    forces: &mut [V2],
+    tension: &mut [f64],
+) {
+    let shear = |(f, m): &(V3, V3)| {
+        bg::elastic(
+            pts,
+            &PlaneLoad {
+                force: plane.vector(*f),
+                at: bg::centroid(pts),
+                moment: dot(*m, plane.n),
+            },
+        )
+        .forces
+    };
+    let pulls = |(f, m): &(V3, V3)| {
+        let out = sub(*m, scale(plane.n, dot(*m, plane.n)));
+        bg::tension(pts, dot(*f, plane.n), plane.vector(out)).forces
+    };
+    let gens: Vec<(Vec<V2>, Vec<f64>)> = passed.iter().map(|p| (shear(p), pulls(p))).collect();
+    for b in base {
+        let (s0, t0) = (shear(b), pulls(b));
+        let mut widest: Vec<V2> = Vec::with_capacity(pts.len());
+        for (k, a) in s0.iter().enumerate() {
+            let g: Vec<V2> = gens.iter().map(|x| x.0[k]).collect();
+            widest.push(box_max_2d(*a, &g));
+            let c: Vec<f64> = gens.iter().map(|x| x.1[k]).collect();
+            tension[k] = tension[k].max(box_max_1d(t0[k], &c));
+        }
+        larger(forces, &widest);
+    }
 }
 
 /// The note of a group whose sources carry ends laid onto them (L14).
@@ -1088,9 +1206,9 @@ fn passed_note(sources: &[Source], part: &str) -> Option<String> {
             with.join("; "),
             if sources.iter().any(|s| s.passed.len() > PASSED_EACH) {
                 format!(
-                    "; NOT ON THE SAFE SIDE: more than {PASSED_EACH} such forces — the rest taken \
-                     together (none or all), so a mix of them in between, which can load the \
-                     bolts more, is not tried (not covered yet)"
+                    "; more than {PASSED_EACH} such forces: each bolt's largest over every share \
+                     found exact (the corners of the sums), and the member's own steel takes \
+                     each further force's size added (on the safe side)"
                 )
             } else {
                 String::new()
@@ -1814,10 +1932,9 @@ fn holding_groups(
                 }
                 if passed_here.len() > PASSED_EACH {
                     notes.push(format!(
-                        "NOT ON THE SAFE SIDE: more than {PASSED_EACH} forces the plate may pass \
-                         to these bolts: the rest taken together (none or all), so a mix of them \
-                         in between, which can load the bolts more, is not tried (not covered \
-                         yet)"
+                        "more than {PASSED_EACH} forces the plate may pass to these bolts: each \
+                         bolt's largest over every share of them found exact (the corners of the \
+                         sums, not 2ⁿ loadings tried)"
                     ));
                 }
                 if plates.len() > 1 {
@@ -2444,7 +2561,15 @@ fn case_forces(
                     (f, add(m, cross(in_plane(&g.plane, s.centroid, c3), f)))
                 })
                 .collect();
-            let loads = with_passed(base, &pass);
+            // Beyond PASSED_EACH such forces, every share exact
+            // (2026-11-25): the bolts widened below; the corners of the
+            // bases alone here.
+            let exact = pass.len() > PASSED_EACH;
+            let loads = if exact {
+                base.clone()
+            } else {
+                with_passed(base.clone(), &pass)
+            };
             let f2 = g.plane.vector(f3);
             let mn = dot(m3, g.plane.n);
             let e = bg::elastic(
@@ -2484,10 +2609,13 @@ fn case_forces(
                     *x = x.max(y);
                 }
             }
+            if exact {
+                widen_exact(&g.plane, &pts, &base, &pass, &mut c.forces, &mut c.tension);
+            }
             // The words: the loading with every force (and, with the
             // forces a level plate may pass, the most of any loading).
             let worded = if g.passed.is_empty() { 1 } else { loads.len() };
-            let (normal, out_m) = loads[..worded]
+            let (mut normal, mut out_m) = loads[..worded]
                 .iter()
                 .map(|(f, m)| {
                     (
@@ -2496,6 +2624,13 @@ fn case_forces(
                     )
                 })
                 .fold((0.0, 0.0), |a: (f64, f64), b| (a.0.max(b.0), a.1.max(b.1)));
+            if exact {
+                // Each passed force's size added (a bound, for the words).
+                for (f, m) in &pass {
+                    normal += dot(*f, g.plane.n).abs();
+                    out_m += norm(sub(*m, scale(g.plane.n, dot(*m, g.plane.n))));
+                }
+            }
             if normal + out_m / l >= 0.01 * size.max(1e-9) && normal + out_m > 1e-6 {
                 c.pulled = Some(format!(
                     "the members' forces square to the plate ({:.1} kN) and their moment bending \
@@ -2552,7 +2687,18 @@ fn case_forces(
                         )
                     })
                     .collect();
-                for (fo, mo) in with_passed(base, &pass).iter().skip(1) {
+                // Beyond PASSED_EACH such forces, every share exact
+                // (2026-11-25).
+                let exact = pass.len() > PASSED_EACH;
+                if exact {
+                    widen_exact(&g.plane, &pts, &base, &pass, &mut e.forces, &mut t);
+                }
+                let corners = if exact {
+                    base.clone()
+                } else {
+                    with_passed(base, &pass)
+                };
+                for (fo, mo) in corners.iter().skip(1) {
                     let other = bg::elastic(
                         &pts,
                         &PlaneLoad {
@@ -3756,12 +3902,136 @@ mod tests {
         let mut xs: Vec<f64> = v.iter().map(|x| x.0[0]).collect();
         xs.sort_by(f64::total_cmp);
         assert_eq!(xs, [1.0, 11.0, 101.0, 111.0]);
-        // Beyond PASSED_EACH the rest together: 2^(PASSED_EACH + 1).
-        let many: Vec<(V3, V3)> = (0..PASSED_EACH + 3).map(|_| f(1.0)).collect();
-        assert_eq!(
-            with_passed(vec![f(0.0)], &many).len(),
-            1 << (PASSED_EACH + 1)
-        );
+        // Up to PASSED_EACH: 2ⁿ corners.
+        let six: Vec<(V3, V3)> = (0..PASSED_EACH).map(|_| f(1.0)).collect();
+        assert_eq!(with_passed(vec![f(0.0)], &six).len(), 1 << PASSED_EACH);
+    }
+
+    /// 2026-11-25: beyond PASSED_EACH, the largest over every share exact
+    /// — against every one of the 2ⁿ corners tried (n = 10, invented
+    /// vectors in all directions; before, the rest taken together, none or
+    /// all, missed a mix of them). By hand: base (1, 0) with (1, 1),
+    /// (1, −1) and (−3, 0) — the largest (3, 0), not (0, 0) of all.
+    #[test]
+    fn beyond_six_passed_forces_every_share_is_exact() {
+        let v = box_max_2d([1.0, 0.0], &[[1.0, 1.0], [1.0, -1.0], [-3.0, 0.0]]);
+        assert!((v[0] - 3.0).abs() < 1e-12 && v[1].abs() < 1e-12, "{v:?}");
+        // Every corner of ten invented generators.
+        let gens: Vec<V2> = (0..10)
+            .map(|k| {
+                let a = 0.7 * k as f64 + 0.3;
+                let r = 1.0 + (k % 3) as f64;
+                [r * a.cos(), r * a.sin()]
+            })
+            .collect();
+        let base = [0.4, -1.3];
+        let mut best = 0.0f64;
+        for mask in 0..(1u32 << gens.len()) {
+            let mut s = base;
+            for (k, g) in gens.iter().enumerate() {
+                if mask & (1 << k) != 0 {
+                    s = [s[0] + g[0], s[1] + g[1]];
+                }
+            }
+            best = best.max(s[0].hypot(s[1]));
+        }
+        let v = box_max_2d(base, &gens);
+        assert!((v[0].hypot(v[1]) - best).abs() < 1e-9, "{v:?} {best}");
+        // The rest taken together (the first six each, then all or none
+        // of the other four) can find less: six small forces, then three
+        // of 1 kN one way and one of 3 kN the other — together none or
+        // nothing net, the exact search 3 kN (three of them).
+        let mut gens: Vec<V2> = (0..6).map(|k| [0.0, 10.0 * (k + 1) as f64]).collect();
+        gens.extend([[1e3, 0.0], [1e3, 0.0], [1e3, 0.0], [-3e3, 0.0]]);
+        let mut together = 0.0f64;
+        for mask in 0..(1u32 << 7) {
+            let mut s = [0.0, 0.0];
+            for (k, g) in gens.iter().enumerate() {
+                let bit = if k < 6 { k } else { 6 };
+                if mask & (1 << bit) != 0 {
+                    s = [s[0] + g[0], s[1] + g[1]];
+                }
+            }
+            together = together.max(s[0].hypot(s[1]));
+        }
+        let v = box_max_2d([0.0, 0.0], &gens);
+        let exact = v[0].hypot(v[1]);
+        assert!((exact - 3e3f64.hypot(210.0)).abs() < 1e-9, "{v:?}");
+        assert!((together - 210.0).abs() < 1e-9, "{together}");
+        // A number: each share where it adds to that sign.
+        assert_eq!(box_max_1d(1.0, &[2.0, -5.0, 3.0]), 6.0);
+        assert_eq!(box_max_1d(-1.0, &[2.0, -5.0]), 6.0);
+        assert_eq!(box_max_1d(0.5, &[]), 0.5);
+    }
+
+    /// 2026-11-25: a group's bolts under eight forces a level plate may
+    /// pass (invented: three bolts in a plane, forces in and out of it with
+    /// moments): each bolt's shear and pull by the exact search equal the
+    /// largest over all 2⁸ corners, bolt by bolt.
+    #[test]
+    fn a_groups_bolts_beyond_six_passed_forces_match_every_corner() {
+        let plane = Plane::new([0.0; 3], [0.0, 0.0, 1.0], Some([1.0, 0.0, 0.0])).unwrap();
+        let pts: Vec<V2> = vec![[0.0, 0.0], [0.06, 0.0], [0.03, 0.05]];
+        let load = |k: usize| -> (V3, V3) {
+            let a = 1.1 * k as f64;
+            (
+                [3e3 * a.cos(), 2e3 * a.sin(), 500.0 * (k as f64 - 3.5)],
+                [
+                    40.0 * a.sin(),
+                    -30.0 * a.cos(),
+                    90.0 * (k % 3) as f64 - 60.0,
+                ],
+            )
+        };
+        let base = vec![
+            ([1e3, -2e3, 300.0], [10.0, 0.0, 25.0]),
+            ([0.0; 3], [0.0; 3]),
+        ];
+        let pass: Vec<(V3, V3)> = (0..8).map(load).collect();
+        let n = pts.len();
+        let mut forces = vec![[0.0, 0.0]; n];
+        let mut tension = vec![0.0; n];
+        widen_exact(&plane, &pts, &base, &pass, &mut forces, &mut tension);
+        // Every corner, bolt by bolt.
+        let mut best_f = vec![0.0f64; n];
+        let mut best_t = vec![0.0f64; n];
+        for b in &base {
+            for mask in 0..(1u32 << pass.len()) {
+                let mut l = *b;
+                for (k, p) in pass.iter().enumerate() {
+                    if mask & (1 << k) != 0 {
+                        l = (add(l.0, p.0), add(l.1, p.1));
+                    }
+                }
+                let e = bg::elastic(
+                    &pts,
+                    &PlaneLoad {
+                        force: plane.vector(l.0),
+                        at: bg::centroid(&pts),
+                        moment: dot(l.1, plane.n),
+                    },
+                );
+                let (t, _) = pull(&plane, &pts, l.0, l.1);
+                for k in 0..n {
+                    best_f[k] = best_f[k].max(e.forces[k][0].hypot(e.forces[k][1]));
+                    best_t[k] = best_t[k].max(t[k]);
+                }
+            }
+        }
+        for k in 0..n {
+            let got = forces[k][0].hypot(forces[k][1]);
+            assert!(
+                (got - best_f[k]).abs() < 1e-6,
+                "bolt {k}: {got} {}",
+                best_f[k]
+            );
+            assert!(
+                (tension[k] - best_t[k]).abs() < 1e-6,
+                "bolt {k}: {} {}",
+                tension[k],
+                best_t[k]
+            );
+        }
     }
 
     /// L21 on L20's invented corner, laid out: the level plate's two

@@ -326,6 +326,9 @@ fn usage_of(
     let mut assumed: &[String] = &[];
     let mut joints: &[String] = &[];
     let mut extra = String::new();
+    // The bending of bolts beyond the leg's centre line taken: what it
+    // leaves out, said (2026-11-25).
+    let mut beyond_said: Option<String> = None;
     if s.yield_strength.is_none() {
         extra = format!(" ({NO_YIELD})");
     }
@@ -398,14 +401,43 @@ fn usage_of(
         if let Some(l) = &c.limit {
             extra = format!("; {l}");
         }
-        Some((
-            -n / (strength * cap),
-            format!(
-                "compression {:.1} kN of {:.1} kN ({what})",
-                kn(-n),
-                kn(*cap)
-            ),
-        ))
+        let axial = -n / (strength * cap);
+        // The bolts' centroid beyond the connected leg's centre line
+        // (C3.7.4's due consideration, 2026-11-25): the extra bending
+        // added, amplified (Eq. 3.12-1's form, C_m 1).
+        match c.beyond_centre.as_ref().filter(|_| n < 0.0) {
+            Some(b) => {
+                let bend = b.usage(-n, strength);
+                beyond_said = Some(
+                    "lateral-torsional buckling of the angle under the bending of its bolts \
+                     beyond the leg's centre line not checked (ASCE 10-97 3.14 gives no rule \
+                     for angles), so a long angle's bending capacity can be lower than F_y·W"
+                        .to_owned(),
+                );
+                Some((
+                    axial + bend,
+                    format!(
+                        "compression {:.1} kN of {:.1} kN ({what}) + {:.0} % the bending of its \
+                         bolts' centroid beyond the connected leg's centre line {} (C3.7.4: \
+                         P·Δe about the principal axes, × 1/(1 − P/P_e), P_e {:.1} kN; Eq. \
+                         3.12-1, C_m 1)",
+                        kn(-n),
+                        kn(*cap),
+                        bend * 100.0,
+                        b.at,
+                        kn(b.euler)
+                    ),
+                ))
+            }
+            None => Some((
+                axial,
+                format!(
+                    "compression {:.1} kN of {:.1} kN ({what})",
+                    kn(-n),
+                    kn(*cap)
+                ),
+            )),
+        }
     } else {
         let squash = s.compression.or(s.yield_strength.map(|y| y * s.area));
         let euler = euler_load(m);
@@ -470,6 +502,7 @@ fn usage_of(
         }
     }
     not_safe_notes.extend(uncovered_clauses(analysis, m, f, strength));
+    not_safe_notes.extend(beyond_said);
     if !not_safe_notes.is_empty() {
         suffix.push_str(&format!(
             " {NOT_SAFE} {} — its usage can be higher than shown; give what is missing, or \

@@ -840,6 +840,7 @@ pub fn pole(args: &PoleArgs) -> Result<(), String> {
             loads.push(PoleLoad {
                 point,
                 force: [tr, lo, -ve],
+                moment: [0.0; 3],
             });
         }
         by_case.push((case, loads));

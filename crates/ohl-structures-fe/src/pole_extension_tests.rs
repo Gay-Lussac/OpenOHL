@@ -49,6 +49,7 @@ fn inline_pole_checks_as_its_ohlp() {
     let loads = [PoleLoad {
         point: t.point_local("A1", None).unwrap(),
         force: [6e3, 2e3, -9e3],
+        moment: [0.0; 3],
     }];
     for (wind, p_delta) in [([0.0, 0.0], false), ([-900.0, 0.0], true)] {
         let a = check_pole(&ohlp, &loads, wind, 0.9, p_delta, &default_budget()).unwrap();
@@ -130,6 +131,7 @@ fn a_solid_wall_checks_as_no_wall() {
     let loads = [PoleLoad {
         point: t.point_local("A1", None).unwrap(),
         force: [3e3, 1e3, -5e3],
+        moment: [0.0; 3],
     }];
     for (wind, p_delta) in [([0.0, 0.0], false), ([-700.0, 0.0], true)] {
         let a = check_pole(&none, &loads, wind, 0.9, p_delta, &default_budget()).unwrap();
@@ -529,6 +531,7 @@ fn a_steel_shaft_by_asce48() {
     let loads = [PoleLoad {
         point: [0.0, 0.0, 10.0],
         force: [10e3, 0.0, -20e3],
+        moment: [0.0; 3],
     }];
     let c = check_pole(&pole, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
     let (d, t) = (0.4f64, 0.008f64);
@@ -576,6 +579,7 @@ fn wood_by_sia265_and_steel_by_sia263() {
     let loads = [PoleLoad {
         point: [0.0, 0.0, 10.0],
         force: [5e3, 0.0, -20e3],
+        moment: [0.0; 3],
     }];
     let c = check_pole(&pole, &loads, [0.0, 0.0], 1.0, false, &default_budget()).unwrap();
     let c24 = crate::sia265::class("C24").unwrap();

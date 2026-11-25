@@ -429,6 +429,17 @@ fn model_on(input: &RunInput) -> (Result<Model, String>, Vec<String>) {
                 bolts,
                 input.extension,
             )
+            .map(|mut m| {
+                // Ends seated on a splice's outer cover (level 4,
+                // 2026-11-25): its thickness an offset in their checks.
+                notes.extend(crate::eccentricities::cover_offsets(
+                    &mut m,
+                    input.text,
+                    input.sections,
+                    bolts,
+                ));
+                m
+            })
         }
     };
     // A plugin's member check: found now, or the run refused.
@@ -694,19 +705,24 @@ fn pole_case(
     let mut notes = Vec::new();
     let mut loads = Vec::new();
     let mut elsewhere = 0;
-    // A fixed post's moment at a point (2026-11-14): the pole check takes
-    // forces at points only.
+    // A fixed post's moment at a point (2026-11-14): taken there, bending
+    // and twisting the pole below it (2026-11-25; before, left out and
+    // said NOT ON THE SAFE SIDE).
     let moments: Vec<&str> = input
         .table
         .case(&case.name)
-        .filter(|r| r.missing.is_none() && r.moment != [0.0; 3])
+        .filter(|r| {
+            r.missing.is_none()
+                && r.moment != [0.0; 3]
+                && matches!(r.at, At::Point)
+                && t.point_local(&r.label, None).is_some()
+        })
         .map(|r| r.label.as_str())
         .collect();
     if !moments.is_empty() {
         notes.push(format!(
-            "NOT ON THE SAFE SIDE: the moment of a post insulator at {} left out (the pole \
-             check takes forces at points only), so the moment in the pole can be larger than \
-             computed; add it by hand to the pole's check",
+            "the moment of a post insulator at {} taken at its point (it bends and twists the \
+             pole below it)",
             moments.join(", ")
         ));
     }
@@ -716,6 +732,7 @@ fn pole_case(
                 Some(point) => loads.push(PoleLoad {
                     point,
                     force: [r.force[0], r.force[1], -r.force[2]],
+                    moment: r.moment,
                 }),
                 None => notes.push(format!(
                     "point {}: not a point of the structure (its load left out)",

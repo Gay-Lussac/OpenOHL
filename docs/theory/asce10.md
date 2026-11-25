@@ -305,6 +305,55 @@ above 200 (bracing)`). **Conservative:** the standard limits a leg's
 \\( L/r \\)) may flag a leg the standard accepts. The limits of
 tension-only members (3.4: \\( L/r \\) from 300 to 500) are not checked.
 
+### Bolts beyond the leg's centre line
+
+*2026-11-25* (before, checked as normal framing eccentricity and said
+NOT ON THE SAFE SIDE in the [joint layout](joint-layout.md)'s theory).
+The curves 3.7-6 and 3.7-7 cover an angle bolted by one leg with *normal
+framing eccentricity*; commentary C3.7.4 ties that to a bolt pattern
+whose centroid lies "between the heel of the angle and the centerline of
+the connected leg. When this is not the case, due consideration should
+be given to the additional stresses induced in the member." The plugin
+gives it that consideration, **on the safe side**, where a single angle's
+eccentric end gives its gauges (`asce10::beyond_centre`):
+
+- **the extra eccentricity** \( \Delta e = ar g - w/2 \): the gauges'
+  mean \( ar g \) from the heel less half the connected leg's width
+  \( w \), the largest over the member's eccentric ends (the leg given
+  at the end, else the member's; none given: the short leg of an unequal
+  angle, as the tension check assumes);
+- **its moment** \( P\,\Delta e \) taken **uniform along the member and
+  whole** (the curve's own eccentricity is the normal one; the part beyond
+  is added), about the angle's principal axes: \( \Delta e \) along the
+  leg laid into \( u, v \), the bending stresses at both axes' farthest
+  fibres **added** — \( P\,(|e_v|/W_u + |e_u|/W_v) \), \( W \) the
+  elastic moduli (the largest stress anywhere in the section is at most
+  that sum);
+- **with the compression** by Eq. 3.12-1's form: \( P/P_a \) (the curve's,
+  unchanged) plus that stress amplified by \( 1/(1 - P/P_e) \), against
+  \( F_y \) (3.14.3, the allowable bending stress of a member supported
+  laterally) times the case's strength factor; \( C_m = 1 \), the largest
+  3.12 gives, and \( P_e = \pi^2 E A/(KL/r)^2 \) at the member's governing
+  effective slenderness, the smallest Euler load the check uses — both
+  **on the safe side**; at or above \( P_e \) the usage is infinite.
+- **NOT ON THE SAFE SIDE, said on the member**: lateral-torsional
+  buckling of the angle under this moment is not checked — ASCE 10-97
+  3.14 gives no rule for angles — so a long angle's bending capacity about
+  its major axis can be lower than \\( F_y W_u \\) and its usage higher than
+  shown; check such a member by hand (or give the gauge within the
+  centre line). The member reads `[not on the safe side: lateral-torsional
+  buckling of the angle under the bending of its bolts beyond the leg's
+  centre line not checked …]` and is never shown as passing. Tension is
+  unchanged (3.10.2's rules for an angle bolted by one leg take any
+  gauge).
+
+The result names it: "… + N % the bending of its bolts' centroid beyond
+the connected leg's centre line at J 15 mm (C3.7.4: …)". Tested by hand
+(`bolts_beyond_the_legs_centre_line_bend_the_angle`, an invented L 80 × 8:
+nothing within the centre line, at 15 mm beyond the hand's sum). SIA 263
+takes the angle's real eccentricity from its gauges already (5.4.1.2, its
+plugin's N·e): nothing changed there.
+
 ### 4. Local buckling of the legs
 
 A wide thin leg buckles locally before the member reaches yield. For an
@@ -583,10 +632,10 @@ largest \\( KL/r \\).
   plane of the stress, which the data do not say;
 - a gusset plate that is also framed to the restraining member (3.7.4.5's
   exception) is not recognised: give `restrained = true` at the end;
-- the eccentricity's size (the gauge) is shown, not used: the curves only
-  know eccentric or not, and C3.7.4's condition that the bolt pattern's
-  centroid lie between the heel and the connected leg's centreline is not
-  checked.
+- the eccentricity's size (the gauge) within the heel and the connected
+  leg's centre line is shown, not used: the curves only know eccentric or
+  not (their own normal framing eccentricity). Beyond the centre line it
+  is used since 2026-11-25 ([below](#bolts-beyond-the-legs-centre-line)).
 
 **Said where it applies** (2026-11-08): an end restrained by the I/L
 rule (worked out, not given) on a member with \\( L/r > 120 \\) is marked

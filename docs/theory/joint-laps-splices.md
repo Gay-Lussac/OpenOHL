@@ -140,9 +140,17 @@ the cover is checked as a plate for the end's **whole** force — *on the
 safe side*, the leg under it taking none of it there; the end's own
 checks are those of a lap (one shear plane, the bearing on its leg and on
 the member's leg, the cover's thickness not added: *on the safe side*).
+The end lies the cover's thickness farther out of the leg: since
+2026-11-25, where the joint details are taken (level 4), that offset is
+in the member's own check — an offset of unknown sign, its moment N·t
+whole (*on the safe side*; [joint layout](joint-layout.md#bracing-bolted-through-the-outer-cover)).
 **NOT ON THE SAFE SIDE:** the cover is a packing between the end and the
 leg, and the bolt's bending across it is not checked (neither ASCE 10-97
-nor SIA 263 gives a rule for packings: searched, none found).
+nor SIA 263 gives a rule for packings: searched, none found) — a thick
+packing bends the bolt more, so its shear resistance can be lower than
+checked; said on the cover's row since 2026-11-25. Keep such covers thin
+or check those bolts by hand until the owner chooses a rule (roadmap
+O44, the question of 2026-11-25).
 
 ## Validation
 

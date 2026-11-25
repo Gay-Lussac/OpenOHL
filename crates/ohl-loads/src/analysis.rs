@@ -138,6 +138,7 @@ pub(crate) fn pole_ice(pole: &Pole, ice: IceOn, foot: f64) -> (Vec<PoleLoad>, f6
             PoleLoad {
                 point: [0.0, 0.0, foot + z],
                 force: [0.0, 0.0, -w],
+                moment: [0.0; 3],
             }
         })
         .collect();
@@ -1010,21 +1011,22 @@ impl Analyses {
         };
         let mut on_pole = Vec::new();
         for (label, [tr, lo, ve], extra) in loads {
-            // A post insulator's moment (owner, 2026-11-14): the pole
-            // takes forces at points only — said.
-            if extra.iter().any(|m| m.abs() > 1e-9) {
+            // A post insulator's moment (owner, 2026-11-14): taken at its
+            // point, bending and twisting the pole below it (2026-11-25;
+            // before, left out and said NOT ON THE SAFE SIDE).
+            let point = t.point_local(label, None);
+            if point.is_some() && extra.iter().any(|m| m.abs() > 1e-9) {
                 notes.push(format!(
                     "pole: point {label}: the moment of the post insulator on it ({:.2} kN m) \
-                     left out — NOT ON THE SAFE SIDE: the pole model takes forces at points \
-                     only, so the moment in the pole can be larger than computed; not taken \
-                     yet: add it by hand to the pole's check",
+                     taken at the point (it bends and twists the pole below it)",
                     extra.iter().map(|m| m * m).sum::<f64>().sqrt() / 1e3
                 ));
             }
-            match t.point_local(label, None) {
+            match point {
                 Some(point) => on_pole.push(PoleLoad {
                     point,
                     force: [*tr, *lo, -ve],
+                    moment: *extra,
                 }),
                 None => notes.push(format!(
                     "pole: point {label} not in the type (its load left out)"

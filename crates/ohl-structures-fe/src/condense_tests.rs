@@ -477,6 +477,7 @@ fn a_pole_condenses_to_the_cantilever() {
     let wires = [PoleLoad {
         point: [0.0, 0.0, 12.0],
         force: [0.0, 0.0, -20e3],
+        moment: [0.0; 3],
     }];
     let loaded = condense_pole(&pole, &pts, Some(&wires), &default_budget()).unwrap();
     let soft = loaded.flexibility_between("top", "top").unwrap();
