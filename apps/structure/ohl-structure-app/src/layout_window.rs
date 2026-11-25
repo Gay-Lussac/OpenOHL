@@ -1080,7 +1080,6 @@ impl StructureApp {
                         "Off: a cut, shift, roll or what a member bolts onto given by hand is \
                          kept (the layout works round it). On: replaced by the layout's.",
                     );
-                layout_practice_ui(ui, &mut w);
                 ui.separator();
                 // The preview.
                 let busy = w.job.is_some();
@@ -1109,6 +1108,10 @@ impl StructureApp {
                             layout_usage(ui, w.usage.as_ref(), p.key, w.usage_job.is_some());
                     }
                 }
+                // (L24) The detailing practice in force, below the preview (its
+                // settings above stay where they were).
+                ui.separator();
+                layout_practice_ui(ui, &mut w);
                 });
                 let ready = w
                     .preview
