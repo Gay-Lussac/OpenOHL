@@ -1080,7 +1080,7 @@ impl StructureApp {
                         "Off: a cut, shift, roll or what a member bolts onto given by hand is \
                          kept (the layout works round it). On: replaced by the layout's.",
                     );
-                layout_practice_ui(ui, w);
+                layout_practice_ui(ui, &mut w);
                 ui.separator();
                 // The preview.
                 let busy = w.job.is_some();
@@ -1436,20 +1436,18 @@ fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
                 practice.shift * 1000.0,
             );
             let now = (w.gap_mm, w.pull_mm, w.shift_mm);
-            if (start.0 - now.0).abs() > 1e-6
+            if ((start.0 - now.0).abs() > 1e-6
                 || (start.1 - now.1).abs() > 1e-6
-                || (start.2 - now.2).abs() > 1e-6
-            {
-                if ui
+                || (start.2 - now.2).abs() > 1e-6)
+                && ui
                     .button("Take its gap, pull-back and shift")
                     .on_hover_text(
                         "The settings above are the last run's (kept in the layout record); \
                          this puts the practice's starting values in their place.",
                     )
                     .clicked()
-                {
-                    (w.gap_mm, w.pull_mm, w.shift_mm) = start;
-                }
+            {
+                (w.gap_mm, w.pull_mm, w.shift_mm) = start;
             }
         });
 }
