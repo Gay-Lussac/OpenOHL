@@ -786,6 +786,20 @@ pub(crate) fn group_plans(
     bolts: &BoltLibrary,
 ) -> GroupPlans {
     let mut out = GroupPlans::default();
+    // (O44 L26) A stand-off's web: no code plugin checks it per case — said
+    // on its row with what makes it safe (its sizing by the layout).
+    for j in &details.joints {
+        for p in &j.plates {
+            if let Some(n) = p
+                .notes
+                .iter()
+                .find(|n| n.starts_with(crate::joints::STAND_OFF_WEB_NOTE))
+            {
+                out.not_checked
+                    .push((j.id.clone(), p.id.clone(), n.clone()));
+            }
+        }
+    }
     // (L14's question 2) The members' tension capacities by the code's
     // plugin, once (only where some member ending at a joint has ends laid
     // onto it).

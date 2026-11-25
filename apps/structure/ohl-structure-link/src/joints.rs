@@ -479,6 +479,30 @@ impl Completeness {
     }
 }
 
+/// The start of a stand-off web's note ([`stand_off_web_note`]; O44 L26):
+/// the joint checks list such a plate's own check so.
+pub const STAND_OFF_WEB_NOTE: &str = "a stand-off's web";
+
+/// What is said of stand-off web `plate` carrying `member` (O44 L26): no
+/// code plugin checks it per case — NOT ON THE SAFE SIDE as a check of its
+/// own; what makes it safe is how the layout sized it.
+pub fn stand_off_web_note(plate: &str, member: &str) -> String {
+    format!(
+        "{STAND_OFF_WEB_NOTE} ({plate}, carrying {member}) in bending and compression as a short \
+         cantilever: NOT CHECKED per load case by the code plugin, NOT ON THE SAFE SIDE as a \
+         check of its own — what: its root section under {member}'s force (the force along the \
+         web shearing it, the part square to the flat plate pressing or pulling it, its moment \
+         about the root's middle bending it in its plane); why: no code plugin export checks a \
+         plate's section in its own plane; what makes it safe: the layout sized it so that its \
+         root, elastic and by von Mises' criterion at every point of its depth, reaches yield \
+         no earlier than {member}'s whole gross section at yield (its area taken as t (b + h), \
+         at least the section's), its steel taken at least as strong as the member's and its \
+         yield with the same factor as the member's — the member's own check then bounds it; \
+         check it by hand where the plate's steel is weaker than the member's, where the code \
+         takes a plate's yield with a larger factor, or where the web was changed by hand"
+    )
+}
+
 /// A gusset plate.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlateDetail {
@@ -739,6 +763,16 @@ pub(crate) fn joint_details_and_model(
     // follow-up, 2026-11-20, its record's `short` mark): drawn round their
     // members' legs from the flange's toe over their bolts and the flange
     // under them (the run then writes that outline).
+    // (O44 L26) The stand-offs' webs it made: the member each carries.
+    let webs: BTreeMap<String, String> = record
+        .made
+        .iter()
+        .filter_map(|(id, (_, f))| {
+            f.iter()
+                .find_map(|x| x.strip_prefix(crate::layout_run::STAND_OFF_WEB))
+                .map(|m| (id.clone(), m.to_owned()))
+        })
+        .collect();
     let short_plates: std::collections::BTreeSet<String> = record
         .made
         .into_iter()
@@ -1031,6 +1065,11 @@ pub(crate) fn joint_details_and_model(
                 let rules = |a: &Arrival| rules_in(a, Some((p.thickness.si(), fu)));
                 let short = short_plates.contains(&p.id);
                 let mut d = plate(p, at, &arrivals, seats.get(&p.id), &rules, short);
+                // (O44 L26) A stand-off's web: what its check is (the joint
+                // checks list it).
+                if let Some(m) = webs.get(&p.id) {
+                    d.notes.push(stand_off_web_note(&p.id, m));
+                }
                 // (L15) Said between the angles, but not on a built-up
                 // member of angles: drawn as any plate on it.
                 if p.between && !d.between {
@@ -1705,12 +1744,25 @@ fn plate_seats(
         };
         // In its member's own plane (the layout's mark): on its outline,
         // lifted along the flat plate's normal.
-        if own_plane.contains(&p.id)
-            && let Some((n, at)) = outline_normal(p)
-            && let Some((lift, _)) = partners(p)
+        // (O44 L26) A stand-off's gusset: welded to its web, the flat plate
+        // one plate further — lifted along that plate's normal.
+        let lift_of = |p: &ohl_structures::connections::TypePlate| {
+            partners(p)
                 .iter()
                 .filter(|q| !own_plane.contains(&q.id))
                 .find_map(|q| outline_normal(q))
+                .or_else(|| {
+                    partners(p)
+                        .iter()
+                        .filter(|q| own_plane.contains(&q.id))
+                        .flat_map(|q| partners(q))
+                        .filter(|r| r.id != p.id && !own_plane.contains(&r.id))
+                        .find_map(|r| outline_normal(r))
+                })
+        };
+        if own_plane.contains(&p.id)
+            && let Some((n, at)) = outline_normal(p)
+            && let Some((lift, _)) = lift_of(p)
         {
             out.insert(
                 p.id.clone(),

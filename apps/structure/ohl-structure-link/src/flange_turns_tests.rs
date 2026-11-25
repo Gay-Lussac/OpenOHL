@@ -215,3 +215,111 @@ fn an_unequal_angle_is_turned_a_quarter_only_where_no_leg_is_given() {
     assert!(weighed > 0, "members weighed");
     assert_eq!(quarter, 0, "no quarter turn where the leg is given");
 }
+
+/// L26: the stand-offs off by default (no weighing, no row of theirs); on,
+/// every member neither turn helped (its `none` row) is weighed for a
+/// stand-off and recorded (kept, offered or left), no joint laid out worse
+/// than without, and a run again weighs none of them again and changes
+/// nothing. With the turns off, the members with such an end are weighed
+/// for a stand-off as they are. (On this steep invented body every
+/// stand-off is refused for its geometry — the web too low under a gusset
+/// coming down to the flat plate, or the axis too far out — and said.)
+#[test]
+fn stand_offs_are_weighed_where_no_turn_helps_and_recorded() {
+    use crate::flange_turns::{LEFT, STAND_OFF, STAND_OFF_OFFERED};
+    assert!(!LayoutSettings::default().stand_offs, "off by default");
+    let text = body();
+    let off = run(&text, &settings(true, true), false);
+    assert!(off.notes.iter().all(|n| !n.contains("(L26)")));
+    let rec0 = LayoutRecord::of(&parse(&off.text));
+    // (Those still left with such an end after the turns.)
+    let into: BTreeSet<&str> = off
+        .joints
+        .iter()
+        .flat_map(|o| &o.hand)
+        .filter(|h| h.contains(crate::flange_turns::INTO_FLANGE))
+        .filter_map(|h| h.split_once(": ").map(|x| x.0))
+        .collect();
+    let none: BTreeSet<&String> = rec0
+        .flange_turns
+        .iter()
+        .filter(|(m, r)| r.kind == NONE && into.contains(m.as_str()))
+        .map(|(m, _)| m)
+        .collect();
+    assert!(!none.is_empty(), "members neither turn helps");
+    let mut s = settings(true, true);
+    s.stand_offs = true;
+    let r = run(&text, &s, false);
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("a stand-off for an outstanding leg")),
+        "{:?}",
+        r.notes
+    );
+    let rec = LayoutRecord::of(&parse(&r.text));
+    for m in &none {
+        let k = rec.flange_turns[*m].kind.as_str();
+        assert!(
+            [STAND_OFF, STAND_OFF_OFFERED, LEFT].contains(&k),
+            "{m}: {k}"
+        );
+    }
+    assert!(rec.flange_turns.values().any(|x| x.kind == LEFT));
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.contains("neither turn nor a stand-off helps")),
+        "{:?}",
+        r.notes
+    );
+    let by = crate::weighed_turns::counts_of(&off);
+    for (j, c) in crate::weighed_turns::counts_of(&r) {
+        assert!(!c.worse_than(&by[j]), "{j}: {c:?} against {:?}", by[j]);
+    }
+    let again = run(&r.text, &s, false);
+    assert!(
+        again.notes.iter().all(|n| !n.contains("(L26)")),
+        "{:?}",
+        again.notes
+    );
+    assert_eq!(again.text, r.text);
+    // The turns off: weighed for a stand-off as they are.
+    let mut s = settings(false, false);
+    s.stand_offs = true;
+    let r = run(&text, &s, false);
+    let rec = LayoutRecord::of(&parse(&r.text));
+    assert!(!rec.flange_turns.is_empty());
+    assert!(rec.flange_turns.values().all(|x| x.kind != NONE));
+}
+
+/// L26: the detailing practice forbids stand-offs (`plates.stand_off =
+/// false`, or no welding): none weighed, none made — not even those the
+/// record keeps; the default practice leaves the setting as it is.
+#[test]
+fn the_practice_may_forbid_stand_offs() {
+    use crate::practice::{DetailingPractice, Fabrication};
+    let mut s = settings(true, true);
+    s.stand_offs = true;
+    let mut a = s.clone();
+    DetailingPractice::default().apply(&mut a);
+    assert!(a.stand_offs && a.stand_offs_allowed);
+    let mut b = s.clone();
+    DetailingPractice {
+        stand_off: false,
+        ..Default::default()
+    }
+    .apply(&mut b);
+    assert!(!b.stand_offs && !b.stand_offs_allowed);
+    let mut c = s.clone();
+    let mut p = DetailingPractice::default();
+    for f in p.fabrication.iter_mut() {
+        if f.0 == Fabrication::Welded {
+            f.1 = false;
+        }
+    }
+    p.apply(&mut c);
+    assert!(!c.stand_offs && !c.stand_offs_allowed);
+    // The default practice allows them (the window's tick is off).
+    assert!(DetailingPractice::default().stand_off);
+}

@@ -66,8 +66,18 @@ pub const HALF: &str = "half";
 pub const QUARTER: &str = "quarter";
 /// A row's kind: a turn offered, not applied (the roll the designer's).
 pub const OFFERED: &str = "offered";
-/// A row's kind: weighed, neither turn helps (left).
+/// A row's kind: weighed, neither turn helps (left; a stand-off may still
+/// be weighed, L26).
 pub const NONE: &str = "none";
+/// A row's kind (O44 L26): neither turn helped; its ends laid out on
+/// stand-offs, kept (every joint it reaches no worse, one better) — the
+/// run lets them take a stand-off ([`crate::LayoutSettings::stand_off_members`]).
+pub const STAND_OFF: &str = "stand_off";
+/// A row's kind (L26): a stand-off would help, offered (the roll the
+/// designer's: a designed tower) — Lay out joints applies it when ticked.
+pub const STAND_OFF_OFFERED: &str = "stand_off_offered";
+/// A row's kind (L26): weighed, neither turn nor a stand-off helps (left).
+pub const LEFT: &str = "left";
 
 /// A member weighed for its outstanding leg pointing into the flange (the
 /// layout record's `flange_turns`).
@@ -369,22 +379,36 @@ fn text_with(
     Ok(doc.to_string())
 }
 
-/// **The half and quarter turns weighed** for the members of the run `r0`
-/// (laid out on `text`, the file before the run) with an end whose
-/// outstanding leg points into the flange (see the module): the run with
-/// the turns kept and the file before it so settled (the rolls kept, the
-/// rows written). Nothing to weigh: `r0` and `text` as they are.
-/// `base_notes`: the notes of `r0` that are not its plain run's (L19's
-/// weighing), kept where the run is laid out again.
+/// **The half and quarter turns weighed** ([`weigh_turns_only`]), then
+/// (O44 L26, [`crate::LayoutSettings::stand_offs`]) **the stand-offs**
+/// for the members neither turn helped ([`weigh_stand_offs`]).
 pub(crate) fn weigh_flange_turns(
     text: &str,
     r0: LayoutRun,
     base_notes: &[String],
     ask: &RunAsk<'_>,
 ) -> Result<(LayoutRun, String), String> {
+    let (r1, settled, extra) = weigh_turns_only(text, r0, base_notes, ask)?;
+    weigh_stand_offs(&settled, r1, &extra, ask)
+}
+
+/// **The half and quarter turns weighed** for the members of the run `r0`
+/// (laid out on `text`, the file before the run) with an end whose
+/// outstanding leg points into the flange (see the module): the run with
+/// the turns kept and the file before it so settled (the rolls kept, the
+/// rows written). Nothing to weigh: `r0` and `text` as they are.
+/// `base_notes`: the notes of `r0` that are not its plain run's (L19's
+/// weighing), kept where the run is laid out again. With them, the notes
+/// of the result that are not its plain run's.
+fn weigh_turns_only(
+    text: &str,
+    r0: LayoutRun,
+    base_notes: &[String],
+    ask: &RunAsk<'_>,
+) -> Result<(LayoutRun, String, Vec<String>), String> {
     let s = ask.settings;
     if !(s.flange_half || s.flange_quarter) {
-        return Ok((r0, text.to_owned()));
+        return Ok((r0, text.to_owned(), base_notes.to_vec()));
     }
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
@@ -394,7 +418,7 @@ pub(crate) fn weigh_flange_turns(
         .unwrap_or_else(|| t.nodes.iter().map(|n| n.id.clone()).collect());
     let cands = candidates(text, &r0, ask, &targets)?;
     if cands.is_empty() {
-        return Ok((r0, text.to_owned()));
+        return Ok((r0, text.to_owned(), base_notes.to_vec()));
     }
     let mut at_joint: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for m in &t.members {
@@ -658,7 +682,7 @@ pub(crate) fn weigh_flange_turns(
             let words = format!(
                 "{}: its outstanding leg points into the flange at {into}: neither turn helps \
                  over its joints {joints} ({} end(s) on {} plate(s) as it is; {}){}; left (a \
-                 stand-off, a welded assembly, later)",
+                 stand-off weighed next where Lay out joints' stand-offs are on)",
                 c.member,
                 b.0,
                 b.1,
@@ -742,6 +766,356 @@ pub(crate) fn weigh_flange_turns(
         cands.len()
     )];
     head.append(&mut notes);
+    let mut extra = base_notes.to_vec();
+    extra.extend(head.iter().cloned());
+    out.notes.extend(head);
+    out.weighed.extend(weighed);
+    Ok((out, settled, extra))
+}
+
+/// A member weighed for a stand-off (L26).
+struct StandCand {
+    member: String,
+    /// The joints where its outstanding leg points into the flange.
+    at: Vec<String>,
+    /// The joints it reaches.
+    reach: Vec<String>,
+    /// Its row as L25 left it ([`NONE`]).
+    row: FlangeTurnRow,
+    /// Its roll the program's (kept), else the designer's (offered).
+    auto: bool,
+}
+
+/// **The stand-offs weighed** (O44 L26; the owner, 2026-11-24: "probably a
+/// half turn if possible then other options"): every member of the run
+/// `r0` (on `text`, the file so far settled) still with an end whose
+/// outstanding leg points into the flange and whose `flange_turns` row says
+/// neither turn helps ([`NONE`], current) is laid out with its ends allowed
+/// a stand-off ([`crate::LayoutSettings::stand_off_members`]) — all at
+/// once, then the ones helping laid out together and weighed again until
+/// every one still helps (at most [`WEIGH_ROUNDS`] more rounds), as L25
+/// weighs the turns: every joint the member reaches no worse, one better,
+/// and no joint elsewhere worse where a member turned otherwise meets one
+/// of its joints. Kept where its roll is the program's (row [`STAND_OFF`]:
+/// later runs lay its ends out so), offered where it is the designer's
+/// ([`STAND_OFF_OFFERED`]), else left ([`LEFT`]). Member size, work point
+/// and roll never changed. `extra`: the notes of `r0` that are not its
+/// plain run's. Off ([`crate::LayoutSettings::stand_offs`]) or nothing to
+/// weigh: `r0` and `text` as they are.
+pub(crate) fn weigh_stand_offs(
+    text: &str,
+    r0: LayoutRun,
+    extra: &[String],
+    ask: &RunAsk<'_>,
+) -> Result<(LayoutRun, String), String> {
+    let s = ask.settings;
+    if !s.stand_offs || !s.stand_offs_allowed || !s.own_plane_welded {
+        return Ok((r0, text.to_owned()));
+    }
+    let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
+        .map_err(|e| e.message)?;
+    let rec = LayoutRecord::of(&t);
+    let targets: BTreeSet<String> = ask
+        .joints
+        .clone()
+        .unwrap_or_else(|| t.nodes.iter().map(|n| n.id.clone()).collect());
+    let mut into_at: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for o in &r0.joints {
+        for h in &o.hand {
+            if let Some((m, why)) = h.split_once(": ")
+                && why.contains(INTO_FLANGE)
+            {
+                let v = into_at.entry(m.to_owned()).or_default();
+                if !v.contains(&o.joint) {
+                    v.push(o.joint.clone());
+                }
+            }
+        }
+    }
+    let mut cands: Vec<StandCand> = Vec::new();
+    for (m, joints) in into_at {
+        let Some(x) = t.members.iter().find(|x| x.id == m) else {
+            continue;
+        };
+        if !x.nodes.iter().all(|n| targets.contains(n)) {
+            continue;
+        }
+        // Neither turn helped (its row), or the turns are not tried (no
+        // row: the member weighed for its roll as it is).
+        let row = match rec.flange_turns.get(&m) {
+            Some(r) if r.kind == NONE && r.current(&t, &rec.rolled, &m) => r.clone(),
+            None if !(s.flange_half || s.flange_quarter) => {
+                let now = roll_text(x.roll.as_ref());
+                FlangeTurnRow {
+                    before: rec.rolled.get(&m).cloned().unwrap_or(now.clone()),
+                    with: now,
+                    kind: NONE.to_owned(),
+                    words: String::new(),
+                }
+            }
+            _ => continue,
+        };
+        let automatic = rec.rolled.contains_key(&m) || rec.oriented.contains_key(&m);
+        let auto = automatic
+            || (x.roll.is_none() && x.reference.is_none() && x.orientation.is_none())
+            || ask.replace_hand;
+        cands.push(StandCand {
+            member: m.clone(),
+            at: joints,
+            reach: x.nodes.to_vec(),
+            row,
+            auto,
+        });
+    }
+    if cands.is_empty() {
+        return Ok((r0, text.to_owned()));
+    }
+    let mut at_joint: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for m in &t.members {
+        for n in &m.nodes {
+            at_joint.entry(n.as_str()).or_default().push(m.id.as_str());
+        }
+    }
+    let nodes_of: BTreeMap<&str, &[String; 2]> = t
+        .members
+        .iter()
+        .map(|m| (m.id.as_str(), &m.nodes))
+        .collect();
+    let reach: Vec<Vec<String>> = cands.iter().map(|c| c.reach.clone()).collect();
+    // (For the guard: one member each, its roll as it is.)
+    let as_turns: Vec<TurnCandidate> = cands
+        .iter()
+        .map(|c| TurnCandidate {
+            run: c.member.clone(),
+            kind: "stand-off".to_owned(),
+            stage: 2,
+            members: vec![TurnRoll {
+                member: c.member.clone(),
+                before: c.row.before.clone(),
+                with: c.row.before.clone(),
+            }],
+        })
+        .collect();
+    let at = |r: &LayoutRun, k: usize| -> Vec<Counts> {
+        let by = counts_of(r);
+        reach[k]
+            .iter()
+            .map(|j| by.get(j.as_str()).copied().unwrap_or_default())
+            .collect()
+    };
+    let sum = |v: &[Counts]| {
+        v.iter()
+            .fold((0usize, 0usize), |(e, p), c| (e + c.ends, p + c.plates))
+    };
+    let worse_at = |b: &[Counts], a: &[Counts], k: usize| -> Vec<String> {
+        b.iter()
+            .zip(a)
+            .zip(&reach[k])
+            .filter(|((b, a), _)| a.worse_than(b))
+            .map(|(_, j)| j.clone())
+            .collect()
+    };
+    // The run with the stand-offs of `set` allowed.
+    let run_with = |set: &BTreeSet<usize>| -> Result<LayoutRun, String> {
+        let mut st = s.clone();
+        st.stand_off_members
+            .extend(set.iter().map(|k| cands[*k].member.clone()));
+        let a2 = RunAsk {
+            library: ask.library,
+            bolts: ask.bolts,
+            settings: &st,
+            preset_fields: ask.preset_fields.clone(),
+            joints: ask.joints.clone(),
+            replace_hand: ask.replace_hand,
+        };
+        lay_out_plain(text, &a2)
+    };
+    let mut seconds = 0.0;
+    let mut layouts = 0usize;
+    // 1. Every candidate allowed a stand-off at once.
+    let all: BTreeSet<usize> = (0..cands.len()).collect();
+    let r = run_with(&all)?;
+    seconds += r.seconds;
+    layouts += 1;
+    let (blamed, _) = knock_on(&r0, &r, &all, &reach, &as_turns, &at_joint, &nodes_of)?;
+    // (Its ends and plates, its joints worse, blamed, helping.)
+    type First = ((usize, usize), Vec<String>, bool, bool);
+    let mut first: BTreeMap<usize, First> = BTreeMap::new();
+    for &k in &all {
+        let (b, a) = (at(&r0, k), at(&r, k));
+        first.insert(
+            k,
+            (
+                sum(&a),
+                worse_at(&b, &a, k),
+                blamed.contains(&k),
+                helps(&b, &a),
+            ),
+        );
+    }
+    let passing: BTreeSet<usize> = first
+        .iter()
+        .filter(|(k, x)| x.3 && (cands[**k].auto || !x.2))
+        .map(|(k, _)| *k)
+        .collect();
+    // 2. The program's rolls: those helping laid out together, each kept
+    // while every joint it reaches still lays out better.
+    let mut tried: BTreeSet<usize> = passing.iter().copied().filter(|k| cands[*k].auto).collect();
+    let mut kept: BTreeSet<usize> = BTreeSet::new();
+    let mut last: Option<LayoutRun> = None;
+    let mut after: BTreeMap<usize, Vec<Counts>> = BTreeMap::new();
+    for round in 0..=WEIGH_ROUNDS {
+        if tried.is_empty() {
+            break;
+        }
+        let r = run_with(&tried)?;
+        seconds += r.seconds;
+        layouts += 1;
+        let (blamed, _) = knock_on(&r0, &r, &tried, &reach, &as_turns, &at_joint, &nodes_of)?;
+        for &k in &tried {
+            after.insert(k, at(&r, k));
+        }
+        let keep: BTreeSet<usize> = tried
+            .iter()
+            .copied()
+            .filter(|k| !blamed.contains(k) && helps(&at(&r0, *k), &at(&r, *k)))
+            .collect();
+        if keep == tried {
+            kept = keep;
+            last = Some(r);
+            break;
+        }
+        if round == WEIGH_ROUNDS {
+            break;
+        }
+        tried = keep;
+    }
+    // 3. The rows, in words.
+    let mut rows: BTreeMap<String, FlangeTurnRow> = BTreeMap::new();
+    let mut notes: Vec<String> = Vec::new();
+    let mut weighed: Vec<WeighedTurn> = Vec::new();
+    let (mut n_kept, mut n_offered, mut n_left) = (0, 0, 0);
+    for (k, c) in cands.iter().enumerate() {
+        let b = sum(&at(&r0, k));
+        let joints = c.reach.join(", ");
+        let into = c.at.join(", ");
+        let (kind, words, a, worse) = if kept.contains(&k) {
+            let a = sum(&after.get(&k).cloned().unwrap_or_default());
+            n_kept += 1;
+            (
+                STAND_OFF,
+                format!(
+                    "{}: its outstanding leg pointed into the flange at {into}, neither turn \
+                     helped: {} — kept, its joints {joints} lay out {} member end(s) on {} \
+                     plate(s) (before {} on {}), none worse; written in the layout record",
+                    c.member,
+                    crate::joint_layout::STAND_OFF_PARTS,
+                    a.0,
+                    a.1,
+                    b.0,
+                    b.1
+                ),
+                a,
+                Vec::new(),
+            )
+        } else if passing.contains(&k) && !c.auto {
+            let a = first[&k].0;
+            n_offered += 1;
+            (
+                STAND_OFF_OFFERED,
+                format!(
+                    "{}: its outstanding leg points into the flange at {into}, neither turn \
+                     helps: {} offered (its roll the designer's: never applied unasked) — with \
+                     it its joints {joints} lay out {} member end(s) on {} plate(s) (before {} \
+                     on {}), none worse; tick it in Lay out joints to apply it",
+                    c.member,
+                    crate::joint_layout::STAND_OFF_PARTS,
+                    a.0,
+                    a.1,
+                    b.0,
+                    b.1
+                ),
+                a,
+                Vec::new(),
+            )
+        } else {
+            let (a, worse, blamed, _) = first[&k].clone();
+            let why = if !worse.is_empty() {
+                format!("joint(s) {} worse", worse.join(", "))
+            } else if blamed {
+                "a joint elsewhere laid out worse where a member turned otherwise meets its \
+                 joints"
+                    .to_owned()
+            } else if passing.contains(&k) {
+                "it helped with every stand-off tried, not with those kept together".to_owned()
+            } else {
+                format!("{} end(s) on {} plate(s), no better", a.0, a.1)
+            };
+            n_left += 1;
+            (
+                LEFT,
+                format!(
+                    "{}: its outstanding leg points into the flange at {into}: neither turn nor \
+                     a stand-off helps over its joints {joints} ({} end(s) on {} plate(s) as it \
+                     is; a stand-off: {why}); left for a hand detail",
+                    c.member, b.0, b.1
+                ),
+                b,
+                worse,
+            )
+        };
+        notes.push(words.clone());
+        weighed.push(WeighedTurn {
+            run: c.member.clone(),
+            kind: "stand-off".to_owned(),
+            members: vec![c.member.clone()],
+            turn: 0.0,
+            kept: kind == STAND_OFF,
+            joints: c.reach.clone(),
+            before: b,
+            after: a,
+            worse,
+        });
+        rows.insert(
+            c.member.clone(),
+            FlangeTurnRow {
+                before: c.row.before.clone(),
+                with: c.row.before.clone(),
+                kind: kind.to_owned(),
+                words,
+            },
+        );
+    }
+    let settled = rewrite_rows(text, &rows)?;
+    let mut out = match last {
+        Some(r) if !kept.is_empty() => {
+            let text1 = rewrite_rows(&r.text, &rows)?;
+            let mut ns = extra.to_vec();
+            ns.extend(r.notes);
+            LayoutRun {
+                text: text1,
+                notes: ns,
+                weighed: r0.weighed.clone(),
+                ..r
+            }
+        }
+        _ => {
+            let text1 = rewrite_rows(&r0.text, &rows)?;
+            LayoutRun {
+                text: text1,
+                ..r0.clone()
+            }
+        }
+    };
+    out.seconds = r0.seconds + seconds;
+    let mut head = vec![format!(
+        "a stand-off for an outstanding leg pointing into the flange where neither turn helps \
+         (L26): {} member(s) weighed over every joint they reach — kept at {n_kept}, offered \
+         (the roll the designer's) at {n_offered}, left at {n_left}; the weighing laid the \
+         tower out {layouts} more time(s) ({seconds:.1} s, measured)",
+        cands.len()
+    )];
+    head.append(&mut notes);
     out.notes.extend(head);
     out.weighed.extend(weighed);
     Ok((out, settled))
@@ -770,7 +1144,9 @@ pub fn offered(t: &StructureType) -> BTreeMap<String, FlangeTurnRow> {
     let rec = LayoutRecord::of(t);
     rec.flange_turns
         .iter()
-        .filter(|(m, r)| r.kind == OFFERED && r.current(t, &rec.rolled, m))
+        .filter(|(m, r)| {
+            (r.kind == OFFERED || r.kind == STAND_OFF_OFFERED) && r.current(t, &rec.rolled, m)
+        })
         .map(|(m, r)| (m.clone(), r.clone()))
         .collect()
 }
@@ -786,6 +1162,17 @@ pub fn apply_offered(text: &str, members: &BTreeSet<String>) -> Result<String, S
     let mut rec = LayoutRecord::of(&t);
     for m in members {
         let Some(r) = rows.get(m) else { continue };
+        // (L26) A stand-off offered: kept now, the roll as it is.
+        if r.kind == STAND_OFF_OFFERED {
+            rec.flange_turns.insert(
+                m.clone(),
+                FlangeTurnRow {
+                    kind: STAND_OFF.to_owned(),
+                    ..r.clone()
+                },
+            );
+            continue;
+        }
         let mut d = (roll_radians(&r.with) - roll_radians(&r.before)).to_degrees() % 360.0;
         if d < 0.0 {
             d += 360.0;
