@@ -1183,7 +1183,12 @@ mod tests {
         assert!(checks.types.get("type-01").is_some());
         assert!(checks.types.get("type-02").is_some());
         let folder = checks.folder.clone().expect("a folder");
-        assert!(folder.join("structures").join("type-02-model.ohlfe").is_file());
+        assert!(
+            folder
+                .join("structures")
+                .join("type-02-model.ohlfe")
+                .is_file()
+        );
         drop(checks);
         assert!(!folder.exists());
         let mut plugin = files.clone();
