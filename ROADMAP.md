@@ -4323,6 +4323,53 @@ only where it helps):
   > → Recommended: allowed, said on the proposal with the leg it bolts.
   > **Taken as recommended, 2026-11-25** (the brief: L25 now; the quarter
   > turn of an unequal angle allowed, said with the leg it bolts).
+- [x] L26. **A stand-off where neither turn helps: built, measured, not
+  kept** (L25's question 2; the owner, 2026-11-24: *"probably a half turn
+  if possible then other options"*; the owner busy: built on its own,
+  reported). **Measured 2026-11-25; taken out again, no change to the
+  program**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-stand-off-where-neither-turn-helps-built-measured-not-kept-l26),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-a-stand-off-where-neither-turn-helps-built-measured-not-kept-l26)).
+  **The form tried**: a welded assembly of three parts — the plane's flat
+  plate on the flange, a web square to it in the plane of the member's axis
+  (welded to the flat plate), a gusset in the member's own plane on the
+  back of its leg bolted (welded on the web's top), the member hanging
+  under it lifted so that its outstanding leg and bolts' heads clear the
+  flat plate by the gap, pulled back so that the web stays on the flange;
+  its axis offset at most 40 mm (L20's limit, for the estimated
+  eccentricities); the web sized so that its root carries the member's
+  gross section at yield (elastic, von Mises over its depth), up to three
+  plates thick and 150 mm long; its own section per load case said NOT ON
+  THE SAFE SIDE (no plugin export checks it) with what made it safe; weighed
+  per member after L25's turns (every joint no worse, one better); off by
+  default (a tick), the practice able to forbid it. **Measured** on seven
+  of the eight private towers (5 794 joints; the base main — L25's result
+  reproduced exactly on all eight —, the bundled ASCE 10-97 plugin built
+  fresh and checked to load; the stand-offs weighed on each tower file the
+  base laid out): **138 members weighed, none kept**, the 252 ends there
+  left as before. Of the 144 ends tried: 82 (most 5°–20° off) at joints
+  laid out no better with it (the plan without such plates kept), 45 (most
+  20° off or more) with the web too low under a gusset coming down to the
+  flat plate, 10 (nearly flat) needing a web over 150 mm even three plates
+  thick, 4 with the axis over 40 mm out, 3 with the web past the heel. The
+  eighth tower's run was stopped for time (its first layout not ended after
+  two hours under a heavy load of other work). Found on the way: laying
+  the base's file out again changed three towers (31 joints better, 6 with
+  as many ends on one more plate — each tower's same two joints).
+  > **Owner:** (1) The stand-off measured and taken out (none kept on
+  > seven towers) → Recommended: accept; the 174 members stay for a hand
+  > detail (their L25 rows say so). (2) A lighter web needs a check per load
+  > case of a plate's section in its own plane (a code plugin export, additive
+  > to interface 0.3 — a change to what OpenOHL sends a plugin) →
+  > Recommended: not now; only if stand-offs are wanted again, after the
+  > crowded joints are traced. (3) Most ends tried lie in crowded joints
+  > laid out no better either way (one traced: its members already run
+  > into each other as drawn) → Recommended: next, *Solve the clashes* (L11)
+  > on those joints before any new part. (4) A run again on the base's file
+  > is not idempotent on three private towers (L16 found it so on 78 towers
+  > before) → Recommended: trace it next (a run again should change
+  > nothing). (5) The eighth tower not measured → Recommended: measure it
+  > with the next joint-layout step's runs (the code is main's).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

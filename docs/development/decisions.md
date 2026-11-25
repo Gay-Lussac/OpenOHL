@@ -8,6 +8,46 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (joint layout: a stand-off where neither turn helps, built, measured, not kept, L26)
+
+**A stand-off — a welded assembly of three parts lifting an end whose
+outstanding leg points into the flange — was built, weighed per member
+after L25's turns, measured on the private towers and taken out again:
+none passed** (roadmap O44 L26; L25's question 2; the owner, 2026-11-24:
+*"probably a half turn if possible then other options"*;
+[theory](../theory/joint-layout.md#a-stand-off-where-neither-turn-helps-built-measured-not-kept-l26)).
+
+- **The form tried**: the plane's flat plate on the flange; a web square
+  to it in the plane of the member's axis, welded to it; a gusset in the
+  member's own plane on the back of its leg bolted, welded on the web; the
+  member lifted so that its outstanding leg and bolts' heads clear the flat
+  plate by the gap, pulled back so that the web stays on the flange. Its
+  axis offset at most 40 mm (L20's limit); the web sized so that its root
+  carries the member's gross section at yield (elastic, von Mises over its
+  depth), up to three plates thick and 150 mm long; its own section per
+  load case said NOT ON THE SAFE SIDE with what made it safe (no plugin
+  export checks a plate's section in its own plane — a new one would change
+  what OpenOHL sends a plugin, so it was not added). Weighed as L25 weighs
+  the turns; off by default (it would change the default layout), a tick
+  in Lay out joints, the detailing practice able to forbid it.
+- **Measured** (seven of the eight private towers, 5 794 joints; the base
+  main, which reproduced L25's result exactly; the bundled ASCE 10-97
+  plugin built fresh and checked to load): 138 members weighed, **no
+  stand-off kept**, the 252 ends there left as before. The ends tried lie
+  mostly in crowded joints laid out no better with it (82 of 144, most
+  5°–20° off), or the gusset is too steep for a web under it (45, most 20°
+  off or more), or nearly flat ends need a web over 150 mm (10), the axis
+  would lie over 40 mm out (4), the web would stand past the heel (3). The
+  eighth tower's run was stopped for time.
+- **Not kept**: the code taken out again (the rule met only trivially:
+  nothing gained, and a part no plugin checks per load case); the members
+  stay left for a hand detail as after L25. Next (owner questions in the
+  roadmap): the crowded joints traced and solved first; a lighter web only
+  with a plugin check per load case, asked first.
+- **Found on the way**: laying the base's file out again changed three of
+  the towers (31 joints better, 6 with as many ends on one more plate) — a
+  run again should change nothing; to be traced.
+
 ## 2026-11-25 (joint layout: an outstanding leg into the flange, a half or quarter turn weighed, L25)
 
 **The members left with an end whose outstanding leg points into the
