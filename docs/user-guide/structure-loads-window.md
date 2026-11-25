@@ -195,10 +195,65 @@ named above the views): a shared tower outside your working set
 (read-only in the file — the network computes it for a working set
 holding it), a line's sections or cases not read or not solved, a check
 reaching beyond the export, neighbours left out of the export. The
-**Loads** and **Usage** views keep this line's own loads; the Usage view
-says in red that the usage of the shared towers is this line's loads
-alone (NOT ALL CHECKED for them)
+**Loads** view keeps this line's own loads
 ([Checks with the export's neighbours](offline-working-set.md#checks-with-the-exports-neighbours)).
+
+#### The usage of a shared tower on every line's loads
+
+*Built 2026-11-25, in active development, not approved yet.* Each shared
+tower is also **checked on every line's loads**: each case of the Shared
+towers view (each line's case, every line's sections on the tower) is
+checked by **the same structure check as this line's own loads** — the
+window's structure types and section library, Methods 1 and 2, the
+finite-element model, the pole. In the **Usage** view these are cases of
+their own, named *line L's case C, every line (shared towers)*, beside
+this line's cases: the **governing** usage of a shared tower is the
+larger of its usage on this line's loads and on every line's loads (per
+member the larger of the two, since the governing member is the largest
+of all members), and the colours, the counts and **Export CSV…** take
+them. The Shared towers view lists each tower's governing usage on every
+line's loads with its line, case and what governs (red above 100 %).
+
+1. Run as usual: the shared towers' loads and then their usage are
+   computed beside the run (their time is said in the Usage view's line,
+   e.g. *… the larger usage governs (0.4 s)*).
+2. Open **Usage**, choose *governing (every case)* or one of the cases
+   *…, every line (shared towers)*.
+3. Read the lines above the table: grey — what was checked; red —
+   **NOT ALL CHECKED** or **NOT ON THE SAFE SIDE**.
+
+What is said:
+
+- A tower whose type has nothing to check against (no type, no
+  capacity, no model) is **not checked**, as on this line's own loads
+  (not red).
+- **A broken wire in every span**: each line's sections are solved with
+  it, each break its own load; the finite-element and pole checks take
+  every combination of one break per line (the worst kept), the
+  allowable loads the lines' envelopes added (every combination within
+  them). More than 256 combinations: the first 256, **NOT ALL CHECKED**
+  (a combination left out can load a member more; a type checked by
+  allowable loads alone is checked whole).
+- **Allowable spans (Method 1)** take this line's conductor positions
+  (at a point shared with another line, its vertical load too: a larger
+  weight span); the other lines' own positions are checked by their
+  spans in their own lines.
+- **NOT ON THE SAFE SIDE** with **Use local conditions** ticked: the
+  loads of every line are without the local conditions (the network's
+  check takes each line's cases as written) — the larger of the two
+  usages is kept, so a tower governed by this line's own loads is safe;
+  untick it to compare both without them.
+- **NOT ALL CHECKED**: twins turned more than 0.5° apart (each line's loads
+  are in its own twin's axes and at its points by label: give the twins
+  one orientation), a usage not computed (why said), and everything the
+  Shared towers view says.
+
+The network's check (**Versions › Offline copy › Check offline › Loads
+and usage of shared towers**, `ohl network check-offline --check loads`,
+and the server's check on a working set) gives the same usage, with the
+line's structure libraries from the file or the network (the server runs
+no member-check plugin: a type naming one is said NOT ALL CHECKED there
+and checked in this window).
 
 ## Add the default cases… and the weather cases
 

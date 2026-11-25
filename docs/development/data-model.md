@@ -1019,7 +1019,10 @@ take a run of spans following each other, 2026-10-29), `values`:
 per level (thin short pieces of surface left out, 2026-10-31),
 `elsewhere` (coarse cells lying wholly in a volume computed before, left
 to it: `volume_beside`, 2026-11-10; absent in older saved runs: 0)}, `pieces`,
-`left_out`}], `pieces` (`Pieces` {`count`, `longest`, `off_wire`,
+`left_out`, `label`? (2026-11-25: what the volume is beside its span when
+it is not the line's own field — `"every line near solved together"`, the
+electric field's second surfaces on an offline working set's file;
+absent: the line's own)}], `pieces` (`Pieces` {`count`, `longest`, `off_wire`,
 `interpolation`}), a `Deviation` being {`points`, `median`, `p90`, `max`}
 (relative to the level, or to the whole line's field for `left_out`);
 `run_keeping` returns the 3D model's wires too (`Wires3d`: `field`,

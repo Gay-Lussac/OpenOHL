@@ -585,8 +585,29 @@ distance \\( d \\) from it, \\( \min(\max(4, 0.15\,d), 60) \\) m — some 50
 pieces per wire and kilometre. The wires beyond are left out (**NOT ON
 THE SAFE SIDE**: their field is not in the result, so the real field can
 be higher; a larger field distance takes them in — said in every result
-with the distance, in the same words as the magnetic field's). The jumpers are
-left out of the system; this line alone in its own model has them (below).
+with the distance, in the same words as the magnetic field's).
+
+**The jumpers** (since 2026-11-25; before, the system left them out and
+only this line alone in its own model had them): every line's jumpers,
+as solved in the case, are wires of the system — each held at the
+voltage of the section ending where it starts (else where it ends), a
+bundle of that section's as its equivalent wire with the jumper's own
+conductor (the section's when the library has not the jumper's). A
+conductor at its phase's voltage is what a jumper is; the line alone
+instead gives it its phase's charge per metre from the section's
+cross-section (above). A jumper ending at no section's end has no known
+voltage: left out, **NOT ON THE SAFE SIDE** (said: a conductor missing,
+the field near it can be higher; join it to a section's end); a jumper
+that does not solve: **NOT ALL CHECKED** (said). **Tested** on the
+synthetic line, 2 m under each of its jumpers' lowest points: the line
+alone in its own model with its jumpers against the joint system of the
+line alone with and without them (`the_jumpers_in_the_joint_system_against_the_line_alone`):
+alone 8.8–11.2 kV/m (3.1–4.9 kV/m with the jumpers off), the system with
+the jumpers 7.8–9.3 kV/m (at most 16 % below alone: the line alone gives
+the jumper its section's charge per metre, the system holds it at its
+voltage near the earthed structure), without them 2.5–4.6 kV/m (72 %
+below). The larger of the two models is kept (below), so near the
+jumpers the result is the line alone's.
 
 **By parts.** The system is linear in the voltages, so the charges and
 the field are the sums of each **part**'s alone: a part is one line's
@@ -635,9 +656,39 @@ wires at zero; DC poles left out (said).
 model (above: the charges from its cross-sections, the jumpers, the
 ground plane under each point in the network's check, the window's
 ground model in the window) and the lines solved together. The two
-models differ (the system leaves the jumpers out; it takes every wire's
-charge from the whole system, not from its cross-section), and neither
-is let to lower the other: **conservative** against either model alone.
+models differ (the system holds every wire, the jumpers among them, at
+its voltage and takes every charge from the whole system, not from its
+cross-section), and neither is let to lower the other: **conservative**
+against either model alone.
+
+### Cuts and volumes with the other lines
+
+*Built 2026-11-25, in active development, not approved yet* (the
+Electric field window on an offline working set's file).
+
+- **A cut** is computed as a profile: its own system centred where its
+  plane crosses the line's axis, the worst over the parts' phase angles
+  at every point of its grid, each point the larger of this line alone
+  and the lines together.
+- **A volume** gets, beside this line's own surfaces, the surfaces of
+  the same levels in the same box with **every line solved together**,
+  drawn with them: a point is inside one or the other where the larger
+  of the two fields is at or above the level, so the union is the
+  larger of the two, as at a profile. Its run is cut into stretches of
+  \( 2 \cdot 4\,	ext{m} / 0.15 pprox 53 \) m, each with its own system
+  centred on the run at its middle (`ohl_scope::electric::JointAlong`,
+  solved once, when a point of it is first asked); every lattice point
+  takes its stretch's system. Along the run a point lies at most 26.7 m
+  from its system's middle, where the pieces are still the shortest
+  (\( 0.15 \cdot 26.7 = 4 \) m): it sees the wires near it cut as finely
+  as a profile's middle does. Points to the side of the run take the
+  system as a profile's points to the side of the axis do (the same
+  model; tested: a stretch's values equal, to the bit, a profile
+  through the same points centred at the stretch's middle,
+  `electric_field_along_a_run`).
+- A stretch whose system cannot be solved (a wire at or below the ground
+  in it) leaves this line's own surfaces there: **NOT ALL CHECKED**
+  (said, with the stretch).
 
 **Tested** (`ohl_electrical::joint`): two long parallel single wires over
 level ground (220 kV at 12 m, 132 kV at 15 m, 9 m apart) against the

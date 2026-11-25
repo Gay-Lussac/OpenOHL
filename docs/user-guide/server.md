@@ -313,8 +313,14 @@ lies within its own reach** and computes there:
 - **Magnetic field**: the lines within 500 m (a setting) are added. The
   wires farther away are left out: the result says **NOT ON THE SAFE
   SIDE**.
+- **Electric field** (2026-11-24): the lines within 500 m solved
+  together with this line, the worst over their unknown phase angles.
 - **Structure loads**: a tower shared with another line carries every
-  line's sections, checked under each line's load cases, the worst kept.
+  line's sections, checked under each line's load cases, the worst kept;
+  since 2026-11-25 also its **usage on every line's loads** by the line's
+  structure types (the same structure check as on the line's own loads;
+  the server runs no member-check plugin — a type naming one is said NOT
+  ALL CHECKED and checked in OHL-Design's Structure loads window).
 
 Every result says **what it pulled in** (the lines, routes and objects) and
 is **marked stale** when any of them changes: OHL-Design marks your

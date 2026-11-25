@@ -5422,8 +5422,8 @@ or three, L four or more. The phases, in order:
   beside them (in parallel: the run 39 s); the network's check on the
   same file 35–37 s (150 pylons, 11 shared towers: 15.1 s against
   15.0 s).
-  Left: the usage check of a shared tower on the combined loads;
-  ~~the magnetic field with the export's neighbours in its window~~
+  Left: ~~the usage check of a shared tower on the combined loads~~
+  (built 2026-11-25, below); ~~the magnetic field with the export's neighbours in its window~~
   (built 2026-11-24, below).
   > **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
   > 1. The shared towers in a view of their own (the Loads and Usage views
@@ -5529,9 +5529,9 @@ or three, L four or more. The phases, in order:
      window (plane ground, every 5 m) 8.8 s alone → 15.6 s with them (the
      window's default tiled floor every 1 m: over 300 s alone there); with
      another test suite on the machine (load ~96) 47 s and 89 s.
-  Left: the cuts and volumes with the other lines; the jumpers in the
+  Left: ~~the cuts and volumes with the other lines; the jumpers in the
   joint system; the Offline working set window's step 2 offering the
-  electric field (today the command line and the server's check).
+  electric field~~ (all three built 2026-11-25, below).
   > **Owner:** (to answer, 2026-11-24; the recommendation after the arrow)
   > 1. At each point the larger of this line alone (its own model) and
   > the lines solved together, rather than the joint value alone? → yes:
@@ -5547,6 +5547,88 @@ or three, L four or more. The phases, in order:
   > angles later if the bound proves loose on real corridors.
   > 4. Other lines at their systems' highest operating voltage, else the
   > nominal (NOT ON THE SAFE SIDE, said)? → yes, as this line's.
+- [x] Follow-up of 2026-11-25 (M): the 2026-11-24 follow-ups' "left" —
+  **the usage of a shared tower on every line's loads; the electric
+  field's cuts, volumes and jumpers with the other lines; step 2 offering
+  the electric field** (owner, 2026-11-23: "go ahead with the server
+  too"). **Built 2026-11-25, in active development, not approved yet**
+  ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-country-server-the-usage-of-a-shared-tower-on-every-lines-loads-the-electric-fields-cuts-volumes-and-jumpers-with-the-other-lines),
+  [theory: usage](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/scoped-checks.md#the-usage-of-a-shared-tower-on-every-lines-loads),
+  [theory: cuts and volumes](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/electric-field.md#cuts-and-volumes-with-the-other-lines)):
+  1. **The usage of a shared tower on every line's loads**: each case of
+     a shared tower (a line's case, every line's loads on it) is one load
+     case of the working set's structure (`ohl_scope::loads::combine`)
+     checked by **the same structure check as the line's own loads**
+     (`ohl_scope::loads::tower_usage` → `ohl_loads::capacity`). OHL-Design's
+     Structure loads window checks them with its own types and lists them
+     in the Usage view beside its own cases (*line L's case C, every line
+     (shared towers)*): the governing usage the larger of the two (per
+     member too: the largest member of either); the Shared towers view
+     names each tower's governing usage. The network's check (server,
+     `check_offline`, step 2) reads the line's structure libraries
+     (`Neighbourhood::structure_checks`) and reports each tower's governing
+     usage against 100 %. Broken wires in every span: every combination of
+     one break per line for the finite-element and pole checks (at most
+     256, more NOT ALL CHECKED), the envelopes added for the allowable
+     loads; **the server runs no member-check plugin** (NOT ALL CHECKED
+     there, checked in OHL-Design). **Found**: twins turned apart have
+     their loads added in each one's own axes and by point label — now
+     NOT ALL CHECKED above 0.5° (loads and usage). **Tested** on the
+     synthetic country (150 pylons, every structure given an invented
+     type with allowable loads): 4 shared towers, 72 cases of every line's
+     loads — the allowable loads' usage equal by hand to the Shared towers
+     view's summed points (largest 148 %); 36 of the line's own cases
+     through the same path equal, to the bit, to the line's own check; the
+     network's check on an offline file and the window say the same of
+     the synthetic towers (no type: not checked, not red).
+  2. **The electric field's cuts and volumes with the other lines**: a
+     cut as a profile (its own system); a volume gets a second set of
+     surfaces with every line solved together, drawn with its own (the
+     larger of the two), its run cut into stretches of 53 m each with its
+     own system (`ohl_scope::electric::JointAlong` on
+     `ohl_electrical::joint::System`, a system solved once and asked at any
+     point after; `joint::solve` unchanged to the bit, tested). **Tested**:
+     a stretch's values equal a profile's centred there, to the bit;
+     against a local network's server, every cut point at least alone and
+     a second volume of every line near, said. Measured on the offline test's synthetic country (150 pylons, a shared machine): one span's volume (2 m steps, plane ground) 145 s alone → 155 s with the export's lines (6 systems of at most 739 pieces, 1.7 s of it the lines together); a cut in the same span 24 s alone, 22 s with them (the same within the machine's noise), the lines together adding up to 0.076 kV/m.
+     The scoped check's electric field per span equal to the window's
+     computation, to the bit (also after the timing fix, item 5).
+  3. **The jumpers in the joint system**: each held at the voltage of the
+     section ending where it starts (a bundle of that section's, the
+     jumper's own conductor). **Tested** against the line alone in its own
+     model on the synthetic line, 2 m under its jumper (three points):
+     alone 8.8–11.2 kV/m (3.1–4.9 without its jumper); the joint system
+     with the jumper 7.8–9.3 kV/m (at most 16 % below alone), without it
+     2.5–4.6 kV/m (72 % below): the jumper's field is now in the system;
+     the larger of the two models is kept, so the result there is the line
+     alone's.
+  4. **Step 2 offers the electric field** (distance, limit in kV/m; the
+     loads check renamed *Loads and usage of shared towers*).
+  5. **Found: a scoped check's result depended on the load** (the full
+     check under a load average of ~115: the network's electric field on
+     the offline file 0.74–1.45 kV/m on three spans against the window's
+     1.16–2.03): the wire solver's 120 s time limit could stop a
+     neighbour's section (said NOT ALL CHECKED, a lower value). Every
+     section solve of a scoped check now has the iteration limit and no
+     clock (`ohl_scope::solve_budget`); tested with the slow path forced
+     (a neighbour that cannot be solved: NOT ALL CHECKED, named).
+  Left: an exact search over the phase angles for three or more parts
+  (the bound kept); the usage on every line's loads at calculation level
+  3 or 4 (rigid now, said NOT ON THE SAFE SIDE as the loads).
+  > **Owner:** (to answer, 2026-11-25; the recommendation after the arrow)
+  > 1. The usage on every line's loads as cases of their own in the Usage
+  > view (the governing the larger), not a separate view? → yes: the
+  > colours, counts and CSV take them without a second list.
+  > 2. Broken wires in every span: every combination of one break per line
+  > (at most 256, more NOT ALL CHECKED)? → yes: an envelope is no bound for
+  > a member force; 256 finite-element solves per case are seconds.
+  > 3. The network's server runs no member-check plugin (a type naming one
+  > NOT ALL CHECKED there, checked in OHL-Design)? → yes: a library could
+  > otherwise make the server run a program installed on it.
+  > 4. A volume with the other lines as a second set of surfaces drawn
+  > with the own (the union), rather than one surface of the larger
+  > field? → yes for now: the own run's floors are not kept after it; the
+  > union is the larger field's level set, the same region.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
 by tile; the merge of twin towers (an admin's command). A first usable

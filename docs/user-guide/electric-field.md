@@ -285,14 +285,17 @@ project of one line) other lines are not in the model.
 **offline working set's file**, Run computes, after this line's own
 field, the export's **other lines whose wires come within 500 m** of the
 spans computed (the network's field distance) **together with this
-line**: one system of charges over every line's wires and earth wires,
-each line solved in the run's weather case with its own settings and
-wires — a neighbour's conductors change this line's charges and its
-earth wires screen, so the lines are not computed apart and added. The
+line**: one system of charges over every line's wires, jumpers and earth
+wires (the jumpers since 2026-11-25), each line solved in the run's
+weather case with its own settings and wires — a neighbour's conductors
+change this line's charges and its earth wires screen, so the lines are
+not computed apart and added. The
 phase angles between the lines are not known: the **worst over them** is
 taken — exact for one other line, an upper bound for more (the notes say
-which). At every profile point and given point the result is **the
-larger** of this line's own value and the lines together. This is the
+which). At every profile point, given point and point of a cut the
+result is **the larger** of this line's own value and the lines
+together; each volume gets a second set of surfaces with the lines
+together (since 2026-11-25, below). This is the
 network's own selection and system
 (`ohl_server::offline_checks::electric_neighbours`): on the working set's
 spans the same highest value per span as the network's electric field
@@ -318,6 +321,28 @@ tested). How it is computed:
    lines near (the plane ground, every 5 m), 8.8 s alone, 15.6 s with
    them — a system of some 50 pieces per wire and kilometre per profile.
 
+**Cuts and volumes with the other lines** (*built 2026-11-25, in active
+development, not approved yet*):
+
+- **A cut**: its own system, centred where it crosses the line's axis (as
+  a profile's), the worst over the phase angles at every point of its
+  grid; each point the larger of this line alone and the lines together.
+- **A volume**: beside this line's own surfaces, the same box and levels
+  with **every line near solved together** — listed in the Results as
+  *Volume A–B (every line near solved together)*, drawn with the own
+  surfaces: what lies inside either is at or above the level (the larger
+  of the two, as at a profile). Its run is cut into **stretches of 53 m**
+  (twice the 26.7 m where the pieces start to grow, 4 m ÷ 0.15), each its
+  own system centred on the run there: every lattice point lies within
+  26.7 m (along the run) of its system's middle, among the shortest
+  pieces, as a profile's points do. The notes say the systems solved,
+  their largest number of pieces and the seconds it took — measured on a
+  synthetic country, one span's volume (2 m steps, plane ground) 145 s
+  alone, 155 s with two other lines near (six systems, 1.7 s of it the
+  lines together); a cut 24 s alone, 22 s with them ([theory](../theory/electric-field.md#cuts-and-volumes-with-the-other-lines)).
+- A stretch whose system cannot be solved (a wire at or below the ground
+  in it) or a volume not computed: **NOT ALL CHECKED** there (this line's
+  own surfaces only).
 Before (the same window without the export's lines, as on a working
 set's replica): NOT ALL CHECKED, the lines near not pulled in.
 
@@ -337,11 +362,12 @@ missing (the network's field check takes a larger field distance); a
 given point far from those spans may lie nearer another line, missing
 too (compute a span near it, else check it by hand); a line at its
 nominal voltage — the field falls with the voltage (give its system's
-highest operating voltage). **NOT ALL CHECKED** (red): the cuts and the volumes' surfaces
-are this line's field alone (the other lines are computed with it at the
-profiles and the given points); a reach beyond the export; neighbours
-left out of the export; a neighbour that does not solve; a profile whose
-system cannot be solved (a wire at or below the ground in it).
+highest operating voltage); a jumper ending at no section's end (its
+voltage not known: left out of the system — join it to a section's end).
+**NOT ALL CHECKED** (red): a reach beyond the export; neighbours left out
+of the export; a neighbour or a jumper that does not solve; a profile,
+cut or volume stretch whose system cannot be solved (a wire at or below
+the ground in it).
 
 ## Without the window
 

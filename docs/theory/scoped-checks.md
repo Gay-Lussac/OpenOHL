@@ -28,6 +28,21 @@ says why. A neighbour that could not be read or solved makes the check
 **not all checked** — never a pass on the assumption that nothing is
 there.
 
+**Timing never changes a result** (2026-11-25): every section solve of a
+scoped check (clearances, fields, loads) has the wire solver's iteration
+limit (100) and **no clock** (`ohl_scope::solve_budget`). Before, it had
+the solver's 120 s time limit too: under heavy load (load average ~115)
+the network's electric field check on an offline file once gave three
+spans 0.74–1.45 kV/m where the same check gave 1.16–2.03 kV/m alone — a
+neighbour's section most likely stopped on the clock and its wires were
+left out (said NOT ALL CHECKED, but a lower value that depended on the
+machine's load). A solve that does not converge now fails the same way
+every time and is said NOT ALL CHECKED (tested: a neighbour line that
+cannot be solved is named NOT ALL CHECKED, never a quietly lower field).
+The small sub-models inside a section's solve (a string's or a clamp's
+position, of a few elements) keep the solver's own 120 s limit: one
+stopping fails its section, said the same way.
+
 Proven on the synthetic country (each route a line of its own, towers
 shared by two routes twins, as a network holds them; `crates/ohl-scope`,
 `tests.rs`):
@@ -227,9 +242,67 @@ twin's points.
   without its report) for the shared towers of the working set among the
   structures it computes — the same loads, to the bit (tested). A shared
   tower outside the working set (read-only in the file) is **not
-  checked** there with its other lines (NOT ALL CHECKED, said); the
-  window's usage check keeps this line's loads alone on the shared towers
-  (NOT ALL CHECKED for them, said).
+  checked** there with its other lines (NOT ALL CHECKED, said).
+
+### The usage of a shared tower on every line's loads
+
+*Built 2026-11-25, in active development, not approved yet.* Each case of
+a shared tower above — line \( x \)'s case, every line's loads on it as
+added there — is made **one load case of the working set's structure**
+(`ohl_scope::loads::combine`): at each point the loads the tower's loads
+add (every line's with sections there, else line \( x \)'s own), moved
+onto the structure (the same type: the same points), the case's factors,
+strength factor and weather line \( x \)'s, every line's missing wires
+there kept (the check then incomplete, never a pass). That case is
+checked by **the same structure check as the line's own loads**
+(`ohl_loads::capacity`, `ohl_scope::loads::tower_usage`): allowable
+spans, allowable loads, the finite-element model, the pole, the type's
+and member sections' libraries of the working set's line, its structure
+groups set aside (the cases are those the loads took).
+
+- **The result per member is the larger of the line's own loads and
+  every line's**: OHL-Design's Usage view lists the cases of every line's
+  loads beside the line's own, and a structure's governing usage is the
+  largest over all of them — the largest member usage of either, so per
+  member the larger of the two (the largest of maxima is the maximum of
+  the larger ones).
+- **A broken wire in every span**: each line's sections are solved with
+  it (the case taken whole), each break its own load. The
+  finite-element and pole checks take **every combination of one break
+  per line** as a variant of its own, the worst kept (a member force
+  \( a\,T + b\,L + c\,V \) combines the components, so an envelope is
+  not a bound for it). The allowable loads take the lines' envelopes
+  added: per component \( \max_{	ext{combinations}}|\sum_m v_m| \le
+  \sum_m \max|v_m| \) — **conservative**. More than 256 combinations:
+  the first 256, **NOT ALL CHECKED** (said with why: a combination left
+  out can load a member more; a type checked by allowable loads alone is
+  checked whole).
+- **Allowable spans (Method 1)**: computed with the working set's line's
+  conductor positions — at a point shared with another line its vertical
+  load is the sum over the lines there over this line's weight per metre:
+  a larger weight span, **conservative**. The other lines' own positions
+  are not in this line's spans (their wires' spans are their own lines'),
+  checked by allowable spans in their lines.
+- **NOT ALL CHECKED** for twins turned more than 0.5° apart (said, with
+  the angle): each line's loads are in its own twin's axes and at its
+  points by label, added as if the axes were one; with the twins turned
+  apart a label can name another place and a component another
+  direction, so the loads (the Shared towers view's too) and their usage
+  can be wrong either way. What makes it safe: one orientation for the
+  tower in every line (one tower).
+- **The network's server** reads the working set's line's libraries of
+  structures, poles, models, loads, bolts and sections (the shipped ones
+  where it has none), laid out as OHL-Design keeps them, and **runs no
+  member-check plugin**: a library naming one is refused there (NOT ALL
+  CHECKED, said: its usage is checked in OHL-Design, whose window takes
+  the plugin). The check on an offline file (`check_offline`, the
+  command line) takes the file's libraries and its user's plugins.
+- **NOT ON THE SAFE SIDE** in the window with **Use local conditions**
+  ticked (said): every line's loads are without the local conditions
+  while the line's own take them; what makes it safe: the larger of the
+  two usages is kept (a tower governed by its own loads), else untick it.
+- The rigid solve (above) is said NOT ON THE SAFE SIDE with the tower as
+  before; the usage on every line's loads takes those loads.
 
 ## Neighbours a user may not see
 

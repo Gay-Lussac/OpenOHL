@@ -8,6 +8,89 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (country server: the usage of a shared tower on every line's loads; the electric field's cuts, volumes and jumpers with the other lines)
+
+**Four "left" items of the server's follow-ups of 2026-11-24, and a
+scoped check's result made independent of the machine's load** (ROADMAP
+O17; owner, 2026-11-23: "go ahead with the server too"; built, in active
+development, not approved yet).
+
+1. **The usage of a shared tower on every line's loads** (the first
+   follow-up's owner question 1, recommended "next, the usage check of a
+   shared tower on the combined loads";
+   [theory](../theory/scoped-checks.md#the-usage-of-a-shared-tower-on-every-lines-loads),
+   [user guide](../user-guide/structure-loads-window.md#the-usage-of-a-shared-tower-on-every-lines-loads)).
+   - **Before**: the Usage view said in red that the shared towers' usage
+     was this line's loads alone (NOT ALL CHECKED); the network's check
+     gave loads only.
+   - **Now** each case of a shared tower (line \\( x \\)'s case, every
+     line's loads on it as added there) is one load case of the working
+     set's structure (`ohl_scope::loads::combine`) checked by **the same
+     structure check as the line's own loads** (`ohl_loads::capacity`
+     through `ohl_scope::loads::tower_usage`). OHL-Design's window checks
+     with its own types and sections and lists these cases in the Usage
+     view beside its own (*line L's case C, every line (shared towers)*):
+     the governing usage is the larger of the two, per member too (the
+     largest member of either). The network's check (server and
+     `check_offline`) reads the line's structure libraries
+     (`Neighbourhood::structure_checks`, new, default: left to the caller)
+     and reports one finding per tower — its governing usage against
+     100 % (a violation above) — and notes for what was not checked.
+   - **Decided**: a broken wire in every span — every combination of one
+     break per line a variant of its own for the finite-element and pole
+     checks (at most 256, more said NOT ALL CHECKED), the lines' envelopes
+     added for the allowable loads (conservative); allowable spans take
+     this line's conductor positions (a shared point's summed vertical
+     load: a larger weight span); twins turned more than 0.5° apart NOT
+     ALL CHECKED (found: the loads were added in each twin's own axes and
+     by point label, right only for one orientation; said for the Shared
+     towers view's loads too); **the network's server runs no
+     member-check plugin** (a library naming one: NOT ALL CHECKED there,
+     checked in OHL-Design); with Use local conditions, NOT ON THE SAFE
+     SIDE (said with what makes it safe).
+2. **The electric field's cuts and volumes with the other lines**
+   ([theory](../theory/electric-field.md#cuts-and-volumes-with-the-other-lines)):
+   a cut as a profile (its own system where it crosses the axis, each
+   point the larger of alone and together); a volume's box gets a second
+   set of surfaces with every line solved together, drawn with the own
+   ones (the union: the larger of the two), its run cut into stretches of
+   53 m each with its own system (`ohl_scope::electric::JointAlong`,
+   `ohl_electrical::joint::System`: a system solved once, its field taken
+   at any point after — `joint::solve` unchanged, to the bit).
+   `FieldVolume` gains an optional `label` (the [data model](data-model.md)).
+3. **The jumpers in the joint system**: every line's jumpers as solved,
+   each held at the voltage of the section ending where it starts, a
+   bundle of that section's with the jumper's own conductor; a jumper at
+   no section's end left out NOT ON THE SAFE SIDE, one not solved NOT ALL
+   CHECKED.
+4. **The Offline working set window's step 2 offers the electric field**
+   (distance, limit in kV/m); its loads check is named *Loads and usage of
+   shared towers*.
+5. **Found and fixed first: a scoped check's result depended on the
+   machine's load** (coordinator, 2026-11-25: the full check failed the
+   offline window's test under a load average of ~115 — the network's
+   electric field on the file 0.74, 1.45, 0.74 kV/m on three spans where
+   the window gave 1.17, 2.03, 1.16; alone the test passed). The only
+   clock in those checks was the wire solver's 120 s time limit on each
+   section solve: under load a neighbour's section could stop on it and
+   be left out (said NOT ALL CHECKED, yet a lower value). Now every
+   section solve of a scoped check has the solver's iteration limit and
+   no clock (`ohl_scope::solve_budget`), for clearances, fields and loads
+   alike; the test compares the network's values only when its check is
+   complete (else it fails naming why); a new test forces the slow path
+   (a neighbour that cannot be solved: NOT ALL CHECKED, the line named).
+
+- **Tested**: on the synthetic country (150 pylons, an invented type with
+  allowable loads on every structure) 4 shared towers, 72 cases of every
+  line's loads, the allowable loads' usage equal by hand to the summed
+  points (largest 148 %), 36 of the line's own cases through the same path
+  equal to its own check, to the bit; a volume stretch's values equal a
+  profile's centred there, to the bit; a system solved once equals
+  `joint::solve`, to the bit; 2 m under the synthetic line's jumper the
+  joint system with it 7.8–9.3 kV/m against the line alone's 8.8–11.2
+  (without it 2.5–4.6: 72 % below).
+- **Measured** on the offline test's synthetic country (150 pylons, a shared machine): one span's volume (2 m steps, plane ground) 145 s alone → 155 s with the export's lines (6 systems of at most 739 pieces, 1.7 s of it the lines together); a cut in the same span 24 s alone, 22 s with them (the same within the machine's noise), the lines together adding up to 0.076 kV/m; the Structure loads window's 11 shared towers 27.5 s beside its own loads (6.1 s), their usage on every line's loads about 0.3 s of it (the synthetic towers have no type: nothing to check against).
+
 ## 2026-11-25 (joint layout: an outstanding leg into the flange, a half or quarter turn weighed, L25)
 
 **The members left with an end whose outstanding leg points into the
