@@ -1873,6 +1873,8 @@ Six stages, the questions per stage and per detail level:
   > two holes) → Recommended: the default bolt the largest the leg's
   > usual gauge takes, or the structure's most used bolt, sent with the
   > members (an interface change, to ask).
+  > **Owner, 2026-11-25** ("Ok for plugin fixes"): (3) keep one ply, approved; (4) the
+  > default bolt sent with the members, approved, to build.
 - [x] **Safety gaps of the 2026-11-24 audit** (2026-11-25; built, in
   active development, not approved yet — the owner busy: built on its
   own, reported; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md)):
@@ -2008,7 +2010,8 @@ the code checks once on the converged state), its phases:
   at level 4 no", the note dropped at level 4 only where that level really
   takes the flexibility; no clearance check takes the level yet, so at
   levels 3 and 4 the note now names the level and that the check still
-  solves rigid — built, in active development, not approved yet;
+  solves rigid (the clearance checks taking the level kept under this
+  item, owner 2026-11-25: "Ok for plugin fixes") — built, in active development, not approved yet;
   [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-24-clearance-reports-the-rigid-structures-note-by-the-lines-calculation-level));
   OHL-Design updated
   near moved structures only; a level per structure group and per check;
@@ -3545,6 +3548,7 @@ only where it helps):
   > edge unless its connection says otherwise? Recommended: yes (the
   > profile is rolled; a flame-cut or sheared toe is then given as
   > `rolled_edge = false`).
+  > **Owner, 2026-11-25** ("Ok for plugin fixes"): approved, to build.
 - [x] L17. **One plate in one gap; a turn refused after writing tried as
   before the plates between** (L16's questions 2 and 3; the owner busy:
   built on its own, reported). **Built 2026-11-23, in active development,
@@ -4092,6 +4096,8 @@ only where it helps):
   > the welded plate does (L20 item 2) — measured first. (6) The half or
   > quarter turn for an outstanding leg into the flange (the owner's
   > answer to 7c) → planned as L25, below.
+  > **Owner, 2026-11-25**: "use recommendations for l23 to l25" — every
+  > recommendation above taken.
 - [x] L24. **The joint layout and plugins: a detailing practice as data,
   the core the validator** (the owner's idea of 2026-11-24, after L22; the
   plan written in L23; **approved by the owner on 2026-11-24**: *"For the
@@ -4255,6 +4261,8 @@ only where it helps):
   > one needs the joint details to follow; a forced fit no check takes).
   > (7) The bundled codes give no practice → Recommended: keep (a
   > practice is a shop's, not a code's).
+  > **Owner, 2026-11-25**: "use recommendations for l23 to l25" — every
+  > recommendation above taken.
 - [x] L25. **An outstanding leg pointing into the flange: a half or a
   quarter turn, weighed** (L19's question 7c; the owner, 2026-11-24:
   *"probably a half turn if possible then other options"* and *"maybe a 90
@@ -4323,6 +4331,8 @@ only where it helps):
   > member weighed and left is not weighed again until its roll changes
   > (its `none` row) → Recommended: keep (the time); a "weigh again" in
   > Lay out joints later if asked.
+  > **Owner, 2026-11-25**: "use recommendations for l23 to l25" — every
+  > recommendation above taken.
   **The plan, as it stood**: Today a plate in the end's own plane is refused where the end's
   outstanding leg points into the flange (it would stand on the flat
   plate): 450 such ends on the eight private towers L21–L23 measure (29
@@ -5742,9 +5752,53 @@ or three, L four or more. The phases, in order:
   > with the own (the union), rather than one surface of the larger
   > field? → yes for now: the own run's floors are not kept after it; the
   > union is the larger field's level set, the same region.
+- [ ] **One model per line: the network's design** (owner, 2026-11-25:
+  "a line with an y connection that's 2 routes should be made into one
+  model … Only separated "lines" should be put in the country server
+  (only connected at substations but not the same line)", and "for the
+  model merging this has to be dealt with at the network design level and
+  then corrected with the app that has the capabilities for it. Keep the
+  function with "twin" as is"). **Decided, not built**; the join command's
+  three questions answered "Ok with recommendations" (owner, 2026-11-25):
+  to build.
+  1. **The rule**: one model per line, its branches included — a line
+     branching (a Y or T connection, two or more routes sharing a tower)
+     is one model, its shared towers one object each (towers shared by
+     several routes, phase 8). Separate lines are separate models; they
+     meet at substations, and where another line's circuits ride on the
+     same towers.
+  2. **Where the split is decided**: at the network's design, before the
+     import — not by the server. `ohl network import` stays one project
+     file = one line (unchanged).
+  3. **Where it is corrected**: in the application that has the
+     capability — OHL-Design. To build: a command joining the routes of
+     another project file into the open project (one model), its twins
+     with the project's own towers offered to become one shared tower
+     each (the user deciding, each listed with its height and orientation
+     difference), ids clashing renamed and listed, library entries mapped
+     as the import maps them, one undo step and one revision.
+  4. **Twins stay as they are**: towers of separate lines within 0.5 m
+     with the same type are listed by the import for an admin, never
+     merged, and the scoped checks take them as one tower (loads and
+     usage on every line's loads, clearances, fields; turned more than
+     0.5° apart NOT ALL CHECKED). This covers **substation portals**
+     holding several lines' starts and towers carrying another line's
+     circuits. The admin's command merging twins (formerly under *Later*)
+     is dropped.
+  > **Owner:** (answered 2026-11-25: "Ok with recommendations")
+  > 1. The join command in OHL-Design under File (*Join routes from
+  > another project…*), not in OHL-Structure? → yes: routes, sections and
+  > towers are OHL-Design's.
+  > 2. A twin becomes one shared tower only when the user ticks it (none
+  > ticked by default)? → yes: never a silent change of the data.
+  > 3. Two twins with different heights or attachment points: the open
+  > project's tower kept, the other line's sections re-attached to its
+  > points by label, those without a matching label refused and listed?
+  > → yes: nothing guessed.
 
 Later: point clouds, backgrounds and terrain tiles in PostgreSQL, served
-by tile; the merge of twin towers (an admin's command). A first usable
+by tile (the merge of twin towers dropped, owner 2026-11-25: twins stay
+as they are). A first usable
 milestone (a country in the database, users moving about and editing
 their routes, checks on the working set said "neighbours not pulled in")
 comes after phase 6 with 7 and 8; phase 10 brings the full checks.
