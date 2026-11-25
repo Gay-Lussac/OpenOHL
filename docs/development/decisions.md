@@ -8,6 +8,53 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-25 (joint layout: an outstanding leg into the flange, a half or quarter turn weighed, L25)
+
+**The members left with an end whose outstanding leg points into the
+flange are laid out turned by half a turn and by a quarter turn, each
+weighed over every joint the member reaches** (roadmap O44 L25; the
+owner, 2026-11-24: *"probably a half turn if possible then other
+options"*, *"maybe a 90 degrees turn might be better so you could also
+consider it"*; L25's two open questions taken as recommended: L25 now, the
+quarter turn of an unequal angle allowed and said with the leg it bolts;
+[theory](../theory/joint-layout.md#an-outstanding-leg-pointing-into-the-flange-a-half-or-a-quarter-turn-weighed-l25)).
+
+- **What**: after the run (and L19's weighing), every member with such an
+  end — not a leg or chord, not one part with another, a single angle,
+  every joint it reaches laid out by the run — is laid out turned by half a
+  turn, by +90° and by −90° (three whole layouts); a turn passes where
+  every joint the member reaches is laid out no worse and one better after
+  writing; the best passing turn is the one laying out more member ends
+  (one no joint elsewhere blames first; on a tie the half turn, then the
+  fewer plates); the turns chosen are laid out together and weighed again
+  with L19's guard past the turned members until all still pass (at most
+  four rounds). `LayoutSettings::flange_half` and `flange_quarter`, on.
+- **The quarter turn of an unequal angle** bolts its other leg (the plan
+  takes that leg's bolts, gauges and edge distances), only where no leg
+  is given (`connected_leg`, the end's `leg`): never changed silently. The
+  member check is unchanged (the bundled plugin takes the short leg bolted
+  without a leg given).
+- **Applied or offered**: applied where the roll is the program's (an
+  imported tower's, or values given by hand replaced), recorded in the
+  layout record's new `flange_turns` rows (no version change; the [data
+  model](data-model.md)); offered in Lay out joints where the roll is the
+  designer's (applied when ticked). A member weighed is not weighed again
+  while its row is its own; neither turn helping: left, said (a stand-off
+  later).
+- **Measured** (eight private towers, 6 852 joints, kept privately; the
+  bundled ASCE 10-97 plugin built fresh and checked to load before each
+  run; the base main before L25, the same setup): joints whole 4 218 →
+  4 253, member ends 15 141 → 15 268, plates 8 047 → 8 196, 124 joints
+  better and none worse; ends left with the outstanding leg into the flange
+  460 → 335; of 326 members weighed, half a turn kept at 83, a quarter
+  turn at 46, 23 passing alone but not together, neither helping at 174.
+  Every member weighed there is an equal-leg angle (the unequal angle's
+  quarter turn tested on an invented body only). Each turn alone on four
+  of the towers: the half turn 23 joints better, the quarter turn 30, both
+  weighed 38 (none worse in any): both kept, as the owner asked. The
+  weighing lays each tower out four or five more times
+  (once per tower). **Kept** (the rule met: no joint worse).
+
 ## 2026-11-25 (joint layout: three steps measured, none kept, L23)
 
 **L22's questions 2 and 3, L21's item 3 and L19's question 7b tried and

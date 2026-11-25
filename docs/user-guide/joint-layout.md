@@ -298,6 +298,22 @@ times (measured on six real towers: median 45 and 71 s unweighed, 266 and
 335 s weighed) — once after Orient angles: the file written lists nothing
 more to weigh.
 
+**An outstanding leg pointing into the flange** (2026-11-25, O44 L25;
+built, in active development): a member end left because its outstanding
+leg points into the flange (a plate in its own plane would stand on the
+flat plate) is laid out with its member turned by half a turn and by a
+quarter turn either way (the quarter turn bolts its other leg; on an
+unequal angle only where no leg is given), each weighed over **every
+joint the member reaches** as above; the one laying out more member ends
+is kept, on a tie the half turn. Where the member's roll is the
+program's (an import's) the turn is applied and written in the layout
+record, said in the notes ("… turned half a turn … — kept, its joints …
+lay out … (before …), none worse"); where its roll is given by hand it is
+**offered** here, under *Members with an outstanding leg pointing into the
+flange*, with its effect — tick it to apply it with the run. Weighed once
+per tower (Lay out joints weighs when it works out its preview); a member
+weighed is not weighed again until its roll changes.
+
 **Where it shows:**
 
 - **Lay out joints**: under the numbers, "Legs and chords turned against

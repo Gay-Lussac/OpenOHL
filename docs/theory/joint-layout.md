@@ -3931,6 +3931,129 @@ the seam at all (and 20 if also their bolts' edge distance to the bend
 were nothing — which no plate allows). So nothing was built; an owner
 question instead (the roadmap's L23 block).
 
+## An outstanding leg pointing into the flange: a half or a quarter turn, weighed (L25)
+
+Built 2026-11-25, in active development, not approved yet (the owner,
+2026-11-24: *"probably a half turn if possible then other options"* and
+*"maybe a 90 degrees turn might be better so you could also consider
+it"*; `ohl_structure_link::flange_turns`, `LayoutSettings::flange_half`
+and `flange_quarter`, both on).
+
+An end lying off its flange whose **outstanding leg points into the
+flange** cannot take a plate in its own plane welded to the flat plate
+(step 4): that leg would stand on the flat plate. The run already tries
+two turns on its plans alone — the half turn (step 2b) and, for an
+equal-leg angle at most 20° off, the quarter turn that turns that leg away
+(L3b) — kept where more of the member's ends are planned laid out. What is
+left after them is now weighed **after writing**, as L19 weighs the turns
+from the joints' planes:
+
+1. After the run (and after L19's weighing), every member left with such
+   an end is a candidate — unless it is a leg or a chord (Orient angles'),
+   is one part with another (given, or joined by the run), is no single
+   angle, or reaches a joint the run did not lay out. A member weighed
+   before (its row in the layout record still its own) is not weighed
+   again.
+2. The tower is laid out three more times: with every candidate turned by
+   **half a turn**, by **a quarter turn one way** (+90°), and by **a
+   quarter turn the other way** (−90°), each roll added to the roll the
+   run wrote. A turned member keeps its roll in that run (the run never
+   turns it again).
+3. A turn passes for a member where **every joint the member reaches**
+   (both its ends) is laid out no worse than without it (no fewer member
+   ends, not as many on more plates, not whole where it was) and one
+   better, and where no joint elsewhere is laid out worse at which a
+   member the layout turned otherwise meets one of its joints (L19's
+   guard past the turned members).
+4. Of the turns that pass, the one laying out **more member ends** at the
+   member's joints is kept; on a tie **the half turn** (the same leg
+   bolted, the owner's first choice), then the fewer plates, then +90°
+   before −90°.
+5. The members kept are laid out together and each weighed again against
+   the run without any turn, those no longer passing dropped, until all
+   still pass (at most four rounds, as L19); where they never agree, none
+   is kept.
+
+**The quarter turn bolts the other leg.** On an equal-leg angle that leg
+is as wide. On an unequal angle it is the other width: the plan takes its
+bolts, gauges and edge distances from that leg as from any leg (the
+code's minimum distances for that leg's thickness and width), and the
+words say so. It is tried only where **no leg is given** — neither the
+member's `connected_leg` nor the end's `leg`: a value given is never
+changed silently. The member check is unchanged by the turn: without a
+leg given the bundled ASCE 10-97 plugin takes an unequal angle bolted by
+its short leg (said in its notes) whichever leg the joint bolts — the
+smaller net section, on the safe side.
+
+**Applied or offered.** Where the member's roll is the program's (no roll
+given, one the layout or Orient angles set — an imported tower's —, or
+values given by hand replaced) the turn kept is **applied**: the roll
+written turned and recorded in the layout record's `flange_turns` (the
+roll before and with it, half or quarter, the words). Where the roll is
+the designer's it is **never applied unasked**: the turn that would pass
+is **offered** in Lay out joints with its effect as weighed, and applied
+when ticked. A member where neither turn passes is left as it is, its row
+saying so (the other options — a stand-off, a welded assembly of three
+parts — later). Member size and work point are never changed; the roll
+only as said.
+
+**Nothing left out that was not before.** A turn changes which face the
+end lies on and which leg is bolted; the joint is then laid out, written
+and checked as any other (the clash rounds, the joint checks, the plates'
+checks). An offset the new seat brings is handled as for any end (the
+welded plate's axis offset carried into the analysis with the estimated
+eccentricities, L20 item 2; said NOT ON THE SAFE SIDE without them, as
+before).
+
+**Time.** Three whole layouts and one or more to confirm, once per tower
+(the rows then say which members were weighed); measured below.
+
+**Measured** (2026-11-25, kept privately): the eight private towers L21–L23
+measure (6 852 joints), the same settings as L23 (Orient angles' turns
+weighed, J9's and J7a's proposals confirmed, no run again, no bend
+check), with the bundled ASCE 10-97 plugin built fresh and checked to load
+before every run (its minimum distances in force; L23 found the earlier
+setup without them); the base is main before L25 with the same setup.
+
+| | base | half and quarter weighed (the default) |
+|---|---|---|
+| joints laid out whole | 4 218 | 4 253 (+35) |
+| member ends laid out | 15 141 | 15 268 (+127) |
+| plates | 8 047 | 8 196 (+149) |
+| joints better / worse than the base | — | 124 / 0 |
+| ends left with the outstanding leg into the flange | 460 | 335 |
+| members weighed | — | 326 |
+| … half a turn kept | — | 83 |
+| … a quarter turn kept (−90° / +90°) | — | 46 (29 / 17) |
+| … a turn passing alone, not after the turns kept together | — | 23 |
+| … neither turn helps (left) | — | 174 |
+
+Each turn alone, on four of the towers (3 111 joints; the same base):
+
+| | base | half turn only | quarter turn only | both weighed |
+|---|---|---|---|---|
+| joints laid out whole | 2 065 | 2 072 | 2 068 | 2 072 |
+| member ends laid out | 7 025 | 7 046 | 7 052 | 7 062 |
+| plates | 3 508 | 3 536 | 3 547 | 3 565 |
+| joints better / worse than the base | — | 23 / 0 | 30 / 0 | 38 / 0 |
+| members turned (of 103 weighed) | — | 21 | 39 | 45 (21 half, 24 quarter) |
+| ends left with the outstanding leg into the flange | 135 | 117 | 101 | 94 |
+
+Both weighed lay out the most ends and better joints; neither alone does
+as well (the half turn alone the same joints whole, 16 ends fewer; the
+quarter turn alone more ends than the half turn but 4 joints whole fewer).
+
+The half turn wins about two in three of the members turned, the quarter
+turn the rest. Every member weighed on these towers is an equal-leg
+angle: the unequal angle's quarter turn is not measured on them (tested
+on an invented body: tried where no leg is given, not where the member's
+`connected_leg` is). No joint
+is laid out worse (the rule: every joint a member reaches no worse, one
+better). The plates rise with the ends: the ends gained mostly go onto a
+plate. The weighing laid each tower out four or five more times — about
+as long again as L19's weighing of Orient angles' turns (measured under a
+varying load of other work; once per tower).
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
