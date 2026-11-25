@@ -36,8 +36,14 @@
 //!
 //! Rolls apart by less (Orient angles turns each piece to its face on its
 //! own): confirming writes both pieces the roll half-way between, so that
-//! the core reads them as one part (its rule: the same roll); each piece
-//! turns by at most half the tolerance, said in the proposal.
+//! the core reads them as one part (its rule: the same roll); a pair alone
+//! turns each piece by at most half the tolerance, said in the proposal.
+//! Pieces confirmed together in a chain — with the pieces already one part
+//! with any of them (O44 L27: they join the chain) — all get the chain's
+//! mean roll, so that no part already one is left turned apart; each piece
+//! turns by less than the spread of the chain's rolls (more than half the
+//! tolerance where a part joins: the new piece is within it of its
+//! neighbour, the part's other pieces turn with it).
 //!
 //! The layout's own values at the ends (marked *automatic*) do not count
 //! as given: a later run replaces them anyway.
@@ -277,12 +283,51 @@ fn leg_with_bolts(t: &StructureType, j: &str, a: &str, b: &str) -> bool {
     (leg(a) || leg(b)) && (bolted(a) || bolted(b))
 }
 
+/// Pieces `a` and `b` joined in one chain ([`confirm`]): `chain` the
+/// chain of each piece, `chains` their pieces. `new`: a pair confirmed
+/// (a chain of its own when neither is in one yet); else a pair one part
+/// already, joined only to a chain one of them is in.
+fn join(
+    chain: &mut BTreeMap<String, usize>,
+    chains: &mut Vec<Vec<String>>,
+    a: &str,
+    b: &str,
+    new: bool,
+) {
+    match (chain.get(a).copied(), chain.get(b).copied()) {
+        (None, None) => {
+            if new {
+                chains.push(vec![a.to_owned(), b.to_owned()]);
+                chain.insert(a.to_owned(), chains.len() - 1);
+                chain.insert(b.to_owned(), chains.len() - 1);
+            }
+        }
+        (Some(k), None) => {
+            chains[k].push(b.to_owned());
+            chain.insert(b.to_owned(), k);
+        }
+        (None, Some(k)) => {
+            chains[k].push(a.to_owned());
+            chain.insert(a.to_owned(), k);
+        }
+        (Some(k), Some(l)) if k != l => {
+            let moved = std::mem::take(&mut chains[l]);
+            for m in &moved {
+                chain.insert(m.clone(), k);
+            }
+            chains[k].extend(moved);
+        }
+        _ => {}
+    }
+}
+
 /// The pieces `list` proposed (those with no reason against) written one
 /// part into `doc` (`kind = "continuous"` at both ends, each onto the
 /// other; the layout's own values at those ends taken out first, as they
 /// were for pieces ending there). Pieces whose rolls are a little apart
-/// get one roll — of each chain of pieces confirmed together, half-way
-/// between its pieces' rolls — no longer the layout's. The pieces written
+/// get one roll — of each chain of pieces confirmed together, with the
+/// pieces already one part with any of them (O44 L27), half-way between
+/// its pieces' rolls — no longer the layout's. The pieces written
 /// one part, and those that could not be (in words, with why).
 pub fn confirm(
     doc: &mut DocumentMut,
@@ -298,37 +343,42 @@ pub fn confirm(
     let mut chain: BTreeMap<String, usize> = BTreeMap::new();
     let mut chains: Vec<Vec<String>> = Vec::new();
     for x in &yes {
-        match (chain.get(&x.member).copied(), chain.get(&x.onto).copied()) {
-            (None, None) => {
-                chains.push(vec![x.member.clone(), x.onto.clone()]);
-                chain.insert(x.member.clone(), chains.len() - 1);
-                chain.insert(x.onto.clone(), chains.len() - 1);
-            }
-            (Some(k), None) => {
-                chains[k].push(x.onto.clone());
-                chain.insert(x.onto.clone(), k);
-            }
-            (None, Some(k)) => {
-                chains[k].push(x.member.clone());
-                chain.insert(x.member.clone(), k);
-            }
-            (Some(k), Some(l)) if k != l => {
-                let moved = std::mem::take(&mut chains[l]);
-                for m in &moved {
-                    chain.insert(m.clone(), k);
-                }
-                chains[k].extend(moved);
-            }
-            _ => {}
+        join(&mut chain, &mut chains, &x.member, &x.onto, true);
+    }
+    // O44 L27: each chain grown by the pieces already one part with any of
+    // its pieces (given `continuous` in the file), so that they all get its
+    // one roll. Else a piece confirmed onto a part already one (a run's
+    // turns brought their rolls within the tolerance) turns alone with its
+    // new partner, and the part's pieces are no longer turned alike: the
+    // core then reads them apart again (measured on private towers: a run
+    // again after confirming again laid such a joint out otherwise). (The
+    // mean of the whole chain; tried too, the part keeping its roll and only
+    // the new pieces turned: measured worse there.)
+    let given: Vec<(&str, &str)> = t
+        .connections
+        .iter()
+        .filter(|c| c.kind() == ConnectionKind::Continuous)
+        .filter_map(|c| Some((c.member.as_str(), c.onto.as_deref()?)))
+        .collect();
+    loop {
+        let before = chain.len();
+        for (a, b) in &given {
+            join(&mut chain, &mut chains, a, b, false);
+        }
+        if chain.len() == before {
+            break;
         }
     }
     let member = |id: &str| t.members.iter().find(|m| m.id == id);
+    // (Any roll written: the core's rule read on the rolls as now written.)
+    let mut rolls_written = false;
     for c in chains.iter().filter(|c| !c.is_empty()) {
         let pieces: Vec<&ohl_structures::structures::TypeMember> =
             c.iter().filter_map(|m| member(m)).collect();
         if pieces.windows(2).all(|w| w[0].roll == w[1].roll) {
             continue;
         }
+        rolls_written = true;
         // Half-way: the mean of the rolls about the first's.
         let r0 = roll_of(pieces[0]);
         let mean = r0
@@ -404,7 +454,7 @@ pub fn confirm(
     }
     // (The core's rule read on the rolls as now written.)
     let now;
-    let t = if yes.iter().any(|x| x.roll.is_some()) {
+    let t = if rolls_written {
         now = <StructureType as ohl_structures::LibraryItem>::parse(
             std::path::Path::new("structure.ohls"),
             &doc.to_string(),
