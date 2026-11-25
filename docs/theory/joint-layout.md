@@ -827,7 +827,13 @@ its own, so pieces of one member often differ by a fraction of a degree
 (on the private real towers up to about a degree). The core reads two
 pieces one part only with the same roll; confirming writes every piece of
 a chain confirmed together the roll half-way between theirs (the mean of
-their rolls) — each turns by at most half the 2°. The 2° is the flatness
+their rolls) — a pair alone turns each piece by at most half the 2°. A
+chain takes in the pieces **already one part** with any of its pieces
+(given `continuous`; [L27](#a-run-again-on-a-laid-out-file-l27)): they get the chain's mean roll too, so
+that a part already one is never left turned apart (each piece turns by
+less than the spread of the chain's rolls — where a part joins, more than
+half the 2°: the new piece is within 2° of its neighbour, the part's
+other pieces turn with it). The 2° is the flatness
 the joint details allow a leg bolted (`FLAT_OFF`): **the owner's value**
 (2026-11-19: "2° for both"; 5° before), not a standard's. Such a roll is then the user's (no longer the
 layout's: a later run does not turn it back), and the layout never turns
@@ -4083,6 +4089,86 @@ plate. The weighing laid each tower out four or five more times — about
 as long again as L19's weighing of Orient angles' turns (measured under a
 varying load of other work; once per tower).
 
+## A run again on a laid-out file (L27)
+
+(Built 2026-11-25, in active development, not approved yet.) L26 found a
+run again on a laid-out tower file not idempotent on three of eight
+private towers: joints better, and on each of the three the same two
+joints with as many ends on one more plate. That run again was made as
+the first run is — the pieces in line and leg splice places proposed
+*then* confirmed first. Traced to three causes:
+
+- **The run's turns bring more pieces within the 2° of one part.** L19's
+  weighed turns and L25's half and quarter turns change rolls; after the
+  run some pieces in line, more than 2° apart before, are within 2° of
+  their neighbours and are proposed one part (seven on each of the three
+  towers). Confirmed, the joints they pass through lose those ends (they
+  run on through), which reads as "better". That is a new input — the
+  user's confirmation (D15), never the run's —, not the run: the first run
+  cannot reach it, as the proposals are read before the turns.
+- **A defect in confirming: a piece confirmed onto a part already one
+  turned with its new partner alone.** Confirming wrote the two pieces the
+  roll half-way between them; the pieces already one part with one of them
+  (given `continuous`) kept the old roll, so that part was turned apart by
+  up to half the 2° — and the core reads pieces one part only with the same
+  roll: the part was silently two pieces again (the user's earlier
+  confirmation undone; each piece then ends at the joint — on the safe
+  side, but not what was confirmed), and the joint between them laid out
+  otherwise (the "one more plate"). **Fixed:** a chain confirmed takes in
+  the pieces already one part with any of its pieces; all get its mean
+  roll ([above](#pieces-in-line-one-part-confirmed-j9)). (Tried too and
+  measured worse: the part keeping its roll — the roll most of its pieces
+  have — and only the pieces confirmed now turned to it.) Tested on an
+  invented line in three pieces (two one part, the third turned 1.5°):
+  confirmed, all three one roll, one part throughout, and a run and a run
+  again give the same file; the test fails without the fix.
+- **In the run itself: members the kept turns leave pointing into the
+  flange.** L25 weighs the members the run leaves with an outstanding leg
+  pointing into the flange; the turns it keeps change the layout of their
+  joints, and other members (laid out before, so not weighed) may then be
+  left so. Only a run again weighed them: their rows written (none kept on
+  these towers), the run again as long as a weighing. **Fixed:** they are
+  weighed in further passes of the same run until a pass finds none (three
+  passes at most, `FLANGE_PASSES`; members still left after the last are
+  said in the notes).
+
+**Measured** (2026-11-25, kept privately; the eight private towers, 6 852
+joints, and the setup L25 and L26 measure — Orient angles' turns weighed,
+the pieces in line and leg splice places confirmed before the first run,
+no bend check; the base the first run L25 and L26 measured; the bundled
+ASCE 10-97 plugin built fresh and checked to load before every run):
+
+| | joints whole | member ends | plates | joints better / worse |
+|---|---|---|---|---|
+| base, first run (eight towers) | 4 253 | 15 268 | 8 196 | — |
+| a run again on its file, nothing confirmed (eight towers) | 4 253 | 15 268 | 8 196 | 0 / 0 |
+| … and a run again on that (eight towers) | 4 253 | 15 268 | 8 196 | 0 / 0 |
+| three towers, base | 1 915 | 6 396 | 3 243 | — |
+| … confirmed again, run again, before the fix | 1 945 | 6 432 | 3 261 | 30 / 6 |
+| … the same with the fix | 1 921 | 6 393 | 3 222 | 30 / 18 |
+| … with the part keeping its roll (tried, not kept) | 1 927 | 6 384 | 3 222 | 18 / 12 |
+
+- **The run alone is idempotent in its joints**: on its own result
+  (nothing confirmed in between) every joint of the eight towers is laid
+  out as before. The file differed only on four towers, by one or two
+  `flange_turns` rows (the members the kept turns left pointing into the
+  flange, weighed by the run again; none kept), and that run again took
+  about as long as the first run's weighing (4 000–5 250 s against 55–1 200
+  s where there was nothing more to weigh). With the passes the first run
+  weighs them: a run again on that result is the same file, byte for byte,
+  on all eight towers.
+- **The first run is unchanged by the fix to confirming**: the files it
+  lays out (after the confirmations) are byte for byte the same on all
+  eight towers; on the smallest tower the first run's file is byte for
+  byte the base's.
+- **Confirmed again, then run again**: with the fix the two joints of each
+  tower are laid out as before (no more plate), the part's pieces one roll;
+  the joints the newly confirmed pieces pass through, or whose pieces turn
+  with them (by up to about 1°), change either way — more joints worse than
+  before the fix, where the part was silently two pieces and its laid-out
+  pieces were not turned. A user's confirmation changes the steel; the run
+  then lays out what is confirmed.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -4102,7 +4188,9 @@ the values a run set before (the record; the members' rolls back to what
 they were), so that it starts from the same joint; ties are broken by
 member id; lengths are rounded as written (a tenth of a millimetre, the
 cut up to the millimetre). A run again on its own result changes nothing
-(tested, and on the 78 tower files of the real line measured below).
+(tested, and on the 78 tower files of the real line measured below; with
+L19's and L25's weighing on eight private towers since L27 —
+[a run again on a laid-out file](#a-run-again-on-a-laid-out-file-l27)).
 
 An edit near a laid-out joint (a member's section, roll or bolts, a
 plate's thickness, a value at an end, a joint moved, a setting) lays that

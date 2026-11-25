@@ -117,7 +117,7 @@ themselves are not chosen here (that comes with the design codes).
 | Preset for bracing, redundant, crossing, leg | a connection preset's bolts for an end of that class without bolts (before the bolt picked); provisional too |
 | Plates at a corner | each bolted to its flange (usual lattice practice) · welded together |
 | Replace values given by hand | off: a cut, shift, roll or what a member bolts onto given by hand is kept (the layout works round it); on: replaced |
-| Pieces in line: **Confirm all (n)**, *Each joint* › **Confirm** | writes the pieces proposed one part (`kind = "continuous"` at both ends; a little apart in roll: one roll half-way), one undo step; the preview is worked out again. Those not proposed are listed with why |
+| Pieces in line: **Confirm all (n)**, *Each joint* › **Confirm** | writes the pieces proposed one part (`kind = "continuous"` at both ends; a little apart in roll: one roll half-way, the pieces already one part with them included), one undo step; the preview is worked out again. Those not proposed are listed with why |
 | **Apply (n joints)** | writes the preview, one undo step; greyed while the preview is worked out |
 | Cancel, Escape | closes the window, nothing changes |
 
@@ -166,7 +166,7 @@ themselves are not chosen here (that comes with the design codes).
 - A plate **stopping short of the work point** (since 2026-11-20) is marked `short` in the record and its outline written; change it like any outline (it is then yours).
 - An `onto` you gave keeps being yours when the layout puts the member onto a plate on that member (since 2026-11-20): Joint details' *laid out automatically* says "onto (yours: D4, kept)", and a run again keeps it.
 - **Leg splices**: where two legs of one section meet with their splice bolts, the joint says *where the splice is is not known* — confirm the leg splice places (*Leg splices*: one part by the owner's rule), or give the splice there (+ Splice in Joint details), and lay it out again. A splice you confirmed is yours: a run (also one replacing values given by hand) keeps it and its provisional bolts.
-- **Pieces in line confirmed one part** whose rolls were a little apart (Orient angles turns each piece to its face on its own: up to about a degree on real towers) get one roll, half-way between theirs (at most 2° apart — the owner's value of 2026-11-19, not a standard's); the proposal says so. Orient angles run again may turn them apart (the joint checks then say they are not one part, and each ends at the joint: on the safe side) — confirm them again.
+- **Pieces in line confirmed one part** whose rolls were a little apart (Orient angles turns each piece to its face on its own: up to about a degree on real towers) get one roll, half-way between theirs (at most 2° apart — the owner's value of 2026-11-19, not a standard's); the proposal says so. A piece confirmed onto pieces already one part: the part's pieces get the one roll too (the mean of them all), so that no part confirmed before is left turned apart. Orient angles run again may turn them apart (the joint checks then say they are not one part, and each ends at the joint: on the safe side) — confirm them again.
 - **Undo** takes the whole run back in one step.
 
 **What it changes in the results** (see *Usage before and after* in the

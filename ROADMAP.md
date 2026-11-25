@@ -4323,6 +4323,67 @@ only where it helps):
   > → Recommended: allowed, said on the proposal with the leg it bolts.
   > **Taken as recommended, 2026-11-25** (the brief: L25 now; the quarter
   > turn of an unequal angle allowed, said with the leg it bolts).
+- [x] L27. **A run again on a laid-out file: traced, two causes fixed**
+  (L26's question 4; the owner busy: traced and fixed on its own,
+  reported). **Built 2026-11-25, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-run-again-on-a-laid-out-file-l27),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-25-joint-layout-a-run-again-on-a-laid-out-file-l27);
+  no format change). L26's run again confirmed the pieces in line and
+  leg splice places proposed again before laying out. **Found**: (a) the
+  run's weighed turns bring more pieces within the 2° of one part (seven
+  per tower), proposed and confirmed then — the user's input (D15), not
+  the run; (b) **a defect in confirming**: a piece confirmed onto a part
+  already one turned with its new partner alone, the part's other pieces
+  kept their roll, so the part was silently two pieces again (the user's
+  earlier confirmation undone; each piece then ending at the joint, on the
+  safe side) and the joint between them laid out with one more plate —
+  **fixed**: the chain takes in the parts already one, all get its mean
+  roll (`in_line::confirm`); (c) in the run, the members L25's kept turns
+  leave with an outstanding leg pointing into the flange were weighed
+  only by a run again — **fixed**: weighed in further passes of the same
+  run (`flange_turns`, at most three). Tested on an invented line in three
+  pieces (structure-app integration test; fails without the fix). Measured
+  on the eight private towers (6 852 joints, kept privately; the bundled
+  ASCE 10-97 plugin built fresh and checked to load before every run):
+
+  | | joints whole | member ends | plates | better / worse |
+  |---|---|---|---|---|
+  | base, first run (eight towers) | 4 253 | 15 268 | 8 196 | — |
+  | a run again, nothing confirmed | 4 253 | 15 268 | 8 196 | 0 / 0 |
+  | … and a run again on that | 4 253 | 15 268 | 8 196 | 0 / 0 |
+  | three towers: confirmed again, run again, before the fix | 1 915 → 1 945 | 6 396 → 6 432 | 3 243 → 3 261 | 30 / 6 |
+  | … with the fix | 1 915 → 1 921 | 6 396 → 6 393 | 3 243 → 3 222 | 30 / 18 |
+  | … the part keeping its roll (tried, not kept) | 1 915 → 1 927 | 6 396 → 6 384 | 3 243 → 3 222 | 18 / 12 |
+
+  The run alone is idempotent in its joints on all eight towers (the
+  eighth, L26's question 5, measured so); its file differed on four towers
+  by one or two `flange_turns` rows, the run again then as long as a
+  weighing (4 000–5 250 s against 55–1 200 s); with the passes a run again
+  on the result is the same file on all eight. The first run is unchanged
+  by the fix to confirming (the files it lays out byte for byte the same).
+  Also measured (L26's question 3, nothing changed): *Solve the clashes*
+  (L11) on the 69 crowded joints of L26's 82 ends: a solution at 63, the
+  clashes there 1 476 → 758, other problems 200 → 173, none more around;
+  of the 16 solutions laying the joint out again, 15 lay one end more out;
+  38 turn a member, 2 move an end (both marked); 78 s per joint.
+  > **Owner:** (1) The fix to confirming (a part confirmed before keeps
+  > being one part; with it the joints of the pieces turned along change,
+  > 30 / 18 against 30 / 6 where the part was silently undone) →
+  > Recommended: keep — an earlier confirmation must not be undone
+  > silently. (2) The pieces the run's turns bring within 2° of one part
+  > are proposed only after the run (seven per tower) → Recommended: say
+  > them in the run's notes after its turns ("n pieces in line now within
+  > 2°: confirm in Lay out joints"), never confirm them silently. (3)
+  > Joining two parts already one of other rolls turns laid-out pieces (up
+  > to about 1° here) → Recommended: say it in the proposal (the pieces
+  > turned and by how much) before confirming; a later step if wanted.
+  > (4) *Solve the clashes* halves the clashes at the crowded joints (63 of
+  > 69) → Recommended: next, a "solve every joint left with clashes" pass
+  > after a run, each solution applied only with every joint around no
+  > worse, measured on the eight towers. (5) L25's passes (at most three;
+  > one more pass weighs one or two members on four of the eight towers,
+  > none kept, the first run there longer by about that weighing, a run
+  > again quicker by as much) → Recommended: keep.
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
