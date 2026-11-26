@@ -314,12 +314,22 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// weld's sides (`[[plate.weld]] sides`, the fillets on one side of the
 /// plate or both: [`crate::connections::TypeWeld::sides`],
 /// [`crate::connections::WELD_SIDES_VERSION`]); a file is written at 28
-/// only when a weld gives them.
-pub const STRUCTURE_FILE_VERSION: u32 = 28;
+/// only when a weld gives them. Version 29 (2026-11-26, the automatic joint
+/// layout's L29) adds the detailing practice's plate thickness rules
+/// (`[layout_practice.plates]` `least_thickness` and `thicknesses`:
+/// [`LAYOUT_PRACTICE_THICKNESS_VERSION`]); a file is written at 29 only
+/// when its practice gives one.
+pub const STRUCTURE_FILE_VERSION: u32 = 29;
 
 /// The structure file version of the joint layout's detailing practice
 /// (`[layout_practice]`, O44 L24, 2026-11-25).
 pub const LAYOUT_PRACTICE_VERSION: u32 = 27;
+
+/// The structure file version of the detailing practice's plate thickness
+/// rules (`[layout_practice.plates]` `least_thickness`, `thicknesses`;
+/// O44 L29, 2026-11-26). An older program refuses such a file (rather than
+/// laying it out without the rules).
+pub const LAYOUT_PRACTICE_THICKNESS_VERSION: u32 = 29;
 
 /// The structure file version of the bolt grades (`[[bolt_grade]]`, a
 /// member's `bolt_grade`; owner 2026-11-19).

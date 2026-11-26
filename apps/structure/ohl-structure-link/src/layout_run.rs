@@ -898,6 +898,20 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     if let Some(n) = &ask.settings.practice_refused {
         run.notes.insert(0, n.clone());
     }
+    // (L29) The plates the practice's thickness rules made thicker: said.
+    let thicker = run
+        .laid_out()
+        .flat_map(|o| &o.plan.notes)
+        .filter(|n| n.contains(crate::practice::THICKER_MARK))
+        .count();
+    if let Some(n) = crate::practice::thicker_run_note(thicker) {
+        run.notes.push(n);
+    }
+    // (L29, the owner's L24 question 4) The run's own gap, pull-back and
+    // shift where they go beyond the practice given: said, kept.
+    if let Some(n) = crate::practice::beyond_note(ask.settings) {
+        run.notes.push(n);
+    }
     Ok(run)
 }
 

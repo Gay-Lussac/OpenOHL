@@ -1417,7 +1417,7 @@ empty table lays out exactly as today):
 
 ```toml
 format = "ohl-layout-practice"
-version = 1
+version = 2                    # 1 without the plate thickness rules (both read)
 name = "invented shop"         # shown with where it comes from
 # The fabrication order: the five forms, each once, in the shop's order,
 # each allowed (a word) or not ({ form = "…", allowed = false }); "direct"
@@ -1444,6 +1444,11 @@ own_plane_offset = "40 mm"     # a welded plate's axis offset (L20)
 bend_radius = 2                # inside radius, in plate thicknesses
 between_least = 0.5            # least gap for a plate between angles (L15)
 short = true                   # plates may stop short of the work point
+# The plate thickness rules (O44 L29, 2026-11-26; version 2): a plate is the
+# thinnest listed at least as thick as the thickest leg on it and the least,
+# never thinner than that leg; none listed that thick: its ends by hand.
+least_thickness = "0 mm"       # 0: none (0 to 50 mm)
+thicknesses = []               # the shop's stock, e.g. ["6 mm", "8 mm", "10 mm"]
 
 [bolts]
 count = 2                      # the picked bolt: bolts per end

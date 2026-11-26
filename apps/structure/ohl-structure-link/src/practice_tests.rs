@@ -204,7 +204,7 @@ fn values_out_of_range_are_refused_with_why() {
     assert!(e.contains("true or false"), "{e}");
     let e = refused("format = \"something-else\"\n");
     assert!(e.contains("format"), "{e}");
-    let e = refused("version = 2\n");
+    let e = refused("version = 3\n");
     assert!(e.contains("version"), "{e}");
     let e = refused("[limits]\nshift = \"50 mm\"\nflatness_deg = 5\n");
     assert!(
@@ -475,4 +475,262 @@ fn a_code_plugins_practice_is_read_and_checked() {
         crate::practice::plugin_practice(&simple, Some(&dir)),
         Ok(None)
     );
+}
+
+/// O44 L29, the plate thickness rules: thicker only — the thinnest listed
+/// at least as thick as the thickest leg and the least; no rule: the leg's
+/// exactly; none listed that thick: refused with why.
+#[test]
+fn a_plate_is_never_thinner_than_the_thickest_leg_on_it() {
+    use crate::practice::plate_thickness;
+    assert_eq!(plate_thickness(0.007, 0.0, &[]), Ok(0.007));
+    assert_eq!(plate_thickness(0.007, 0.006, &[]), Ok(0.007));
+    assert_eq!(plate_thickness(0.005, 0.006, &[]), Ok(0.006));
+    let list = [0.006, 0.008, 0.010, 0.012];
+    assert_eq!(plate_thickness(0.005, 0.0, &list), Ok(0.006));
+    assert_eq!(plate_thickness(0.007, 0.0, &list), Ok(0.008));
+    assert_eq!(plate_thickness(0.008, 0.0, &list), Ok(0.008));
+    assert_eq!(plate_thickness(0.005, 0.009, &list), Ok(0.010));
+    let e = plate_thickness(0.014, 0.0, &list).unwrap_err();
+    assert!(
+        e.contains("14 mm") && e.contains("the thickest 12 mm"),
+        "{e}"
+    );
+    // The settings' own: the rules applied; the planner's estimate falls
+    // back to the leg where none is listed (the plate refused when made).
+    let s = LayoutSettings {
+        plate_least: 0.006,
+        plate_thicknesses: list.to_vec(),
+        ..settings()
+    };
+    assert_eq!(s.plate_thickness(0.005), Ok(0.006));
+    assert_eq!(s.plate_planned(0.014), 0.014);
+    assert_eq!(settings().plate_planned(0.0071), 0.0071);
+}
+
+/// The rules read back as written (version 2 only with them), every value
+/// checked, the default without them.
+#[test]
+fn the_thickness_rules_read_back_and_are_checked() {
+    let p = DetailingPractice::parse(
+        "version = 2\n[plates]\nleast_thickness = \"6 mm\"\nthicknesses = [\"10 mm\", \"8 mm\", \
+         \"6 mm\", \"12.5 mm\"]\n",
+    )
+    .unwrap();
+    assert!((p.least_thickness - 0.006).abs() < 1e-12);
+    assert_eq!(p.thicknesses, vec![0.006, 0.008, 0.010, 0.0125]);
+    assert!(p.has_thickness_rules());
+    let t = p.to_table();
+    assert_eq!(t["version"].as_integer(), Some(2));
+    assert_eq!(DetailingPractice::from_table(&t).unwrap(), p);
+    assert_eq!(
+        p.thickness_text(),
+        "at least 6 mm, in 6 mm, 8 mm, 10 mm, 12.5 mm"
+    );
+    // Without them: version 1, as before L29.
+    let d = DetailingPractice::default();
+    assert_eq!(d.to_table()["version"].as_integer(), Some(1));
+    assert!(!d.to_text().contains("thickness"));
+    // Refused, each with why.
+    assert!(refused("[plates]\nleast_thickness = \"60 mm\"").contains("0 (none) to 50 mm"));
+    assert!(refused("[plates]\nthicknesses = [\"1 mm\"]").contains("give each 2 mm to 100 mm"));
+    assert!(refused("[plates]\nthicknesses = [\"8 mm\", \"8 mm\"]").contains("given twice"));
+    assert!(refused("[plates]\nthicknesses = [\"8 mm\", true]").contains("a length expected"));
+    assert!(refused("[plates]\nthicknesses = \"8 mm\"").contains("a list of lengths"));
+    assert!(
+        refused("[plates]\nleast_thickness = \"10 mm\"\nthicknesses = [\"6 mm\", \"8 mm\"]")
+            .contains("thicker than the thickest plate listed")
+    );
+    assert!(refused("version = 3").contains("1 or 2 expected"));
+    // The settings take them.
+    let s = with_practice(settings(), Some(&recorded(p.clone())));
+    assert!((s.plate_least - 0.006).abs() < 1e-12);
+    assert_eq!(s.plate_thicknesses, p.thicknesses);
+}
+
+/// The layout with the rules (an invented K-brace's joint N2): every plate
+/// it makes is as thick as the rule gives over the thickest leg on it,
+/// each such plate said in the joint's notes and the run's (NOT ON THE
+/// SAFE SIDE, with why); no thickness listed that thick: those ends left
+/// for a hand detail, said.
+#[test]
+fn the_thickness_rules_make_the_plates_thicker_only() {
+    let text = d1_spoiled(10.0);
+    let n2 = |s: &LayoutSettings| {
+        let r = run(&text, s, Some(&["N2"]), false);
+        let o = r.joints.iter().find(|j| j.joint == "N2").unwrap().clone();
+        (o, r.notes)
+    };
+    let (o0, notes0) = n2(&settings());
+    assert!(!o0.plan.plates.is_empty());
+    assert!(
+        !notes0
+            .iter()
+            .any(|n| n.contains(crate::practice::THICKER_MARK))
+    );
+    let legs: Vec<f64> = o0.plan.plates.iter().map(|p| p.thickness).collect();
+    // At least 8 mm (the legs here 7 mm and less): every plate 8 mm, or
+    // as thick as a thicker leg on it; never thinner.
+    let p = DetailingPractice {
+        least_thickness: 0.008,
+        ..Default::default()
+    };
+    let (o, notes) = n2(&with_practice(settings(), Some(&recorded(p))));
+    assert!(!o.plan.plates.is_empty());
+    let leg_max = legs.iter().copied().fold(0.0, f64::max);
+    for pl in &o.plan.plates {
+        let want = if leg_max < 0.008 { 0.008 } else { pl.thickness };
+        assert!(pl.thickness >= 0.008 - 1e-12, "{pl:?}");
+        assert!((pl.thickness - want).abs() < 1e-12, "{pl:?}");
+    }
+    assert!(
+        o.plan
+            .notes
+            .iter()
+            .any(|n| n.contains(crate::practice::THICKER_MARK)),
+        "{:?}",
+        o.plan.notes
+    );
+    assert!(
+        notes.iter().any(
+            |n| n.contains("NOT ON THE SAFE SIDE where a plate is thicker")
+                && n.contains("what makes it safe")
+        ),
+        "{notes:?}"
+    );
+    // Much thicker (20 mm): every plate at least that.
+    let p = DetailingPractice {
+        least_thickness: 0.020,
+        ..Default::default()
+    };
+    let (o, _) = n2(&with_practice(settings(), Some(&recorded(p))));
+    assert!(!o.plan.plates.is_empty());
+    assert!(o.plan.plates.iter().all(|pl| pl.thickness >= 0.020 - 1e-12));
+    // Only thinner plates listed: no plate made, the ends that needed one
+    // by hand (D1 and D2, 10° off: with no plate bent round the heel, the
+    // other plates they could take say why they do not fit).
+    let p = DetailingPractice {
+        thicknesses: vec![0.003],
+        ..Default::default()
+    };
+    let (o, _) = n2(&with_practice(settings(), Some(&recorded(p))));
+    assert!(o.plan.plates.is_empty(), "{:?}", o.plan.plates);
+    for m in ["D1", "D2"] {
+        assert!(o.plan.ends.iter().all(|e| e.member != m));
+        assert!(
+            o.plan.hand_members.iter().any(|h| h == m),
+            "{:?}",
+            o.plan.hand
+        );
+    }
+    // A flat plate only: its ends by hand, the list said.
+    let e = crate::practice::plate_thickness(0.007, 0.0, &[0.003]).unwrap_err();
+    assert!(e.contains("thicker than every plate thickness the detailing practice lists"));
+}
+
+/// The editor's table: only what differs from what it is laid over (the
+/// default, or a code plugin's practice), version 2 only with a rule; a
+/// rule the plugin gives taken away by its empty value; written into the
+/// file with its version step (27, or 29 with a rule), taken out again.
+#[test]
+fn the_editors_table_holds_only_what_differs() {
+    let d = DetailingPractice::default();
+    assert_eq!(d.own_over(&d), None);
+    let p = DetailingPractice {
+        shift: 0.020,
+        ..Default::default()
+    };
+    let own = p.own_over(&d).unwrap();
+    assert_eq!(own["version"].as_integer(), Some(1));
+    assert!(crate::practice::gives(&own, "limits.shift"));
+    assert!(!crate::practice::gives(&own, "limits.gap"));
+    assert!(!crate::practice::gives(&own, "fabrication"));
+    let back = in_force(Some(&own), None).unwrap().unwrap().practice;
+    assert_eq!(back, p);
+    // Over a plugin's practice with a least thickness, taken away here.
+    let plugin = answer("[plates]\nleast_thickness = \"8 mm\"\n[bolts]\ncount = 3\n");
+    let under = DetailingPractice::from_table(&plugin.table).unwrap();
+    let edited = DetailingPractice {
+        least_thickness: 0.0,
+        ..under.clone()
+    };
+    let own = edited.own_over(&under).unwrap();
+    assert!(!crate::practice::gives(&own, "bolts"));
+    let back = in_force(Some(&own), Some(&plugin))
+        .unwrap()
+        .unwrap()
+        .practice;
+    assert_eq!(back, edited);
+    // Written into the file: version 27, or 29 with a rule; taken out.
+    let base = format!(
+        "format = \"ohl-structure\"\nversion = 26\n{}",
+        d1_spoiled(0.0)
+    );
+    let mut doc: toml_edit::DocumentMut = base.parse().unwrap();
+    crate::practice::write_own(&mut doc, p.own_over(&d).as_ref()).unwrap();
+    assert_eq!(doc["version"].as_integer(), Some(27));
+    let t = parse(&doc.to_string());
+    assert!(t.layout_practice.is_some());
+    let thick = DetailingPractice {
+        thicknesses: vec![0.006, 0.008],
+        ..Default::default()
+    };
+    crate::practice::write_own(&mut doc, thick.own_over(&d).as_ref()).unwrap();
+    assert_eq!(doc["version"].as_integer(), Some(29));
+    crate::practice::write_own(&mut doc, None).unwrap();
+    assert!(parse(&doc.to_string()).layout_practice.is_none());
+    assert_eq!(doc["version"].as_integer(), Some(29), "never lowered");
+    // A file ending in plates with sub-tables: the practice written after
+    // them, the file still reading (never between an entry and its
+    // sub-table).
+    let plated = format!(
+        "{base}\n[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"7 mm\"\n[plate.bend]\n\
+         angle = \"10 deg\"\n\n[[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"7 mm\"\n"
+    );
+    let mut doc2: toml_edit::DocumentMut = plated.parse().unwrap();
+    crate::practice::write_own(&mut doc2, thick.own_over(&d).as_ref()).unwrap();
+    let again: toml::Table = toml::from_str(&doc2.to_string()).expect("it reads");
+    assert!(again.contains_key("layout_practice"));
+    assert_eq!(again["plate"].as_array().map(Vec::len), Some(2), "{}", doc2);
+    // A refused table is not written.
+    let bad = table("[limits]\nshift = \"90 mm\"\n");
+    assert!(crate::practice::write_own(&mut doc, Some(&bad)).is_err());
+}
+
+/// The window's own gap, pull-back and shift stay the user's per run (the
+/// owner's L24 question 4): where they go beyond the practice given, said
+/// — in the run's notes too; no practice given says nothing.
+#[test]
+fn settings_beyond_the_practice_are_said() {
+    let p = DetailingPractice {
+        shift: 0.015,
+        pull_back: 0.200,
+        ..Default::default()
+    };
+    assert!(p.beyond(p.gap, p.pull_back, p.shift).is_empty());
+    let b = p.beyond(0.001, 0.250, 0.030);
+    assert_eq!(b.len(), 4, "{b:?}");
+    assert!(b[0].starts_with("gap 1 mm — less than the practice's 10 mm"));
+    assert!(b[1].contains("the least the clash check sees"));
+    assert!(b[2].starts_with("pull-back 250 mm — longer than the practice's 200 mm"));
+    assert!(b[3].starts_with("shift 30 mm — larger than the practice's 15 mm"));
+    // In the run's notes.
+    let s = LayoutSettings {
+        shift_limit: 0.030,
+        ..with_practice(settings(), Some(&recorded(p)))
+    };
+    let r = run(&d1_spoiled(0.0), &s, Some(&["N2"]), false);
+    assert!(
+        r.notes
+            .iter()
+            .any(|n| n.starts_with("This run's own settings go beyond the detailing practice")),
+        "{:?}",
+        r.notes
+    );
+    // No practice given: nothing said.
+    let s = LayoutSettings {
+        shift_limit: 0.100,
+        ..settings()
+    };
+    assert_eq!(crate::practice::beyond_note(&s), None);
 }

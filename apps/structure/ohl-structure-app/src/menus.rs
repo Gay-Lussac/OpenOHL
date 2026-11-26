@@ -736,6 +736,20 @@ impl StructureApp {
                         crate::layout_window::Scope::Tower
                     });
                 }
+                if entry(
+                    ui,
+                    None,
+                    "Detailing practice…",
+                    None,
+                    tower,
+                    "Sets the shop's preferences Lay out joints follows for this tower (the \
+                     parts it may make, faces, limits, plates and their thicknesses, the picked \
+                     bolt), written in the structure file over the code plugin's or the \
+                     default, value by value; one undo step",
+                    "A tower with members first",
+                ) {
+                    self.open_practice_window();
+                }
             }
             Area::LoadCases => self.load_actions(ui),
             Area::Results => self.results_actions(ui),

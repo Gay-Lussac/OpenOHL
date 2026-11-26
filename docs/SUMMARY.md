@@ -46,6 +46,7 @@
 - [OHL-Structure, the structure application (ohl-structure)](user-guide/structure-app.md)
   - [OHL-Structure tools](user-guide/structure-tools.md)
   - [Lay out joints](user-guide/joint-layout.md)
+  - [Detailing practice](user-guide/detailing-practice.md)
   - [Bolt grade](user-guide/bolt-grade.md)
 - [Cross-section library (.ohlsec)](user-guide/section-library.md)
 - [Structure load cases (.ohlslc)](user-guide/structure-load-cases.md)
