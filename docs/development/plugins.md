@@ -1003,7 +1003,10 @@ before; the method names are `member-check`'s):
   connected part's thickness and ultimate strength, the force per bolt,
   a sheared or rolled edge and whether the member is a redundant, the
   minimum end distance, spacing and edge distance with their clauses
-  (and optionally the hole's diameter).
+  (and optionally the hole's diameter). The edge OpenOHL sends
+  (`ohl_structures_fe::bolt_rules::sheared_edge`): the connection's
+  `rolled_edge` where given; else, since 2026-11-26, a member's own leg of
+  a rolled angle profile rolled, any other part (a plate) sheared.
 - `bolt-distances-full` (third round, 2026-11-18; additive, found by its
   export name, called before `bolt-distances`) —
   `minimum-distances-full(method, distance-input) ->
@@ -1125,12 +1128,43 @@ further optional export carries them:
   as before. Both bundled plugins have it
   ([ASCE 10-97](../theory/asce10.md#buckling-lengths-from-what-braces-the-member),
   [SIA 263](../theory/sia263.md#flexural-buckling)).
+- `member-check-default-bolts` (2026-11-26, `code.wit`, additive: found
+  by its export name; it takes `member-check-full`'s and
+  `member-check-bracing`'s records, the three bound together in the world
+  `member-check-default-bolts-export`; roadmap O19 stage 5, the owner's
+  answer of 2026-11-25):
+  `check-members-default-bolts(method, full-input, list<member-bracing>,
+  list<default-bolt>) -> result<full-output, string>`. As
+  `check-members-bracing`, with **the default bolt of each member whose
+  data gives no bolts** at either end (an angle profile, checked):
+  `default-bolt` — the member's id, the library bolt's id ("" none), its
+  `diameter` (none: no default), `hole` (none: the code's standard hole),
+  `source` (`leg`: the largest bolt of the structure's bolt library the
+  leg's usual gauge takes — one gauge line at mid-leg, the hole clear of
+  the root fillet, the code's edge distance kept to the toe by the
+  plugin's own `bolt-distances` without an analysis; `structure`: the
+  structure's most used bolt, only where the first cannot be worked out;
+  `none`: the leg takes no bolt of the library, or nothing gives one) and
+  `why` in words for the member's result. A plugin that takes a hole in
+  each leg of such a member until the bolts are known takes this bolt's
+  hole after the member's own bolts at its other end and says where it
+  came from (the `why`); with no diameter it keeps its own default and
+  says OpenOHL's reason. OpenOHL calls it before `check-members-bracing`
+  (`ohl_member_check::full::check_full`, the defaults from
+  `ohl_member_check::default_bolts`); a plugin without it is called as
+  before and keeps its own default (the bundled plugins before 2026-11-26:
+  a 20 mm bolt). Both bundled plugins have it
+  ([ASCE 10-97](../theory/asce10.md#tension), [SIA 263](../theory/sia263.md)).
 - `joint-check-groups` (2026-11-19, `code.wit`, additive: found by its
   export name, its own records, world `joint-check-groups-export`; stage
   4.5 of the joint details): `check-joint-groups(method, group-input) ->
   result<list<group-result>, string>`. Per **group** (`holding`: a gusset
   plate's bolts onto the leg holding it; `bearing`: every bolt onto one
-  member at a joint) its plies (`ply`: the plate or the member, its
+  member at a joint) its plies (`ply`: the plate or the member — `kind`
+  `plate`, `member` (an angle's leg, its toe rolled) or, since 2026-11-26,
+  `member-sheared` (a member's toe its connection gives `rolled_edge =
+  false`: a sheared edge; a plugin that does not know the word takes it as
+  it takes any word other than `member`) —, its
   thickness, steel, redundant, whether its edges are `known`), its
   physical bolts (`group-bolt`: diameter, hole, the bolt's strength and
   shear capacities, grade, the `planes` its force is taken on — 1 where

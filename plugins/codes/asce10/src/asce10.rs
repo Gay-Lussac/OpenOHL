@@ -909,19 +909,40 @@ fn end_check(
     let mut net_notes: Vec<String> = Vec::new();
     let assumed = match (bolts, unbolted, leg_holes(s)) {
         (None, false, Some((legs, _))) => {
-            let (diameter, hole, whose) = match typical {
-                Some((dia, hole)) => (
+            // The member's other end's bolt (data), else OpenOHL's default
+            // bolt for the member (2026-11-26), else the plugin's own.
+            let sent = d.default_bolt.as_ref();
+            let (diameter, hole, whose) = match (typical, sent.and_then(|b| b.diameter)) {
+                (Some((dia, hole)), _) => (
                     dia,
                     hole.unwrap_or(dia + STANDARD_HOLE),
                     format!("the member's other end's {:.0} mm bolt", dia * 1e3),
                 ),
-                None => (
+                (None, Some(dia)) => {
+                    let b = sent.expect("a diameter sent");
+                    (
+                        dia,
+                        b.hole.unwrap_or(dia + STANDARD_HOLE),
+                        format!(
+                            "OpenOHL's default bolt, {}{}",
+                            b.why,
+                            if b.hole.is_none() {
+                                ", its standard hole (4.1)"
+                            } else {
+                                ""
+                            }
+                        ),
+                    )
+                }
+                (None, None) => (
                     DEFAULT_BOLT,
                     DEFAULT_BOLT + STANDARD_HOLE,
                     format!(
                         "a {:.0} mm bolt, the program's default (not the code's), and its \
-                         standard hole (4.1)",
-                        DEFAULT_BOLT * 1e3
+                         standard hole (4.1){}",
+                        DEFAULT_BOLT * 1e3,
+                        sent.map(|b| format!("; no default bolt from OpenOHL: {}", b.why))
+                            .unwrap_or_default()
                     ),
                 ),
             };

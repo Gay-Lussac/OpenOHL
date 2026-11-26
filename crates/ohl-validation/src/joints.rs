@@ -25,6 +25,7 @@ pub(crate) fn register(registry: &mut Registry) {
     registry.register(Box::new(JointParts));
     registry.register(Box::new(JointGroups));
     registry.register(Box::new(BoltDistances));
+    registry.register(Box::new(MemberBoltDistances));
     registry.register(Box::new(Welds));
 }
 
@@ -520,6 +521,66 @@ impl Calculation for BoltDistances {
         if let Some(f) = d.bolt_force {
             out.insert("bolt_force_n".into(), f);
         }
+        Ok(out)
+    }
+}
+
+/// `structures.member_bolt_distances`: the minimum distances of a member
+/// end's bolts as the bolt tools and the joint layout ask for them, through
+/// OpenOHL's own basis (`ohl_structures_fe::bolt_rules::basis`: the end's
+/// bolts, the member's leg, the edge rolled or sheared — 2026-11-26, a
+/// rolled angle's own leg rolled unless its connection says `rolled_edge =
+/// false`) and the plugin the structure names.
+struct MemberBoltDistances;
+
+impl Calculation for MemberBoltDistances {
+    fn id(&self) -> &'static str {
+        "structures.member_bolt_distances"
+    }
+
+    fn description(&self) -> &'static str {
+        "A member end's minimum bolt distances by the design code's plugin its structure \
+         names, through OpenOHL's basis (inputs: structure = .ohls text with its joint \
+         details, sections = .ohlsec text, member, joint = the member's end there, optional \
+         plate_thickness: in a plate of this thickness instead of the member's own leg); \
+         outputs end_m, spacing_m, edge_m, sheared (1: the edge taken as sheared, 0: rolled)"
+    }
+
+    fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
+        let text = |k: &str| {
+            inputs
+                .get(k)
+                .and_then(toml::Value::as_str)
+                .ok_or_else(|| format!("missing input \"{k}\""))
+        };
+        let library = ohl_sections::SectionLibrary::parse(text("sections")?)?;
+        let model = ohl_structures_fe::Model::from_structure_type_with_joint_details(
+            text("structure")?,
+            &library,
+            &Default::default(),
+            None,
+        )?;
+        let model = ohl_member_check::find(model, None)?;
+        let member = text("member")?;
+        let joint = text("joint")?;
+        let idx = model
+            .members
+            .iter()
+            .position(|m| m.id == member)
+            .ok_or_else(|| format!("no member {member}"))?;
+        let m = &model.members[idx];
+        let end = [m.i, m.j]
+            .iter()
+            .position(|&n| model.nodes[n].id == joint)
+            .ok_or_else(|| format!("member {member} has no end at {joint}"))?;
+        let part = q::<Length>(inputs, "plate_thickness")?.map(|t| (t, None));
+        let r = mc::bolt_rules(&model, idx, end, None, part)
+            .ok_or("the structure names no plugin, or the end has no bolts")??;
+        let mut out = Outputs::new();
+        out.insert("end_m".into(), r.end);
+        out.insert("spacing_m".into(), r.spacing);
+        out.insert("edge_m".into(), r.edge);
+        out.insert("sheared".into(), f64::from(u8::from(r.sheared)));
         Ok(out)
     }
 }

@@ -466,6 +466,97 @@ fn holes_in_each_leg_without_bolts() {
     assert_eq!(what, "gross section, no holes");
 }
 
+/// OpenOHL's default bolt sent with a member whose data gives no bolts
+/// (2026-11-26, O19 stage 5, the owner's answer of 2026-11-25): its hole in
+/// each leg in place of the 20 mm bolt's. L 40 × 4 with no root radius, A =
+/// 4 (80 − 4) = 304 mm², fy 355 MPa; a 12 mm bolt with a 13.5 mm hole sent:
+/// punched 15.1 mm, net 304 − 2 × 15.1 × 4 = 183.2 mm², one leg bolted × 0.9
+/// × 355 MPa = 58.5324 kN (the 20 mm bolt: 304 − 2 × 23.2 × 4 = 118.4 mm²,
+/// 37.8288 kN). A default without a hole: its standard hole (4.1), 12 + 1.6
+/// + 1.6 = 15.2 mm. No diameter sent (the leg takes no library bolt): the
+/// 20 mm bolt, OpenOHL's why said. The member's other end's bolt still
+/// first.
+#[test]
+fn default_bolt_sent_for_holes_in_each_leg() {
+    let (s, q) = profiled(ohl_sections::Shape::EqualAngle {
+        h: 0.04,
+        t: 0.004,
+        r: 0.0,
+    });
+    assert!((q.area - 304e-6).abs() < 1e-12);
+    let mut b = member("b", s, 1.5, MemberDesign::default(), None);
+    let before = capacity(&b, None).tension.unwrap().0;
+    assert!((before - 118.4e-6 * 355e6 * 0.9).abs() < 1e-6);
+    b.design.default_bolt = Some(crate::model::DefaultBolt {
+        diameter: Some(0.012),
+        hole: Some(0.0135),
+        why: "the largest bolt of the structure's library its 40 mm leg's usual gauge takes, M12"
+            .into(),
+    });
+    let c = capacity(&b, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - 183.2e-6 * 355e6 * 0.9).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section");
+    assert!(
+        c.tension_assumed.iter().any(|n| n.contains(
+            "13.5 mm hole in each leg (2 in the section; OpenOHL's default bolt, the largest \
+             bolt of the structure's library its 40 mm leg's usual gauge takes, M12)"
+        )),
+        "{c:?}"
+    );
+    // No hole sent: the standard hole.
+    b.design.default_bolt.as_mut().unwrap().hole = None;
+    let c = capacity(&b, None);
+    let (t, _) = c.tension.clone().unwrap();
+    assert!(
+        (t - (304e-6 - 2.0 * 0.0152 * 0.004) * 355e6 * 0.9).abs() < 1e-6,
+        "{c:?}"
+    );
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("M12, its standard hole (4.1)")),
+        "{c:?}"
+    );
+    // No diameter: the plugin's own 20 mm bolt, OpenOHL's why said.
+    b.design.default_bolt = Some(crate::model::DefaultBolt {
+        diameter: None,
+        hole: None,
+        why: "its 40 mm leg's usual gauge takes no bolt of the structure's library".into(),
+    });
+    let c = capacity(&b, None);
+    assert!((c.tension.clone().unwrap().0 - before).abs() < 1e-6);
+    assert!(
+        c.tension_assumed.iter().any(|n| n.contains(
+            "a 20 mm bolt, the program's default (not the code's), and its standard hole (4.1); \
+             no default bolt from OpenOHL: its 40 mm leg's usual gauge takes no bolt"
+        )),
+        "{c:?}"
+    );
+    // The other end's own bolt comes first.
+    b.design.default_bolt = Some(crate::model::DefaultBolt {
+        diameter: Some(0.012),
+        hole: Some(0.0135),
+        why: String::new(),
+    });
+    b.design.ends[1] = Some(crate::model::EndDesign {
+        bolts: Some(crate::model::EndBolts {
+            count: 2,
+            diameter: Some(0.016),
+            hole: Some(0.0175),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+    let c = capacity(&b, None);
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("the member's other end's 16 mm bolt")),
+        "{c:?}"
+    );
+}
+
 /// A built-up member's bearing at member level (O19 stage 5, the owner's
 /// answer of 2026-11-23, built 2026-11-24): two plies of 6 mm, 2 M18 in
 /// double shear, f_u 370 MPa — one ply's thickness until the plate between

@@ -576,7 +576,7 @@ angle) — each code then takes its conservative case (below), said.
 | bearing on the ply | force on the bolt ≤ 1.5 F_u d t, F_u the lower of the ply's and the bolt's | 4.4 |
 | end distance along the force | e ≥ max(1.2 P/(F_u t), 1.3 d, t + d/2) (redundant member: max(t + d/2, 1.2 d)), P the bolt's force | 4.5.1, Eqs. 4.5-1 to 4.5-4 |
 | spacing to the next hole along the force | s ≥ 1.2 P/(F_u t) + 0.6 d | 4.5.2, Eq. 4.5-5 |
-| edge distance square to it | f ≥ 0.85 e_min (an angle's rolled toe), + 1/16 in. (a plate's sheared edge) | 4.5.3, Eqs. 4.5-6, 4.5-7 |
+| edge distance square to it | f ≥ 0.85 e_min (an angle's rolled toe), + 1/16 in. (a plate's sheared edge; since 2026-11-26 also a member's toe its connection gives `rolled_edge = false`, sent as the ply kind `member-sheared`) | 4.5.3, Eqs. 4.5-6, 4.5-7 |
 | bolt tension (2026-11-19) | the pull with its prying ≤ F_t A_s, F_t = 0.6 F_u (case (b): the ASTM proof-load stress of case (a) is not in the data); A_s taken as 0.6 of the gross area; a library's tension capacity (its F_u A_s): 0.6 of it | 4.3.3 |
 | shear and tension together | (f_t/F_t)² + (f_v/F_v)² ≤ 1 (Eq. 4.3-2, F_t(v) = F_t [1 − (f_v/F_v)²]^½, squared), its square root as the usage | 4.3.4, Eq. 4.3-2 |
 | the flange's bending under the pull | T b′ ≤ (1 + δ) w t² F_y / 4 (the prying model's mechanism; no rule in the standard) | — |

@@ -1401,8 +1401,11 @@ bolt P is the member's largest axial force over the last analysis
 can pass by the code (on the safe side): its shear capacity, by ASCE
 10-97 since 2026-11-24 the smaller of that and its bearing in the part
 (1.5 f_u d t, 4.4 — the joint checks still check the bearing); without
-either, the force terms are left out (said). The leg's edge is taken as sheared (the larger minimum)
-unless the connection says `rolled_edge = true`. Change the capacity
+either, the force terms are left out (said). The edge (since 2026-11-26): a
+member's own leg of a rolled angle profile is taken as rolled (its toe as
+rolled; the smaller minimum) unless the connection says `rolled_edge =
+false` — give that for a toe that is flame-cut or sheared —, a plate's
+edge as sheared (the larger minimum). Change the capacity
 method and the tools follow its code (the simple check has none); a
 code added later brings its own minimums.
 

@@ -15,7 +15,11 @@
 # sides (structures.welds, the plugin's joint-check-welds) — one fillet bent
 # about its seam, two fillets taking that moment as a couple across the
 # plate, the sides not known (the worse of the two), two fillets each the
-# seam's length.
+# seam's length. joints-022 to joints-024 (2026-11-26, roadmap O44 L16
+# question 4): a member end's minimum distances through OpenOHL's own basis
+# (structures.member_bolt_distances) — a rolled angle's own leg sent as a
+# rolled edge unless its connection says rolled_edge = false; a plate's
+# edge sheared, as before.
 # Run through the plugins (their first call compiles them).
 
 [[case]]
@@ -317,3 +321,161 @@ inputs.welds = [
   { weld = "fillet", throat = "5 mm", length = "200 mm", length_given = false, sides = 2, angle = 90, fy = "355 MPa", thicknesses = ["10 mm", "12 mm"], force = "60 kN", in_plane = 1000.0, out_of_plane = 300.0 },
 ]
 expected.usage_0 = { value = 0.3063725490196078, rel_tol = 1e-9 }
+
+[[case]]
+id = "joints-022"
+title = "A member end's bolt distances through OpenOHL's basis: an angle's own leg, its toe rolled (Eq. 4.5-6)"
+calculation = "structures.member_bolt_distances"
+reference = "ASCE 10-97 4.4, 4.5.1 (Eqs. 4.5-1 to 4.5-3), 4.5.2 (Eq. 4.5-5) and 4.5.3 (Eqs. 4.5-6, 4.5-7) as the asce10 plugin takes them, by hand; the edge OpenOHL sends: a rolled angle's own leg rolled unless its connection says rolled_edge = false (owner, 2026-11-25), a plate sheared"
+notes = "M16 (hole 17.5 mm, no capacity given) at the end of an equal angle 50 x 5 mm, F_u 490 MPa, no analysis: the force per bolt its bearing cap 1.5 x 490 MPa x 16 mm x 5 mm = 58.8 kN (its shear capacity not known); end max(1.2 x 58.8 kN/(490 MPa x 5 mm) = 28.8 mm, 1.3 d = 20.8 mm, t + d/2 = 13 mm) = 28.8 mm; spacing 28.8 + 0.6 x 16 = 38.4 mm; the member's own leg of a rolled angle, no rolled_edge given: a rolled edge, 0.85 x 28.8 = 24.48 mm (sheared before: 26.0675 mm)"
+max_seconds = 30.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "L50"
+shape = "equal_angle"
+material = "steel"
+h = "50 mm"
+t = "5 mm"
+r = "0 mm"
+'''
+inputs.structure = '''
+id = "T"
+name = "t"
+kind = "lattice"
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = "fixed"
+[[member]]
+id = "D"
+nodes = ["N1", "N2"]
+section = "L50"
+[[connection]]
+member = "D"
+joint = "N2"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm" }
+'''
+inputs.member = "D"
+inputs.joint = "N2"
+expected.end_m = { value = 0.0288, rel_tol = 1e-9 }
+expected.spacing_m = { value = 0.0384, rel_tol = 1e-9 }
+expected.edge_m = { value = 0.02448, rel_tol = 1e-9 }
+expected.sheared = { value = 0.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "joints-023"
+title = "A member end's bolt distances through OpenOHL's basis: the toe given flame-cut or sheared (rolled_edge = false, Eq. 4.5-7)"
+calculation = "structures.member_bolt_distances"
+reference = "ASCE 10-97 4.4, 4.5.1 (Eqs. 4.5-1 to 4.5-3), 4.5.2 (Eq. 4.5-5) and 4.5.3 (Eqs. 4.5-6, 4.5-7) as the asce10 plugin takes them, by hand; the edge OpenOHL sends: a rolled angle's own leg rolled unless its connection says rolled_edge = false (owner, 2026-11-25), a plate sheared"
+notes = "M16 (hole 17.5 mm, no capacity given) at the end of an equal angle 50 x 5 mm, F_u 490 MPa, no analysis: the force per bolt its bearing cap 1.5 x 490 MPa x 16 mm x 5 mm = 58.8 kN (its shear capacity not known); end max(1.2 x 58.8 kN/(490 MPa x 5 mm) = 28.8 mm, 1.3 d = 20.8 mm, t + d/2 = 13 mm) = 28.8 mm; spacing 28.8 + 0.6 x 16 = 38.4 mm; its connection says rolled_edge = false: a sheared edge, 0.85 x 28.8 + 1/16 in. (1.5875 mm) = 26.0675 mm"
+max_seconds = 30.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "L50"
+shape = "equal_angle"
+material = "steel"
+h = "50 mm"
+t = "5 mm"
+r = "0 mm"
+'''
+inputs.structure = '''
+id = "T"
+name = "t"
+kind = "lattice"
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = "fixed"
+[[member]]
+id = "D"
+nodes = ["N1", "N2"]
+section = "L50"
+[[connection]]
+member = "D"
+joint = "N2"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm" }
+rolled_edge = false
+'''
+inputs.member = "D"
+inputs.joint = "N2"
+expected.end_m = { value = 0.0288, rel_tol = 1e-9 }
+expected.spacing_m = { value = 0.0384, rel_tol = 1e-9 }
+expected.edge_m = { value = 0.0260675, rel_tol = 1e-9 }
+expected.sheared = { value = 1.0, abs_tol = 1e-12 }
+
+[[case]]
+id = "joints-024"
+title = "A member end's bolt distances in a plate through OpenOHL's basis: a plate's edge sheared, as before (Eq. 4.5-7)"
+calculation = "structures.member_bolt_distances"
+reference = "ASCE 10-97 4.4, 4.5.1 (Eqs. 4.5-1 to 4.5-3), 4.5.2 (Eq. 4.5-5) and 4.5.3 (Eqs. 4.5-6, 4.5-7) as the asce10 plugin takes them, by hand; the edge OpenOHL sends: a rolled angle's own leg rolled unless its connection says rolled_edge = false (owner, 2026-11-25), a plate sheared"
+notes = "The joints-022 bolt in a plate of 10 mm, F_u 490 MPa (the member's): bearing cap 1.5 x 490 MPa x 16 mm x 10 mm = 117.6 kN; end max(1.2 x 117.6 kN/(490 MPa x 10 mm) = 28.8 mm, 20.8 mm, 10 + 8 = 18 mm) = 28.8 mm; spacing 38.4 mm; a plate's edge sheared: 0.85 x 28.8 + 1.5875 = 26.0675 mm"
+max_seconds = 30.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "L50"
+shape = "equal_angle"
+material = "steel"
+h = "50 mm"
+t = "5 mm"
+r = "0 mm"
+'''
+inputs.structure = '''
+id = "T"
+name = "t"
+kind = "lattice"
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = "fixed"
+[[member]]
+id = "D"
+nodes = ["N1", "N2"]
+section = "L50"
+[[connection]]
+member = "D"
+joint = "N2"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm", hole = "17.5 mm" }
+'''
+inputs.member = "D"
+inputs.joint = "N2"
+inputs.plate_thickness = "10 mm"
+expected.end_m = { value = 0.0288, rel_tol = 1e-9 }
+expected.spacing_m = { value = 0.0384, rel_tol = 1e-9 }
+expected.edge_m = { value = 0.0260675, rel_tol = 1e-9 }
+expected.sheared = { value = 1.0, abs_tol = 1e-12 }

@@ -227,6 +227,24 @@ pub struct MemberDesign {
     pub spacing: Option<f64>,
     /// Each end's connection.
     pub ends: [Option<EndDesign>; 2],
+    /// The bolt OpenOHL sends for the holes of a member whose data gives
+    /// no bolts (`member-check-default-bolts`, 2026-11-26; none: not sent,
+    /// the plugin's own default).
+    pub default_bolt: Option<DefaultBolt>,
+}
+
+/// The default bolt OpenOHL sends with a member whose data gives no bolts
+/// (2026-11-26, O19 stage 5): the largest bolt of the structure's library
+/// its leg's usual gauge takes, else the structure's most used bolt; no
+/// diameter where neither gives one (the plugin's own default kept).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct DefaultBolt {
+    /// Its diameter, m (none: no default — `why` says why).
+    pub diameter: Option<f64>,
+    /// Its hole, m (none: the code's standard hole).
+    pub hole: Option<f64>,
+    /// Where it comes from and why, in words.
+    pub why: String,
 }
 
 /// Where an end condition comes from.

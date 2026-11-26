@@ -4975,6 +4975,7 @@ dependencies = [
  "ohl-sagtension",
  "ohl-sections",
  "ohl-spotting",
+ "ohl-structures",
  "ohl-structures-fe",
  "ohl-terrain",
  "ohl-thermal",

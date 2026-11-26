@@ -19,10 +19,12 @@ wit_bindgen::generate!({
 });
 
 use crate::model::{
-    Analysis, Bolts, Condition, ConnectedLeg, EndBolts, EndConditions, EndDesign, Grade, Member,
-    MemberClass, MemberDesign, MemberForces, MemberKind, Onto, OntoLeg, Section, Source, Supported,
+    Analysis, Bolts, Condition, ConnectedLeg, DefaultBolt, EndBolts, EndConditions, EndDesign,
+    Grade, Member, MemberClass, MemberDesign, MemberForces, MemberKind, Onto, OntoLeg, Section,
+    Source, Supported,
 };
 use exports::ohl::plugin::member_check_bracing as mb;
+use exports::ohl::plugin::member_check_default_bolts as md;
 use exports::ohl::plugin::member_check_full as full;
 
 /// The method's description.
@@ -333,6 +335,7 @@ pub fn member(m: &full::Member) -> Member {
             end_distance: m.end_distance,
             spacing: m.spacing,
             ends: [0, 1].map(|k| end(k).and_then(|e| e.connection.as_ref()).map(end_design)),
+            default_bolt: None,
         },
         section: section(&m.section),
         length: m.length,
@@ -447,13 +450,30 @@ fn angle(m: &Member) -> bool {
 pub fn check_all(
     input: &full::FullInput,
     bracing: Option<&[mb::MemberBracing]>,
+    defaults: &[md::DefaultBolt],
 ) -> Vec<full::MemberResult> {
     let analysis = Analysis {
         single_angle_moments: input.single_angle_moments,
         no_compression: input.tension_compression == "none",
         redundant_force: input.redundant_share,
     };
-    let members: Vec<Member> = input.members.iter().map(member).collect();
+    // OpenOHL's default bolt of each member without bolts in its data
+    // (`member-check-default-bolts`, 2026-11-26), by member.
+    let defaults: HashMap<&str, &md::DefaultBolt> =
+        defaults.iter().map(|d| (d.member.as_str(), d)).collect();
+    let members: Vec<Member> = input
+        .members
+        .iter()
+        .map(|w| {
+            let mut m = member(w);
+            m.design.default_bolt = defaults.get(w.id.as_str()).map(|d| DefaultBolt {
+                diameter: d.diameter.filter(|x| x.is_finite() && *x > 0.0),
+                hole: d.hole.filter(|x| x.is_finite() && *x > 0.0),
+                why: d.why.clone(),
+            });
+            m
+        })
+        .collect();
     let braced: Option<HashMap<String, Bracing>> = bracing.map(|b| {
         b.iter()
             .map(|x| (x.member.clone(), bracing_of(x)))
@@ -587,7 +607,7 @@ impl full::Guest for Sia263 {
         let p = params::parse(&input.parameters)?;
         params::set(p);
         memo::start();
-        let results = check_all(&input, None);
+        let results = check_all(&input, None, &[]);
         memo::stop();
         Ok(full::FullOutput {
             method_note: format!(
@@ -610,7 +630,31 @@ impl mb::Guest for Sia263 {
         let p = params::parse(&input.parameters)?;
         params::set(p);
         memo::start();
-        let results = check_all(&input, Some(&bracing));
+        let results = check_all(&input, Some(&bracing), &[]);
+        memo::stop();
+        Ok(full::FullOutput {
+            method_note: format!(
+                "{} (Construction en acier; {})",
+                sia263::TITLE,
+                params::words(&p)
+            ),
+            results,
+        })
+    }
+}
+
+impl md::Guest for Sia263 {
+    fn check_members_default_bolts(
+        method: String,
+        input: full::FullInput,
+        bracing: Vec<mb::MemberBracing>,
+        defaults: Vec<md::DefaultBolt>,
+    ) -> Result<full::FullOutput, String> {
+        ours(&method)?;
+        let p = params::parse(&input.parameters)?;
+        params::set(p);
+        memo::start();
+        let results = check_all(&input, Some(&bracing), &defaults);
         memo::stop();
         Ok(full::FullOutput {
             method_note: format!(

@@ -981,6 +981,11 @@ pub struct Model {
     /// many members' bolts take it: lines for the results ("bolt grade 8.8
     /// set by command: …").
     pub bolt_grade_notes: Vec<String>,
+    /// The structure's bolt library (the bolts a structure file's
+    /// connections may name; empty for a model file): what the default
+    /// bolt of a member without bolts in its data is picked from
+    /// (2026-11-26, O19 stage 5; `ohl_member_check::default_bolts`).
+    pub bolt_library: BoltLibrary,
     /// What the end-release and bolt-slip options did (stage 4.4,
     /// 2026-11-23; [`crate::joint_stiffness::apply`]); none: both off.
     pub joint_stiffness: Option<crate::joint_stiffness::Summary>,
@@ -1396,6 +1401,7 @@ impl Model {
             method_compression: Vec::new(),
             bolt_defaults: Default::default(),
             bolt_grade_notes: Vec::new(),
+            bolt_library: BoltLibrary::default(),
             joint_stiffness: None,
         };
         model.check()?;
@@ -1533,6 +1539,9 @@ impl Model {
             crate::member_ends::read_connections(&mut out, &file, bolts)?;
         }
         out.joint_use = joints;
+        // The bolt library, for the default bolt of a member without bolts
+        // in its data (2026-11-26).
+        out.bolt_library = bolts.clone();
         // The bolt grades set on members' bolts (version 21), over the
         // connections' library bolts and the members' own.
         out.bolt_grade_notes = crate::member_ends::apply_bolt_grades(&mut out, &file)?;

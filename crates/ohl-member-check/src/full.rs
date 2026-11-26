@@ -338,9 +338,12 @@ pub(crate) fn bracing(model: &Model) -> Vec<bwit::MemberBracing> {
 }
 
 /// The check of `model` in `cases` by method `method` of the plugin in
-/// `dir`: through its `member-check-bracing` export with what braces each
-/// member (true), else its `member-check-full` one (false). None: the
-/// plugin has neither.
+/// `dir`: through its `member-check-default-bolts` export with what braces
+/// each member and the default bolt of each member whose data gives no
+/// bolts ([`crate::default_bolts`], 2026-11-26), else its
+/// `member-check-bracing` export (both: true; the plugin keeping its own
+/// default bolt), else its `member-check-full` one (false). None: the
+/// plugin has none of them.
 pub(crate) fn check_full(
     host: &ohl_plugins::WasmHost,
     dir: &std::path::Path,
@@ -350,7 +353,13 @@ pub(crate) fn check_full(
     params: &str,
 ) -> Result<Option<(wit::FullOutput, bool)>, ohl_plugins::PluginError> {
     let input = input(model, cases, params);
-    if let Some(out) = host.check_members_bracing(dir, method, &input, &bracing(model))? {
+    let braces = bracing(model);
+    let defaults = crate::default_bolts::default_bolts(model);
+    let records = crate::default_bolts::records(model, &defaults);
+    if let Some(out) = host.check_members_default_bolts(dir, method, &input, &braces, &records)? {
+        return Ok(Some((out, true)));
+    }
+    if let Some(out) = host.check_members_bracing(dir, method, &input, &braces)? {
         return Ok(Some((out, true)));
     }
     Ok(host

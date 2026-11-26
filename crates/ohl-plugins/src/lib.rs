@@ -474,13 +474,15 @@ pub const LAYOUT_PRACTICE_EXPORT: &str = "ohl:plugin/layout-practice@0.1.0";
 /// dozen lines; more is refused, naming the plugin).
 pub const LAYOUT_PRACTICE_MAX: usize = 64 * 1024;
 
-// One binding for `member-check-full` and `member-check-bracing`, whose
-// function takes the former's records (2026-11-19): each export is looked
-// up on its own ([`member_check_full_guest`], [`member_check_bracing_guest`]),
-// so a plugin without `member-check-bracing` loads as before.
+// One binding for `member-check-full`, `member-check-bracing` and
+// `member-check-default-bolts`, whose functions take the first's records
+// (2026-11-19, 2026-11-26): each export is looked up on its own
+// ([`member_check_full_guest`], [`member_check_bracing_guest`],
+// [`member_check_default_bolts_guest`]), so a plugin without the newer
+// ones loads as before.
 mod member_check_full_bindings {
     wasmtime::component::bindgen!({
-        world: "member-check-bracing-export",
+        world: "member-check-default-bolts-export",
         path: "wit",
     });
 }
@@ -512,6 +514,17 @@ pub mod member_check_bracing {
 /// plugin.
 pub const MEMBER_CHECK_BRACING_EXPORT: &str = "ohl:plugin/member-check-bracing@0.1.0";
 
+/// The records of the `member-check-default-bolts` interface (2026-11-26,
+/// O19 stage 5): the bolt OpenOHL takes for the holes of a member whose
+/// data gives no bolts, sent with the `member-check-full` records.
+pub mod member_check_default_bolts {
+    pub use super::member_check_full_bindings::exports::ohl::plugin::member_check_default_bolts::DefaultBolt;
+}
+
+/// Export name of the optional `member-check-default-bolts` interface of
+/// any plugin.
+pub const MEMBER_CHECK_DEFAULT_BOLTS_EXPORT: &str = "ohl:plugin/member-check-default-bolts@0.1.0";
+
 /// The `member-check-full` export of an instance, looked up alone.
 fn member_check_full_guest<T: 'static>(
     store: &mut wasmtime::Store<T>,
@@ -533,8 +546,22 @@ fn member_check_bracing_guest<T: 'static>(
         .load(&mut *store, instance)
 }
 
-/// What a plugin gave for `input` by `member-check-full` or
-/// `member-check-bracing`, checked: a result only for members sent, once
+/// The `member-check-default-bolts` export of an instance, looked up alone.
+fn member_check_default_bolts_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<
+    member_check_full_bindings::exports::ohl::plugin::member_check_default_bolts::Guest,
+> {
+    let pre = instance.instance_pre(&*store);
+    member_check_full_bindings::exports::ohl::plugin::member_check_default_bolts::GuestIndices::new(
+        &pre,
+    )?
+    .load(&mut *store, instance)
+}
+
+/// What a plugin gave for `input` by `member-check-full`,
+/// `member-check-bracing` or `member-check-default-bolts`, checked: a result only for members sent, once
 /// each; a load case only once and only those sent; no negative usage; no
 /// capacity that is not a positive number. Errors name plugin `name`.
 fn check_full_output(
@@ -3022,6 +3049,38 @@ impl WasmHost {
         let given = export
             .call_check_members_bracing(&mut p.store, method, input, bracing)
             .map_err(|e| classify(e, &p.manifest, "member-check-bracing", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_full_output(&name, input, &given)?;
+        Ok(Some(given))
+    }
+
+    /// The members of `input` checked as [`WasmHost::check_members_bracing`]
+    /// does, with the default bolt of each member whose data gives no bolts
+    /// (`defaults`), through the plugin's `member-check-default-bolts`
+    /// export (2026-11-26). None: the plugin has no such export (the caller
+    /// then calls [`WasmHost::check_members_bracing`], the plugin keeping
+    /// its own default). The results and errors as
+    /// [`WasmHost::check_members_full`]'s.
+    pub fn check_members_default_bolts(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &member_check_full::FullInput,
+        bracing: &[member_check_bracing::MemberBracing],
+        defaults: &[member_check_default_bolts::DefaultBolt],
+    ) -> Result<Option<member_check_full::FullOutput>, PluginError> {
+        let Some((mut p, instance)) =
+            self.optional_export(dir, MEMBER_CHECK_DEFAULT_BOLTS_EXPORT)?
+        else {
+            return Ok(None);
+        };
+        let export = member_check_default_bolts_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_check_members_default_bolts(&mut p.store, method, input, bracing, defaults)
+            .map_err(|e| classify(e, &p.manifest, "member-check-default-bolts", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         check_full_output(&name, input, &given)?;
         Ok(Some(given))

@@ -21,7 +21,8 @@
 //! pitch = "50 mm"
 //! end_distance = "30 mm"
 //! edge_distance = "25 mm"
-//! # rolled_edge = true  # the leg's edge rolled (none: sheared, on the safe side)
+//! # rolled_edge = false  # the leg's toe flame-cut or sheared (none: an angle's own leg
+//! #   rolled, a plate's edge sheared, 2026-11-26)
 //! # bolt_points = [["30 mm", "30 mm"], ["80 mm", "30 mm"]]  # instead of
 //! #   the layout: along the member from the joint, across from the heel
 //! # leg = "both" lays the layout on both legs, the bolts shared (the leg
@@ -430,8 +431,10 @@ pub struct TypeConnection {
     #[serde(default)]
     pub edge_distance: Option<Length>,
     /// The leg's edge is rolled (true) or sheared / flame-cut (false); none:
-    /// taken as sheared, the larger minimum edge distance (owner
-    /// 2026-11-03).
+    /// a member's own leg of a rolled angle profile rolled, any other part
+    /// (a plate) sheared, the larger minimum edge distance (the owner's
+    /// answer of 2026-11-25; sheared for every part from 2026-11-03 until
+    /// then; `ohl_structures_fe::bolt_rules::sheared_edge`).
     #[serde(default)]
     pub rolled_edge: Option<bool>,
     /// Each bolt where it is, instead of the layout: along the member from

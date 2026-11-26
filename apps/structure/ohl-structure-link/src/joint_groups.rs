@@ -151,6 +151,8 @@ enum Edges {
 struct Ply {
     part: String,
     member: bool,
+    /// A member whose toe is given flame-cut or sheared ([`toe_sheared`]).
+    sheared: bool,
     thickness: f64,
     fy: Option<f64>,
     fu: Option<f64>,
@@ -554,6 +556,21 @@ fn member_ply(a: &Arrival, model: &Model) -> Option<(f64, Option<f64>, Option<f6
         .or(m.design.thickness)?;
     let redundant = m.design.class == Some(ohl_structures_fe::design::MemberClass::Redundant);
     Some((t, s.yield_strength, s.ultimate, redundant))
+}
+
+/// A member's toe at its end `a` is given flame-cut or sheared
+/// (`rolled_edge = false` at that end's connection; 2026-11-26, O44 L16
+/// question 4): its ply is sent as `member-sheared` — the code's sheared
+/// edge. Not given: a member's leg, its toe rolled (`member`), as before.
+fn toe_sheared(a: &Arrival, model: &Model) -> bool {
+    model
+        .members
+        .iter()
+        .find(|m| m.id == a.member)
+        .and_then(|m| m.design.ends.get(a.end))
+        .and_then(Option::as_ref)
+        .and_then(|e| e.rolled_edge)
+        == Some(false)
 }
 
 /// A member's yield strength (its section's).
@@ -1419,6 +1436,7 @@ fn end_bolt_groups(
         let mut plies = vec![Ply {
             part: h.member.clone(),
             member: true,
+            sheared: toe_sheared(h, model),
             thickness: t,
             fy,
             fu,
@@ -1444,6 +1462,7 @@ fn end_bolt_groups(
             plies.push(Ply {
                 part: onto.to_owned(),
                 member: false,
+                sheared: false,
                 thickness: steel.thickness,
                 fy: steel.fy,
                 fu: steel.fu,
@@ -1963,6 +1982,7 @@ fn holding_groups(
                     plies: vec![Ply {
                         part: q.clone(),
                         member: false,
+                        sheared: false,
                         thickness: steel.thickness,
                         fy: steel.fy,
                         fu: steel.fu,
@@ -2345,6 +2365,7 @@ fn bearing_groups(
                 plies: vec![Ply {
                     part,
                     member: true,
+                    sheared: toe_sheared(host, model),
                     thickness: t,
                     fy,
                     fu,
@@ -2956,7 +2977,12 @@ pub(crate) fn group_rows(
                         .iter()
                         .map(|p| w::Ply {
                             part: p.part.clone(),
-                            kind: if p.member { "member" } else { "plate" }.to_owned(),
+                            kind: match (p.member, p.sheared) {
+                                (true, false) => "member",
+                                (true, true) => "member-sheared",
+                                (false, _) => "plate",
+                            }
+                            .to_owned(),
                             thickness: p.thickness,
                             fy: p.fy,
                             fu: p.fu,
@@ -3273,6 +3299,7 @@ mod tests {
             plies: vec![Ply {
                 part: "X".into(),
                 member: !holding,
+                sheared: false,
                 thickness: 0.008,
                 fy: Some(355e6),
                 fu: Some(510e6),

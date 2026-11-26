@@ -233,7 +233,12 @@ fn fnv(text: &str) -> u64 {
 /// say so in new words (the members without bolts), 36 of them with the
 /// hole (`every-profile.ohls` m-EA, m-EA-2, m-UA), 4 usages changed (m-UA
 /// in case C, tension now on the net section (39): 176.1 kN, the gross
-/// section before); every other usage's bits the same.
+/// section before); every other usage's bits the same. Recorded again
+/// 2026-11-26 (the default bolt sent with the members): 36 lines add
+/// OpenOHL's reason for keeping the 20 mm bolt ("; no default bolt from
+/// OpenOHL: the structure has no bolt library, and the structure's members
+/// give no bolts"); with those words taken out the lines hash to the value
+/// before (0x69c5_d277_d9ea_23c2), every usage's bits the same.
 #[test]
 fn the_examples_give_the_cores_numbers() {
     if !built() {
@@ -248,7 +253,7 @@ fn the_examples_give_the_cores_numbers() {
         lines(&repo().join(f), &sections, "sia263-2013", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0x69c5_d277_d9ea_23c2, "{out}");
+    assert_eq!(fnv(&out), 0x92a0_86a0_4e77_2a3a, "{out}");
 }
 
 /// The same examples by ASCE 10-97 (the default), now its bundled plugin
@@ -259,7 +264,9 @@ fn the_examples_give_the_cores_numbers() {
 /// those words taken out the lines hash to the value before
 /// (0xa2ac_8421_7e06_e804). Recorded again 2026-11-24 (as above): 96 lines
 /// in new words, 36 with the hole in each leg, 4 usages changed (m-UA in
-/// case C: the net section, 95.1 kN).
+/// case C: the net section, 95.1 kN). Recorded again 2026-11-26 (as
+/// above): 4 lines with OpenOHL's reason for keeping the 20 mm bolt; with
+/// those words taken out the hash before (0x58dd_da48_cbc2_3fa0).
 #[test]
 fn the_examples_keep_the_cores_asce10_numbers() {
     if !built() {
@@ -274,7 +281,7 @@ fn the_examples_keep_the_cores_asce10_numbers() {
         lines(&repo().join(f), &sections, "asce10-97", &mut out);
     }
     assert_eq!(out.lines().count(), 2256);
-    assert_eq!(fnv(&out), 0x58dd_da48_cbc2_3fa0, "{out}");
+    assert_eq!(fnv(&out), 0x4eb6_d8c7_3094_00cc, "{out}");
 }
 
 fn library() -> ohl_sections::SectionLibrary {
