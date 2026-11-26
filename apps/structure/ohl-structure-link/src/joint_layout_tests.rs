@@ -1042,3 +1042,38 @@ fn a_k_brace_on_a_wide_leg_bolts_directly_with_a_small_move() {
     assert!(b.notes.iter().any(|n| n.contains("moved")), "{:?}", b.notes);
     assert_eq!(b, plan_joint(j, &settings(), &|_, _| None));
 }
+
+/// O44 L30 (`LayoutSettings::host_flat`): an end naming nothing it bolts
+/// onto (none given, none worked out: the joint details then measure no
+/// flatness), its leg 30° off the flange of the member it is planned onto
+/// (the one running through), is planned as lying off that flange (a
+/// plate in its own plane), as an end naming that member is — not as
+/// lying flat on it.
+#[test]
+fn an_end_naming_nothing_has_its_flatness_measured_on_its_planned_host() {
+    let text = crate::layout_run_tests::d1_spoiled(30.0);
+    let mut j = joint(&text, "N2");
+    let named = plan_joint(&j, &settings(), &|_, _| None);
+    let d1 = j.arrivals.iter_mut().find(|a| a.member == "D1").unwrap();
+    assert!(d1.flat.is_some_and(|f| f.off > 20.0), "{d1:?}");
+    d1.onto.value = None;
+    d1.flat = None;
+    let on_own = |p: &JointPlan| {
+        p.ends.iter().any(|e| {
+            e.member == "D1" && matches!(e.onto, Onto::Plate(k) if p.plates[k].own.is_some())
+        })
+    };
+    let s = LayoutSettings {
+        host_flat: true,
+        ..settings()
+    };
+    assert!(on_own(&named), "{named:?}");
+    let with = plan_joint(&j, &s, &|_, _| None);
+    assert!(on_own(&with), "{with:?}");
+    let off = LayoutSettings {
+        host_flat: false,
+        ..settings()
+    };
+    let before = plan_joint(&j, &off, &|_, _| None);
+    assert!(!on_own(&before), "{before:?}");
+}

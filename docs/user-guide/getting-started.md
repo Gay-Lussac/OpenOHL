@@ -34,6 +34,7 @@ On macOS, double-click **Start OHL-Structure.command**. See
 | `ohl-design` (**Start OHL-Design.command**) | OHL-Design, the line application: projects, lines, terrain, checks | [OHL-Design](desktop-app.md) |
 | `ohl-structure` (**Start OHL-Structure.command**) | OHL-Structure, the structure application: one structure file, detail levels 1 to 4, its libraries and plugins | [OHL-Structure](structure-app.md) |
 | `ohl-structure-export` | a level 3 structure as IFC, SAF or CSV, without a window | [OHL-Structure](structure-app.md#export) |
+| `ohl-structure-layout` | the joint layout of a structure file without a window (`run`), and the joints it leaves for a person to check, by reason (`left`) | [Lay out joints](joint-layout.md#the-joints-left-by-reason) |
 
 ### A new line, step by step
 

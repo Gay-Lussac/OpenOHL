@@ -117,6 +117,7 @@ themselves are not chosen here (that comes with the design codes).
 | Preset for bracing, redundant, crossing, leg | a connection preset's bolts for an end of that class without bolts (before the bolt picked); provisional too |
 | Plates at a corner | each bolted to its flange (usual lattice practice) · welded together |
 | Replace values given by hand | off: a cut, shift, roll or what a member bolts onto given by hand is kept (the layout works round it); on: replaced |
+| Solve the clashes at the joints left after the run | off by default: after the run, [Solve the clashes](#solve-the-clashes-at-the-joints-left-after-the-run) at every joint it leaves not whole, kept only where better; every turn and move said (marked). Slow: about 20 s per joint left, more on a busy machine — hours on a large tower (measured) |
 | Pieces in line: **Confirm all (n)**, *Each joint* › **Confirm** | writes the pieces proposed one part (`kind = "continuous"` at both ends; a little apart in roll: one roll half-way, the pieces already one part with them included), one undo step; the preview is worked out again. Those not proposed are listed with why |
 | **Apply (n joints)** | writes the preview, one undo step; greyed while the preview is worked out |
 | Cancel, Escape | closes the window, nothing changes |
@@ -270,6 +271,86 @@ or taken away. A member **left** for a hand detail is said with why.
   own. A leg piece its joints say is turned is only **proposed** (see
   *Leg turned against its joints* below).
 - **Undo** takes the whole solution back in one step.
+
+## Solve the clashes at the joints left after the run
+
+(2026-11-26, O44 L30; built, in active development, not approved yet.)
+**What it is for:** after a run, the joints it could not lay out whole
+get [Solve the clashes](#solve-the-clashes) without you opening each one
+— so that what is left for you to check is fewer joints, each with why
+([below](#the-joints-left-by-reason)).
+
+**How to use it:**
+
+1. In [Lay out joints](#lay-out-joints), tick **Solve the clashes at the
+   joints left after the run** (off by default).
+2. Run as usual (the preview). The notes say, for each joint solved, the
+   way taken, the clashes, other problems and members left before →
+   after, and — marked **MARKED (it turns or moves steel: check it)** —
+   every member it turned and every end it moved sideways (an
+   eccentricity the analysis takes). The last note counts the joints
+   tried, solved, now whole, and the time.
+3. **Apply** as usual: one undo step for the run and the pass.
+
+**What it does, and does not do:**
+
+- At each joint the run left not whole it tries what the Solve the
+  clashes window tries — but it **never confirms** a proposal (pieces in
+  line one part, a leg splice: yours to decide) and never proposes a leg's
+  or chord's turn.
+- A solution is kept only where the joint is **better on every count**
+  (no more clashes, other problems or members left, and fewer of one)
+  and **every joint around** (the other joints of its members) has no
+  more clashes and problems, joint by joint.
+- It changes **no value given by hand** (unless you tick *Replace values
+  given by hand*, as for the run), no member's size, no work point, no
+  leg's roll, and no roll a weighing of the run set.
+- A joint it only fixes (its clashes fewer, the members left still left)
+  stays **not whole**: those members are still for a hand detail, with
+  the run's reason.
+- A run again on the result gives the same file.
+- **Time:** slow — measured on real towers, about 20 s per joint left on a
+  lightly loaded machine and 80 to 110 s on a busy one; a large tower
+  leaves 270 to 340 joints, so the pass takes hours there. Tick it for a
+  whole tower when you can wait, or run it in a batch from the command line
+  (below).
+- **What to expect** (measured on real towers): it clears about half of
+  the clashes at the joints it solves (about seven joints in ten), but
+  rarely makes a joint whole — most joints are left for reasons a clash
+  solution does not touch (a leg off its flange, bolts joining nothing).
+  Check those [by reason](#the-joints-left-by-reason).
+
+## The joints left, by reason
+
+(2026-11-26, O44 L30; built, in active development, not approved yet.)
+Every member end the layout leaves for a hand detail has its reason; the
+reasons are sorted into fifteen classes, each with what to look at (the
+[theory's table](../theory/joint-layout.md#the-joints-left-by-reason)):
+a clash after laying out, what it bolts onto not fitting after, its leg
+off the flange, its axis out of the flange's face, its outstanding leg
+into the flange, the flange's inner face, its bolts off the flange, its
+plate running into another part, more pull-back than the longest, too
+short for its bolts, a member left losing a bolt, its bolts joining
+nothing, a value given by hand, a form the layout does not make, other.
+
+From the command line, on a laid-out file (`ohl-structure-layout`, a tool
+of its own beside `ohl-structure-export`):
+
+```bash
+# Lay every joint out, with Solve the clashes after the run, and write the file.
+ohl-structure-layout run tower.ohls --sections libraries/sections --bolts libraries/bolts --solve-left -o tower-laid.ohls
+# Every joint left, its classes, and the counts per class.
+ohl-structure-layout left tower-laid.ohls
+# Only one class, with the layout's words.
+ohl-structure-layout left tower-laid.ohls --class leg-off-flange --words
+# One row per member end left, for a spreadsheet.
+ohl-structure-layout left tower-laid.ohls --csv tower-left.csv
+```
+
+`left` reads only the file's layout record (no run, no libraries), so it
+is quick on any laid-out file. A whole tower with `--solve-left` takes as
+long as a run and the pass together (see *Time* above): run it in a batch,
+then check the joints class by class.
 
 ## Leg or chord turned against its joints
 

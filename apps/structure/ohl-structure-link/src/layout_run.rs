@@ -850,6 +850,10 @@ pub struct LayoutRun {
     /// where every joint its members reach is laid out better, else taken
     /// back and offered ([`crate::weighed_turns`]); empty: none weighed.
     pub weighed: Vec<crate::weighed_turns::WeighedTurn>,
+    /// O44 L30: the joints Solve the clashes after the run solved
+    /// ([`LayoutSettings::solve_left`], [`crate::solve_pass`]), each with
+    /// what it changed (turns and moves marked); empty: off, or none.
+    pub solved: Vec<crate::solve_pass::SolvedJoint>,
 }
 
 impl LayoutRun {
@@ -895,6 +899,11 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     // (L24) A detailing practice refused: said in the run's notes (the
     // default used).
     let mut run = lay_out_turns(text, ask)?;
+    // (L30) Solve the clashes after the run at the joints it left not
+    // whole, where asked.
+    if ask.settings.solve_left {
+        run = crate::solve_pass::after_run(run, ask)?;
+    }
     if let Some(n) = &ask.settings.practice_refused {
         run.notes.insert(0, n.clone());
     }
@@ -2529,6 +2538,7 @@ fn lay_out_once(
                 splices: splices.clone(),
                 leg_rolls: leg_rolls.clone(),
                 weighed: Vec::new(),
+                solved: Vec::new(),
             });
         }
         let mut done = None;
@@ -3101,6 +3111,7 @@ fn lay_out_once(
             splices: splices.clone(),
             leg_rolls: leg_rolls.clone(),
             weighed: Vec::new(),
+            solved: Vec::new(),
         });
     }
 }

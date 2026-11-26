@@ -8,6 +8,59 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-26 (joint layout: Solve the clashes after the run, the joints left by reason, L30)
+
+**A pass after the run solving the joints left (a tick, off by default),
+the joints left sorted by reason, a command-line tool; an end naming
+nothing has how flat it lies measured on what it is planned onto (on by
+default)** (roadmap O44 L30, L27's question 4; the owner, 2026-11-26: *"Okay
+go ahead with the second run then and also setup ways to study the latest
+joint and lay them out. The goal is not to reach 100% but not far off so
+that a human can relatively quickly check the missing joints"*; built, in
+active development, not approved yet;
+[theory](../theory/joint-layout.md#solve-the-clashes-after-the-run-and-the-joints-left-by-reason-l30),
+[user guide](../user-guide/joint-layout.md#solve-the-clashes-at-the-joints-left-after-the-run)).
+
+- **The pass** (`LayoutSettings::solve_left`, `solve_pass`; off by
+  default, a tick in Lay out joints, `--solve-left` on the command line):
+  after the run, Solve the clashes at every joint left not whole, one after
+  the other; a way taken only where the joint is no worse on any of
+  clashes, other problems and members left and better on one, every joint
+  around no worse joint by joint, no value given by hand changed and no
+  roll a weighing set turned; never a proposal confirmed or a leg turned;
+  every turn and move said, marked; its values recorded as the layout's
+  (a run again: the same file). A joint only fixed stays not whole.
+- **The joints left by reason** (`left_reasons`): the layout's words
+  sorted into fifteen classes, each with what to look at; a joint's main
+  class the one most of its ends have.
+- **`ohl-structure-layout`** (`run`, `left`): the layout of a file and the
+  list of the joints left without a window; a tool of its own beside
+  `ohl-structure-export` (the core's `ohl` never depends on the structure
+  application).
+- **How flat an end naming nothing lies** (`LayoutSettings::host_flat`,
+  on by default; off: as before): measured on the member it is planned
+  onto, as the joint details measure it on a member it names; such an
+  end lying more than 2° off goes the way of every end off its flange
+  instead of being bolted flat (not on the safe side before, never said)
+  or left with *its axis runs out of the face*. Measured on the eight towers: 4 253 → 4 238 joints whole (51 no longer,
+  36 newly), 15 268 → 15 331 ends, 130 joints better, 70 worse (56 of the
+  59 with fewer ends had an end bolted flat 2° to 20° off — the safe side);
+  the run 4 to 9 times slower (L25 weighs the ends now found pointing into
+  the flange).
+- **Tried, not kept**: L20's guard per end (the offset of a plate in a
+  member's own plane dropped only for the ends a joint left after
+  writing): the same files on three towers; traced, the ends concerned
+  are left by L20 item 2's tie rule (the plan without the offset kept on
+  a tie), not by the guard. Taken out again.
+- **Measured** (eight private towers, 6 852 joints, kept privately; the
+  bundled ASCE 10-97 plugin built fresh and checked to load before every
+  run): the run leaves 2 112 of 6 852 joints for a person
+  (4 253 whole, 62.1 %; 487 with nothing for the layout); the pass on the
+  smallest tower solves 36 of 42 (2 now whole, clashes 202 → 85, a run
+  again the same file), on a sample of 161 joints of four large towers 109
+  (none whole, clashes 1 368 → 814), 20 to 110 s per joint.
+- **No format change**.
+
 ## 2026-11-26 (joint layout: the joints left reviewed, L31)
 
 **A list of the joints the automatic layout did not lay out whole, with

@@ -234,10 +234,57 @@ impl Solution {
 const FIX_TRIES: usize = 24;
 const FIX_ROUNDS: usize = 4;
 
+/// What [`solve_joint_with`] tries (O44 L30: the pass after a run, which
+/// never confirms the user's proposals nor proposes a leg's turn).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SolveOptions {
+    /// The layout's proposals at the joint confirmed as one more starting
+    /// point (marked; Joint details' window: on).
+    pub proposals: bool,
+    /// The leg and chord turns proposed, each worked out again
+    /// ([`Solution::leg_turns`]; the window: on).
+    pub leg_turns: bool,
+    /// The layout tried with values given by hand replaced too (the
+    /// window: on; a run's pass: only where the run replaces them).
+    pub replace_hand: bool,
+    /// The members the layout left for a hand detail at the joint as it is
+    /// (none: 0, the joint as it is not laid out).
+    pub before_left: Option<usize>,
+}
+
+impl Default for SolveOptions {
+    fn default() -> Self {
+        Self {
+            proposals: true,
+            leg_turns: true,
+            replace_hand: true,
+            before_left: None,
+        }
+    }
+}
+
 /// The best whole solution of joint `ask.joint` of the structure file
 /// `text` (see the module).
 pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
+    solve_joint_with(text, ask, SolveOptions::default())
+}
+
+/// [`solve_joint`] with what it tries chosen (`opts`). The layout it runs
+/// never makes the pass after a run (O44 L30) itself.
+pub fn solve_joint_with(
+    text: &str,
+    ask: &SolveAsk<'_>,
+    opts: SolveOptions,
+) -> Result<Solution, String> {
     let start = std::time::Instant::now();
+    let settings = LayoutSettings {
+        solve_left: false,
+        ..ask.settings.clone()
+    };
+    let ask = &SolveAsk {
+        settings: &settings,
+        ..ask.clone()
+    };
     let joint = ask.joint.clone();
     let t0 = parse(text)?;
     // The joint and the other joints of its members.
@@ -245,7 +292,8 @@ pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
     for m in t0.members.iter().filter(|m| m.nodes.contains(&joint)) {
         focus.extend(m.nodes.iter().cloned());
     }
-    let (before, d0) = measure(text, ask, &focus, &joint)?;
+    let (mut before, d0) = measure(text, ask, &focus, &joint)?;
+    before.left = opts.before_left.unwrap_or(0);
     let j0 = d0
         .joint(&joint)
         .cloned()
@@ -318,7 +366,20 @@ pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
         };
     // 1. The layout, values given by hand kept, then replaced; 2. the same
     // with the layout's proposals at the joint confirmed (marked).
-    let bases = bases_of(text, ask, &t0, &joint)?;
+    let bases = if opts.proposals {
+        bases_of(text, ask, &t0, &joint)?
+    } else {
+        vec![Base {
+            prefix: "",
+            text: text.to_owned(),
+            confirms: Vec::new(),
+        }]
+    };
+    let replaces: &[bool] = if opts.replace_hand {
+        &[false, true]
+    } else {
+        &[false]
+    };
     // (L11: an end moved sideways to pass the flange on a plate, off in a
     // run, tried here too where the layout leaves something.)
     let shifted = LayoutSettings {
@@ -326,7 +387,7 @@ pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
         ..ask.settings.clone()
     };
     for b in &bases {
-        for replace in [false, true] {
+        for &replace in replaces {
             let run = run_on(&b.text, replace, ask.settings)?;
             let mut left_some = false;
             if run.text != text {
@@ -426,7 +487,11 @@ pub fn solve_joint(text: &str, ask: &SolveAsk<'_>) -> Result<Solution, String> {
     };
     // A leg piece at the joint the joints say is turned: proposed, the
     // solution worked out again with it.
-    let leg_turns = leg_turns(text, ask, &t0, &j0, &bases, &focus)?;
+    let leg_turns = if opts.leg_turns {
+        leg_turns(text, ask, &t0, &j0, &bases, &focus)?
+    } else {
+        Vec::new()
+    };
     Ok(Solution {
         joint,
         before,

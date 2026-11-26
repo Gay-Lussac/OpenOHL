@@ -4524,6 +4524,80 @@ only where it helps):
   > one more pass weighs one or two members on four of the eight towers,
   > none kept, the first run there longer by about that weighing, a run
   > again quicker by as much) → Recommended: keep.
+- [x] L30. **Solve the clashes after the run, the joints left by reason,
+  an end naming nothing measured on its host** (L27's question 4; the
+  owner, 2026-11-26: *"Okay go ahead with the second run then and also
+  setup ways to study the latest joint and lay them out. The goal is not
+  to reach 100% but not far off so that a human can relatively quickly
+  check the missing joints"*). **Built 2026-11-26, in active development,
+  not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#solve-the-clashes-after-the-run-and-the-joints-left-by-reason-l30),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#solve-the-clashes-at-the-joints-left-after-the-run),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-26-joint-layout-solve-the-clashes-after-the-run-the-joints-left-by-reason-l30);
+  no format change). **The pass** (a tick in Lay out joints, off by
+  default; `--solve-left`): after the run, *Solve the clashes* at every
+  joint left not whole, a way taken only where the joint is no worse on
+  any count and better on one and every joint around no worse, joint by
+  joint; never a proposal confirmed, a leg turned, a value given by hand
+  or a weighed roll changed; every turn and move said, marked; a run again
+  gives the same file. **The joints left by reason**: fifteen classes from
+  the layout's words, each with what to look at (`left_reasons`, used by
+  the review list). **`ohl-structure-layout run|left`**: the layout and the
+  list of joints left without a window. **How flat an end naming nothing
+  lies**, measured on what it is planned onto (on by default): such ends
+  are no longer bolted flat though more than 2° off (on the safe side) and
+  go the way of every end off its flange. **L20's guard per end**: tried,
+  no change, taken out. Measured on the eight private towers (6 852
+  joints, kept privately; the bundled ASCE 10-97 plugin built fresh and
+  checked to load):
+
+  | | joints whole | member ends | plates |
+  |---|---|---|---|
+  | the run (eight towers, 6 852 joints) | 4 253 (62.1 %) | 15 268 | 8 196 |
+  | … flatness measured on the planned host | 4 238 (61.9 %; 130 better / 70 worse) | 15 331 | 8 350 |
+
+  Left for a person after the run: 2 112 joints (487 more have nothing for
+  the layout), main classes: leg off the flange 662, axis out of the face
+  546, clash 308, plate running into 152, bolts joining nothing 137, … .
+  With the planned-host flatness the axis-out-of-face ends become
+  leg-off-flange ones (how far off, which plate does not fit); 56 of the 59
+  joints laying out fewer ends had an end bolted flat **2° to 20° off**
+  (not on the safe side before, never said) — hence fifteen joints fewer
+  whole (51 no longer, 36 newly); the run 4 to 9 times slower (L25 weighs
+  21 to 62 more members per tower; 72 of 284 turned on seven towers); the
+  smallest tower unchanged byte for byte. **The pass**: on the
+  smallest tower 42 joints tried, 36 solved, 2 now whole, 15 with no clash
+  left, clashes there 202 → 85, 21 s per joint, a run again the same file;
+  on four large towers (every eighth joint left, 161) 109 solved, 0 whole,
+  10 with no clash left, clashes 1 368 → 814, 82 s per joint on the loaded
+  machine (full runs did not end within six hours there); 10 joints with a
+  turn or a move, marked. It clears clashes but rarely makes a joint whole:
+  most joints are left for reasons a clash solution does not touch.
+  > **Owner:** (1) The pass rarely makes a joint whole and takes hours on
+  > a large tower → Recommended: keep it a tick, off by default, and run it
+  > in a batch (`ohl-structure-layout run --solve-left`) where wanted;
+  > check the joints left by class. (2) A joint the pass only fixes (fewer
+  > clashes, its members still left) stays not whole → Recommended: keep
+  > (conservative), and say "no clash left" beside "whole" in the pass's
+  > last note and the review list (a small later change). (3) The flatness
+  > of an end naming nothing measured on its planned host, on by default →
+  > Recommended: keep on — on the safe side (no end bolted flat more than
+  > 2° off; the fifteen joints fewer whole had such ends) and the person
+  > reads the real reason; the run is 4 to 9 times slower; make L25's extra
+  > weighing cheaper later. (4) L20's guard per end changed nothing; the ~500 ends left with
+  > "farther out than a plate's thickness" are left by L20 item 2's tie
+  > rule, and their words are the plan without the offset's →
+  > Recommended: on such a tie, say what blocks the end with the offset
+  > (the reason a person can act on); a later step. (5) The goal "not far
+  > off 100 %": about three joints in ten are left, the largest class a
+  > leg off its flange with no bent or welded plate fitting (most: its
+  > outstanding leg towards the flange, or the welded plate's offset) →
+  > Recommended: next, the review list (L31) for the person, then that
+  > class's sub-reasons one by one, each measured. (6) The pass measured
+  > in full on the smallest tower only (on the large ones on samples; full
+  > runs did not end within six hours on the loaded machine) →
+  > Recommended: run it in full on a quiet machine before deciding (1).
+
 - [x] L31. **The joints left reviewed: a list with why, grouped by reason,
   and a reviewer's tick per joint** (the owner, 2026-11-26: *"setup ways to
   study the latest joint and lay them out. The goal is not to reach 100%
