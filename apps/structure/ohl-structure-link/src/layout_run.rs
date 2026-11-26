@@ -786,6 +786,25 @@ impl LayoutRecord {
     }
 }
 
+/// Table `t` and every table nested in it without a place in the file
+/// (O44 L29): written where its parent is, in its order — a sub-table keeping
+/// the place it was read at could be written before its own entry of an
+/// array of tables.
+fn unplace(t: &mut toml_edit::Table) {
+    t.set_position(None);
+    for (_, item) in t.iter_mut() {
+        match item {
+            Item::Table(x) => unplace(x),
+            Item::ArrayOfTables(a) => {
+                for x in a.iter_mut() {
+                    unplace(x);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The member ends of structure `t` whose bolts are provisional (the
 /// layout's, until the code step chooses bolts): a tower with any stays at
 /// level 3 for the joint details (owner 2026-11-18, question 6) — read by
@@ -4828,7 +4847,12 @@ fn write_rounds(
         if let Some(mut item) = result.remove(key) {
             if let Some(a) = item.as_array_of_tables_mut() {
                 for t in a.iter_mut() {
-                    t.set_position(None);
+                    // (L29) Their sub-tables too (a plate's `[plate.bend]`,
+                    // `[[plate.weld]]`…): with the positions they were read
+                    // at, a table after the plates in the file (a
+                    // `[layout_practice]` at its end) put them before their
+                    // own entry — a file that no longer read.
+                    unplace(t);
                 }
             }
             result.insert(key, item);

@@ -697,6 +697,49 @@ fn the_editors_table_holds_only_what_differs() {
     assert!(crate::practice::write_own(&mut doc, Some(&bad)).is_err());
 }
 
+/// A laid-out file with plates that have sub-tables (`[plate.bend]`) and
+/// the practice written at its end (as the editor writes it): a run again
+/// writes a file that reads — the plates' sub-tables kept with their own
+/// entry (found measuring L29: they were written before it, the file no
+/// longer reading) — and lays out as the same run without the table.
+#[test]
+fn a_run_again_with_the_practice_at_the_files_end_writes_a_file_that_reads() {
+    let text = d1_spoiled(10.0);
+    let first = run(&text, &settings(), None, false);
+    assert!(first.text.contains("[plate.bend]"), "a bent plate to keep");
+    let p = DetailingPractice {
+        shift: 0.020,
+        ..Default::default()
+    };
+    let mut doc: toml_edit::DocumentMut = first.text.parse().unwrap();
+    crate::practice::write_own(&mut doc, p.own_over(&DetailingPractice::default()).as_ref())
+        .unwrap();
+    let with = doc.to_string();
+    let t = parse(&with);
+    assert!(t.layout_practice.is_some());
+    let s = with_practice(settings(), Some(&recorded(p)));
+    // N2's bent plate kept as read (the run laying out the other joints).
+    let others: Vec<&str> = first
+        .joints
+        .iter()
+        .map(|o| o.joint.as_str())
+        .filter(|j| *j != "N2")
+        .collect();
+    let again = run(&with, &s, Some(&others), false);
+    let read = parse(&again.text);
+    assert!(read.layout_practice.is_some());
+    // The same joints as a run again without the table, with the same
+    // settings.
+    let plain = run(&first.text, &s, Some(&others), false);
+    let outcome = |r: &crate::LayoutRun| {
+        r.joints
+            .iter()
+            .map(|o| (o.joint.clone(), o.plan.ends.len(), o.plates.len()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(outcome(&again), outcome(&plain));
+}
+
 /// The window's own gap, pull-back and shift stay the user's per run (the
 /// owner's L24 question 4): where they go beyond the practice given, said
 /// — in the run's notes too; no practice given says nothing.
