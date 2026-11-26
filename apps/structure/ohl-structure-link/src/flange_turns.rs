@@ -434,9 +434,9 @@ pub(crate) fn weigh_flange_turns(
     Ok((run, settled))
 }
 
-/// O44 L27: the most passes [`weigh_flange_turns`] makes (the program's
-/// bound): each weighs the members the turns kept before leave with an end
-/// whose outstanding leg points into the flange.
+/// O44 L27: the most passes the run's weighing of these turns makes (the
+/// program's bound): each weighs the members the turns kept before leave
+/// with an end whose outstanding leg points into the flange.
 pub const FLANGE_PASSES: usize = 3;
 
 /// One pass of [`weigh_flange_turns`]: the run and the file settled, and
