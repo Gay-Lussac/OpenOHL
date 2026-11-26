@@ -14,8 +14,8 @@ use crate::joints::{
     self, BoltGroup, PlateSteel, WeldInput, WeldKind, bolted, contact_width, weld,
 };
 use crate::model::{
-    Bolts, Condition, ConnectedLeg, EndConditions, Grade, Member, MemberDesign, MemberKind,
-    OntoLeg, Section, Source,
+    Bolts, Condition, ConnectedLeg, EndConditions, Grade, Member, MemberClass, MemberDesign,
+    MemberKind, OntoLeg, Section, Source,
 };
 use crate::params::{GAMMA_M1, GAMMA_M2};
 use crate::sia263::{self, Curve, Element, K_INTERNAL, K_OUTSTAND, chi, epsilon, eta, omega, rho};
@@ -793,4 +793,32 @@ fn a_frame_members_shear_and_moment_in_the_plate() {
     assert!(c.checks.iter().any(|p| p.what.contains("as a strut")));
     let plain = joints::bolted_with(&group(), &STEEL, 100e3, &joints::Extra::default(), None);
     assert_eq!(plain, bolted(&group(), &STEEL, 100e3));
+}
+
+/// The limits of `member-limits` (2026-11-26, O49): an L 60×6, 2 m, its
+/// slenderness λ_K the check's own against 200 (main load-carrying
+/// members, 4.5.1.7), a redundant against 250 (secondary members); a
+/// tension-only member: none.
+#[test]
+fn member_limits_by_hand() {
+    use crate::limits::{MAIN_SLENDERNESS, SECONDARY_SLENDERNESS, member_limits};
+    let (mut m, _) = angle(0.06, 0.006, 355e6, 2.0);
+    let (c, _) = sia263::capacity(&m, None);
+    let l = member_limits(&m, &c);
+    assert_eq!(l.len(), 1, "{l:?}");
+    assert_eq!(Some(l[0].value), c.kl_r);
+    assert!(l[0].value > 0.0);
+    assert_eq!(l[0].maximum, Some(MAIN_SLENDERNESS));
+    assert!(l[0].compression);
+    assert_eq!(
+        l[0].clause,
+        "SIA 263:2013 4.5.1.7 (main load-carrying members)"
+    );
+    m.design.class = Some(MemberClass::Redundant);
+    let (c, _) = sia263::capacity(&m, None);
+    let l = member_limits(&m, &c);
+    assert_eq!(l[0].maximum, Some(SECONDARY_SLENDERNESS));
+    m.kind = MemberKind::Tension;
+    let (c, _) = sia263::capacity(&m, None);
+    assert!(member_limits(&m, &c).is_empty());
 }

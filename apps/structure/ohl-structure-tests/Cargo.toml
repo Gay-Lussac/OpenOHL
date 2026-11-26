@@ -28,6 +28,8 @@ toml.workspace = true
 toml_edit = "0.25"
 # `ohl structure …` end to end: the reply read as JSON.
 serde_json.workspace = true
+# The member sizer's validation case (O49), in the benchmark format.
+ohl-validation.workspace = true
 
 [lints]
 workspace = true

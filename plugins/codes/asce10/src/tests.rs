@@ -881,3 +881,56 @@ fn bolts_beyond_the_legs_centre_line_bend_the_angle() {
         member_usage(&a, &within, &t, None, false, 1.0, None, None).usage
     );
 }
+
+/// The limits of `member-limits` (2026-11-26, O49) by hand on an L50×5
+/// (no root radius), 2 m between its joints, every length ratio 1:
+/// a leg's L/r against 150 (3.4), the same check's value; w/t (50 − 5)/5
+/// = 9 against 25 (3.7.1); its thickness 5 mm against the suggested 3 mm
+/// (3.3). A redundant's KL/r against 250, a member without a class
+/// against 200 (other members, said), a tension-only member: the
+/// thickness only.
+#[test]
+fn member_limits_by_hand() {
+    use crate::limits::{
+        ANGLE_W_T, LEG_SLENDERNESS, MEMBER_THICKNESS, OTHER_SLENDERNESS, REDUNDANT_SLENDERNESS,
+        member_limits,
+    };
+    let (s, q) = profiled(ohl_sections::Shape::EqualAngle {
+        h: 0.05,
+        t: 0.005,
+        r: 0.0,
+    });
+    let design = |class| MemberDesign {
+        class,
+        ..MemberDesign::default()
+    };
+    let mut m = member("m", s, 2.0, design(Some(MemberClass::Leg)), None);
+    let c = capacity(&m, None);
+    let l = member_limits(&m, &c);
+    assert_eq!(l.len(), 3, "{l:?}");
+    let r_v = (q.iv / q.area).sqrt();
+    assert!(l[0].value >= 2.0 / r_v - 1e-9, "{l:?}");
+    assert_eq!(Some(l[0].value), c.l_r);
+    assert_eq!(l[0].maximum, Some(LEG_SLENDERNESS));
+    assert!(l[0].compression);
+    assert_eq!(l[0].clause, "ASCE 10-97 3.4 (leg members)");
+    assert!((l[1].value - 9.0).abs() < 1e-12);
+    assert_eq!(l[1].maximum, Some(ANGLE_W_T));
+    assert_eq!(l[1].clause, "ASCE 10-97 3.7.1");
+    assert!((l[2].value - 0.005).abs() < 1e-12);
+    assert_eq!(l[2].minimum, Some(MEMBER_THICKNESS));
+    assert!(!l[2].compression);
+    m.design.class = Some(MemberClass::Redundant);
+    let c = capacity(&m, None);
+    let l = member_limits(&m, &c);
+    assert_eq!(Some(l[0].value), c.kl_r);
+    assert_eq!(l[0].maximum, Some(REDUNDANT_SLENDERNESS));
+    m.design.class = None;
+    let l = member_limits(&m, &capacity(&m, None));
+    assert_eq!(l[0].maximum, Some(OTHER_SLENDERNESS));
+    assert!(l[0].clause.contains("without a class taken so"), "{l:?}");
+    m.kind = MemberKind::Tension;
+    let l = member_limits(&m, &capacity(&m, None));
+    assert_eq!(l.len(), 1);
+    assert_eq!(l[0].minimum, Some(MEMBER_THICKNESS));
+}

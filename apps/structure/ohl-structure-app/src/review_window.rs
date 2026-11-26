@@ -214,6 +214,7 @@ impl StructureApp {
             || self.layout_window.is_some()
             || self.solve_window.is_some()
             || self.orient_window.is_some()
+            || self.sizing_window.is_some()
             || self.apply_window.is_some()
             || self.bolt_grade_window.is_some()
             || self.inventory

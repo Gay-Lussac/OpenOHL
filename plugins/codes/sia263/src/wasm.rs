@@ -26,6 +26,48 @@ use crate::model::{
 use exports::ohl::plugin::member_check_bracing as mb;
 use exports::ohl::plugin::member_check_default_bolts as md;
 use exports::ohl::plugin::member_check_full as full;
+use exports::ohl::plugin::member_limits as ml;
+
+impl ml::Guest for Sia263 {
+    fn member_limits(
+        method: String,
+        input: full::FullInput,
+        bracing: Vec<mb::MemberBracing>,
+    ) -> Result<Vec<ml::MemberLimit>, String> {
+        ours(&method)?;
+        let p = params::parse(&input.parameters)?;
+        params::set(p);
+        memo::start();
+        let members: Vec<Member> = input.members.iter().map(member).collect();
+        let braced: HashMap<String, Bracing> = bracing
+            .iter()
+            .map(|x| (x.member.clone(), bracing_of(x)))
+            .collect();
+        let lengths = Lengths::new(&members, &braced);
+        let mut out = Vec::new();
+        for (w, m) in input.members.iter().zip(&members) {
+            // Its crossing partner not bracing it: the longer length.
+            let partner = (!w.crossing.is_empty()).then_some(false);
+            let plain = lengths.worked(m, None, 1.0);
+            let (c, _) = sia263::capacity_worked(m, partner, plain.as_ref());
+            out.extend(
+                crate::limits::member_limits(m, &c)
+                    .into_iter()
+                    .map(|l| ml::MemberLimit {
+                        member: w.id.clone(),
+                        name: l.name,
+                        value: l.value,
+                        maximum: l.maximum,
+                        minimum: l.minimum,
+                        compression: l.compression,
+                        clause: l.clause,
+                    }),
+            );
+        }
+        memo::stop();
+        Ok(out)
+    }
+}
 
 /// The method's description.
 const DESCRIPTION: &str = "SIA 263:2013 (Construction en acier): design values with γ_M1, γ_M2 \

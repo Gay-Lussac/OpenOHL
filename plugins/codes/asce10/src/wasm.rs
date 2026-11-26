@@ -26,6 +26,7 @@ use crate::model::{
 use exports::ohl::plugin::member_check_bracing as mb;
 use exports::ohl::plugin::member_check_default_bolts as md;
 use exports::ohl::plugin::member_check_full as full;
+use exports::ohl::plugin::member_limits as ml;
 
 /// The method's description.
 const DESCRIPTION: &str = "ASCE 10-97 (Design of Latticed Steel Transmission Structures): \
@@ -647,6 +648,46 @@ impl md::Guest for Asce10 {
             method_note: asce10::TITLE.to_owned(),
             results,
         })
+    }
+}
+
+impl ml::Guest for Asce10 {
+    fn member_limits(
+        method: String,
+        input: full::FullInput,
+        bracing: Vec<mb::MemberBracing>,
+    ) -> Result<Vec<ml::MemberLimit>, String> {
+        ours(&method)?;
+        params::parse(&input.parameters)?;
+        memo::start();
+        let members: Vec<Member> = input.members.iter().map(member).collect();
+        let braced: HashMap<String, Bracing> = bracing
+            .iter()
+            .map(|x| (x.member.clone(), bracing_of(x)))
+            .collect();
+        let lengths = Lengths::new(&members, &braced);
+        let mut out = Vec::new();
+        for (w, m) in input.members.iter().zip(&members) {
+            // Its crossing partner not bracing it: the longer length.
+            let partner = (!w.crossing.is_empty()).then_some(false);
+            let plain = lengths.worked(m, None);
+            let c = asce10::capacity_worked(m, partner, plain.as_ref());
+            out.extend(
+                crate::limits::member_limits(m, &c)
+                    .into_iter()
+                    .map(|l| ml::MemberLimit {
+                        member: w.id.clone(),
+                        name: l.name,
+                        value: l.value,
+                        maximum: l.maximum,
+                        minimum: l.minimum,
+                        compression: l.compression,
+                        clause: l.clause,
+                    }),
+            );
+        }
+        memo::stop();
+        Ok(out)
     }
 }
 

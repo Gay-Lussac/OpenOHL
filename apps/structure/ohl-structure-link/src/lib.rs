@@ -138,6 +138,9 @@ mod reduce;
 pub use ohl_member_check as plugin_check;
 mod quantities;
 mod run;
+pub mod sizing;
+#[cfg(test)]
+mod sizing_tests;
 pub mod solve;
 pub mod solve_pass;
 #[cfg(test)]
@@ -1598,7 +1601,7 @@ pub type CaseRun = (String, Result<CaseResult, String>);
 /// structure file's text. A member's section is looked up in `sections`
 /// first, the bolts its connections name in the bolt libraries beside it
 /// (`Bolts/` in `dir`).
-fn model_of(
+pub(crate) fn model_of(
     structure: &StructureType,
     text: &str,
     dir: Option<&Path>,

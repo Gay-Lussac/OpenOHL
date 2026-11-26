@@ -671,6 +671,22 @@ impl StructureApp {
                 let tower = t
                     .as_ref()
                     .is_some_and(|t| ohl_structure_edit::is_tower(t.kind) && !t.members.is_empty());
+                let designed = t.as_ref().is_some_and(|t| t.detail().is_design());
+                if entry(
+                    ui,
+                    None,
+                    "Choose the members…",
+                    None,
+                    designed,
+                    "Proposes for each member group the lightest section of the section library \
+                     that passes the design check, the code's limits and the joint-fit limits \
+                     (the forces solved again until the choice settles); a table of the changes \
+                     with their weight and usage before and after — Apply takes the ticked \
+                     groups as one undo step",
+                    "A level 3 structure first (every member with a section)",
+                ) {
+                    self.open_sizing_window();
+                }
                 if entry(
                     ui,
                     None,

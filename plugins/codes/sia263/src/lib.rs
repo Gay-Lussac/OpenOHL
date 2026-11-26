@@ -40,6 +40,7 @@ pub mod check;
 pub mod groups;
 pub mod joints;
 pub mod lengths;
+pub mod limits;
 pub mod memo;
 pub mod model;
 pub mod params;

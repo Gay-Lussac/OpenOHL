@@ -2416,6 +2416,63 @@ world member-check-default-bolts-export {
     export member-check-default-bolts;
 }
 
+/// **The limits a design code puts on its members' sizes** (2026-11-26,
+/// roadmap O49, the owner's words of that day: "there would be a basic
+/// choice and then plugins can adapt the values based on norms"; added to
+/// interface version 0.3 without changing anything else: a plugin without
+/// it gives no limits). The values a code bounds that a member's usage does
+/// not hold — a compression member's slenderness, a leg's flat width to
+/// thickness, a member's least thickness — each worked out by the plugin's
+/// own rules (its effective slenderness as its check takes it), with its
+/// bound and its clause. OpenOHL's member sizer takes a section only where
+/// every limit holds; the member check itself does not change. An empty
+/// list: the code puts no limit on these members (nothing is checked, and
+/// the sizer says so).
+interface member-limits {
+    use member-check-full.{full-input};
+    use member-check-bracing.{member-bracing};
+
+    /// One limit on one member.
+    record member-limit {
+        /// The member's id (a member of `full-input.members`).
+        member: string,
+        /// What is bounded, in words with its symbol ("KL/r, the effective
+        /// slenderness").
+        name: string,
+        /// The member's value as the code works it out.
+        value: f64,
+        /// The largest value allowed (none: no upper bound).
+        maximum: option<f64>,
+        /// The smallest value allowed (none: no lower bound).
+        minimum: option<f64>,
+        /// It holds only for a member carrying compression (a slenderness
+        /// limit of compression members): OpenOHL applies it to a member
+        /// compressed in a load case only.
+        compression: bool,
+        /// The clause ("ASCE 10-97 3.4").
+        clause: string,
+    }
+
+    /// The limits on the members of `input` by method `method`, with what
+    /// braces each (`bracing`, as `member-check-bracing`). No load case is
+    /// sent (`input.cases` and each member's `forces` empty): where a
+    /// length depends on a case (a crossing's other diagonal in tension),
+    /// the plugin takes the longer one. A member without a limit: none in
+    /// the list.
+    member-limits: func(method: string, input: full-input, bracing: list<member-bracing>) -> result<list<member-limit>, string>;
+}
+
+/// The `member-limits` export with the member-check exports whose records
+/// it takes, bound together for the host (each looked up alone, so a
+/// plugin without the newer ones loads as before; not a world to build
+/// plugins for).
+world member-limits-export {
+    export member-check-full;
+    export member-check-bracing;
+    export member-check-default-bolts;
+    export member-limits;
+}
+
 /// A plugin giving a design code for structures (2026-11-18): its members
 /// by `member-check` and `member-check-full`, its joints by
 /// `joint-check` and (with its parameters) `joint-check-full`, the bolt
@@ -2429,12 +2486,14 @@ world member-check-default-bolts-export {
 /// (2026-11-19), a bent plate's bend by `joint-check-bends` (2026-11-19),
 /// a weld with its sides by `joint-check-welds` (2026-11-25), its members
 /// without bolts in their data with OpenOHL's default bolt by
-/// `member-check-default-bolts` (2026-11-26).
+/// `member-check-default-bolts` (2026-11-26), the limits its code puts on
+/// its members' sizes by `member-limits` (2026-11-26, O49).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
     export member-check-bracing;
     export member-check-default-bolts;
+    export member-limits;
     export joint-check;
     export joint-check-full;
     export joint-check-moments;

@@ -72,6 +72,7 @@ use std::path::{Path, PathBuf};
 pub mod default_bolts;
 pub mod full;
 pub mod joints;
+pub mod limits;
 
 use ohl_plugins::member_check as wit;
 use ohl_sections::Shape;

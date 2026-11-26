@@ -229,6 +229,8 @@ pub struct StructureApp {
     pub review_cache: crate::review_window::ReviewCache,
     /// The Orient angles window ([`crate::orient_window`]).
     pub orient_window: Option<crate::orient_window::OrientWindow>,
+    /// The Choose the members window ([`crate::sizing_window`]).
+    pub sizing_window: Option<crate::sizing_window::SizingWindow>,
     /// The Apply this joint's detail to similar joints window
     /// ([`crate::apply_window`]).
     pub apply_window: Option<crate::apply_window::ApplyWindow>,
@@ -327,6 +329,7 @@ impl StructureApp {
             review_window: None,
             review_cache: None,
             orient_window: None,
+            sizing_window: None,
             apply_window: None,
             bolt_grade_window: None,
             practice_window: None,
@@ -620,6 +623,7 @@ impl StructureApp {
             || self.layout_window.is_some()
             || self.solve_window.is_some()
             || self.orient_window.is_some()
+            || self.sizing_window.is_some()
             || self.apply_window.is_some()
             || self.bolt_grade_window.is_some()
             || self.practice_window.is_some()
@@ -628,6 +632,9 @@ impl StructureApp {
         self.layout_window = None;
         self.solve_window = None;
         self.orient_window = None;
+        if let Some(w) = self.sizing_window.take() {
+            w.cancel();
+        }
         self.apply_window = None;
         self.bolt_grade_window = None;
         self.practice_window = None;
@@ -1235,6 +1242,7 @@ impl eframe::App for StructureApp {
         self.solve_window(&ctx);
         self.review_window(&ctx);
         self.orient_window(&ctx);
+        self.sizing_window(&ctx);
         self.apply_window(&ctx);
         self.bolt_grade_window(&ctx);
         self.practice_window(&ctx);

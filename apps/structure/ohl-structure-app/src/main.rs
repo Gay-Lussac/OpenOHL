@@ -59,6 +59,9 @@ mod member_panel;
 mod menus;
 mod notices;
 mod orient_window;
+mod sizing_window;
+#[cfg(test)]
+mod sizing_ui_tests;
 mod plate_outline_ui;
 mod plugins_ui;
 mod pole_panel;

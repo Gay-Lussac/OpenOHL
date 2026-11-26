@@ -20,6 +20,10 @@ path = "src/report_main.rs"
 name = "ohl-structure-layout"
 path = "src/layout_main.rs"
 
+[[bin]]
+name = "ohl-structure-size"
+path = "src/size_main.rs"
+
 [dependencies]
 ohl-core.workspace = true
 # The bill of materials (weight and quantities, joint details stage 4.6).

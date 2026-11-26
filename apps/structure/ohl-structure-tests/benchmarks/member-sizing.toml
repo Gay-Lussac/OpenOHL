@@ -1,0 +1,133 @@
+# The member sizer of OHL-Structure (roadmap O49 stage 1, 2026-11-26; built,
+# in active development, not approved yet), in the benchmark format. Run by
+# `apps/structure/ohl-structure-tests/tests/member_sizing.rs` (the
+# calculation is the structure application's: the core's `ohl validate`
+# cannot reach it). Invented truss and sections.
+
+[[case]]
+id = "structsize-001"
+title = "Member sizer on a plane truss of three groups: its choice the lightest passing one, proved by brute force over every combination of the library"
+calculation = "structure.size"
+reference = "Brute force: every combination of the library's six angles for the three member groups (6³ = 216 full runs of the structure by OHL-Structure's run, the bundled ASCE 10-97 plugin), each kept only when every member's usage is at most 1, no limit of the code (member-limits: ASCE 10-97 3.3, 3.4, 3.7.1) is broken and no joint-fit limit (the leg takes its 16 mm bolt at mid-leg with the code's edge distance; the member holds its bolts) — the lightest kept"
+notes = "A (0, 0, 0) and B (0, 0, 2 m) pinned, C (2 m, 0, 0), D (2 m, 0, 2 m), E (4 m, 0, 0) held across the plane; 30 kN down at E, the members' own weight (the default analysis: P-Delta, self-weight × 1). Groups: bottom AC, CE (legs; 60 kN and 30 kN compression by hand), top BD (leg; 30 kN tension), web CD, BC, DE (bracing; 30 kN compression, 42.4 kN tension). Every member starts as an L80×8; two 16 mm bolts at each end. mass_total: the sizer's chosen members' mass (profile mass per metre × length between joints, kg) = brute_mass_total: the brute force's lightest passing combination; same_choice 1: the same section for every group."
+max_seconds = 300.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+name = "Sizing angles (invented)"
+default_material = "s355"
+[[material]]
+id = "s355"
+name = "Steel (invented)"
+elasticity = "210 GPa"
+shear_modulus = "81 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+ultimate = "510 MPa"
+[[section]]
+id = "L40x4"
+shape = "equal_angle"
+h = "40 mm"
+t = "4 mm"
+r = "5 mm"
+[[section]]
+id = "L45x4"
+shape = "equal_angle"
+h = "45 mm"
+t = "4 mm"
+r = "6 mm"
+[[section]]
+id = "L50x5"
+shape = "equal_angle"
+h = "50 mm"
+t = "5 mm"
+r = "6 mm"
+[[section]]
+id = "L60x6"
+shape = "equal_angle"
+h = "60 mm"
+t = "6 mm"
+r = "7 mm"
+[[section]]
+id = "L70x7"
+shape = "equal_angle"
+h = "70 mm"
+t = "7 mm"
+r = "8 mm"
+[[section]]
+id = "L80x8"
+shape = "equal_angle"
+h = "80 mm"
+t = "8 mm"
+r = "9 mm"
+'''
+inputs.model = '''
+format = "ohl-structure"
+version = 21
+id = "sizing-truss"
+name = "Sizing truss (invented)"
+kind = "lattice"
+[[node]]
+id = "A"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "B"
+point = ["0 m", "0 m", "2 m"]
+support = "pinned"
+[[node]]
+id = "C"
+point = ["2 m", "0 m", "0 m"]
+support = ["y"]
+[[node]]
+id = "D"
+point = ["2 m", "0 m", "2 m"]
+support = ["y"]
+[[node]]
+id = "E"
+point = ["4 m", "0 m", "0 m"]
+support = ["y"]
+[[member]]
+id = "AC"
+nodes = ["A", "C"]
+section = "L80x8"
+group = "bottom"
+design = { class = "leg", bolts = { diameter = "16 mm", count = 2 } }
+[[member]]
+id = "CE"
+nodes = ["C", "E"]
+section = "L80x8"
+group = "bottom"
+design = { class = "leg", bolts = { diameter = "16 mm", count = 2 } }
+[[member]]
+id = "BD"
+nodes = ["B", "D"]
+section = "L80x8"
+group = "top"
+design = { class = "leg", bolts = { diameter = "16 mm", count = 2 } }
+[[member]]
+id = "CD"
+nodes = ["C", "D"]
+section = "L80x8"
+group = "web"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+[[member]]
+id = "BC"
+nodes = ["B", "C"]
+section = "L80x8"
+group = "web"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+[[member]]
+id = "DE"
+nodes = ["D", "E"]
+section = "L80x8"
+group = "web"
+design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
+[[load]]
+node = "E"
+force = ["0 kN", "0 kN", "-30 kN"]
+'''
+expected.mass_total = { value = 0.0, abs_tol = 0.01 }
+expected.brute_mass_total = { value = 0.0, abs_tol = 0.01 }
+expected.same_choice = { value = 1.0, abs_tol = 0.0 }
+expected.over_target = { value = 0.0, abs_tol = 0.0 }

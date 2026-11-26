@@ -126,6 +126,13 @@ pub struct Capacity {
     pub tension: Option<(f64, String)>,
     /// The effective slenderness KL/r (compression).
     pub kl_r: Option<f64>,
+    /// The slenderness L/r before the end conditions' curves (3.7.4),
+    /// the largest of the axes' (a torsional mode's or a crossing's where
+    /// larger): what 3.4 limits for a leg (2026-11-26, `member-limits`).
+    pub l_r: Option<f64>,
+    /// The legs' flat width to thickness w/t of an angle (given, else
+    /// worked out; none: not an angle): what 3.7.1 limits.
+    pub w_t: Option<f64>,
     /// What the compression capacity assumed for missing data, in words.
     pub compression_assumed: Vec<String>,
     /// What the tension capacity assumed for missing data, in words.
@@ -582,6 +589,7 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
         }
     };
     out.kl_r = Some(kl_r);
+    out.l_r = Some(l_r);
     out.beyond_centre = beyond_centre(m, kl_r, fy);
     if let Some((limit, class)) = class_limit(d.class)
         && kl_r > limit
@@ -600,6 +608,9 @@ fn capacity_of(m: &Member, partner_in_tension: Option<bool>, worked: Option<&Wor
         }
         _ => None,
     };
+    if legs.is_some() {
+        out.w_t = w_t;
+    }
     if let (Some(w), Some(_)) = (w_t, legs)
         && w > MAX_W_T
     {

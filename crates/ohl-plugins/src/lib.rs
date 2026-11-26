@@ -474,15 +474,15 @@ pub const LAYOUT_PRACTICE_EXPORT: &str = "ohl:plugin/layout-practice@0.1.0";
 /// dozen lines; more is refused, naming the plugin).
 pub const LAYOUT_PRACTICE_MAX: usize = 64 * 1024;
 
-// One binding for `member-check-full`, `member-check-bracing` and
-// `member-check-default-bolts`, whose functions take the first's records
-// (2026-11-19, 2026-11-26): each export is looked up on its own
-// ([`member_check_full_guest`], [`member_check_bracing_guest`],
-// [`member_check_default_bolts_guest`]), so a plugin without the newer
-// ones loads as before.
+// One binding for `member-check-full`, `member-check-bracing`,
+// `member-check-default-bolts` and `member-limits`, whose functions take
+// the first's records (2026-11-19, 2026-11-26): each export is looked up
+// on its own ([`member_check_full_guest`], [`member_check_bracing_guest`],
+// [`member_check_default_bolts_guest`], [`member_limits_guest`]), so a
+// plugin without the newer ones loads as before.
 mod member_check_full_bindings {
     wasmtime::component::bindgen!({
-        world: "member-check-default-bolts-export",
+        world: "member-limits-export",
         path: "wit",
     });
 }
@@ -558,6 +558,67 @@ fn member_check_default_bolts_guest<T: 'static>(
         &pre,
     )?
     .load(&mut *store, instance)
+}
+
+/// The records of the `member-limits` interface (2026-11-26, O49): the
+/// limits a design code puts on its members' sizes (slenderness, flat
+/// width to thickness, least thickness), worked out by the plugin.
+pub mod member_limits {
+    pub use super::member_check_full_bindings::exports::ohl::plugin::member_limits::MemberLimit;
+}
+
+/// Export name of the optional `member-limits` interface of any plugin.
+pub const MEMBER_LIMITS_EXPORT: &str = "ohl:plugin/member-limits@0.1.0";
+
+/// The `member-limits` export of an instance, looked up alone.
+fn member_limits_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<member_check_full_bindings::exports::ohl::plugin::member_limits::Guest> {
+    let pre = instance.instance_pre(&*store);
+    member_check_full_bindings::exports::ohl::plugin::member_limits::GuestIndices::new(&pre)?
+        .load(&mut *store, instance)
+}
+
+/// What a plugin gave by `member-limits` for `input`, checked: only
+/// members sent; a value and bounds that are numbers (a bound not a
+/// number, or neither bound given, refused); a name. Errors name plugin
+/// `name`.
+fn check_limits_output(
+    name: &str,
+    input: &member_check_full::FullInput,
+    given: &[member_limits::MemberLimit],
+) -> Result<(), PluginError> {
+    let bad = |m: String| PluginError::Runtime(format!("plugin {name}: member-limits: {m}"));
+    let sent: std::collections::HashSet<&str> =
+        input.members.iter().map(|m| m.id.as_str()).collect();
+    for l in given {
+        if !sent.contains(l.member.as_str()) {
+            return Err(bad(format!("a limit for member \"{}\", not sent", l.member)));
+        }
+        if l.name.trim().is_empty() {
+            return Err(bad(format!("a limit without a name on member \"{}\"", l.member)));
+        }
+        if !l.value.is_finite() {
+            return Err(bad(format!(
+                "{} of member \"{}\" is not a number",
+                l.name, l.member
+            )));
+        }
+        if l.maximum.is_none() && l.minimum.is_none() {
+            return Err(bad(format!(
+                "{} of member \"{}\" has neither a largest nor a smallest value",
+                l.name, l.member
+            )));
+        }
+        if l.maximum.iter().chain(&l.minimum).any(|b| !b.is_finite()) {
+            return Err(bad(format!(
+                "a bound of {} of member \"{}\" is not a number",
+                l.name, l.member
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// What a plugin gave for `input` by `member-check-full`,
@@ -3083,6 +3144,34 @@ impl WasmHost {
             .map_err(|e| classify(e, &p.manifest, "member-check-default-bolts", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         check_full_output(&name, input, &given)?;
+        Ok(Some(given))
+    }
+
+    /// The limits the code of method `method` puts on the members of
+    /// `input` (no load case in it), with what braces them (`bracing`),
+    /// through the plugin's `member-limits` export (2026-11-26, O49). None:
+    /// the plugin has no such export (no limits known, said by the
+    /// caller). Errors name the plugin: its own error, a limit for a
+    /// member not sent, a value or bound that is not a number.
+    pub fn member_limits(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &member_check_full::FullInput,
+        bracing: &[member_check_bracing::MemberBracing],
+    ) -> Result<Option<Vec<member_limits::MemberLimit>>, PluginError> {
+        let Some((mut p, instance)) = self.optional_export(dir, MEMBER_LIMITS_EXPORT)? else {
+            return Ok(None);
+        };
+        let export = member_limits_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_member_limits(&mut p.store, method, input, bracing)
+            .map_err(|e| classify(e, &p.manifest, "member-limits", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_limits_output(&name, input, &given)?;
         Ok(Some(given))
     }
 
