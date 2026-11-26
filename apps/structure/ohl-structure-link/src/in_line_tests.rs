@@ -382,3 +382,40 @@ fn the_redundant_on_the_pieces_before_and_after_confirming() {
         }
     }
 }
+
+/// O44 L27: a piece confirmed onto a part already one (a run's turns
+/// brought its roll within the tolerance of the part's): the part's pieces
+/// join the chain and all get its one roll — never the new pair alone,
+/// which would leave the part's pieces turned apart (the core then reads
+/// them as two pieces again).
+#[test]
+fn a_piece_confirmed_onto_a_part_already_one_turns_the_whole_part() {
+    let three = format!(
+        "{SPLIT}\n[[node]]\nid = \"C\"\npoint = [\"4 m\", \"0 m\", \"0 m\"]\nsupport = \"fixed\"\n\n\
+         [[member]]\nid = \"H3\"\nnodes = [\"B\", \"C\"]\nsection = \"EA-61x7\"\n\
+         orientation = \"z+y-\"\nroll = \"1.5 deg\"\n\
+         design = {{ class = \"bracing\", bolts = {{ diameter = \"16 mm\", count = 2 }} }}\n"
+    );
+    // H1 and H2 confirmed first (alike: no roll written).
+    let list = in_line_pieces(&parse(&three), None);
+    let at_m: Vec<_> = list.iter().filter(|x| x.joint == "M").cloned().collect();
+    assert_eq!(at_m.len(), 1, "{list:?}");
+    let once = confirm_text(&three, &at_m).unwrap();
+    let t = parse(&once);
+    assert_eq!(t.continuous_with("H1", "M"), Some("H2"), "{once}");
+    // Then H3 onto H2 (1.5° apart): proposed, confirmed.
+    let list = in_line_pieces(&t, None);
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert!(list[0].proposed() && list[0].joint == "B", "{list:?}");
+    let twice = confirm_text(&once, &list).unwrap();
+    let t = parse(&twice);
+    let member = |m: &str| t.members.iter().find(|x| x.id == m).unwrap();
+    assert_eq!(member("H1").roll, member("H2").roll, "{twice}");
+    assert_eq!(member("H2").roll, member("H3").roll, "{twice}");
+    assert_eq!(t.continuous_with("H1", "M"), Some("H2"), "{twice}");
+    assert_eq!(t.continuous_with("H2", "B"), Some("H3"), "{twice}");
+    // The mean of the three (0°, 0°, 1.5°): 0.5°.
+    let deg = ohl_structure_edit::edits::member_roll(member("H1")).to_degrees();
+    assert!((deg - 0.5).abs() < 0.01, "{deg}");
+    assert!(in_line_pieces(&t, None).is_empty());
+}

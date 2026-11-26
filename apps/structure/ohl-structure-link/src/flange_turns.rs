@@ -43,7 +43,10 @@
 //! saying so (the other options — a stand-off, a welded assembly of three
 //! parts — later). Deterministic: the same file and settings give the same
 //! result; each weighing is three whole layouts and one or more to
-//! confirm (measured and said in the run's notes).
+//! confirm (measured and said in the run's notes). O44 L27: the members the
+//! turns kept leave with such an end (not weighed: their end was laid out
+//! before) are weighed in a further pass, until a pass finds none
+//! ([`FLANGE_PASSES`] at most), so that a run again finds nothing more.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -376,15 +379,78 @@ fn text_with(
 /// rows written). Nothing to weigh: `r0` and `text` as they are.
 /// `base_notes`: the notes of `r0` that are not its plain run's (L19's
 /// weighing), kept where the run is laid out again.
+///
+/// O44 L27: in passes. The turns kept change the layout of their joints,
+/// and a member not weighed (its end laid out before) may be left there
+/// with an end whose outstanding leg points into the flange: such members
+/// are weighed in a further pass on the file so settled, from the run with
+/// the turns kept, until a pass finds none ([`FLANGE_PASSES`] at most) —
+/// so that a run again on the result finds nothing more to weigh (before,
+/// a run again weighed them: measured on private towers, rows written and
+/// the run again as long as a weighing). The members still left after the
+/// last pass are said in the notes (a run again weighs them).
 pub(crate) fn weigh_flange_turns(
     text: &str,
     r0: LayoutRun,
     base_notes: &[String],
     ask: &RunAsk<'_>,
 ) -> Result<(LayoutRun, String), String> {
+    let (mut run, mut settled, head) = weigh_flange_pass(text, r0, base_notes, ask)?;
+    if head.is_empty() {
+        return Ok((run, settled));
+    }
+    let mut notes = base_notes.to_vec();
+    notes.extend(head);
+    let mut last_weighed = true;
+    for _ in 1..FLANGE_PASSES {
+        let (r, s, head) = weigh_flange_pass(&settled, run, &notes, ask)?;
+        run = r;
+        settled = s;
+        last_weighed = !head.is_empty();
+        if !last_weighed {
+            break;
+        }
+        notes.extend(head);
+    }
+    if last_weighed {
+        let t = StructureType::parse(std::path::Path::new("structure.ohls"), &settled)
+            .map_err(|e| e.message)?;
+        let targets: BTreeSet<String> = ask
+            .joints
+            .clone()
+            .unwrap_or_else(|| t.nodes.iter().map(|n| n.id.clone()).collect());
+        let left = candidates(&settled, &run, ask, &targets)?;
+        if !left.is_empty() {
+            let names: Vec<&str> = left.iter().map(|c| c.member.as_str()).collect();
+            run.notes.push(format!(
+                "an outstanding leg pointing into the flange (L25): {} member(s) left with such \
+                 an end after the turns of the last of {FLANGE_PASSES} passes, not weighed (a run \
+                 again weighs them): {}",
+                left.len(),
+                names.join(", ")
+            ));
+        }
+    }
+    Ok((run, settled))
+}
+
+/// O44 L27: the most passes the run's weighing of these turns makes (the
+/// program's bound): each weighs the members the turns kept before leave
+/// with an end whose outstanding leg points into the flange.
+pub const FLANGE_PASSES: usize = 3;
+
+/// One pass of [`weigh_flange_turns`]: the run and the file settled, and
+/// the notes the pass added (none: nothing weighed, `r0` and `text` as
+/// they are).
+fn weigh_flange_pass(
+    text: &str,
+    r0: LayoutRun,
+    base_notes: &[String],
+    ask: &RunAsk<'_>,
+) -> Result<(LayoutRun, String, Vec<String>), String> {
     let s = ask.settings;
     if !(s.flange_half || s.flange_quarter) {
-        return Ok((r0, text.to_owned()));
+        return Ok((r0, text.to_owned(), Vec::new()));
     }
     let t = StructureType::parse(std::path::Path::new("structure.ohls"), text)
         .map_err(|e| e.message)?;
@@ -394,7 +460,7 @@ pub(crate) fn weigh_flange_turns(
         .unwrap_or_else(|| t.nodes.iter().map(|n| n.id.clone()).collect());
     let cands = candidates(text, &r0, ask, &targets)?;
     if cands.is_empty() {
-        return Ok((r0, text.to_owned()));
+        return Ok((r0, text.to_owned(), Vec::new()));
     }
     let mut at_joint: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for m in &t.members {
@@ -742,9 +808,9 @@ pub(crate) fn weigh_flange_turns(
         cands.len()
     )];
     head.append(&mut notes);
-    out.notes.extend(head);
+    out.notes.extend(head.iter().cloned());
     out.weighed.extend(weighed);
-    Ok((out, settled))
+    Ok((out, settled, head))
 }
 
 /// The file `text` with the record's `flange_turns` rows `rows` written

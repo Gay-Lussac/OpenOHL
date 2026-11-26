@@ -202,6 +202,55 @@ circuits as twins** (roadmap O17, *One model per line*; owner,
   holding several lines' starts. The admin's command merging twins,
   planned under *Later*, is dropped.
 
+## 2026-11-25 (joint layout: a run again on a laid-out file, L27)
+
+**Confirming pieces in line one part gives the pieces already one part
+with any of them the chain's roll too; L25's weighing made in passes, so
+that a run again finds nothing more to weigh** (roadmap O44 L27, L26's
+question 4; the owner busy: traced and fixed on its own, reported;
+[theory](../theory/joint-layout.md#a-run-again-on-a-laid-out-file-l27)).
+
+- **Found**: laying a laid-out tower file out again — the pieces in line
+  and leg splice places proposed then confirmed first, as before the first
+  run — changed three of eight private towers (L26). Traced to two causes
+  outside the layout run: the run's weighed turns (L19, L25) bring more
+  pieces within the 2° of one part, proposed and confirmed then (a new
+  input, the user's — D15); and **a defect in confirming**: a piece
+  confirmed onto a part already one turned with its new partner alone to
+  the roll half-way between them, the part's other pieces kept theirs, so
+  the part was turned apart and the core (one part only with the same
+  roll) read it as two pieces again; the joint between them laid out
+  otherwise.
+- **Changed**: `in_line::confirm` grows each chain confirmed by the pieces
+  already given `continuous` with any of its pieces; all get its mean roll
+  (a pair alone as before, half-way). Tried too and measured worse: the
+  part keeping its roll (the roll most of its pieces have) and only the
+  pieces confirmed now turned to it. No format change.
+- **Also found, in the run**: the members L25's kept turns leave with an
+  outstanding leg pointing into the flange (laid out before, so not
+  weighed) were weighed only by a run again (rows written, the run again
+  as long as a weighing). **Changed**: `flange_turns` weighs them in
+  further passes of the same run until a pass finds none (at most three,
+  `FLANGE_PASSES`; members left after the last are said in the notes).
+- **Measured** (eight private towers, 6 852 joints, kept privately; the
+  bundled ASCE 10-97 plugin built fresh and checked to load before every
+  run): a run again on the first run's file, nothing confirmed, lays out
+  every joint as before (4 253 whole, 15 268 ends, 8 196 plates; 0 better,
+  0 worse); before the passes the file differed on four towers by one or
+  two rows and that run again took a weighing's time; with them a run
+  again on the result is the same file on all eight. The first run is
+  unchanged by the fix to confirming (the files it lays out byte for byte
+  the same). Confirmed again then run again on the three towers: 30
+  joints better, 18 worse with the fix (30 / 6 before, where the part was
+  silently two pieces; the part keeping its roll, tried: 18 / 12) — the
+  joints of the pieces newly confirmed and of those turned with them; a
+  user's confirmation, not the run.
+- **Measured besides** (L26's question 3, nothing changed): *Solve the
+  clashes* on the 69 crowded joints of L26's 82 ends found a solution at
+  63 (clashes there 1 476 → 758, other problems 200 → 173, none more at
+  the joints around); 15 of the 16 that lay the joint out again lay one
+  member end more out.
+
 ## 2026-11-25 (country server: the usage of a shared tower on every line's loads; the electric field's cuts, volumes and jumpers with the other lines)
 
 **Four "left" items of the server's follow-ups of 2026-11-24, and a
