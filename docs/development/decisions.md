@@ -92,6 +92,57 @@ hanging in the spacers was said NOT ON THE SAFE SIDE, not checked.
   hand checks. On the example line with its first section made a twin bundle and one subconductor of span 2 broken (2026-11-25): at the suspension structure next to the break 0.63 kN along the line gone against 0.29 kN hanging, but 12.3 kN down hanging against 9.5 kN gone, and at the section's two dead-ends 49.1 and 49.5 kN along the line hanging against 43.8 and 44.9 kN gone (the wires left pull harder) — neither reading bounds every force; the run took 0.94 s against 0.90 s with the whole phase broken. Other cases
   unchanged.
 
+## 2026-11-25 (owner answers: the plugin fixes' questions; the joint layout's L23 to L25 recommendations)
+
+**The plugin fixes' open questions** (roadmap O19 stage 5 and O44 L16
+question 4; owner, 2026-11-25: "Ok for plugin fixes"): a built-up member's
+bearing on one ply until the plate between is defined, kept; the default
+bolt for a member without bolts in its data — the largest its leg's usual
+gauge takes, or the structure's most used bolt — sent with the members to
+the code plugins (an interface change, approved, to build); a rolled
+angle's own leg sent as a rolled edge unless its connection says
+`rolled_edge = false` (a core change, approved, to build); the clearance
+checks taking the calculation level kept under O7 item 7.
+
+**The joint layout's L23 to L25 questions** (roadmap O44; owner,
+2026-11-25: "use recommendations for l23 to l25"), each as recommended:
+L23 — the held plate's bolts re-planned and the plate grown along its
+holder dropped; each turn the welded plates change decided with and
+without them next; measuring with the bundled code plugin loaded; the
+joggle dropped, a plate bent once carrying its axis offset up to 40 mm
+measured first. L24 — the six design questions confirmed; each value's
+effect measured next; the plate's thickness rules as data next; the
+window's gap, pull-back and shift kept the user's per run, said where
+they exceed the practice's; a small editor next; the flatness only
+stricter; the bundled codes give no practice. L25 — the weighed turns on
+by default; the 23 members passing alone left for now; the plates'
+rise accepted; a member weighed and left not weighed again until its roll
+changes.
+
+## 2026-11-25 (country server: one model per line, decided at the network's design; twins stay as they are)
+
+**A line and its branches are one model; separate lines are separate
+models, meeting at substations and on towers carrying another line's
+circuits as twins** (roadmap O17, *One model per line*; owner,
+2026-11-25). Nothing is built by this entry.
+
+- **The rule**: a line branching (a Y or T connection, two or more routes
+  sharing a tower) is one model, its shared towers one object each (phase
+  8's towers shared by several routes). Only separate lines are separate
+  models in the country server.
+- **Where it is decided**: at the network's design, before the import;
+  `ohl network import` stays one project file = one line. **Where it is
+  corrected**: in OHL-Design, the application with the capability — a
+  command joining another project file's routes into the open project is
+  to be built (its twins offered to become shared towers, the user
+  deciding, none ticked by default; the open project's tower kept and the
+  other line's sections re-attached by point label, those without a match
+  refused and listed; owner, 2026-11-25: "Ok with recommendations").
+- **Twins unchanged**: listed by the import for an admin, never merged,
+  taken as one tower by the scoped checks; they cover substation portals
+  holding several lines' starts. The admin's command merging twins,
+  planned under *Later*, is dropped.
+
 ## 2026-11-25 (country server: the usage of a shared tower on every line's loads; the electric field's cuts, volumes and jumpers with the other lines)
 
 **Four "left" items of the server's follow-ups of 2026-11-24, and a

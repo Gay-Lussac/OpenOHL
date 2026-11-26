@@ -15,6 +15,11 @@ use ohl_server::{Position, RowsMsg};
 use ohl_session::working_set::{Pick, WORKING_SET_KEY, WorkingSetSpec};
 use ohl_session::{Command, Session};
 
+/// How long a field window's run may take in these tests: a guard against a
+/// hang, not a speed test — the full check runs them beside other builds
+/// under load averages near 100, where a run took more than 300 s.
+const FIELD_RUN_WAIT: std::time::Duration = std::time::Duration::from_secs(1800);
+
 #[test]
 fn a_replica_takes_the_servers_rows_in_place() {
     let ex = root().join("examples/synthetic-line");
@@ -1014,8 +1019,8 @@ fn offline_files_neighbours_in_the_check_windows(
                 break;
             }
             assert!(
-                t0.elapsed() < std::time::Duration::from_secs(300),
-                "computed"
+                t0.elapsed() < FIELD_RUN_WAIT,
+                "computed within {FIELD_RUN_WAIT:?}"
             );
             h.run_steps(2);
             std::thread::sleep(std::time::Duration::from_millis(30));
@@ -1348,8 +1353,8 @@ fn offline_files_neighbours_in_the_check_windows(
                 break;
             }
             assert!(
-                t0.elapsed() < std::time::Duration::from_secs(300),
-                "computed"
+                t0.elapsed() < FIELD_RUN_WAIT,
+                "computed within {FIELD_RUN_WAIT:?}"
             );
             h.run_steps(2);
             std::thread::sleep(std::time::Duration::from_millis(30));
@@ -1544,8 +1549,8 @@ fn offline_files_neighbours_in_the_check_windows(
                 break;
             }
             assert!(
-                t0.elapsed() < std::time::Duration::from_secs(300),
-                "computed"
+                t0.elapsed() < FIELD_RUN_WAIT,
+                "computed within {FIELD_RUN_WAIT:?}"
             );
             h.run_steps(2);
             std::thread::sleep(std::time::Duration::from_millis(30));
