@@ -127,6 +127,37 @@ built, in active development, not approved yet;
   as `made_by` and `kind` are; tested (the joint details and a run on a
   ticked file equal those without the ticks).
 
+## 2026-11-26 (the code checks are plugins: one plugin per code family, SIA 260 to 265 in one SIA plugin)
+
+The owner, 2026-11-26: the code checks are plugin based; SIA 261, 262,
+263 and 265 (with SIA 260) should in the end be in one SIA plugin for
+OHL-Design and OHL-Structure, the other codes the same way later; what a
+code needs to work is to be reachable to its plugin. Today SIA 263 and
+ASCE 10-97 are bundled plugins (O4, 2026-11-18); SIA 265 (wood poles),
+ASCE/SEI 48-19 (steel pole shafts) and the SIA 261 snow and wind factors
+on structures are still in the core. Next: the inventory of the code
+rules still in the core and the plan of the move (roadmap O4), agreed
+before the interface changes are built. The website says the direction.
+
+**The inventory and the plan, written the same day** (planned, to be
+agreed by the owner; nothing changed in the code;
+[roadmap O4](https://github.com/Gay-Lussac/OpenOHL/blob/main/ROADMAP.md)).
+Still in the core: SIA 265 wood poles, ASCE/SEI 48-19 and SIA 263 pole
+shafts (the pole check), SIA 261's member force coefficients and
+inclination factors (for every tower without a drag factor, whatever its
+code), SIA 261's snow on structures, SIA 263's bolt grades; ASCE 10-97's
+end conditions and an old plugin's bolt shear stay for now; quantities
+and the simple check are no code checks. The plan, each move compared
+bit for bit with the core before its copy goes: `sia263` becomes `sia`,
+built for a new combined world `code-family-plugin` (one snag: the two
+worlds' `describe` differ, so the new world takes the design-code one);
+SIA 261 structure wind and snow; a `pole-check` export with the three pole
+codes; SIA 260/261 load cases for OHL-Design; SIA 262 when concrete
+members exist; then the ASCE family (`asce`, with ASCE MOP 74's load
+cases). Every interface addition additive (ADR-0012). Nine questions to
+the owner, each with a recommendation, are in the roadmap.
+
+
 ## 2026-11-26 (the plugin fixes: the default bolt sent with the members; a rolled angle's own leg a rolled edge)
 
 **The owner's answers of 2026-11-25** ("Ok for plugin fixes") to O19 stage
