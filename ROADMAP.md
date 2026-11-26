@@ -1875,6 +1875,43 @@ Six stages, the questions per stage and per detail level:
   > members (an interface change, to ask).
   > **Owner, 2026-11-25** ("Ok for plugin fixes"): (3) keep one ply, approved; (4) the
   > default bolt sent with the members, approved, to build.
+  > **Built 2026-11-26** (built, in active development, not approved yet;
+  > [decision](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-26-the-plugin-fixes-the-default-bolt-sent-with-the-members-a-rolled-angles-own-leg-a-rolled-edge)):
+  > a new optional export `member-check-default-bolts` (additive; a plugin
+  > without it keeps its own 20 mm bolt); OpenOHL sends each member
+  > without bolts in its data the largest bolt of the structure's library
+  > its leg's usual gauge (mid-leg) takes by the plugin's own edge
+  > distance, else (no library) the structure's most used bolt, else none
+  > (the 20 mm bolt, the reason said); both bundled plugins take it after
+  > the member's other end's bolt, said with the member, still not on the
+  > safe side; validation `asce10-011`, `asce10-012`, `sia263-006`.
+  > Measured (both plugins built fresh, checked to load; before: the
+  > plugin of before this change, which the core calls by
+  > `member-check-bracing` as before): the public examples unchanged (one
+  > has angles without bolts, no library and no bolts given: the 20 mm
+  > bolt kept, the reason said). On the private towers (77, kept
+  > privately) the same 343 members: with their bolt library the largest
+  > bolt the usual gauge takes is large on large angles (22 to 30 mm; a
+  > redundant's smaller edge distance lets a 22 mm bolt on a 45 mm leg),
+  > their tension capacities 5 to 24 % lower (median 13 %), 139 usages
+  > in the program's case up (by at most 6 points), no new failure, none
+  > above the program's; without a library the most used bolt (16 to 24
+  > mm): 204 capacities up, 139 down, none above the program's, no new
+  > failure.
+  > (questions, 2026-11-26) (5) The order: with a library of bolts up to 30 mm the
+  > largest the usual gauge takes is harsher than the 20 mm bolt on large
+  > angles (the aim was the small ones) → Recommended: the structure's
+  > most used bolt where the leg's usual gauge takes it, else the largest
+  > the leg takes (a bolt the structure uses and the leg fits; measured
+  > above as "without a library" where it fits).
+  > (6) The usual gauge is OpenOHL's own (mid-leg:
+  > no gauge table in the data; a larger bolt at another gauge is possible)
+  > → Recommended: keep mid-leg; a usual-gauge table per leg width as
+  > optional data of the bolt or section library later, used where given.
+  > (7) The structure's most used bolt is taken only where the library's
+  > fit cannot be worked out, without checking it fits the leg → Recommended:
+  > keep (a larger hole is on the safe side; a structure without a library
+  > has no other bolt to offer).
 - [x] **Safety gaps of the 2026-11-24 audit** (2026-11-25; built, in
   active development, not approved yet — the owner busy: built on its
   own, reported; [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md)):
@@ -3549,6 +3586,25 @@ only where it helps):
   > profile is rolled; a flame-cut or sheared toe is then given as
   > `rolled_edge = false`).
   > **Owner, 2026-11-25** ("Ok for plugin fixes"): approved, to build.
+  > **Built 2026-11-26** (built, in active development, not approved yet;
+  > same decision): `ohl_structures_fe::bolt_rules::sheared_edge` — a
+  > member's own leg of a rolled angle profile (single, double, star,
+  > cross) a rolled edge unless its connection says `rolled_edge = false`,
+  > a plate sheared as before; the bolt tools and the joint layout follow;
+  > the joint checks' bolt groups send a member's toe given
+  > `rolled_edge = false` as `member-sheared` (sheared; they took every
+  > member's toe as rolled); validation `joints-022` to `joints-024`.
+  > Measured on the private towers (kept privately): 325 336 member ends
+  > now a rolled edge (1 344 without an angle profile still sheared); of
+  > the 1 134 ends whose data give an edge distance, 718 were below the
+  > sheared minimum and none is below the rolled one (all within the 1/16
+  > in. band); no member capacity changes (no private connection says
+  > `rolled_edge = false`); the joint layout not re-run.
+  > (question, 2026-11-26) (5) Every angle of the section library is taken
+  > as hot-rolled (the library does not say how a profile is made) →
+  > Recommended: an optional `rolled = false` on a library section (a
+  > cold-formed or cut angle) next, so that a whole profile is not left to
+  > each connection.
 - [x] L17. **One plate in one gap; a turn refused after writing tried as
   before the plates between** (L16's questions 2 and 3; the owner busy:
   built on its own, reported). **Built 2026-11-23, in active development,

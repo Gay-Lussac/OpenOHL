@@ -199,5 +199,26 @@ l = L
 qq = F / (2 * l) + 6 * M / (2 * l**2) + T / (tmin * l)
 cases["joints-021"] = max(qq / (a * q87), qq / (s * q88))
 
+# --- a member end's distances through OpenOHL's basis (2026-11-26, O44 L16
+# question 4): the edge a rolled angle's own leg (rolled unless its
+# connection says rolled_edge = false), a plate's sheared -----------------
+# U: M16 (no capacity) at the end of an L 50x5, f_u 490 MPa, no analysis:
+# the force per bolt its bearing cap 1.5 f_u d t.
+d, t, fu = 16 * MM, 5 * MM, 490 * MPA
+p = 1.5 * fu * d * t
+end_min = max(1.2 * p / (fu * t), 1.3 * d, t + d / 2)
+for case in ("joints-022", "joints-023"):
+    cases[f"{case} end_m"] = end_min
+    cases[f"{case} spacing_m"] = 1.2 * p / (fu * t) + 0.6 * d
+cases["joints-022 edge_m"] = 0.85 * end_min
+cases["joints-023 edge_m"] = 0.85 * end_min + 0.0625 * 25.4 * MM
+# V: the same bolt in a plate of 10 mm (the member's f_u): sheared.
+t = 10 * MM
+p = 1.5 * fu * d * t
+end_min = max(1.2 * p / (fu * t), 1.3 * d, t + d / 2)
+cases["joints-024 end_m"] = end_min
+cases["joints-024 spacing_m"] = 1.2 * p / (fu * t) + 0.6 * d
+cases["joints-024 edge_m"] = 0.85 * end_min + 0.0625 * 25.4 * MM
+
 for k, v in cases.items():
     print(f"{k} {v!r}")

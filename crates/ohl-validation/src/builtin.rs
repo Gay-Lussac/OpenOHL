@@ -1194,7 +1194,8 @@ impl Calculation for StructureFe {
 
     fn description(&self) -> &'static str {
         "Structure model under its own loads (inputs: model = .ohlfe text, optional \
-         sections = .ohlsec text whose profiles the model's members name, optional \
+         sections = .ohlsec text whose profiles the model's members name, optional bolts = \
+         .ohlb text (the bolt library a member's default bolt is picked from), optional \
          self_weight factor, optional end_releases and bolt_slip = true: the joint options of \
          the analysis); outputs u_<node>_<dof> (m, rad), n_<member> (N), \
          r_<node>_<dof> (N, N m), usage_<member>, slack_<member> (cables and tension-only \
@@ -1212,6 +1213,12 @@ impl Calculation for StructureFe {
         };
         let mut model =
             ohl_structures_fe::Model::parse_with(string_input(inputs, "model")?, &library)?;
+        // A bolt library given (2026-11-26: the default bolt of a member
+        // without bolts in its data is picked from it).
+        if inputs.get("bolts").is_some() {
+            model.bolt_library =
+                ohl_structures::bolts::BoltLibrary::parse(string_input(inputs, "bolts")?)?;
+        }
         // The joint options of the analysis (stage 4.4, 2026-11-23): end
         // releases and bolt slip from the members' bolts.
         let flag = |name: &str| inputs.get(name).and_then(toml::Value::as_bool);

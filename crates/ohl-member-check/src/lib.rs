@@ -69,6 +69,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod default_bolts;
 pub mod full;
 pub mod joints;
 

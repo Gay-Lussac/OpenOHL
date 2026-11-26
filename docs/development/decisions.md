@@ -8,6 +8,92 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-26 (the plugin fixes: the default bolt sent with the members; a rolled angle's own leg a rolled edge)
+
+**The owner's answers of 2026-11-25** ("Ok for plugin fixes") to O19 stage
+5's question 4 and O44 L16's question 4, built (built, in active
+development, not approved yet;
+[ASCE 10-97](../theory/asce10.md#tension),
+[SIA 263](../theory/sia263.md#tension),
+[bolt distances](../theory/asce10.md#minimum-distances-of-bolts)).
+
+1. **The default bolt sent with the members** (an interface change,
+   additive).
+   - **Before**: a member without bolts in its data took a hole in each leg
+     of its typical bolt or, without one, of the plugin's own 20 mm bolt —
+     harsh on small angles (an L 40×4 keeps 39 % of its area).
+   - **Now**: OpenOHL sends each such member (checked, an angle, no bolts
+     at either end) a default bolt with why, through the new optional
+     export `member-check-default-bolts` (`code.wit`; the records of
+     `member-check-full` and `member-check-bracing` and a list of
+     `default-bolt { member, bolt, diameter?, hole?, source, why }`;
+     `ohl_member_check::default_bolts`). **The order** (the
+     recommendation's): the largest bolt of the structure's bolt library
+     its leg's usual gauge takes — one gauge line at mid-leg of its longer
+     leg, the hole clear of the root fillet (t + r + d/2) and the code's
+     own edge distance (the plugin's `bolt-distances` without an analysis,
+     the toe rolled unless `rolled_edge = false`) kept to the toe —; else,
+     only where that cannot be worked out (no library, no edge distance
+     from the plugin), the structure's most used bolt; else, and where the
+     leg takes no bolt of the library, none: the plugin's own 20 mm bolt,
+     OpenOHL's reason said (never a smaller hole without a bolt that
+     fits). The member's own bolts at its other end still come first.
+     Both bundled plugins take it (`MemberDesign::default_bolt`), and say
+     it with the member ("OpenOHL's default bolt, …"); a plugin without
+     the export is called as before (older plugins unchanged: checked with
+     the plugin of before this change). Still NOT ON THE SAFE SIDE with
+     the three parts (assumed bolt and holes; a larger bolt or more holes
+     lower the net section, the connection's own checks left out; giving
+     the bolts checks them). `Model::bolt_library` keeps the library a
+     structure file was read with (no format change).
+   - **Decided on the way**: the usual gauge is OpenOHL's own (mid-leg, as
+     a leg without gauges is drawn) — no usual-gauge table exists in the
+     data; the longer leg (the larger bolt, on the safe side for the holes
+     in both legs); a library bolt the code gives no edge distance for
+     (SIA 263 Table 17 lists M10 to M30) is skipped, said.
+   - **Validation**: `asce10-011` (L 40×4 of a library M12, M16, M20: M12),
+     `asce10-012` (no library: the most used bolt), `sia263-006` (L 45×5:
+     M16 by Table 17's e₂); tests in both plugins
+     (`default_bolt_sent_for_holes_in_each_leg`) and
+     `crates/ohl-member-check/tests/default_bolts.rs`.
+2. **A rolled angle's own leg a rolled edge** (a core change).
+   - **Before**: the edge sent to the code plugin's bolt distances was
+     sheared unless the connection said `rolled_edge = true` (the owner's
+     rule of 2026-11-03), for every part.
+   - **Now**: a member's own leg (no plate thickness given) of a rolled
+     angle profile (single, double, star or cross angle; every angle of the
+     section library taken as hot-rolled) is sent as a rolled edge unless
+     its connection says `rolled_edge = false`; plates and other parts
+     sheared as before (`ohl_structures_fe::bolt_rules::sheared_edge`). The
+     bolt tools and the joint layout follow (ASCE 10-97: the edge 1/16 in.
+     smaller). The joint checks' bolt groups, which took every member's toe
+     as rolled, send a member's ply whose end says `rolled_edge = false` as
+     the new kind `member-sheared` (a sheared edge; a plugin not knowing
+     the word takes it as a plate's) — more conservative there.
+   - **Validation**: `joints-022` to `joints-024` (a new calculation
+     `structures.member_bolt_distances` through OpenOHL's basis).
+3. **Measured** (both bundled plugins built fresh and checked to load;
+   before: the plugin of before this change, which the core calls by
+   `member-check-bracing` — an older plugin keeps working unchanged): the
+   public examples are unchanged (one has angles without bolts; no
+   library, no bolts given: the 20 mm bolt kept, the reason said). On the
+   private towers (77, kept privately), the same 343 members without bolts:
+   with their bolt library (bolts up to 30 mm) the leg's rule gives 22 to
+   30 mm bolts — tension capacities 5 to 24 % lower, 139 usages up by at
+   most 6 points, no new failure, none above the comparison program's;
+   without a library the most used bolt (16 to 24 mm): 204 up, 139 down,
+   none above, no new failure. The rolled toe: 325 336 member ends now a
+   rolled edge; of 1 134 ends whose data give an edge distance, 718 were
+   below the sheared minimum, none is below the rolled one; no member
+   capacity changes.
+4. **Questions** (roadmap O19 stage 5 (5)–(7), O44 L16 (5)), each with a
+   recommendation: the order (the most used bolt where the leg takes it,
+   else the largest it takes — the leg's rule is harsher on large angles
+   than the 20 mm bolt); the usual gauge (keep mid-leg, a gauge table as
+   optional data later); the most used bolt not checked against the leg
+   where nothing else is known (keep); every library angle taken as
+   hot-rolled (an optional `rolled = false` on a library section next).
+
 ## 2026-11-25 (owner answers: the plugin fixes' questions; the joint layout's L23 to L25 recommendations)
 
 **The plugin fixes' open questions** (roadmap O19 stage 5 and O44 L16

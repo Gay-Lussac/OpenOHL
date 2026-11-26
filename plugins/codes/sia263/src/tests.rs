@@ -255,6 +255,54 @@ fn holes_in_each_leg_without_bolts() {
     );
 }
 
+/// OpenOHL's default bolt sent with a member whose data gives no bolts
+/// (2026-11-26, O19 stage 5): its hole in each leg in the net section (39)
+/// in place of the 20 mm bolt's. L 60×6 (no root radius), A = 684 mm²; a
+/// 16 mm bolt sent without a hole: Table 17's (`standard_hole`), net 684 −
+/// 2 × d0 × 6, 0.9 f_u A_net / γ_M2; with a 17.5 mm hole sent, that hole.
+/// No diameter sent: the 20 mm bolt, OpenOHL's why said.
+#[test]
+fn default_bolt_sent_for_holes_in_each_leg() {
+    let (mut m, _) = angle(0.060, 0.006, 355e6, 2.0);
+    m.design.bolts = None;
+    let net = |hole: f64| 0.9 * 510e6 * (684e-6 - 2.0 * hole * 0.006) / GAMMA_M2;
+    m.design.default_bolt = Some(crate::model::DefaultBolt {
+        diameter: Some(0.016),
+        hole: None,
+        why: "the structure's most used bolt, 16 mm".into(),
+    });
+    let d0 = sia263::standard_hole(0.016).unwrap();
+    let (c, _) = sia263::capacity(&m, None);
+    let (t, what) = c.tension.clone().unwrap();
+    assert!((t - net(d0)).abs() < 1e-6, "{c:?}");
+    assert_eq!(what, "net section (39)");
+    assert!(
+        c.tension_assumed.iter().any(|n| n.contains(
+            "OpenOHL's default bolt, the structure's most used bolt, 16 mm, its hole Table 17's"
+        )),
+        "{c:?}"
+    );
+    m.design.default_bolt.as_mut().unwrap().hole = Some(0.0175);
+    let (c, _) = sia263::capacity(&m, None);
+    assert!((c.tension.unwrap().0 - net(0.0175)).abs() < 1e-6);
+    m.design.default_bolt = Some(crate::model::DefaultBolt {
+        diameter: None,
+        hole: None,
+        why: "no bolt library".into(),
+    });
+    let (c, _) = sia263::capacity(&m, None);
+    assert!(
+        (c.tension.clone().unwrap().0 - net(0.022)).abs() < 1e-6,
+        "{c:?}"
+    );
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("(Table 17); no default bolt from OpenOHL: no bolt library")),
+        "{c:?}"
+    );
+}
+
 /// A built-up member's bearing at member level (O19 stage 5, the owner's
 /// answer of 2026-11-23, built 2026-11-24): L 60×6 counted as two plies,
 /// the M16's bearing (76) on one ply's 6 mm until the plate between is

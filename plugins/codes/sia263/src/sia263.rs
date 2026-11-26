@@ -707,17 +707,39 @@ fn end_check(
             });
         }
         if let (false, Some(legs), Some(t)) = (unbolted, legs, thickness) {
-            let (hole, whose) = match typical {
-                Some((dia, hole)) => (
+            // The member's other end's bolt (data), else OpenOHL's default
+            // bolt for the member (2026-11-26), else the plugin's own.
+            let sent = d.default_bolt.as_ref();
+            let (hole, whose) = match (typical, sent.and_then(|b| b.diameter)) {
+                (Some((dia, hole)), _) => (
                     hole.or_else(|| standard_hole(dia)).unwrap_or(dia + 0.003),
                     format!("the member's other end's {:.0} mm bolt", dia * 1e3),
                 ),
-                None => (
+                (None, Some(dia)) => {
+                    let b = sent.expect("a diameter sent");
+                    (
+                        b.hole.or_else(|| standard_hole(dia)).unwrap_or(dia + 0.003),
+                        format!(
+                            "OpenOHL's default bolt, {}{}",
+                            b.why,
+                            if b.hole.is_some() {
+                                ""
+                            } else if standard_hole(dia).is_some() {
+                                ", its hole Table 17's"
+                            } else {
+                                ", its hole the bolt + 3 mm"
+                            }
+                        ),
+                    )
+                }
+                (None, None) => (
                     standard_hole(DEFAULT_BOLT).unwrap_or(DEFAULT_BOLT + 0.003),
                     format!(
                         "a {:.0} mm bolt, the program's default (not the code's), and its hole \
-                         (Table 17)",
-                        DEFAULT_BOLT * 1e3
+                         (Table 17){}",
+                        DEFAULT_BOLT * 1e3,
+                        sent.map(|b| format!("; no default bolt from OpenOHL: {}", b.why))
+                            .unwrap_or_default()
                     ),
                 ),
             };

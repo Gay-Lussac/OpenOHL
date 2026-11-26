@@ -246,3 +246,61 @@ node = "b"
 force = ["30 kN", "0 kN", "0 kN"]
 '''
 expected.usage_m = { value = 0.4471383147853735, rel_tol = 1e-9 }
+
+[[case]]
+id = "sia263-006"
+title = "Tension of an angle without bolts in its data: OpenOHL's default bolt, the largest of the structure's library its leg's usual gauge takes by Table 17, its hole in each leg (39)"
+calculation = "structures.fe"
+reference = "SIA 263:2013, Construction en acier (SIA), formulas (38) and (39) and Table 17 (holes and minimum edge distances e_2) as the sia263 plugin takes them, evaluated by hand; the default bolt (the largest of the library the leg's usual gauge takes, one gauge line at mid-leg) is OpenOHL's assumption until the bolts are known (owner, 2026-11-25), not the code's"
+notes = "Invented equal angle 45 x 5 mm, no root radius: A = 5 x (90 - 5) = 425 mm2, fy 355 MPa, fu 490 MPa. Library M12, M16, M20 (no holes given). The usual gauge at mid-leg, 22.5 mm from the heel and from the toe. Table 17's minimum edge distance e_2: M20 25 mm > 22.5 (does not fit), M16 20 mm <= 22.5, its hole clear of the root (5 + 8 = 13 mm <= 22.5): M16, its hole of Table 17 18 mm, one in each leg: A_net = 425 - 2 x 18 x 5 = 245 mm2, (39) 0.9 x 490 MPa x 245 mm2 / 1.25 = 86.436 kN, below (38) 355 x 425 / 1.05 = 143.6905 kN (the 20 mm default bolt before: 425 - 2 x 22 x 5 = 205 mm2, 72.324 kN); 30 kN -> 0.34707761"
+max_seconds = 30.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+[[material]]
+id = "steel"
+elasticity = "210 GPa"
+yield = "355 MPa"
+ultimate = "490 MPa"
+[[section]]
+id = "L45"
+shape = "equal_angle"
+material = "steel"
+h = "45 mm"
+t = "5 mm"
+r = "0 mm"
+'''
+inputs.bolts = '''
+format = "ohl-bolts"
+version = 1
+[[bolt]]
+id = "M12"
+diameter = "12 mm"
+[[bolt]]
+id = "M16"
+diameter = "16 mm"
+[[bolt]]
+id = "M20"
+diameter = "20 mm"
+'''
+inputs.model = '''
+[analysis]
+nonlinear = false
+capacity = "sia263-2013"
+[[node]]
+id = "a"
+point = ["0 m", "0 m", "0 m"]
+support = "pinned"
+[[node]]
+id = "b"
+point = ["1.5 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "m"
+nodes = ["a", "b"]
+section = "L45"
+[[load]]
+node = "b"
+force = ["30 kN", "0 kN", "0 kN"]
+'''
+expected.usage_m = { value = 0.3470776065528252, rel_tol = 1e-9 }

@@ -460,7 +460,52 @@ hole, else their standard hole), else a **20 mm bolt's standard hole,
 holes given: a 21.6 mm hole in each leg (2 in the section; a 20 mm bolt,
 the program's default (not the code's), and its standard hole (4.1))
 until the bolts are known"); punched (+ 1.6 mm) and one leg bolted
-(× 0.9; an unequal angle's short leg) as for any missing data. What it
+(× 0.9; an unequal angle's short leg) as for any missing data.
+
+**OpenOHL's default bolt** (2026-11-26, the owner's answer of 2026-11-25,
+O19 stage 5; built, in active development, not approved yet): the 20 mm
+bolt is harsh on small angles (an L 40×4 keeps 39 % of its area with two
+of its holes). Since then OpenOHL sends each member without bolts in its
+data a default bolt with why (the interface's
+`member-check-default-bolts`; `ohl_member_check::default_bolts`), and the
+plugin takes its hole, said with the member ("OpenOHL's default bolt,
+…"). The order is the recommendation's, the leg first:
+
+1. **The largest bolt of the structure's bolt library its leg's usual
+   gauge takes**: one gauge line at mid-leg (OpenOHL's usual gauge: the
+   leg divided evenly, as a leg without gauges is drawn), a bolt there
+   taken when its hole is clear of the root fillet (the gauge at least
+   \( t + r + d/2 \) from the heel, geometry) and the distance on to the
+   toe at least the code's edge distance for that bolt in that leg —
+   ASCE 10-97 4.5.3 as the bolt tools take it without an analysis (above:
+   \( 0.85\,e_{min} \) for the rolled toe, Eq. 4.5-6, \( e_{min} \) with the force
+   per bolt the smaller of its shear capacity and its bearing cap; + 1/16
+   in. where a connection of the member says `rolled_edge = false`). The
+   leg is an angle's longer leg (a built-up member's angles'): the larger
+   bolt, **conservative** for the holes in both legs. A library bolt the
+   code gives no edge distance for is not taken (said).
+2. **Else the structure's most used bolt** (the bolt of the most bolts at
+   member ends in its data; on a tie the larger) — only where step 1
+   cannot be worked out: the structure has no bolt library, or the plugin
+   gives no edge distance at all.
+3. **Else, or where the leg's usual gauge takes no bolt of the library,
+   the 20 mm bolt as before**, OpenOHL's reason said ("no default bolt
+   from OpenOHL: its 40 mm leg's usual gauge takes no bolt of the
+   structure's library (the smallest, …)") — never a smaller hole without
+   a bolt that fits.
+
+The member's own bolts at its other end still come first (they are
+data); a plugin built before 2026-11-26 keeps its own 20 mm bolt. **NOT
+ON THE SAFE SIDE**, said with the member (the connection's note above):
+(1) what is assumed: the bolt, a hole in each leg, one hole per section;
+(2) why it can be unsafe: a larger bolt than the default (a gauge other
+than mid-leg, a code distance the design did not keep) or more holes
+lower the net section further, and the bolts' shear, bearing and block
+shear can govern; (3) what makes it safe: give the member's `bolts` (or
+its ends' connections). An L 40×4 of a library M12, M16, M20: M12 (the
+M16's rolled edge 24.5 mm passes the 20 mm to the toe), net 183.2 mm²
+for 118.4 mm² with the 20 mm bolt (validation `asce10-011`; the most used
+bolt: `asce10-012`). What it
 leaves out: the real bolts — a larger bolt or more holes in one section
 lower the net section further, and the bolts' shear, bearing and block
 shear can govern; give the member's `bolts` (or its ends' connections)
@@ -570,8 +615,23 @@ round) the plugin works this out itself (`asce10::bolt_shear`, its
 `bolt-distances-full`; before, OpenOHL's core did, for every code — the
 same numbers bit for bit on the shipped examples and the real towers
 compared, 4 013 640 member-end rows). Without the shear capacity the
-bearing cap alone, without either the force terms are left out (said). **Conservative:** the edge is taken as
-sheared unless the connection says `rolled_edge = true`; holes as punched
+bearing cap alone, without either the force terms are left out (said). **The edge** (2026-11-26, the
+owner's answer of 2026-11-25, O44 L16 question 4): a member's own leg
+(no plate thickness given) of a rolled angle profile — a single angle or
+a built-up member's angles, every angle of the section library taken as
+hot-rolled, the library not saying how a profile is made — is a **rolled
+edge** (4.5.3 Eq. 4.5-6: "for a rolled edge"; its toe as rolled) unless
+its connection says `rolled_edge = false` (a flame-cut or sheared toe:
+Eq. 4.5-7); `rolled_edge = true` still makes any part rolled; a plate,
+another profile or a section without one stays **sheared**
+(**conservative**), as before (`ohl_structures_fe::bolt_rules::sheared_edge`;
+the joint checks' bolt groups took a member's toe as rolled already and
+now take a toe given `rolled_edge = false` as sheared,
+[Joint bolt groups](joint-groups.md)). What it assumes: a toe not trimmed
+by flame cutting or shearing — a leg cut along its length must be given
+`rolled_edge = false` (its edge distance then 1/16 in. larger); on a 5
+mm leg of an M20, edge 30.6 mm rolled for 32.2 mm sheared (validation
+`joints-022` to `joints-024`). Holes as punched
 (Eq. 4.5-3 applies; it does not for drilled holes); the spacing is
 checked between any two bolts, also on different gauge lines (the
 standard's is along a line of force). A new gauge line is kept clear of
@@ -666,7 +726,7 @@ said in what governs (`[assumed: …]`):
 | holes per section | 1 |
 | bolt threads | in the shear plane |
 | twisting | free to warp (K_t 1); built-ups' warping left out |
-| bolts | connection not checked — **not on the safe side**: the member is marked `[not on the safe side: no bolts given: connection not checked (…)]` and never shown as passing (2026-11-08); the tension on the net section with a hole in each leg of an angle (the member's typical bolt's, else a 20 mm bolt's standard hole, the program's default), another section the gross section (2026-11-24) |
+| bolts | connection not checked — **not on the safe side**: the member is marked `[not on the safe side: no bolts given: connection not checked (…)]` and never shown as passing (2026-11-08); the tension on the net section with a hole in each leg of an angle (the member's typical bolt's, else OpenOHL's default bolt — the largest of the library its leg's usual gauge takes, else the structure's most used bolt, 2026-11-26 —, else a 20 mm bolt's standard hole, the program's default), another section the gross section (2026-11-24) |
 
 ## Plates and welds
 

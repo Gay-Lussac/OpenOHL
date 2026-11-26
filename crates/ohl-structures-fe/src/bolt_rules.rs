@@ -265,8 +265,40 @@ pub struct Basis {
     pub redundant: bool,
 }
 
+/// Whether the edge a bolt's edge distance runs to is taken as sheared
+/// (2026-11-26, roadmap O44 L16 question 4, the owner's answer of
+/// 2026-11-25): the connection's `rolled_edge` where given; else a
+/// member's own leg (`in_part` false: no other part's thickness given) of
+/// a rolled angle profile — a single angle or the angles of a built-up
+/// member, every angle of the section library taken as hot-rolled — is
+/// **rolled** (its toe as rolled; a flame-cut or sheared toe is given as
+/// `rolled_edge = false`), and any other part (a plate, another profile, a
+/// section without one) sheared, on the safe side, as before.
+pub fn sheared_edge(s: &crate::model::Section, rolled_edge: Option<bool>, in_part: bool) -> bool {
+    if let Some(r) = rolled_edge {
+        return !r;
+    }
+    !(rolled_angle(s) && !in_part)
+}
+
+/// The section is a rolled angle profile: a single angle (equal or
+/// unequal legs) or two or four of them (back to back, a star, a cross).
+pub fn rolled_angle(s: &crate::model::Section) -> bool {
+    matches!(
+        s.profile.as_ref().map(|p| &p.shape),
+        Some(
+            ohl_sections::Shape::EqualAngle { .. }
+                | ohl_sections::Shape::UnequalAngle { .. }
+                | ohl_sections::Shape::DoubleAngle { .. }
+                | ohl_sections::Shape::StarAngle { .. }
+                | ohl_sections::Shape::CrossAngle { .. }
+        )
+    )
+}
+
 /// The [`Basis`] of member `idx`'s end `end` (arguments as
-/// [`rules_in`]); none: the end has no bolts of known diameter.
+/// [`rules_in`]); none: the end has no bolts of known diameter. The edge
+/// is [`sheared_edge`]'s.
 pub fn basis(
     model: &Model,
     idx: usize,
@@ -323,7 +355,7 @@ pub fn basis(
     let analysis = force
         .filter(|_| count > 0)
         .map(|n| n.abs() / f64::from(count));
-    let sheared = !e.and_then(|e| e.rolled_edge).unwrap_or(false);
+    let sheared = sheared_edge(s, e.and_then(|e| e.rolled_edge), part.is_some());
     Some(Basis {
         diameter,
         thickness: t,

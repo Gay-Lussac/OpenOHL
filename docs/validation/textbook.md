@@ -501,6 +501,8 @@ notes give L/r, KL/r, \\( F_{cr} \\) and the capacity. Tolerance
 | asce10-008 | tension without design data: the gross section |
 | asce10-009 | tension of an angle without bolts or holes in its data: a bolt hole in each leg (the default 20 mm bolt's standard hole, punched) until the bolts are known (2026-11-24) |
 | asce10-010 | bearing of a built-up member (two plies) at member level: one ply's thickness until the plate between is defined (2026-11-24) |
+| asce10-011 | tension of an angle without bolts in its data: OpenOHL's default bolt, the largest of the structure's library its leg's usual gauge takes (an L 40×4: M12, the M16's rolled edge not kept), its hole in each leg (2026-11-26; input `bolts`, the library) |
+| asce10-012 | the same without a bolt library: the structure's most used bolt (2026-11-26) |
 
 The cases are not published worked examples; the
 method was also compared, privately, with a tower design program's
@@ -521,7 +523,9 @@ Calculations `structures.joint_groups` and `structures.joint_parts` (output
 `usage_<i>`, one case, strength factor 1; `structures.bolt_distances` since
 2026-11-24: outputs `end_m`, `spacing_m`, `edge_m`, `bolt_force_n`;
 `structures.welds` since 2026-11-25: a weld with its sides through the
-plugin's `joint-check-welds`, output `usage_<i>`): invented bolt groups and plate
+plugin's `joint-check-welds`, output `usage_<i>`; `structures.member_bolt_distances`
+since 2026-11-26: a member end of a structure through OpenOHL's own basis,
+outputs `end_m`, `spacing_m`, `edge_m`, `sheared`): invented bolt groups and plate
 parts sent to the bundled plugins (`asce10`, `sia263`) as a structure's run
 sends them; the expected usages worked out line by line in
 `benchmarks/structures-fe/reference_joint_capacities.py` from the methods of
@@ -552,6 +556,9 @@ the theory pages ([joint groups](../theory/joint-groups.md),
 | joints-019 | two fillets, the moment about the seam a couple across the thinner plate |
 | joints-020 | the sides not known: the worse of one fillet and two |
 | joints-021 | two fillets without a length given: each the seam's length |
+| joints-022 | a member end's minimum distances through OpenOHL's basis (2026-11-26, calculation `structures.member_bolt_distances`): a rolled angle's own leg, its toe rolled (Eq. 4.5-6) |
+| joints-023 | the same, its connection saying `rolled_edge = false`: sheared (Eq. 4.5-7) |
+| joints-024 | the same bolt in a plate: a plate's edge sheared, as before |
 
 The members' connection capacities were also compared, privately, with a
 tower design program's on a real line's towers (163 690 members): bolt shear

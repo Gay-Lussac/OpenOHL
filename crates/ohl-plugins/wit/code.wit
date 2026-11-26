@@ -1262,8 +1262,13 @@ interface joint-check-groups {
     record ply {
         /// What it is: the member's id, or the plate's.
         part: string,
-        /// `member` (an angle's leg: its free edge rolled) or `plate`
-        /// (its edges sheared or cut).
+        /// `member` (an angle's leg: its free edge rolled), `plate`
+        /// (its edges sheared or cut) or, since 2026-11-26,
+        /// `member-sheared` (a member's leg whose toe its connection gives
+        /// flame-cut or sheared, `rolled_edge = false`: its edge distances
+        /// as a sheared edge's; a plugin that does not know the word takes
+        /// it as any word other than `member`, which the bundled plugins
+        /// take as a plate's sheared edge).
         kind: string,
         /// Its thickness, m.
         thickness: f64,
@@ -2358,6 +2363,59 @@ world member-check-bracing-export {
     export member-check-bracing;
 }
 
+/// Member checks with **a default bolt for each member whose data gives
+/// no bolts** (2026-11-26, roadmap O19 stage 5, the owner's answer of
+/// 2026-11-25; added to interface version 0.3 without changing anything
+/// else: a plugin without it is called by `member-check-bracing` or
+/// `member-check-full` as before and keeps its own default). Where a
+/// member end gives no bolts or holes, a code plugin may take a hole in
+/// each leg of an angle in the net section until the bolts are known;
+/// OpenOHL sends here the bolt to take for those holes and why: the
+/// largest bolt of the structure's bolt library its leg's usual gauge
+/// takes (the code's own edge distance, by the plugin's `bolt-distances`),
+/// else the structure's most used bolt; none when the leg takes no bolt
+/// of the library (the plugin keeps its own default, said). The member's
+/// own bolts at its other end still come first (they are data).
+interface member-check-default-bolts {
+    use member-check-full.{full-input, full-output};
+    use member-check-bracing.{member-bracing};
+
+    /// The default bolt of one member.
+    record default-bolt {
+        /// The member's id (a member of `full-input.members`).
+        member: string,
+        /// The library bolt's id ("" none: not a library bolt).
+        bolt: string,
+        /// Its diameter, m (none: no default — the leg takes no bolt of
+        /// the library, or the structure gives none; `why` says which).
+        diameter: option<f64>,
+        /// Its hole, m (none: the code's standard hole).
+        hole: option<f64>,
+        /// Where it comes from: `leg` (the largest bolt of the library the
+        /// leg's usual gauge takes), `structure` (the structure's most
+        /// used bolt) or `none`.
+        source: string,
+        /// Why, in words, for the member's result ("the largest bolt of
+        /// the library the 40 mm leg's usual gauge takes: …").
+        why: string,
+    }
+
+    /// Checks the members of `input` by method `method` as
+    /// `member-check-bracing`'s `check-members-bracing`, with `defaults`
+    /// (one per member OpenOHL gives one for; a member without one: the
+    /// plugin's own default, as before).
+    check-members-default-bolts: func(method: string, input: full-input, bracing: list<member-bracing>, defaults: list<default-bolt>) -> result<full-output, string>;
+}
+
+/// The `member-check-default-bolts` export with the `member-check-full`
+/// and `member-check-bracing` ones whose records it takes: how the host
+/// finds them in any plugin (not a world to build plugins for).
+world member-check-default-bolts-export {
+    export member-check-full;
+    export member-check-bracing;
+    export member-check-default-bolts;
+}
+
 /// A plugin giving a design code for structures (2026-11-18): its members
 /// by `member-check` and `member-check-full`, its joints by
 /// `joint-check` and (with its parameters) `joint-check-full`, the bolt
@@ -2369,11 +2427,14 @@ world member-check-bracing-export {
 /// bolts in tension, with prying, by `joint-check-groups-tension`
 /// (2026-11-19), the plates' prying too by `joint-check-groups-prying`
 /// (2026-11-19), a bent plate's bend by `joint-check-bends` (2026-11-19),
-/// a weld with its sides by `joint-check-welds` (2026-11-25).
+/// a weld with its sides by `joint-check-welds` (2026-11-25), its members
+/// without bolts in their data with OpenOHL's default bolt by
+/// `member-check-default-bolts` (2026-11-26).
 world structure-code-plugin {
     include member-check-plugin;
     export member-check-full;
     export member-check-bracing;
+    export member-check-default-bolts;
     export joint-check;
     export joint-check-full;
     export joint-check-moments;
