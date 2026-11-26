@@ -1552,6 +1552,279 @@ forces, buckling lengths, sections, joint details), what comes back
 > plan of the move follow as the next step (to be agreed before the
 > interface changes are built).
 
+**The inventory and the plan of the move (2026-11-26; planned, to be
+agreed by the owner before any interface change is built).** Nothing
+below is changed yet; what exists is built, in active development, not
+approved yet.
+
+*1. Code rules still in the core* (searched in every crate and app for
+SIA 260 to 265, ASCE, 48-19, EN, partial factors, snow, wind
+coefficients, wood, steel and concrete poles, load cases, clearance
+rules). For each: where, what it computes, which application, and what
+the core data a plugin would need.
+
+1. **SIA 265:2012, wood poles** — `ohl-structures-fe/src/sia265.rs`
+   (`round_usage`, `kc`, `lambda_rel`, `eta_w`, the strength classes
+   C16 … of Tables 6 and 43 built in), called from
+   `pole.rs::check_pole_first` for a solid wood pole with a
+   `strength_class` and no capacity given. Both applications (the line's
+   structure check, `ohl-loads/src/analysis.rs`, in OHL-Design;
+   `ohl-structure-link/src/run.rs` in OHL-Structure). Needs: the pole's
+   diameter by height, height above ground (its buckling length 2H is
+   the core's assumption today), strength and moisture class, and per
+   case and height the axial force, the moment (P-Delta amplified),
+   shear, torsion and the case's strength factor.
+2. **ASCE/SEI 48-19, steel pole shafts** — `asce48.rs` (`usage`,
+   `polygon_allowable`, `round_allowables`, the `Shaft` section),
+   called from the same pole check for a hollow steel pole with a yield
+   strength and no capacity (the default `code`). Both applications.
+   Needs: per height the shaft (round or polygon sides, diameter across
+   flats, wall, inside bend radius), the yield strength, the forces as
+   in 1.
+3. **SIA 263:2013, steel pole shafts** — `sia263.rs::shaft_usage`
+   (`[[pole]] code = "sia263-2013"`; its γ_M1 fixed at 1.05 in the core,
+   so the `sia263` plugin's parameter file does not reach the pole shafts
+   — a difference the move removes). Both applications. Needs: as 2.
+4. **SIA 261:2014, the member wind's force coefficients and inclination
+   factors** — `wind_law.rs` (`code_drag`: Tableaux 71 and 72 per
+   profile shape on a reference width; `inclination`: Tableau 74, the
+   taper beyond 60° an owner's assumption), used by `wind.rs` for every
+   member whose drag nobody gave (no face drag, no drag for its shape,
+   no `[analysis] drag`), whatever the structure's code — an ASCE 10-97
+   tower too. Both applications (OHL-Structure's FE run; the bodies' wind
+   in the line's structure check, `ohl-loads/src/analysis.rs`). Needs:
+   each section's shape and extents (`ohl_sections::Section`), the
+   member's angle to the wind; gives a coefficient, its reference width
+   and its source.
+5. **SIA 261:2014, snow on structures** — `ohl-line/src/local.rs`
+   (`snow_on_ground`: s_k from the reference altitude, (10)) and
+   `ohl-loads/src/options.rs` (`snow_load` q_k = μ C_e C_T s_k, (9); the
+   defaults μ 0.8, C_e 1.0, C_T 1.0, 5.3.4, 5.2.4, 5.2.5), with their
+   help texts in `ohl-app/src/load_case_form.rs`. OHL-Design (each
+   structure's local conditions and a load case's `[case.structure]`);
+   OHL-Structure through the line's loads. Needs: the structure's
+   reference altitude (or its given s_k); gives s_k and the three
+   defaults with their source.
+6. **SIA 263:2013 bolt grades** — `ohl-structures/src/bolts.rs`
+   (`SIA263_GRADES`, seven strength classes of 3.4.2 Table 2), offered by
+   OHL-Structure's Design › Bolt grade… (`bolt_grade_window.rs`).
+   OHL-Structure. Needs nothing from the core: a list of grade name,
+   f_ub, f_yb and source.
+7. **ASCE 10-97 end conditions** — `member_ends.rs` (an end worked out
+   as restrained from two bolts onto a stiffer member, C3.7.4 (b); not
+   from bolts onto a gusset plate only, 3.7.4.5), sent to every code
+   plugin as "worked out" with its source and why (`member-check-full`),
+   so a plugin may already decide otherwise. Both applications. Stays
+   (see question 6).
+8. **ASCE 10-97 4.3.2 bolt shear, the bolt tools' force basis for an old
+   plugin** — `member_ends.rs::bolt_shear_per_bolt` (0.62 f_ub on the
+   root area), used only for a plugin built without
+   `bolt-distances-full` (`bolt_rules.rs::shear_without_plugin`).
+   OHL-Structure. A compatibility path: goes only with a breaking
+   interface version (ADR-0012).
+9. **Optional checks citing a code, the value the user's** — the
+   climbing load (`check.rs`, ASCE 10-97 commentary C2.2 cited; against
+   first yield, `[analysis] climbing_load` given by the user) and the
+   redundant members' force (`[analysis] redundant_force`, the share
+   given by the user, checked by the code plugin). Both applications.
+   No code value in the core; stay.
+10. **Quantities, not checks** — the steel's unit weight (SIA 261 Table
+    28) and the weld filler in `ohl-bom/src/structure.rs` and
+    `ohl-structure-link/src/quantities.rs`, the packing allowance of SIA
+    263 6.3.6.3 in the heavy count, a partly penetrated seam taken as
+    fillet welds (SIA 263 6.3.3.5) in the joint layout
+    (`joint_layout.rs`). OHL-Structure. Material constants and modelling
+    conventions with their source said; stay (question 7).
+11. **The simple check** — `check.rs` (`capacity = "simple"`: Euler
+    buckling and gross yield, "not a design code"), and the member
+    without a yield strength under a code. Both applications. Not a code;
+    stays (question 1).
+
+*Already not in the core* (searched, nothing code-specific found): the
+load cases and their partial factors (`.ohllc` data, written by a code
+plugin or by hand; the default load cases are said to be arbitrary, not
+from a code); the weather physics (`ohl-weather`: "code-agnostic"); the
+wires' oblique wind (the projected area by default, a physics choice
+citing SIA 261 Table 74 and the LeV in support); the clearance checks
+(the distance between conductors, unequal wind, the altitude increase,
+the wind study: OpenOHL measures, the values and rules are a check
+plugin's or a rule preset's); the field limits (a template, the user's
+ordinance's values); the lattice members, plates, welds, bolt groups and
+bolt distances (the bundled `asce10` and `sia263`, rounds 1 to 3);
+concrete poles (only a capacity given by the user; no SIA 262 rule
+anywhere).
+
+*2. What the plugins already reach* (`crates/ohl-plugins/wit/code.wit`,
+interface 0.3):
+
+- **Design-code plugins** (extension point `design-code`, worlds
+  `code-plugin` < `code-wind-plugin` < `code-rules-plugin`):
+  `describe` (with the parameter template) and `generate` (weather and
+  load cases from the project's parameter file, clearance presets);
+  optional `structure-wind` (a section library `[wind]` table: drag per
+  shape, face drag and shielding by solidity, inclination curves per
+  shape — every bundled load plugin a stub giving none, so the core's
+  SIA 261 values of item 4 apply) and `rule-presets`. Plugins:
+  `en50341`, `iec60826`, `nesc`, `csa-c22-3`, `asce-mop74`, `go95`
+  (separate from the structure codes), the private Swiss ordinance
+  plugin (design code, check and presets in one).
+- **Structure-code plugins** (extension point `member-check`, world
+  `structure-code-plugin`, `structure-code-practice-plugin` with the
+  detailing practice): `member-check`, `member-check-full`,
+  `member-check-bracing`, `member-check-default-bolts`, `joint-check`,
+  `joint-check-full`, `joint-check-moments`, `joint-check-groups`
+  (`-tension`, `-prying`), `joint-check-bends`, `joint-check-welds`,
+  `bolt-distances`, `bolt-distances-full`; the structure's parameter file
+  `Plugins/<plugin>.toml`. Bundled: `asce10` and `sia263` — **`sia263`
+  is a structure-code plugin only**: it generates no load cases and
+  gives no structure wind; no plugin checks a pole.
+- **Check plugins** (`check`): the clearance checks' rules (the private
+  plugin).
+
+*3. The gap and the plan.* The interface additions, each additive and
+versioned per ADR-0012 (new interfaces and worlds, found by their export
+name; plugins built before load and answer as they did; `sdk` stays
+0.3):
+
+- **A combined world** `code-family-plugin` (planned): the exports of
+  `code-rules-plugin` with those of `structure-code-practice-plugin`
+  and the new ones below, so one component serves OHL-Design and
+  OHL-Structure; the manifest lists both extension points (the host
+  already loads a plugin in each world its manifest lists). One snag
+  found: `code-plugin`'s `describe` returns `code-info` and
+  `member-check-plugin`'s returns `plugin-info` — one component cannot
+  export both, so the new world takes `code-info` (it holds the name,
+  version and description too) and does not include
+  `member-check-plugin`; the host reads the description of a plugin
+  listing `design-code` through the code world (to be checked for
+  `ohl plugin check` and the bundled check at start).
+- **A pole export** `pole-check` (planned; world `pole-check-export`):
+  the plugin's pole methods (`asce48-19`, `sia263-2013`, `sia265-2012`),
+  and one call per pole with: the pole (material, height above ground,
+  embedment, per station its section — round or polygon sides, diameter
+  across flats, wall or solid, inside bend radius —, yield strength,
+  strength and moisture class, the structure's parameter file), the
+  cases (name, strength factor) and per case and station the axial
+  force, the amplified moment, shear and torsion (the P-Delta, the lean
+  and the loads stay the core's); back per case: usage, station,
+  capacity, what governs and what is not on the safe side. A pole with a
+  capacity given stays the core's (the user's capacity × strength
+  factor, not a code). The records leave room for a concrete section
+  in a later interface.
+- **Structure wind filled by SIA 261** (planned): the member force
+  coefficient on a reference width (Tableaux 71, 72) is not in the
+  `[wind]` table today — added to the section library format as a new
+  key (version 3, additive), so the existing `structure-wind` export
+  carries it with the inclination curves (Tableau 74); and the host asks
+  the structure's default wind source at run time (a bundled plugin)
+  where no section library gives values, so that no file changes and the
+  results stay the same.
+- **Snow on structures** `structure-snow` (planned): s_k from a reference
+  altitude and the defaults μ, C_e, C_T with their source, from the
+  parameter file; the product μ C_e C_T s_k stays the core's (it is the
+  load case's data).
+- **Bolt grades** `bolt-grades` (planned): the grades a code gives (name,
+  f_ub, f_yb, source) for Design › Bolt grade….
+- **Partial factors per SIA 260**: no new interface — the load factors
+  are written by the plugin's `generate` into the load cases (as every
+  load plugin does), the material factors are the plugin's parameter
+  file's (as `sia263` does today).
+- **SIA 262, concrete** (planned, later): needs a data model first — a
+  concrete pole's section (concrete class, reinforcement bars and cover,
+  prestress, a spun hollow section) in the `.ohlp` and the structure's
+  `[pole]` (a format version each), then an interface
+  `pole-check-concrete` beside `pole-check`. Concrete foundations would
+  need their own model (OHL-Foundations, further ahead).
+- **One parameter file per plugin** (planned): `Plugins/sia.toml` with a
+  table per part (loads, steel, timber), the old `Plugins/sia263.toml`
+  read where it is missing; the same text reaches `generate`, the member,
+  joint and pole checks.
+
+**Stages, in order** (each move compared bit for bit with the core
+before the core's copy goes, as rounds 1 to 3 were; sizes S < M < L):
+
+1. **`sia263` becomes `sia`, built for `code-family-plugin`** — the new
+   world, the host reading its description, the bundled name and its
+   alias (`capacity = "sia263-2013"` and `plugin:sia263/…` still read, no
+   file changed), `Plugins/sia.toml` with the old name read, the
+   `bolt-grades` export with SIA 263's grades out of the core. Compared:
+   every member and plate result of the benchmarks and the private
+   towers identical (the code itself unchanged). (M)
+2. **SIA 261 structure wind and snow** — the force coefficients and
+   inclination factors and the snow into `sia` (`structure-wind`, the
+   section library key, `structure-snow`), the host's default wind
+   source; compared: every member wind force and every snow load of the
+   benchmarks (`member_wind.toml`), the example line and the private
+   towers identical; then `wind_law.rs` and the snow formulas leave the
+   core. (M)
+3. **The poles** — the `pole-check` export; SIA 265 wood poles and SIA
+   263 pole shafts into `sia`, ASCE/SEI 48-19 into `asce10` (moved
+   together, so the pole check holds no code after it; `code` and the
+   wood default as aliases, no file changed); compared: every pole usage
+   of the tests, the validation and the private lines identical; the
+   pole shafts then take γ_M1 from the parameter file (its default the
+   core's 1.05: identical without one, said where one differs). (M–L)
+4. **SIA 260/261 load cases for OHL-Design** — `generate` and the
+   parameter template in `sia`, the `design-code` extension point added;
+   no core copy to compare against: checked by hand examples from the
+   standards (local documents), as the other load plugins. Its scope is
+   question 4. (M)
+5. **SIA 262** — when concrete members exist (the data model first). (L)
+6. **The ASCE family** — `asce10` becomes `asce` (aliases as in stage 1),
+   `asce-mop74`'s load cases merged into it (question 3), ASCE/SEI 48-19
+   already in it from stage 3; compared: the asce-mop74 generated files
+   and every check identical. (M)
+7. **The other codes** — EN 50341 and the others the same way when a
+   structure part of their family is written; until then each load
+   plugin is already one plugin for its family. (planned)
+
+*4. Questions for the owner* (each with a recommendation):
+
+1. *The simple check (Euler buckling, gross yield):* keep it in the
+   core? **Recommendation:** yes — it is no code, says so, and is the
+   only check that works without any plugin.
+2. *No code plugin loaded:* what does the core do? **Recommendation:**
+   nothing code-specific: a structure naming a code that is not loaded
+   is an error at start for the bundled ones (as today) and its results
+   say "not checked by a code, NOT ON THE SAFE SIDE"; a pole without a
+   capacity likewise; the member wind without any code's coefficients
+   takes the generic drag factor 1, said NOT ON THE SAFE SIDE as today
+   for a general section (reached only when the bundled plugin is
+   missing, itself an error at start).
+3. *The separate load plugins:* merge them per family too?
+   **Recommendation:** yes where a family has both parts (`asce-mop74`
+   into `asce` in stage 6, `en50341` into an `en` plugin when an EN
+   structure check exists); the single-code ones (`iec60826`, `nesc`,
+   `csa-c22-3`, `go95`) stay as they are. The private Swiss ordinance
+   plugin stays apart from `sia` (another family, kept private).
+4. *What `sia`'s load cases cover:* for a Swiss line the ordinance's
+   cases come from the private plugin. **Recommendation:** SIA 260
+   combinations and partial factors with the SIA 261 actions on the
+   structures (wind, snow, ice on the bodies), every value from the
+   parameter file; the user picks which plugin's cases a project takes.
+5. *The default wind source:* today SIA 261's coefficients apply to every
+   tower without a drag, an ASCE 10-97 one too. **Recommendation:** keep
+   that as the default (the bundled `sia`, no result changes) and let a
+   structure name its code's wind instead when that code's plugin gives
+   one; decide the default again when the ASCE family gives its own.
+6. *The ASCE 10-97 end conditions in the core (item 7):* move them?
+   **Recommendation:** not now — they are sent with their source and
+   why, and a plugin may already decide otherwise; move them only when a
+   code needs other rules.
+7. *Quantities (item 10):* the steel's unit weight, the packing and weld
+   conventions — move them? **Recommendation:** no; they are material
+   constants and modelling conventions, not checks, each with its source
+   said; a library value replaces them where given.
+8. *The plugin's name and licence:* **Recommendation:** `sia` (the
+   method names unchanged: `sia263-2013`, `sia265-2012`, …; `asce` for
+   the ASCE family), AGPL-3.0-or-later like the bundled plugins (the
+   interface stays MPL-2.0, ADR-0011).
+9. *Bit for bit:* each stage compared with the core before its copy
+   goes, as rounds 1 to 3? **Recommendation:** yes, including the
+   private towers and lines; only a parameter file giving another γ_M1
+   changes a pole shaft's result after stage 3, said.
+> **Owner:**
+
 
 ASCE 10-97 (the default, 2026-10-27,
 [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md))
