@@ -577,20 +577,10 @@ enum Guard {
 /// `-` (starting with a letter or digit): it becomes the prefix of
 /// renamed ids.
 pub fn check_code(code: &str) -> Result<(), NetError> {
-    let ok = !code.is_empty()
-        && code.len() <= 32
-        && code
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphanumeric())
-        && code
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
-    if ok {
-        Ok(())
-    } else {
-        Err(NetError::Refused(format!(
+    // The rule shared with the join's prefix (`ohl_session::join`).
+    ohl_session::join::check_prefix(code).map_err(|_| {
+        NetError::Refused(format!(
             "\"{code}\": a line code of 1 to 32 letters, digits, '_', '.' or '-'"
-        )))
-    }
+        ))
+    })
 }

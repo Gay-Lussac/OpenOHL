@@ -4128,6 +4128,32 @@ What a working set means for a command (the routes of objects, the rules
 1–8, what is allowed and marked stale, typed structures, protected
 project lines) is in the module's notes and the decision log.
 
+#### Joining another project's routes (2026-11-25)
+
+`ohl_session::join` (OHL-Design's File › Join routes from another
+project…, `ohl project join`; the [decision log](decisions.md#2026-11-25-one-model-per-line-the-join-routes-command-built)).
+**No format change**: no table, column, `ols_meta` key or object field is
+added; the project file's schema and the line file's version stay.
+
+- The other file is read with `SqliteStore::copy_in_memory` and a session
+  on it (its main project line); renames are applied there with the
+  session's `rename` and `rename_system` commands (circuits and structure
+  groups on its exported line), then its objects are appended to the open
+  project's line (`JoinPlan::line`).
+- The join is **one log entry** of the open project: `batch` of the
+  library files changed (`put` of `library` objects, as
+  `Session::library_puts` makes them) and `replace_line` with the merged
+  line — undone at once. Then `Session::commit` with the message
+  `joined routes from FILE` (one revision on the project line worked on).
+- A merged twin is one `structure` object (the open project's, unchanged
+  unless its `routes` had to be given: listed); the other line's
+  `SectionPoint`s (sections, jumper ends, `circuit_starts`) name it with
+  the set of its wire point of the same label; `JumperClamp.structure`
+  and tied `AlignmentPoint.structure` name it too.
+- Shared with the network import (`ohl_store_pg::import`): `NETWORK_KINDS`,
+  `TWIN_TOLERANCE`, `fresh_id`, `check_prefix`, `twin_distance`,
+  `match_entry` (`EntryMatch`), re-exported where the import used its own.
+
 ### Project lines kept as differences (schema 6)
 
 A project line started since schema 6 (`Session::create_line`,

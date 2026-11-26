@@ -4393,6 +4393,9 @@ pub(crate) mod in_place;
 #[cfg(test)]
 mod in_place_tests;
 pub mod interest;
+pub mod join;
+#[cfg(test)]
+mod join_tests;
 pub mod library_merge;
 pub mod lines;
 pub mod live;

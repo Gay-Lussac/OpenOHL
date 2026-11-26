@@ -460,6 +460,8 @@ pub struct Ready {
     pub preset_editor: crate::preset_edits::PresetEditor,
     /// File › Import › Another project into this one.
     pub import_into: crate::import_into::ImportInto,
+    /// File › Join routes from another project.
+    pub join_routes: crate::join_routes::JoinWindow,
     /// Line › Sections › Wire colours from a plugin.
     pub wire_colours: crate::wire_colours::WireColours,
     /// Add jumper: the first string clicked.
@@ -640,6 +642,7 @@ impl Ready {
             rule_editor: Default::default(),
             preset_editor: Default::default(),
             import_into: Default::default(),
+            join_routes: Default::default(),
             wire_colours: Default::default(),
             jumper_from: None,
             spacer_from: None,
@@ -2580,6 +2583,7 @@ impl App {
         crate::codes::window(ctx, ready, &self.plugins);
         crate::preset_edits::window(ctx, ready, &self.plugins);
         crate::import_into::window(ctx, ready, &mut self.plugins);
+        crate::join_routes::window(ctx, ready);
         crate::wire_colours::window(ctx, ready, &self.plugins);
     }
 

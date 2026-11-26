@@ -127,6 +127,31 @@ objects it changed and the **sections to recalculate** (changed sections,
 sections through changed structures, sections at changed jumpers' ends) —
 the basis for incremental recalculation.
 
+### Join routes from another project on the command line
+
+*Built 2026-11-25, in active development, not approved yet.* The
+command of OHL-Design's
+[File › Join routes from another project…](join-routes.md): the main
+project line of another project file joined into a project — one model
+for a line and its branches.
+
+```bash
+ohl project join branch.ohl --into line.ohl --user ana --dry-run
+ohl project join branch.ohl --into line.ohl --user ana --merge T3=T3
+```
+
+It prints the plan (routes, objects, ids renamed `PREFIX-id`, each twin
+with its height, level and orientation difference, each library entry's
+mapping, what to look at, what is refused), with the option that would
+tick each twin (`--merge OPEN=OTHER`; none by default) and accept each
+library conflict (`--accept KIND/FILE/ENTRY`; a conflict not accepted
+refuses the join). Then — unless `--dry-run` — it writes the library
+files and the merged line as **one** logged command (`ohl project undo`
+takes it back) and the revision *joined routes from FILE*. `--prefix`
+sets the prefix of renamed ids (default: from the other file's name),
+`--tolerance` the twin distance (0.5 m). The other file is read, never
+changed.
+
 ## Incremental solving
 
 The application keeps the line solved while it is edited: every command,

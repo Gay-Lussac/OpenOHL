@@ -112,6 +112,40 @@ pub enum ProjectCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Join the routes of another project file (its main project line)
+    /// into a project: one model for a line and its branches (roadmap
+    /// O17). Ids clashing renamed PREFIX-id, library entries mapped as
+    /// the network import maps them (a conflict refuses the join unless
+    /// --accept), twin towers listed and merged into one shared tower only
+    /// when --merge names them; prints the plan, then (unless --dry-run)
+    /// writes it as one change and one revision "joined routes from FILE".
+    Join {
+        /// The other project file (.ohl; read, never changed).
+        from: PathBuf,
+        /// The project file joined into (.ohl; must exist).
+        #[arg(long)]
+        into: PathBuf,
+        /// User name.
+        #[arg(long)]
+        user: String,
+        /// Prefix of renamed ids (default: from the other file's name).
+        #[arg(long)]
+        prefix: Option<String>,
+        /// Twins: towers of the same type nearer than this in plan, m.
+        #[arg(long, default_value_t = ohl_session::join::TWIN_TOLERANCE)]
+        tolerance: f64,
+        /// OPEN=OTHER (repeatable): make the project's tower OPEN and the
+        /// other file's twin OTHER one shared tower (none by default).
+        #[arg(long = "merge")]
+        merge: Vec<String>,
+        /// KIND/FILE/ENTRY (repeatable), as listed: use the project's entry
+        /// for the joined routes where the other file's differs.
+        #[arg(long = "accept")]
+        accept: Vec<String>,
+        /// Only print the plan.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Read a file of any line format (see ohl formats: structure points
     /// from CSV, GeoJSON or shapefiles, LandXML, OHL XML…) into a project
     /// file: a new project gets the line, one holding a line gets it
@@ -401,6 +435,82 @@ pub fn import_into(
     Ok(())
 }
 
+/// `ohl project join`: the routes of project file `from` joined into
+/// `into` (see [`ohl_session::join`]): the plan printed, then (unless
+/// `dry_run`) one change and the revision "joined routes from FILE".
+#[allow(clippy::too_many_arguments)]
+fn join(
+    from: &Path,
+    into: &Path,
+    user: &str,
+    prefix: Option<String>,
+    tolerance: f64,
+    merge: &[String],
+    accept: &[String],
+    dry_run: bool,
+) -> Result<(), String> {
+    if std::fs::canonicalize(from).ok() == std::fs::canonicalize(into).ok() {
+        return Err("the two project files are the same".into());
+    }
+    let mut s = open_existing(into)?;
+    let prefix = prefix.unwrap_or_else(|| {
+        let stem = from
+            .file_stem()
+            .map(|x| x.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let p: String = stem
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+            .skip_while(|c| !c.is_ascii_alphanumeric())
+            .take(32)
+            .collect();
+        if p.is_empty() { "J".into() } else { p }
+    });
+    let mut options = ohl_session::join::JoinOptions::new(&prefix);
+    options.tolerance = tolerance;
+    for m in merge {
+        let (a, b) = m
+            .split_once('=')
+            .ok_or_else(|| format!("--merge {m}: OPEN=OTHER"))?;
+        options
+            .merge
+            .insert((a.trim().to_owned(), b.trim().to_owned()));
+    }
+    options.accept = accept.iter().map(|a| a.trim().to_owned()).collect();
+    let libs = s
+        .line_library_all(s.current_line())
+        .map_err(|e| e.to_string())?;
+    let plan =
+        ohl_session::join::plan(&s.export(), &libs, from, &options).map_err(|e| e.to_string())?;
+    print!("{}", plan.text());
+    for t in &plan.twins {
+        let key = t.key();
+        if !options.merge.contains(&key) {
+            println!(
+                "  (to make {} one shared tower: --merge {}={})",
+                t.open, key.0, key.1
+            );
+        }
+    }
+    for m in &plan.libraries {
+        if let ohl_session::join::Outcome::Conflict {
+            accepted: false, ..
+        } = m.outcome
+        {
+            println!("  (to accept the project's entry: --accept {})", m.key());
+        }
+    }
+    if dry_run {
+        println!("dry run: nothing written");
+        return Ok(());
+    }
+    let (a, rev) = ohl_session::join::join(&mut s, user, &plan).map_err(|e| e.to_string())?;
+    report(&a);
+    s.checkpoint().map_err(|e| e.to_string())?;
+    println!("revision {} \"{}\"", rev.short(), rev.message);
+    Ok(())
+}
+
 /// Ids joined by commas, or "none".
 fn list(ids: &[&str]) -> String {
     if ids.is_empty() {
@@ -625,6 +735,18 @@ pub fn run(command: ProjectCommand) -> Result<(), String> {
             let how = import_options(&mode, &choose, &routes, tolerance)?;
             import_into(&read, &into, &user, &how, dry_run)?;
         }
+        ProjectCommand::Join {
+            from,
+            into,
+            user,
+            prefix,
+            tolerance,
+            merge,
+            accept,
+            dry_run,
+        } => join(
+            &from, &into, &user, prefix, tolerance, &merge, &accept, dry_run,
+        )?,
         ProjectCommand::ImportFile {
             file,
             into,
