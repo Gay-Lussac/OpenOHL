@@ -222,6 +222,11 @@ pub struct StructureApp {
     pub layout_window: Option<crate::layout_window::LayoutWindow>,
     /// Joint details' Solve the clashes window ([`crate::solve_window`]).
     pub solve_window: Option<crate::solve_window::SolveWindow>,
+    /// Review the joints left ([`crate::review_window`], O44 L31).
+    pub review_window: Option<crate::review_window::ReviewWindow>,
+    /// The joints left read from the file, for its revision
+    /// ([`StructureApp::review_list`]).
+    pub review_cache: crate::review_window::ReviewCache,
     /// The Orient angles window ([`crate::orient_window`]).
     pub orient_window: Option<crate::orient_window::OrientWindow>,
     /// The Apply this joint's detail to similar joints window
@@ -319,6 +324,8 @@ impl StructureApp {
             quantities: Default::default(),
             layout_window: None,
             solve_window: None,
+            review_window: None,
+            review_cache: None,
             orient_window: None,
             apply_window: None,
             bolt_grade_window: None,
@@ -597,7 +604,8 @@ impl StructureApp {
     /// Delete).
     /// Escape on a tool's window (Delete, Open in the Detail view?, New
     /// gauge line?, Continuous members, Lay out joints) or the inventory: closed, nothing
-    /// done. False: none was open.
+    /// done. Review the joints left only when no other is open (the windows
+    /// it opens close first). False: none was open.
     fn close_tool_window(&mut self) -> bool {
         // The link question, or the Move attachment point chooser: closed
         // first, the tool still held.
@@ -627,6 +635,10 @@ impl StructureApp {
         self.joint_tools.offer = None;
         self.joint_tools.continuous = None;
         self.inventory = false;
+        if !open && self.review_window.is_some() {
+            self.review_window = None;
+            return true;
+        }
         open
     }
 
@@ -1221,6 +1233,7 @@ impl eframe::App for StructureApp {
         self.continuous_window(&ctx);
         self.layout_window(&ctx);
         self.solve_window(&ctx);
+        self.review_window(&ctx);
         self.orient_window(&ctx);
         self.apply_window(&ctx);
         self.bolt_grade_window(&ctx);

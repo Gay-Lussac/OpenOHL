@@ -5,7 +5,7 @@
 //! Detailing practice (O44 L29, the owner's L24 question 5): Design ›
 //! Detailing practice… opens the editor; Save writes only what differs from
 //! the default as the file's own `[layout_practice]`, one undo step, the
-//! file raised to 29 with a plate thickness rule; a value out of range
+//! file raised to 30 with a plate thickness rule; a value out of range
 //! greys Save and is said; Escape changes nothing; Lay out joints says
 //! where its own settings go beyond the practice. With `OHL_RENDER_PNG`
 //! set the window is rendered before and after
@@ -76,7 +76,7 @@ fn the_practice_is_saved_in_the_file_in_one_undo_step() {
     assert_eq!(f.undo_name(), Some("Detailing practice"));
     let text = f.text();
     assert!(
-        text.contains("version = 29"),
+        text.contains("version = 30"),
         "raised for the thickness rule"
     );
     let own = f

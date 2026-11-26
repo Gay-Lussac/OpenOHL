@@ -65,6 +65,7 @@ mod pole_panel;
 mod practice_window;
 mod quantities_panel;
 mod results_tab;
+mod review_window;
 mod roll_ui;
 mod rows;
 mod section_editor;
@@ -131,6 +132,8 @@ mod practice_ui_tests;
 mod quantities_ui_tests;
 #[cfg(test)]
 mod results_ui_tests;
+#[cfg(test)]
+mod review_ui_tests;
 #[cfg(test)]
 mod section_editor_tests;
 #[cfg(test)]

@@ -8,6 +8,72 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-26 (joint layout: the joints left reviewed, L31)
+
+**A list of the joints the automatic layout did not lay out whole, with
+why, grouped by reason, and a reviewer's tick per joint stored with the
+joint** (roadmap O44 L31; the owner, 2026-11-26: *"setup ways to study the
+latest joint and lay them out. The goal is not to reach 100% but not far
+off so that a human can relatively quickly check the missing joints"*;
+built, in active development, not approved yet;
+[user guide](../user-guide/joint-review.md),
+[theory](../theory/joint-layout.md#the-joints-left-for-review-l31)).
+
+- **Where**: a tool window, *Design › Review the joints left…* (also from
+  Joint details at a joint left), not a panel: it opens over the owner's
+  two panes, a click on a joint selecting it and its members in the 3D
+  view and opening it in the Detail view (its details on the left), so
+  that the list, the joint's details and its drawing are seen together.
+  ‹ Previous / Next › and the keys P / N step through the list in its
+  order; Enter (*Reviewed, next ›*) ticks the joint shown and goes on.
+  From the joint, *Lay out this joint…* and *Solve the clashes…* open the
+  existing windows (one Solve the clashes per joint, no per-clash button:
+  the owner's rule of 2026-11-21).
+- **Which joints**: counted, the joints where two or more members meet and
+  any other the layout record names; whole, laid out by a run with no
+  member left for a hand detail; left, every other — including those the
+  record keeps no reason for (nothing the layout could lay out, or no run
+  asked it), listed last under their own group, so that the counts add
+  up ("312 of 400 joints laid out whole, 88 left").
+- **The reasons and groups**: the record's reasons, as recorded today (no
+  change to the layout); one reason, one group, in **one function**
+  (`ohl_structure_link::joint_review::reason_group`), today from the
+  reasons' words in the order of the causes the theory counts — so that
+  the reason classes being built in the layout crates (L30) replace it
+  with a one-line change. A joint is in the group of its first reason in
+  the groups' order.
+- **The tick**: `reviewed` on the joint's `[[node]]`, structure file
+  version 29 (written only when a joint is ticked; older files read with
+  none reviewed). It holds a **stamp of the joint's layout** when ticked
+  (a hash of the joint as written: its table, the members meeting there
+  and their joints' places, its connections, plates and splices, what the
+  record says of it); the joint reads as reviewed only while its layout
+  gives that stamp. So *the tick is cleared when the joint's layout
+  changes* by whatever changes it (a run, an edit followed, a value
+  changed by hand, Solve the clashes) without the layout's code — worked
+  on by other steps at the same time — clearing anything; a change
+  elsewhere keeps it. One undo step per tick (written without the layout
+  following: nothing of the layout changes).
+- **NOT ON THE SAFE SIDE**, said in the window (always shown), the user
+  guide and the theory: a ticked joint is still not laid out by the
+  program where it was left, the layout's checks after writing never ran
+  on what is detailed by hand, and the tick takes it out of "to go"; what
+  makes it safe — the tick changes no check (Joint details' problems, the
+  clash colours, the analysis' joint checks read the joint as written).
+- **A departure from the tool-window pattern**, said next to the code: a
+  tick is written when made, so the window has no Apply and its last
+  button is *Close* (Escape), not Cancel. Escape closes a window opened
+  from it (Lay out joints, Solve the clashes) first.
+- **The command line**: `ohl-structure-export <file> --format joints-left`
+  (CSV) or `joints-left-text`, `-o -` for the standard output — the same
+  list (`ReviewList::csv`, `text`); reading the file only.
+- **Found on the way, fixed** (a core change of one word): the
+  finite-element model (`ohl_structures_fe::Model::from_structure_table`)
+  refused a joint's key it does not know, so a tick broke the joint details
+  and a layout run on the ticked file. `reviewed` is left out of the model
+  as `made_by` and `kind` are; tested (the joint details and a run on a
+  ticked file equal those without the ticks).
+
 ## 2026-11-26 (the plugin fixes: the default bolt sent with the members; a rolled angle's own leg a rolled edge)
 
 **The owner's answers of 2026-11-25** ("Ok for plugin fixes") to O19 stage

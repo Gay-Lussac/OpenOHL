@@ -144,6 +144,17 @@ impl JointPanel {
     pub(crate) fn details_key(&self) -> Option<(u64, u64)> {
         self.details.as_ref().map(|d| d.0)
     }
+
+    /// The joint details kept for revision `from` kept for revision `to`
+    /// too: an edit that changes nothing they read (a review tick, O44
+    /// L31) does not work them out again.
+    pub(crate) fn carry_details(&mut self, from: u64, to: u64) {
+        if let Some(((r, _), _)) = self.details.as_mut()
+            && *r == from
+        {
+            *r = to;
+        }
+    }
 }
 
 impl StructureApp {
@@ -361,6 +372,8 @@ impl StructureApp {
         // The automatic layout (2026-11-18): the button, what it set here
         // (automatic), the bolts provisional, a hand detail needed.
         self.layout_box(ui, &chosen);
+        // O44 L31: a joint left, its Reviewed tick and the review list.
+        self.review_box(ui, &chosen);
         // What the Detail view's Edit tool picked (a bolt, a plate).
         self.picked_box(ui, details);
         if j.arrivals.iter().any(|a| {

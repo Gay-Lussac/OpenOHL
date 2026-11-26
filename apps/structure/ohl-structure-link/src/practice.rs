@@ -1438,7 +1438,7 @@ pub fn beyond_note(s: &LayoutSettings) -> Option<String> {
 /// The structure file `doc` with its own detailing practice `own` (none:
 /// its `[layout_practice]` taken out): the editor's change (O44 L29), the
 /// file raised to version 27 (`ohl_structures::structures::LAYOUT_PRACTICE_VERSION`),
-/// or 29 where the table gives a plate thickness rule
+/// or 30 where the table gives a plate thickness rule
 /// (`LAYOUT_PRACTICE_THICKNESS_VERSION`) — never lowered.
 pub fn write_own(doc: &mut toml_edit::DocumentMut, own: Option<&Table>) -> Result<(), String> {
     use ohl_structures::structures::{LAYOUT_PRACTICE_THICKNESS_VERSION, LAYOUT_PRACTICE_VERSION};

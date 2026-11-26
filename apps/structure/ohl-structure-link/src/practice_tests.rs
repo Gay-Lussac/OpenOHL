@@ -631,7 +631,7 @@ fn the_thickness_rules_make_the_plates_thicker_only() {
 /// The editor's table: only what differs from what it is laid over (the
 /// default, or a code plugin's practice), version 2 only with a rule; a
 /// rule the plugin gives taken away by its empty value; written into the
-/// file with its version step (27, or 29 with a rule), taken out again.
+/// file with its version step (27, or 30 with a rule), taken out again.
 #[test]
 fn the_editors_table_holds_only_what_differs() {
     let d = DetailingPractice::default();
@@ -661,7 +661,7 @@ fn the_editors_table_holds_only_what_differs() {
         .unwrap()
         .practice;
     assert_eq!(back, edited);
-    // Written into the file: version 27, or 29 with a rule; taken out.
+    // Written into the file: version 27, or 30 with a rule; taken out.
     let base = format!(
         "format = \"ohl-structure\"\nversion = 26\n{}",
         d1_spoiled(0.0)
@@ -676,10 +676,10 @@ fn the_editors_table_holds_only_what_differs() {
         ..Default::default()
     };
     crate::practice::write_own(&mut doc, thick.own_over(&d).as_ref()).unwrap();
-    assert_eq!(doc["version"].as_integer(), Some(29));
+    assert_eq!(doc["version"].as_integer(), Some(30));
     crate::practice::write_own(&mut doc, None).unwrap();
     assert!(parse(&doc.to_string()).layout_practice.is_none());
-    assert_eq!(doc["version"].as_integer(), Some(29), "never lowered");
+    assert_eq!(doc["version"].as_integer(), Some(30), "never lowered");
     // A file ending in plates with sub-tables: the practice written after
     // them, the file still reading (never between an entry and its
     // sub-table).

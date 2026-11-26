@@ -11,7 +11,7 @@
 //! value by value: only what differs from those is written. Every value is
 //! checked as the layout checks it (refused values said, Save greyed); each
 //! field says its effect on the results and on the time, measured. **Save**
-//! writes it as one undo step (structure file version 27, or 29 with a
+//! writes it as one undo step (structure file version 27, or 30 with a
 //! plate thickness rule); the joints laid out stay as they are until the
 //! next run of Lay out joints.
 

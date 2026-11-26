@@ -1310,7 +1310,10 @@ impl StructureApp {
                     "{laid} joint(s) laid out ({plates} plate(s), one undo step){}; clashes at \
                      them {} to {}",
                     if hand > 0 {
-                        format!(", {hand} need a hand detail (Joint details says why)")
+                        format!(
+                            ", {hand} need a hand detail (Design › Review the joints left… lists \
+                             them with why)"
+                        )
                     } else {
                         String::new()
                     },

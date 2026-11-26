@@ -57,8 +57,9 @@ pub use string_volumes::{
 pub use structures::{
     AllowedSpans, AttachmentCapacity, Capacity, Detail, Interaction, Joint, JointKind, JointSource,
     NOT_ATTACH, ON_JOINT, PlacedAttachment, PlacedPoint, PlacedString, PlacedStrings, PlacedWire,
-    PointPlace, SAME_JOINT, SpanLimit, StructureLibrary, StructureType, StructureWind, TypePoint,
-    TypeString, TypeWire, UNLINKED_POINT_VERSION, WindBand, point_joints, unlinked_words,
+    PointPlace, REVIEWED_VERSION, SAME_JOINT, SpanLimit, StructureLibrary, StructureType,
+    StructureWind, TypePoint, TypeString, TypeWire, UNLINKED_POINT_VERSION, WindBand, point_joints,
+    unlinked_words,
 };
 
 /// Error loading a library item.

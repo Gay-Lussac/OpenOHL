@@ -4524,6 +4524,73 @@ only where it helps):
   > one more pass weighs one or two members on four of the eight towers,
   > none kept, the first run there longer by about that weighing, a run
   > again quicker by as much) → Recommended: keep.
+- [x] L31. **The joints left reviewed: a list with why, grouped by reason,
+  and a reviewer's tick per joint** (the owner, 2026-11-26: *"setup ways to
+  study the latest joint and lay them out. The goal is not to reach 100%
+  but not far off so that a human can relatively quickly check the missing
+  joints"*). **Built 2026-11-26, in active development, not approved yet**
+  ([user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-review.md),
+  [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-joints-left-for-review-l31),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-26-joint-layout-the-joints-left-reviewed-l31);
+  **structure file version 29**; no change to the layout). **Design ›
+  Review the joints left…** (also Joint details at a joint left): a tool
+  window listing every joint not laid out whole — the joints whole and left
+  of those counted ("312 of 400 joints laid out whole, 88 left (0
+  reviewed)"), the joints by reason (counts per group, a group closed by a
+  click) or by joint, *Hide reviewed*, in a fixed-height list that scrolls;
+  a click selects the joint and its members in the 3D view and opens it in
+  the Detail view, its details on the left; ‹ Previous / Next › (P, N),
+  *Reviewed, next ›* (Enter); from the joint *Lay out this joint…* and *Solve
+  the clashes…* (the existing windows); the clashes and problems Joint
+  details finds there now; Close (Escape; a window opened from it closes
+  first). The **reviewed tick** is stored with the joint (`reviewed` on its
+  `[[node]]`, version 29, older files read as not reviewed; one undo step
+  per tick) as a stamp of the joint's layout when ticked, read as reviewed
+  only while the joint's layout gives the same stamp: **any change of the
+  joint's layout clears it** (a run, an edit followed, a value changed by
+  hand, Solve the clashes), a change elsewhere keeps it. NOT ON THE SAFE
+  SIDE said in the window (always shown), the guide and the theory: a
+  ticked joint is still not laid out or checked by the program where it
+  was left; the tick changes no check. **The reasons** are those the layout
+  records today, one group per reason decided in **one function**,
+  `ohl_structure_link::joint_review::reason_group` (from the reasons'
+  words, in the order of the causes the theory counts): **L30's reason
+  classes replace its body with a one-line change** (the window, the list
+  and the command line follow). **Command line**: `ohl-structure-export
+  <file> --format joints-left` (CSV) / `joints-left-text`, `-o -` to the
+  standard output. Tests: `joint_review_tests.rs` (splitting, every
+  recorded reason's group, the counts, the tick written, read and cleared
+  only by a change of the joint's layout), `review_ui_tests.rs` (the
+  window: click, N/P, Enter, Hide reviewed, undo, Lay out this joint…, Escape
+  order, Joint details' tick), `ohl-structure-tests/tests/joint_review.rs`
+  (an invented body laid out, ticked, laid out again otherwise: the ticks
+  of the joints changed cleared, the others kept; the joint details and a
+  run on a ticked file as without ticks; the command line's CSV and text).
+  **Found on the way, fixed**: the finite-element model refused a joint's
+  unknown key, so a tick broke the joint details and a layout run on that
+  file — `reviewed` is now left out of the model with `made_by` and `kind`
+  (`ohl_structures_fe`, one word). **Measured** on the eight private
+  towers as L27 left them (kept privately): 4 253 of 6 844 joints counted
+  laid out whole, 2 591 left (1 694 laid out in part); by group a bolted leg
+  not flat 702, an end out of the flange's plane 588, no reason recorded
+  479, bolts joining nothing 289, a clash or check after writing 250, a
+  plate into steel 124, a member left as it is 45, a built-up member 42, a
+  leg splice 34, the pull-back 34, no room on one plate 4, other 0; every
+  reason of a tower of about 1 000 joints split one per member; the list
+  read in about 0.3 s of CPU on such a tower (a debug build, the machine
+  under load; the window shows the time measured).
+  > **Owner:** (1) A tool window over the two panes (not a docked panel),
+  > the tick written at once (one undo step each, Close instead of Cancel)
+  > → Recommended: keep; a docked panel later if a long review wants the
+  > list beside Joint details. (2) The tick cleared by any change of the
+  > joint's layout, through a stamp (also a hand edit there after ticking)
+  > → Recommended: keep (on the safe side: a reviewed joint changed is
+  > looked at again). (3) The joints with no reason recorded (nothing the
+  > layout could lay out) listed last, so that the counts add up →
+  > Recommended: keep. (4) The 479 joints (18 % of those left) the layout records no reason
+  > for → Recommended: traced with L30's reason classes (a run should say
+  > why it left every joint where members meet). (5) Next: L30's classes
+  > in `reason_group` (one line).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).

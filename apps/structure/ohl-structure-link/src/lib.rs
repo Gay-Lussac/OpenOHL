@@ -86,6 +86,9 @@ mod joint_order_tests;
 pub mod joint_planes;
 #[cfg(test)]
 mod joint_planes_tests;
+pub mod joint_review;
+#[cfg(test)]
+mod joint_review_tests;
 mod joint_sheet;
 mod joints;
 #[cfg(test)]

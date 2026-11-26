@@ -117,7 +117,7 @@ Each value's effect is measured on eight private real towers ([theory](../theory
 ## Good to know
 
 - **Where it is written**: the structure file's `[layout_practice]`
-  (structure file version 27; 29 when it gives a plate thickness rule — an
+  (structure file version 27; 30 when it gives a plate thickness rule — an
   older program refuses such a file rather than laying it out without
   the rule). A code plugin may answer a practice of its own (its optional
   `layout-practice` export); the file's values win value by value.

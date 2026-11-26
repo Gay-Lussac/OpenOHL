@@ -1527,8 +1527,9 @@ impl Model {
             .and_then(toml::Value::as_array)
             .cloned()
             .unwrap_or_default();
-        // A joint's kind (attach, support) is the structure's, not the model's.
-        strip(&mut nodes, &["made_by", "kind"]);
+        // A joint's kind (attach, support) is the structure's, not the
+        // model's; so is a reviewer's tick (version 29, O44 L31).
+        strip(&mut nodes, &["made_by", "kind", "reviewed"]);
         model.insert("node".into(), nodes.into());
         let mut out = Self::parse_with(
             &toml::to_string(&model).map_err(|e| e.to_string())?,

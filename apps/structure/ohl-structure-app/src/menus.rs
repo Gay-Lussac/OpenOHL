@@ -750,6 +750,20 @@ impl StructureApp {
                 ) {
                     self.open_practice_window();
                 }
+                if entry(
+                    ui,
+                    None,
+                    "Review the joints left…",
+                    None,
+                    tower,
+                    "Every joint the automatic layout did not lay out whole, with why, grouped \
+                     by reason, and the joints whole and left of all: click one to see it in \
+                     the Detail view, step through them (P, N), lay it out or solve its \
+                     clashes from there, and tick each one reviewed (stored with the joint)",
+                    "A tower with members first",
+                ) {
+                    self.open_review_window(None);
+                }
             }
             Area::LoadCases => self.load_actions(ui),
             Area::Results => self.results_actions(ui),

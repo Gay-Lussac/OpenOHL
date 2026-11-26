@@ -10,7 +10,15 @@
 //!     --format saf -o type-02.xlsx
 //! ohl-structure-export tower.ohls --format ifc --sections libraries/sections \
 //!     --bolts libraries/bolts --loads tower-loads.csv -o tower.ifc
+//! ohl-structure-export tower.ohls --format joints-left -o left.csv
+//! ohl-structure-export tower.ohls --format joints-left-text -o -
 //! ```
+//!
+//! `joints-left` (CSV) and `joints-left-text` are the joints the automatic
+//! joint layout did not lay out whole, with why and their review ticks —
+//! OHL-Structure's *Review the joints left* list
+//! (`ohl_structure_link::joint_review`); `-o -` prints to the standard
+//! output. They read the file only (no libraries, nothing laid out).
 //!
 //! A tool of its own (not `ohl structures export`): the command line
 //! (`ohl-cli`) is a core crate and core crates never depend on the
@@ -32,7 +40,9 @@ struct Args {
     file: PathBuf,
     /// ifc (IFC4: analysis model and members), ifc-members (IFC4, members
     /// only), ifc2x3 (members for steel-detailing programs), saf (xlsx), csv
-    /// (tables in a folder), quantities (the bill of materials, xlsx).
+    /// (tables in a folder), quantities (the bill of materials, xlsx);
+    /// joints-left (CSV) and joints-left-text: the joints the automatic
+    /// joint layout did not lay out whole, with why and their review ticks.
     #[arg(long)]
     format: String,
     /// Section library files (.ohlsec) or folders; the first one giving
@@ -49,7 +59,8 @@ struct Args {
     /// of the file's own load cases evaluated without line values.
     #[arg(long)]
     loads: Option<PathBuf>,
-    /// Output file (a folder for csv).
+    /// Output file (a folder for csv; `-` for joints-left and
+    /// joints-left-text: the standard output).
     #[arg(short, long)]
     output: PathBuf,
     /// Write the time of the export into IFC headers (else 1970-01-01, so
@@ -58,12 +69,36 @@ struct Args {
     timestamp: bool,
 }
 
+/// The formats of the joints left (O44 L31), CSV or text.
+const JOINTS_LEFT: [(&str, bool); 2] = [("joints-left", true), ("joints-left-text", false)];
+
+/// The joints left of the file, as CSV or text, into `args.output` (`-`:
+/// the standard output).
+fn joints_left(args: &Args, csv: bool) -> Result<(), String> {
+    let text =
+        std::fs::read_to_string(&args.file).map_err(|e| format!("{}: {e}", args.file.display()))?;
+    let list = ohl_structure_link::joint_review::review_list(&text)
+        .map_err(|e| format!("{}: {e}", args.file.display()))?;
+    let out = if csv { list.csv() } else { list.text() };
+    if args.output.as_os_str() == "-" {
+        print!("{out}");
+    } else {
+        std::fs::write(&args.output, out).map_err(|e| format!("{}: {e}", args.output.display()))?;
+        println!("{} → {}", list.summary(), args.output.display());
+    }
+    Ok(())
+}
+
 fn run(args: &Args) -> Result<(), String> {
+    if let Some((_, csv)) = JOINTS_LEFT.iter().find(|(n, _)| *n == args.format) {
+        return joints_left(args, *csv);
+    }
     let format = Format::parse(&args.format).ok_or_else(|| {
         format!(
-            "--format {}: one of {}",
+            "--format {}: one of {}, {}",
             args.format,
-            Format::ALL.map(Format::as_str).join(", ")
+            Format::ALL.map(Format::as_str).join(", "),
+            JOINTS_LEFT.map(|f| f.0).join(", ")
         )
     })?;
     let text =
