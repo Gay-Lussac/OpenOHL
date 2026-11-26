@@ -4289,6 +4289,205 @@ ASCE 10-97 plugin built fresh and checked to load before every run):
   pieces were not turned. A user's confirmation changes the steel; the run
   then lays out what is confirmed.
 
+## Solve the clashes after the run, and the joints left by reason (L30)
+
+(Built 2026-11-26, in active development, not approved yet. The owner,
+2026-11-26: *"Okay go ahead with the second run then and also setup ways
+to study the latest joint and lay them out. The goal is not to reach 100%
+but not far off so that a human can relatively quickly check the missing
+joints"*. L27's question 4. The code: `solve_pass`, `left_reasons`,
+`LayoutSettings::solve_left` (off by default), `LayoutRun::solved`, the
+command line `ohl-structure-layout`; the application's Lay out joints.
+**No format change**: the pass writes the fields, plates and record rows a
+run writes.)
+
+### The pass after the run
+
+`LayoutSettings::solve_left`, off by default, a tick in Lay out joints.
+After the run — its weighed turns (L19), L25's passes included — every
+joint the run left not whole (written with member ends left for a hand
+detail, or not written though the layout had ends there) is given to
+[Solve the clashes](#solve-the-clashes-an-end-moved-to-pass-the-flange-on-a-plate-both-faces-of-one-plate-a-leg-turned-against-its-joints-l11),
+one joint after the other in the run's order, each on the file as the
+joints before it left it. It tries what the window tries, less what is the
+user's to decide: **no proposal confirmed** (pieces in line one part, a
+leg splice: D15), **no leg or chord turn proposed**, values given by hand
+replaced only where the run replaces them. A way is **taken** only where:
+
+- the joint is **better on every count**: no more clashes, no more other
+  problems and no more members left for a hand detail than the run left,
+  and fewer of one (the window takes the fewest clashes first; the pass
+  asks more — never worse in any of the three);
+- **every joint around** (the other joints of the members meeting there)
+  has no more clashes and other problems, **joint by joint** (the window's
+  guard sums them);
+- it changes **no value given by hand** (a field of a member end the
+  layout record does not keep as the layout's; a roll the designer gave,
+  unless the run replaces values given by hand) and turns no member whose
+  roll a weighing of the run set (L19, L25);
+- and, as the window refuses anyway, it pulls back no leg nor member
+  running on, turns no leg, changes no section, moves no end (work point).
+
+Of the ways that pass, the one with the fewest clashes, then problems,
+then members left is taken. **Every turn and move is said**: the run's
+notes give, per joint solved, the way, the counts before → after and its
+marked effects ("MARKED (it turns or moves steel: check it): …" — a
+member turned about its axis, an end moved sideways, an eccentricity the
+analysis takes); the run keeps the joints solved with all their effects
+(`LayoutRun::solved`). The values it writes are recorded as the layout's
+(the ends' fields, the members turned with their roll before), so that a
+later run takes them out first, lays the joint out as the run does and
+solves it again: **a run again on the result gives the same file**
+(tested on an invented tower; measured below).
+
+Conservative: a joint the pass only **fixes** (the ends left as they
+were, their clashes or problems fewer) stays **not whole** — its members
+left are still for a hand detail, each with the run's reason. A joint is
+counted whole after the pass only where it is laid out with no member left
+and no clash, as a run counts it.
+
+### The joints left by reason
+
+`ohl_structure_link::left_reasons`: the type `LeftReason`,
+`LeftReason::of(words)`, `joints_left(text)` from a laid-out file's
+record, `joints_left_of_run(run)`, `counts`; the command line's
+`ohl-structure-layout left`. The layout says for every end it leaves why;
+the words are sorted into fifteen classes, each with what a person
+checking the joint looks at:
+
+| Class | The layout's words | What to look at |
+|---|---|---|
+| clash | laid out, it would run into another part | the two parts named |
+| not-fit-after | laid out, what it bolts onto would then not fit | detail both together |
+| leg-off-flange | its leg off the flange, no turn lays it flat; no bent or welded plate fits | the roll, a bent plate, a hand detail |
+| axis-out-of-face | its axis out of the flange's face by more than a bent plate takes | the plane it lies in |
+| leg-into-flange | its outstanding leg points into the flange | the roll (turns weighed), a stand-off |
+| inner-face | on the inner face, towards the angle's other leg | the face, the turn |
+| bolts-off-flange | its bolts do not all land on the flange (built up, splice cover) | a plate across |
+| plate-runs-into | its plate would run into another part | the plate's outline |
+| pull-back | more pull-back than the longest | a longer pull-back, a shift |
+| too-short | too short for its bolts | fewer or smaller bolts |
+| partner-left | a member left would lose a bolt | the member beside it first |
+| bolts-join-nothing | its design data's bolts drawn where it bolts onto nothing | the member's data |
+| given-by-hand | a value given by hand keeps it | keep or replace it |
+| form | a form the layout does not make here | by hand |
+| other | none of the above | the words |
+
+The classes are read from the words (the layout's own, unchanged); every
+class's words are tested against the texts the layout builds, and on
+invented towers every reason a run gives has a class. A joint's main
+class is the class most of its ends left have.
+
+### How flat an end naming nothing lies, measured on what it is planned onto
+
+`LayoutSettings::host_flat`, **on by default** (off: as before). The
+joint details measure how flat an end's leg lies only on the member it
+names (`onto`, given or worked out); an end naming nothing had no such
+measure, and the planner — which plans it onto the member running through
+the joint — took it as lying flat. Laid out so, an end whose leg lies
+several degrees off that member's flange was bolted flat onto it (more
+than the owner's 2°, never said), or, where its axis ran out of the
+flange's face, left with *its axis runs n° out of the face* though a bent
+plate or a plate in its own plane takes such an end. Now such an end has
+how far its leg lies off measured on the member it is planned onto, as
+the joint details measure it on a member it names (the flange whose face
+runs most nearly along it, of two alike the nearer): off by more than the
+2°, it goes the way of every end off its flange — a turn where one lays it
+flat at both its ends, a plate bent by as much, a plate in its own plane
+(each with its own limits and checks, unchanged), else a hand detail with
+why. **On the safe side**: no end is bolted flat that lies more than 2°
+off what it bolts onto; nothing new is assumed (the plates and their
+offsets are the ones the layout makes for every end off its flange).
+Tested on an invented K-brace (an end 30° off naming nothing: onto a plate
+in its own plane, as when it names the leg; off: as before).
+
+**Measured** (2026-11-26, kept privately; the eight private towers,
+6 852 joints; the base a run on L27's laid files, nothing confirmed, as L27
+measured it (4 253 whole on all eight); the bundled ASCE
+10-97 plugin built fresh and checked to load before every run):
+
+| | joints whole | member ends | plates | joints better / worse |
+|---|---|---|---|---|
+| base | 4 253 (62.1 %) | 15 268 | 8 196 | — |
+| measured on the planned host | 4 238 (61.9 %) | 15 331 | 8 350 | 130 / 70 |
+
+**Fifteen joints fewer whole, and that is the safe side**: 51 joints are
+no longer whole and 36 are newly whole. Of the 70 joints worse, 59 lay out
+fewer ends: at 56 of them an end that was bolted flat **lies 2° to 20°
+off** the member it bolts onto (44 of them 2° to 5°) and is now left with
+why — before, it was laid out off the owner's 2°, never said; 3 have a
+welded plate's flat plate running into another member; 11 lay out as many
+ends on one more plate. The ends left with *its axis runs n° out of the
+face* (928) are now measured as lying off the flange (the class
+*leg-off-flange*, 1 347 → 2 180 ends) — the reason a person reads is now
+how far off and which plate does not fit. **Slower**: the newly found ends
+whose outstanding leg points into the flange are weighed by L25 (21 to 62
+members per tower, a half or a quarter turn kept for 72 of 284 on seven
+towers), so a run takes 4 to 9 times as long (on the same loaded machine
+at the same time: 1 414 → 5 913 s and 1 467 → 6 201 s on two towers,
+2 258 → 14 995 s on a third); the smallest tower (no such end) is
+unchanged, byte for byte.
+
+### L20's guard per end: tried, not kept
+
+About 500 ends on the eight towers are left with *its axis would lie n mm
+farther out of the flange than on a flat plate (more than a plate's t
+mm…)*, most within the 40 mm the analysis takes for a plate in its own
+plane (L20 item 2). Taken first to be L20's guard (a joint laid out with
+fewer ends after writing with such plates than without is planned again
+without them, the whole joint), the guard was tried dropping the offset
+only for the ends the joint left after writing, then the whole joint.
+**Measured: no change** — on three of the eight towers the files byte
+for byte the same (stopped there); traced on the smallest tower, the
+guard never had such a plate to drop at those joints: there the plan
+with the offset lays out as many ends on as many plates as the plan
+without it, and L20 item 2 keeps the plan without on a tie (in each of its
+plans of those five joints). The words are the plan without's; with the
+offset the joint lays out no more ends.
+**Taken out again**, no change to the program; a question to the owner
+(below).
+
+### Measured: what is left for a person (2026-11-26)
+
+On the eight private towers (6 852 joints; kept privately), the run as
+L27 left it lays **4 253 joints out whole (62.1 %)**; 487 have nothing for
+the layout (no member end it lays out); **2 112 are left for a person**.
+Their main classes (the class most of a joint's ends have): leg off the
+flange 662, axis out of the flange's face 546, a clash after laying out
+308, a plate running into another part 152, bolts joining nothing 137,
+bolts off the flange 81, not fitting after 61, the inner face 53, more
+pull-back than the longest 40, too short 38, a member left losing a bolt
+30, a form not made 4, other 0. With the flatness measured on the planned
+host (above) the axis-out-of-face class empties into leg-off-flange.
+
+**The pass** (Solve the clashes after the run):
+
+| | joints tried | solved | now whole | no clash left after | clashes at the joints solved | s per joint |
+|---|---|---|---|---|---|---|
+| the smallest tower, every joint left | 42 | 36 | 2 | 15 | 202 → 85 | 21 |
+| four large towers, every eighth joint left (on the planned-host files) | 161 | 109 | 0 | 10 | 1 368 → 814 | 82 |
+| one large tower, its first 40 joints left | 40 | 32 | 0 | 5 | 404 → 210 | 113 |
+
+- It **clears clashes** (about 40 % to 60 % fewer at the joints it solves;
+  other problems and members left a little fewer), but it **rarely makes a
+  joint whole**: the joints left are mostly left for reasons a clash
+  solution does not touch (a leg off its flange, its axis out of the
+  face, bolts joining nothing). On the large towers about seven joints in
+  ten are solved, none whole.
+- **Marked** (a member turned or an end moved): 1 joint on the smallest
+  tower, 9 of the 109 on the large ones — each said in the notes.
+- **A run again gives the same file**: on the smallest tower, with and
+  without the planned-host flatness (the pass's file also the same across
+  the two builds).
+- **Time**: about 20 s per joint left on a lightly loaded machine, 80 to
+  110 s on a heavily loaded one (four to ten jobs on ten cores) — on a
+  large tower with 270 to 340 joints left, **hours**. Full runs of the pass
+  on the large towers did not finish within six hours on the loaded
+  machine; they were measured on samples (above).
+- **What the person checks**: the joints left, class by class, with the
+  layout's words (`ohl-structure-layout left`, the review list) — about
+  three in ten of a tower's joints on these towers.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to

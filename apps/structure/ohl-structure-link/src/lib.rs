@@ -93,6 +93,9 @@ mod joints_tests;
 mod layout_run;
 #[cfg(test)]
 mod layout_run_tests;
+pub mod left_reasons;
+#[cfg(test)]
+mod left_reasons_tests;
 pub mod leg_roll;
 #[cfg(test)]
 mod leg_roll_tests;
@@ -130,6 +133,9 @@ pub use ohl_member_check as plugin_check;
 mod quantities;
 mod run;
 pub mod solve;
+pub mod solve_pass;
+#[cfg(test)]
+mod solve_pass_tests;
 #[cfg(test)]
 mod solve_tests;
 mod volumes;
@@ -210,8 +216,8 @@ pub use run::{
     joint_option_effect,
 };
 pub use solve::{
-    Candidate, Counts, Effect, EffectKind, LegTurn, Solution, SolveAsk, TurnReach, TurnSource,
-    solve_joint,
+    Candidate, Counts, Effect, EffectKind, LegTurn, Solution, SolveAsk, SolveOptions, TurnReach,
+    TurnSource, solve_joint, solve_joint_with,
 };
 pub use volumes::{VolumeMesh, string_volumes};
 pub use welds::{Flat, PlannedPlate, Weld, flat_roll, joint_legs, seam, welded_plan};

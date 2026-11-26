@@ -159,7 +159,7 @@ fn pieces_turned_a_little_apart_get_one_roll() {
 
 /// The horizontal in two pieces with a diagonal to its middle instead of
 /// the redundant.
-fn diagonal() -> String {
+pub(crate) fn diagonal() -> String {
     SPLIT.replace(
         "point = [\"0 m\", \"0 m\", \"1.5 m\"]",
         "point = [\"1.5 m\", \"0 m\", \"1.5 m\"]",

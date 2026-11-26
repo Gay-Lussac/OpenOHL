@@ -445,6 +445,24 @@ pub struct LayoutSettings {
     /// end only on a plate bent by a few degrees (L3), else left for a hand
     /// detail, said.
     pub own_plane_welded: bool,
+    /// O44 L30 (the owner, 2026-11-26: "go ahead with the second run"):
+    /// after the run, *Solve the clashes* on every joint the run left not
+    /// whole, each solution applied only where the joint gets better and
+    /// every joint around is no worse; every turn and move said
+    /// ([`crate::solve_pass`]). Off by default (it costs seconds per joint
+    /// left; measured in the user guide); Lay out joints offers it as a tick.
+    pub solve_left: bool,
+    /// O44 L30 (a targeted fix for the joints left with an end's axis out
+    /// of the flange's face): an end planned onto a member it does not name
+    /// has how far its leg lies off measured on that member's flange (as
+    /// for one naming it), so that one lying off goes the way of an end off
+    /// its flange (a plate bent by a few degrees, a plate in its own plane)
+    /// instead of being left — or bolted flat though it lies more than
+    /// [`FLAT_OFF`] off (on the safe side). On by default (measured on the
+    /// private real towers: more ends laid out, a few joints fewer whole —
+    /// each had an end bolted flat more than [`FLAT_OFF`] off —, the run
+    /// slower, the theory says how much); off: as before.
+    pub host_flat: bool,
     /// O44 L24 (the detailing practice's flatness): the most an end's leg
     /// may lie off its flange and still be planned as bolting flat on it,
     /// degrees — where the planner chooses between flat and a bent or
@@ -542,6 +560,8 @@ impl Default for LayoutSettings {
             flange_half: true,
             flange_quarter: true,
             own_plane_welded: true,
+            solve_left: false,
+            host_flat: true,
             flat_off: FLAT_OFF,
             bend_small_max: BEND_SMALL_MAX,
             own_out_max: OWN_OUT_MAX,
@@ -3052,7 +3072,15 @@ fn plan_avoiding(
         // caller's to turn; still off, onto a plate in its own plane
         // welded to a flat plate on the flange (the owner's step 4), else
         // a hand detail.
-        let off = a.flat.filter(|f| f.off > s.flat_off).map(|f| f.off);
+        // (L30) How far off it lies measured on the member it is planned
+        // onto here, where that is not what it names now (the joint
+        // details measure it on what it names: else none).
+        let flat = if s.host_flat && a.onto.value.as_deref() != Some(host.member.as_str()) {
+            flat_on(a, host).or(a.flat)
+        } else {
+            a.flat
+        };
+        let off = flat.filter(|f| f.off > s.flat_off).map(|f| f.off);
         // Off: on the flange in whose plane its axis lies most nearly, else
         // on the other.
         // (L15) Across a gap between a built-up member's angles: onto a
@@ -5665,6 +5693,26 @@ pub(crate) fn angle_between_deg(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 fn angle_deg(a: [f64; 3], b: [f64; 3]) -> f64 {
     dot(a, b).clamp(-1.0, 1.0).acos().to_degrees()
+}
+
+/// (O44 L30) How `a`'s leg bolted lies against `host`'s flange it can lie
+/// on — as the joint details measure it on the member an end names
+/// (`joints::flat_of`: the flange whose face runs most nearly along `a`, of
+/// two alike the nearer) — for an end planned onto `host` without naming
+/// it. None: not angles.
+fn flat_on(a: &Arrival, host: &Arrival) -> Option<crate::welds::Flat> {
+    let p = a.profile.as_ref()?;
+    p.angle?;
+    let q = host.profile.as_ref()?;
+    if q.angle.is_none() && q.part_angles.is_empty() {
+        return None;
+    }
+    let across = |n: [f64; 3]| (dot(n, p.axes[0]).abs() * 1e3).round();
+    [q.axes[1], q.axes[2]]
+        .into_iter()
+        .filter_map(|n| crate::welds::flat_roll(p.axes, a.leg_y, n).map(|f| (across(n), f)))
+        .min_by(|x, y| x.0.total_cmp(&y.0).then(x.1.off.total_cmp(&y.1.off)))
+        .map(|x| x.1)
 }
 
 /// The turns that lay the member ends of `j` flat on what they bolt onto

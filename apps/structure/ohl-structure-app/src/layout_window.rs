@@ -267,6 +267,9 @@ pub struct LayoutWindow {
     pub welded: bool,
     /// Values given by hand replaced too.
     pub replace: bool,
+    /// O44 L30: Solve the clashes after the run at every joint it leaves
+    /// not whole (off by default: slow).
+    pub solve_left: bool,
     /// The preview.
     pub preview: Option<Preview>,
     job: Job<Preview>,
@@ -427,6 +430,9 @@ impl LayoutWindow {
             // where the roll is the program's, else offered).
             flange_half: true,
             flange_quarter: true,
+            // L30 (2026-11-26): Solve the clashes after the run at the
+            // joints left not whole — the window's tick (off by default).
+            solve_left: self.solve_left,
             // L24 (2026-11-25): the detailing practice's values, below.
             ..LayoutSettings::default()
         };
@@ -445,7 +451,14 @@ impl LayoutWindow {
         for v in [self.gap_mm, self.pull_mm, self.shift_mm, self.diameter_mm] {
             v.to_bits().hash(&mut h);
         }
-        (&self.bolt, &self.presets, self.welded, self.replace).hash(&mut h);
+        (
+            &self.bolt,
+            &self.presets,
+            self.welded,
+            self.replace,
+            self.solve_left,
+        )
+            .hash(&mut h);
         self.practice
             .as_ref()
             .map(|p| (p.source.word(), p.practice.to_text()))
@@ -499,6 +512,7 @@ impl StructureApp {
             presets: rec.as_ref().map(|r| r.presets.clone()).unwrap_or_default(),
             welded: rec.as_ref().is_some_and(|r| r.welded),
             replace: false,
+            solve_left: false,
             preview: None,
             job: None,
             error: None,
@@ -1144,6 +1158,18 @@ impl StructureApp {
                         "Off: a cut, shift, roll or what a member bolts onto given by hand is \
                          kept (the layout works round it). On: replaced by the layout's.",
                     );
+                ui.checkbox(
+                    &mut w.solve_left,
+                    "Solve the clashes at the joints left after the run",
+                )
+                .on_hover_text(
+                    "After the run, Solve the clashes at every joint it leaves not whole, each \
+                     solution kept only where the joint gets better on every count and every \
+                     joint around is no worse. Every turn and move it makes is said (marked) in \
+                     the notes; it never confirms a proposal or turns a leg. Slow: about 20 s per \
+                     joint left, more on a busy machine — hours on a large tower (measured; see \
+                     the user guide).",
+                );
                 ui.separator();
                 // The preview.
                 let busy = w.job.is_some();

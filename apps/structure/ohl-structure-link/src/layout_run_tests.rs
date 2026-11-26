@@ -45,7 +45,7 @@ pub(crate) fn parse(text: &str) -> StructureType {
     StructureType::parse(std::path::Path::new("s.ohls"), text).unwrap()
 }
 
-fn k_brace() -> String {
+pub(crate) fn k_brace() -> String {
     crate::joint_layout_tests::K.to_owned()
 }
 
