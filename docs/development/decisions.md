@@ -8,6 +8,19 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-26 (the code checks are plugins: one plugin per code family, SIA 260 to 265 in one SIA plugin)
+
+The owner, 2026-11-26: the code checks are plugin based; SIA 261, 262,
+263 and 265 (with SIA 260) should in the end be in one SIA plugin for
+OHL-Design and OHL-Structure, the other codes the same way later; what a
+code needs to work is to be reachable to its plugin. Today SIA 263 and
+ASCE 10-97 are bundled plugins (O4, 2026-11-18); SIA 265 (wood poles),
+ASCE/SEI 48-19 (steel pole shafts) and the SIA 261 snow and wind factors
+on structures are still in the core. Next: the inventory of the code
+rules still in the core and the plan of the move (roadmap O4), agreed
+before the interface changes are built. The website says the direction.
+
+
 ## 2026-11-26 (the plugin fixes: the default bolt sent with the members; a rolled angle's own leg a rolled edge)
 
 **The owner's answers of 2026-11-25** ("Ok for plugin fixes") to O19 stage

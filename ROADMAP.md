@@ -1537,6 +1537,22 @@ forces, buckling lengths, sections, joint details), what comes back
 > code: SIA 263 for steel. Members first, then joints. The theory of the
 > checks goes in a theory page of the book.
 
+> **Owner (2026-11-26):** *"Also edit the website to say the norm check
+> are plugin based. Like Sia 263,262,265 and 261 should be in a SIA plugin
+> for OHL design and structure in the end. Same for other codes later on.
+> What's needed to make them work should be reachable to the plugins."*
+> The direction: every code check a plugin, one plugin per code family
+> for both applications — SIA 260, 261, 262, 263 and 265 together in one
+> SIA plugin for OHL-Design and OHL-Structure, the other codes the same
+> way later; what a code needs from OpenOHL handed to its plugin through
+> the interface. Still in the core today: SIA 265 (wood poles), ASCE/SEI
+> 48-19 (steel pole shafts) and the SIA 261 snow and wind factors on
+> structures. The website says so (2026-11-26). The inventory of every
+> code rule still in the core, what each needs from the core, and the
+> plan of the move follow as the next step (to be agreed before the
+> interface changes are built).
+
+
 ASCE 10-97 (the default, 2026-10-27,
 [theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/asce10.md))
 and SIA 263:2013 (`[analysis] capacity = "sia263-2013"`, 2026-11-03,
