@@ -314,8 +314,15 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// weld's sides (`[[plate.weld]] sides`, the fillets on one side of the
 /// plate or both: [`crate::connections::TypeWeld::sides`],
 /// [`crate::connections::WELD_SIDES_VERSION`]); a file is written at 28
-/// only when a weld gives them.
-pub const STRUCTURE_FILE_VERSION: u32 = 28;
+/// only when a weld gives them. Version 29 (2026-11-26, the automatic joint
+/// layout's L31) adds a joint's review tick (a joint's `reviewed`:
+/// [`TypeNode::reviewed`], [`REVIEWED_VERSION`]); a file is written at 29
+/// only when a joint is ticked.
+pub const STRUCTURE_FILE_VERSION: u32 = 29;
+
+/// The structure file version of a joint's review tick (`reviewed` on a
+/// `[[node]]`, O44 L31, 2026-11-26).
+pub const REVIEWED_VERSION: u32 = 29;
 
 /// The structure file version of the joint layout's detailing practice
 /// (`[layout_practice]`, O44 L24, 2026-11-25).
@@ -779,6 +786,14 @@ pub struct TypeNode {
     /// generator replaces it; none: made by hand.
     #[serde(default)]
     pub made_by: Option<String>,
+    /// Reviewed by hand (version 29, O44 L31, 2026-11-26): the stamp of
+    /// the joint's layout when a reviewer ticked it in OHL-Structure's
+    /// *Review the joints left*; read as reviewed only while the joint's
+    /// layout still gives that stamp (the structure application works it
+    /// out; the core passes it through and uses it for nothing — no check
+    /// takes it). None: not reviewed (every file before version 29).
+    #[serde(default)]
+    pub reviewed: Option<String>,
 }
 
 /// A member of the pylon between two joints (levels 2 and 3). Without a
@@ -2700,6 +2715,7 @@ impl StructureType {
                 attachment: None,
                 kind: Some(JointKind::Attach),
                 made_by: None,
+                reviewed: None,
             });
         }
         let mut more = Vec::new();
@@ -3108,6 +3124,26 @@ mod tests {
         let newer = StructureType::parse(Path::new("t.ohls"), &text(STRUCTURE_FILE_VERSION + 1))
             .unwrap_err();
         assert!(newer.message.contains("newer"), "{}", newer.message);
+    }
+
+    /// A joint's review tick (version 29, O44 L31): read as given, passed
+    /// through; none in a file without it (every older file).
+    #[test]
+    fn a_joints_review_tick_is_read_and_older_files_have_none() {
+        let text = |extra: &str| {
+            format!(
+                "format = \"ohl-structure\"\nversion = {REVIEWED_VERSION}\nid = \"t\"\nname = \"t\"\nkind = \"lattice\"\n\
+                 [[node]]\nid = \"B\"\npoint = [\"0 m\", \"0 m\", \"0 m\"]\n{extra}"
+            )
+        };
+        let t = StructureType::parse(Path::new("t.ohls"), &text("reviewed = \"0a1b\"\n")).unwrap();
+        assert_eq!(t.nodes[0].reviewed.as_deref(), Some("0a1b"));
+        let t = StructureType::parse(Path::new("t.ohls"), &text("")).unwrap();
+        assert_eq!(t.nodes[0].reviewed, None);
+        // A typo is refused, naming it.
+        let e = StructureType::parse(Path::new("t.ohls"), &text("reviewd = \"x\"\n")).unwrap_err();
+        assert!(e.message.contains("reviewd"), "{}", e.message);
+        const { assert!(REVIEWED_VERSION <= STRUCTURE_FILE_VERSION) };
     }
 
     /// A string's limits (version 4, not checked by OpenOHL): read with

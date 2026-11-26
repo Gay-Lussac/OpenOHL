@@ -4289,6 +4289,59 @@ ASCE 10-97 plugin built fresh and checked to load before every run):
   pieces were not turned. A user's confirmation changes the steel; the run
   then lays out what is confirmed.
 
+## The joints left, for review (L31)
+
+(Built 2026-11-26, in active development, not approved yet; the owner,
+2026-11-26: *"setup ways to study the latest joint and lay them out. The
+goal is not to reach 100% but not far off so that a human can relatively
+quickly check the missing joints"*;
+[user guide](../user-guide/joint-review.md).) Nothing here lays out or
+checks anything: the list is read from the structure file
+(`ohl_structure_link::joint_review`).
+
+- **Counted**: the joints where two or more members meet, and any other
+  joint the layout record names. **Whole**: in the record's laid-out
+  joints and not among its joints needing a hand detail. **Left**: every
+  other — laid out in part, not laid out, or with no reason recorded (the
+  layout found nothing it could lay out there, or no run asked it; listed
+  last, so that the counts add up to the joints counted).
+- **The reasons** are the record's, per joint one text of its members'
+  reasons joined by "; " (as Lay out joints and Joint details show it),
+  split again per member: at a "; " outside brackets where the next reason
+  begins with a name and ":" or with "laid out:".
+- **The groups**: one reason, one group, decided in one function
+  (`reason_group`) — today from the reasons' words, in the order of the
+  causes counted [above](#what-leaves-an-end-for-a-hand-detail) (a leg
+  splice, bolts joining nothing, out of the flange's plane, the leg bolted
+  not flat, a built-up member), then room in its kinds (a clash or a check
+  after writing, a plate into steel, the pull-back, a member left as it is,
+  no room on one plate, too short), then any other. A joint is in the
+  group of its first reason in that order. When the layout gives its own
+  classes of reasons (O44 L30), that function's body becomes one line
+  calling them; the list, the window and the command line follow.
+- **The tick**: `reviewed` on the joint's `[[node]]` (structure file
+  version 29) holds a stamp of the joint's layout when it was ticked — a
+  64-bit FNV-1a hash of the joint as written: its own table, the members
+  meeting there (place, section, roll, design data) and their joints'
+  places, its connections, plates and splices, and what the record says of
+  it, each value in one canonical text (spacing, comments and the order of
+  keys not counted). The joint reads as reviewed only while its layout
+  gives the same stamp, so **any change of its layout clears the tick**
+  (a run, an edit followed, a value changed by hand, Solve the clashes),
+  without the layout's code knowing of ticks. A change elsewhere (another
+  joint, a member's buckling length) keeps it. **NOT ON THE SAFE SIDE where
+  a tick is taken for a check**: what is left out — a ticked joint is still
+  not laid out by the program where it was left, and the layout's checks
+  after writing (the clash check, bolts within their edge and end
+  distances, holes not overlapping) never ran on what was detailed there
+  by hand; why it can be unsafe — the tick takes the joint out of the
+  list's "to go", so a joint ticked too early hides a clash or a bolt too
+  near an edge from the reviewer; what makes it safe — the tick changes no
+  check: Joint details' problems, the clash colours and the analysis' joint
+  checks read the joint as written, ticked or not, and a joint is to be
+  ticked only once Joint details shows no problem the reviewer has not
+  accepted.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
