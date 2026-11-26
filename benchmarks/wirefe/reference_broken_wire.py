@@ -49,6 +49,13 @@ weight balance. Reported: the tension per wire (span 1: the share's; span
 the whole bundle (the share's x n). The statics at the clamp, by hand:
 n H1 - (n - k) H2 = the string's horizontal pull.
 
+1c. The same, the broken subconductors hanging in the spacers of the wires
+left (2026-11-25): span 2 keeps the share r of the axial stiffness but
+carries the whole bundle's weight per metre (w, not r w: the broken ones'
+weight on the wires left, their own tension none). The same statics; the
+wire left's tension and the load down on the structure are larger, the
+unbalance along the line smaller, than with them gone (1b).
+
 2. A local wind (roadmap O15). One level 300 m span between wire points
 fixed at (0, 27) and (300, 27) m, clipped in with an unstressed length of
 300.5 m at 20 deg C (the same cable, its data sheet weight w at 20 deg C),
@@ -211,21 +218,24 @@ def broken(lengths, t):
     }
 
 
-def partly_broken(lengths, t, n, k_broken):
+def partly_broken(lengths, t, n, k_broken, hanging=False):
     """k_broken of the n subconductors of span 2 broken at temperature t
-    (still air), gone from the span: per wire the tensions of span 1 and
-    of span 2, the clamp, the string's swing and force and the load on its
-    top along the line and down (the whole bundle's)."""
+    (still air), gone from the span (or, `hanging`, hanging in the spacers
+    of the wires left: the whole bundle's weight per metre on the share
+    left of the stiffness): per wire the tensions of span 1 and of span 2,
+    the clamp, the string's swing and force and the load on its top along
+    the line and down (the whole bundle's)."""
     length, weight, k = STRING
     weight = weight / n
     r = (n - k_broken) / n
+    carried = 1.0 if hanging else r
     thermal = math.exp(ALPHA * (t - T_STRING))
     w = W / thermal
     L1, L2 = lengths[0] * thermal, lengths[1] * thermal
 
     def parts(c):
         h0, _, tz0 = span_forces(L1, w, (c[0] - ENDS[0][0], c[1] - ENDS[0][1]))
-        h1, v1, _ = span_forces(L2, r * w, (ENDS[1][0] - c[0], ENDS[1][1] - c[1]),
+        h1, v1, _ = span_forces(L2, carried * w, (ENDS[1][0] - c[0], ENDS[1][1] - c[1]),
                                 ea=r * EA)
         ax, az = ATTACH[0] - c[0], ATTACH[1] - c[1]
         d = math.hypot(ax, az)
@@ -294,6 +304,12 @@ if __name__ == "__main__":
         bundle = strung(W, n)
         print(f"{name} (unstressed lengths {bundle[0]:.10f} {bundle[1]:.10f})")
         for key, value in partly_broken(bundle, t, n, k).items():
+            print(f"  {key:14s} {value:.12g}")
+    for name, t, n, k in (("brokenwire-006 twin bundle, 1 of 2 broken in span 2 at 15 C, hanging", 15.0, 2, 1),
+                          ("brokenwire-007 quad bundle, 3 of 4 broken in span 2 at -5 C, hanging", -5.0, 4, 3)):
+        bundle = strung(W, n)
+        print(f"{name} (unstressed lengths {bundle[0]:.10f} {bundle[1]:.10f})")
+        for key, value in partly_broken(bundle, t, n, k, hanging=True).items():
             print(f"  {key:14s} {value:.12g}")
     for name, p, f in (("localwind-001 factor 1", 500.0, 1.0),
                        ("localwind-002 factor 1.5", 500.0, 1.5),

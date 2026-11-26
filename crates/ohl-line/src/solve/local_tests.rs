@@ -588,6 +588,7 @@ fn some_subconductors_of_a_bundle_broken() {
             &[Break {
                 span: 1,
                 subconductors: k,
+                hanging: false,
             }],
             &budget,
             &Coupling::default(),
@@ -652,10 +653,10 @@ fn some_subconductors_of_a_bundle_broken() {
     assert!(
         part.flags
             .iter()
-            .any(|f| f.contains("NOT ON THE SAFE SIDE for the tension of the subconductors left"))
+            .any(|f| f.contains("the broken ones gone from the span (the least pull left"))
     );
     assert_eq!(
-        partial_break_flag(1, 1, 2),
+        partial_break_flag(1, 1, 2, false),
         part.flags[part.flags.len() - 1]
     );
     // A bundle of four with two broken has the same share left: the same
@@ -674,6 +675,7 @@ fn some_subconductors_of_a_bundle_broken() {
         &[Break {
             span: 1,
             subconductors: Some(2),
+            hanging: false,
         }],
         &budget,
         &Coupling::default(),
@@ -681,6 +683,82 @@ fn some_subconductors_of_a_bundle_broken() {
     .unwrap();
     assert!((two_of_four.spans[1].horizontal_tension - ahead).abs() < 1e-6 * ahead);
     assert!((two_of_four.spans[0].horizontal_tension - back).abs() < 1e-6 * back);
+}
+
+/// The same break with the broken subconductor hanging in the spacers of
+/// the wire left (2026-11-25, [`Break::hanging`]): span 2 keeps half the
+/// stiffness but carries the whole bundle's weight. The same statics at
+/// the clamp; by statics too, the structures together carry the whole
+/// weight of the wires (both spans, the bundle's) as intact — gone, half
+/// of span 2's less. Against gone: the wire left's tension and the load
+/// down on the middle structure larger, the unbalance along the line
+/// smaller — each reading bounds its own forces. Flagged as such.
+#[test]
+fn a_partial_break_hanging_in_the_spacers() {
+    let (mut line, cable) = two_spans();
+    line.sections[0].bundle = 2;
+    let budget = default_fe_budget();
+    let case = windy(10.0, 0.0, 0.0);
+    let s = line.sections[0].clone();
+    let solve = |hanging: bool| {
+        solve_section_breaks(
+            &line,
+            &s,
+            &cable,
+            &case,
+            &[Break {
+                span: 1,
+                subconductors: Some(1),
+                hanging,
+            }],
+            &budget,
+            &Coupling::default(),
+        )
+        .unwrap()
+    };
+    let (gone, hanging) = (solve(false), solve(true));
+    let intact = solve_section(&line, &s, &cable, &case, &budget).unwrap();
+    // The statics at the clamp, per wire.
+    let (back, ahead) = (
+        hanging.spans[0].horizontal_tension,
+        hanging.spans[1].horizontal_tension,
+    );
+    let unbalance = 2.0 * back - ahead;
+    let string = string_pull_along(&hanging, 1);
+    assert!(
+        (unbalance - string).abs() < 1e-3,
+        "2·{back} − {ahead} = {unbalance} against {string}"
+    );
+    // The weight carried: the sum of the loads down at every structure.
+    let down = |shape: &SectionShape| -> f64 {
+        shape
+            .attachment_loads
+            .iter()
+            .flatten()
+            .map(|l| -l.force[2])
+            .sum()
+    };
+    let wire = |shape: &SectionShape| down(shape) - down(&intact);
+    assert!(
+        wire(&hanging).abs() < 1e-6 * down(&intact),
+        "hanging {} intact {}",
+        down(&hanging),
+        down(&intact)
+    );
+    assert!(wire(&gone) < -0.1 * down(&intact), "{}", wire(&gone));
+    // Against gone: more tension in the wire left, more down on T2, less
+    // along the line.
+    assert!(ahead > 1.1 * gone.spans[1].horizontal_tension);
+    let t2 = |shape: &SectionShape, k: usize| -> f64 {
+        shape.attachment_loads[1].iter().map(|l| l.force[k]).sum()
+    };
+    assert!(-t2(&hanging, 2) > 1.2 * -t2(&gone, 2));
+    assert!(t2(&hanging, 0).abs() < 0.8 * t2(&gone, 0).abs());
+    assert_eq!(
+        partial_break_flag(1, 1, 2, true),
+        hanging.flags[hanging.flags.len() - 1]
+    );
+    assert!(hanging.flags[hanging.flags.len() - 1].contains("hanging in the spacers"));
 }
 
 /// The same break on a cable with stress-strain curves: the curves take
@@ -725,6 +803,7 @@ fn a_partial_break_on_curves_takes_the_tension_per_wire() {
     let one = [Break {
         span: 1,
         subconductors: Some(1),
+        hanging: false,
     }];
     for breaks in [&[][..], &one[..]] {
         let (a, b) = (solve(&linear, breaks), solve(&curved, breaks));

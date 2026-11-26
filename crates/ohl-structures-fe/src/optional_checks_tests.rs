@@ -5,13 +5,10 @@
 //! The optional checks of 2026-11-15 (owner), both off by default: a
 //! redundant member's nominal force (`[analysis] redundant_force`, a
 //! percentage of the compression in the member it braces) and the
-//! climbing load (`[analysis] climbing_load`, flat members at mid-length,
+//! climbing load (`[analysis] climbing_load`, every member at mid-length,
 //! alone). Invented models, numbers by hand.
 
-use crate::check::{
-    CLIMBING_INCLINATION_DEG, NOT_SAFE, REDUNDANT_FORCE, climbing_check, climbing_note,
-    redundant_supports,
-};
+use crate::check::{NOT_SAFE, REDUNDANT_FORCE, climbing_check, climbing_note, redundant_supports};
 use crate::design::MemberClass;
 use crate::model::{CapacityMethod, Section};
 use crate::{
@@ -177,11 +174,13 @@ fn a_sub_redundant_takes_its_share_of_the_redundant_it_braces() {
     );
 }
 
-/// A frame of members at several slopes: the flat ones (0°, 20°) are
-/// checked for 1100 N at mid-length alone, the steep ones (40°, the
-/// vertical) are not; numbers by hand.
+/// A frame of members at several slopes (0°, 20°, 40°, vertical; and an
+/// 8 m vertical too slender for the load along it): every one is checked
+/// for 1100 N vertical at mid-length alone (since 2026-11-25; before,
+/// only those within 30° of the horizontal) — across it bending it,
+/// along it whole in compression amplifying the moment; numbers by hand.
 #[test]
-fn flat_members_carry_the_climbing_load_alone() {
+fn every_member_carries_the_climbing_load_alone() {
     let mut s = Section::elastic("bar", E, 1e-4, 1e-8);
     s.yield_strength = Some(FY);
     s.wy = Some(2e-6);
@@ -201,11 +200,14 @@ fn flat_members_carry_the_climbing_load_alone() {
         Node::free("F", slope(20.0)),
         Node::free("S", slope(40.0)),
         Node::free("V", [0.0, 0.0, 2.0]),
+        Node::free("T", [0.0, 1.0, 8.0]),
     ];
     for (k, id) in ["h", "f", "s", "v"].iter().enumerate() {
         m.members
             .push(Member::new(id, MemberKind::Frame, 0, k + 1, 0));
     }
+    // The tall one from the vertical's top (6 m) — its length 6.083 m.
+    m.members.push(Member::new("t", MemberKind::Frame, 4, 5, 0));
     // Off: nothing.
     assert!(climbing_check(&m).is_empty());
     assert!(climbing_note(&m, &[]).is_none());
@@ -213,37 +215,75 @@ fn flat_members_carry_the_climbing_load_alone() {
     let c = climbing_check(&m);
     assert_eq!(
         c.iter().map(|c| c.member).collect::<Vec<_>>(),
-        vec![0, 1],
+        vec![0, 1, 2, 3, 4],
         "{c:?}"
     );
-    // M = P L / 4 + q L² / 8 on W_min = 1 cm³ (the smaller), f_y 355 MPa.
+    // By hand: q = 7850 × 1e-4 × 9.80665 = 7.698 N/m; L = 2 m;
+    // N_cr = π² × 2.1e11 × 1e-8 / 2² = 5181.5 N; W_min = 1 cm³ (the
+    // smaller), f_y 355 MPa, A = 1 cm².
+    // 0°: M = 1100 × 2 / 4 + 7.698 × 4 / 8 = 553.85 N m → 553.85 / 355
+    //     = 156.0 % (as before 2026-11-25).
+    // 20°: M = 0.93969 × 553.85 = 520.45; N = 0.34202 × (1100 + 15.40)
+    //     = 381.49 N; 1/(1 − 381.49/5181.5) = 1.0795; 520.45 × 1.0795 / 355
+    //     + 381.49 / 35 500 = 1.5826 + 0.0107 = 159.3 %.
+    // 40°: M = 0.76604 × 553.85 = 424.27; N = 0.64279 × 1115.40 = 716.97;
+    //     1/(1 − 0.13837) = 1.1606; 424.27 × 1.1606 / 355 + 716.97 / 35 500
+    //     = 1.3871 + 0.0202 = 140.7 %.
+    // 90°: N = 1115.40 N, no moment: 1115.40 / 35 500 = 3.1 %.
     let q = 7850.0 * 1e-4 * crate::model::G;
-    let moment = 1100.0 * 2.0 / 4.0 + q * 4.0 / 8.0;
-    let expected = moment / (1e-6 * FY);
-    assert!((c[0].usage.unwrap() - expected).abs() < 1e-12, "{c:?}");
-    assert_eq!(c[0].usage, c[1].usage);
+    let n_cr = |l: f64| std::f64::consts::PI.powi(2) * E * 1e-8 / (l * l);
+    let by_formula = |deg: f64| {
+        let (sin, cos) = deg.to_radians().sin_cos();
+        let moment = cos * (1100.0 * 2.0 / 4.0 + q * 4.0 / 8.0);
+        let n = sin * (1100.0 + q * 2.0);
+        n / (1e-4 * FY) + moment / (1e-6 * FY * (1.0 - n / n_cr(2.0)))
+    };
+    for (k, (deg, hand)) in [(0.0, 1.560), (20.0, 1.593), (40.0, 1.407), (90.0, 0.031)]
+        .into_iter()
+        .enumerate()
+    {
+        let u = c[k].usage.unwrap();
+        assert!((u - by_formula(deg)).abs() < 1e-9, "{deg}°: {c:?}");
+        assert!((u - hand).abs() < 1e-3, "{deg}°: {u} by hand {hand}");
+    }
     assert!(
-        c[0].words.starts_with("1.10 kN at mid-length of 2.00 m"),
+        c[0].words
+            .starts_with("1.10 kN at mid-length of 2.00 m, 0° from the horizontal: across M"),
         "{}",
         c[0].words
     );
+    assert!(
+        c[2].words.contains("along N 0.717 kN (whole, compression)"),
+        "{}",
+        c[2].words
+    );
+    // The tall one (80.5° from the horizontal, 6.083 m): N_cr = 5181.5 ×
+    // 4 / 6.083² = 560.2 N < N = sin θ (1100 + 7.698 × 6.083) = 1131.0 N:
+    // it would buckle under the climbing load alone — over, by N / N_cr.
+    let l = 37f64.sqrt();
+    let n = 6.0 / l * (1100.0 + q * l);
+    assert!(
+        (c[4].usage.unwrap() - n / n_cr(l)).abs() < 1e-9,
+        "{:?}",
+        c[4]
+    );
+    assert!(c[4].words.contains("would buckle"), "{}", c[4].words);
     let note = climbing_note(&m, &c).unwrap();
     assert!(
-        note.starts_with(&format!(
-            "climbing load (alone, not a load case; ASCE 10-97 commentary C2.2): 1.10 kN at \
-             mid-length of each member within {CLIMBING_INCLINATION_DEG:.0}° of the horizontal"
-        )),
+        note.starts_with(
+            "climbing load (alone, not a load case; ASCE 10-97 commentary C2.2): 1.10 kN \
+             vertical at mid-length of every design-checked member but cables, whatever its \
+             slope"
+        ),
         "{note}"
     );
-    assert!(note.contains("2 member(s) checked"), "{note}");
+    assert!(note.contains("5 member(s) checked"), "{note}");
     assert!(
-        note.contains("2 OVER first yield: h 156 %, f 156 %"),
+        note.contains("4 OVER first yield: h 156 %, f 159 %, s 141 %, t 202 %"),
         "{note}"
     );
-    assert!(
-        note.contains("members steeper than 30° not checked"),
-        "{note}"
-    );
+    assert!(!note.contains("steeper"), "{note}");
+    assert!(!note.contains(NOT_SAFE), "{note}");
     // The load cases' usage does not change.
     let loads = Loads::default();
     let sol = solve(&m, &loads, &Options::default(), &default_budget()).unwrap();
@@ -252,6 +292,44 @@ fn flat_members_carry_the_climbing_load_alone() {
     assert_eq!(
         member_usage(&m, &sol, 1.0),
         member_usage(&without, &sol, 1.0)
+    );
+}
+
+/// A member whose section gives no elastic modulus is listed as not
+/// checked, and the note says NOT ON THE SAFE SIDE with why; a vertical
+/// one needs no elastic modulus (no moment).
+#[test]
+fn climbing_without_properties_is_said() {
+    let mut s = Section::elastic("bar", E, 1e-4, 1e-8);
+    s.yield_strength = Some(FY);
+    let mut m = Model {
+        sections: vec![s],
+        ..Model::default()
+    };
+    m.nodes = vec![
+        Node::fixed("O", [0.0, 0.0, 0.0]),
+        Node::fixed("H", [2.0, 0.0, 0.0]),
+        Node::fixed("V", [0.0, 0.0, 2.0]),
+    ];
+    m.members.push(Member::new("h", MemberKind::Frame, 0, 1, 0));
+    m.members.push(Member::new("v", MemberKind::Frame, 0, 2, 0));
+    m.analysis.climbing_load = Some(1100.0);
+    let c = climbing_check(&m);
+    assert_eq!(c[0].usage, None);
+    assert_eq!(
+        c[0].words,
+        "not checked: its section gives no elastic modulus"
+    );
+    assert!((c[1].usage.unwrap() - 1100.0 / (1e-4 * FY)).abs() < 1e-12);
+    let note = climbing_note(&m, &c).unwrap();
+    assert!(note.contains("1 member(s) checked"), "{note}");
+    assert!(
+        note.contains(
+            "NOT ON THE SAFE SIDE: 1 not checked (their section gives no elastic modulus, \
+             yield strength, area or second moment), so a climber's weight could overload one \
+             unseen; give their section's properties and material"
+        ),
+        "{note}"
     );
 }
 

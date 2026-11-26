@@ -82,7 +82,7 @@ expected.down_n = { value = 3266.71578511, rel_tol = 1e-7 }
 # nearly the pull of the two behind it: its tension rises from 28 kN to
 # 41.8 kN (005: one wire left of four, 74.2 kN) - the tension to check
 # against the wire's strength; with the broken subconductors hanging in
-# the spacers it is higher still (not modelled, said on the result). The
+# the spacers it is higher still (brokenwire-006 and 007, below). The
 # unbalance on the structure is 0.82 kN, against about 19 kN with the
 # whole phase of the twin bundle broken (brokenwire-001: 9.54 kN for a
 # single wire).
@@ -118,3 +118,52 @@ expected.swing_deg = { value = -11.5309031205, abs_tol = 1e-6 }
 expected.string_n = { value = 12669.7966961, rel_tol = 1e-7 }
 expected.along_n = { value = -2532.64723936, rel_tol = 1e-7 }
 expected.down_n = { value = 12814.0825791, rel_tol = 1e-7 }
+
+# The same breaks with the broken subconductors hanging in the spacers of the
+# wires left (2026-11-25; ohl_line::solve::Break::hanging): span 2 keeps the
+# share r of the stiffness but carries the whole bundle's weight per metre
+# (their own tension none). A load case solves both readings, each its own
+# case (ohl_loads::expand_cases).
+#
+# Reference: the same script (part 1c). Hand checks (006): the statics at the
+# clamp along the line, n H1 - (n - k) H2 = 2 x 25304.44 - 1 x 50259.16 =
+# 349.73 N = the string's horizontal pull, 9993.54 x sin(2.0055 deg); the
+# load down on the middle structure is about the whole bundle's weight of a
+# span (half of each) and the string: 2 x 15.97 N/m x 300.12 m + 800 N =
+# 10386.9 N (10387.42 N computed: the two spans' shapes differ slightly). Against
+# the broken ones gone (004): the wire left's tension 50.26 kN instead of
+# 41.83 kN (+20 %; 007 against 005: 93.22 kN instead of 74.20 kN, +26 %),
+# the load down 10.39 kN instead of 7.99 kN (+30 %), the unbalance along the
+# line 0.35 kN instead of 0.82 kN: each reading bounds its own forces.
+
+[[case]]
+id = "brokenwire-006"
+title = "Twin bundle, 1 of 2 subconductors broken in span 2 at 15 °C, hanging in the spacers"
+calculation = "line.broken_wire"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py, part 1c), hand check in the file"
+max_seconds = 2.0
+inputs = { temperature = "15 °C", span = 2, bundle = 2, subconductors = 1, hanging = true }
+expected.h_n = { value = 25304.4421621, rel_tol = 1e-7 }
+expected.h_broken_n = { value = 50259.1574573, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 299.895003654, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 27.0015379451, abs_tol = 1e-6 }
+expected.swing_deg = { value = -2.00549159874, abs_tol = 1e-6 }
+expected.string_n = { value = 9993.54257791, rel_tol = 1e-7 }
+expected.along_n = { value = -349.726867017, rel_tol = 1e-6 }
+expected.down_n = { value = 10387.4213076, rel_tol = 1e-7 }
+
+[[case]]
+id = "brokenwire-007"
+title = "Quad bundle, 3 of 4 subconductors broken in span 2 at -5 °C, hanging in the spacers"
+calculation = "line.broken_wire"
+reference = "Independent evaluation (benchmarks/wirefe/reference_broken_wire.py, part 1c)"
+max_seconds = 2.0
+inputs = { temperature = "-5 °C", span = 2, bundle = 4, subconductors = 3, hanging = true }
+expected.h_n = { value = 23781.285203, rel_tol = 1e-7 }
+expected.h_broken_n = { value = 93221.3219205, rel_tol = 1e-7 }
+expected.clamp_x_m = { value = 299.70967869, abs_tol = 1e-6 }
+expected.clamp_z_m = { value = 27.0137842748, abs_tol = 1e-6 }
+expected.swing_deg = { value = -5.55287183279, abs_tol = 1e-6 }
+expected.string_n = { value = 19674.8166343, rel_tol = 1e-7 }
+expected.along_n = { value = -1903.81889153, rel_tol = 1e-7 }
+expected.down_n = { value = 19982.4891988, rel_tol = 1e-7 }

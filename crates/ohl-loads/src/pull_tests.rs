@@ -401,8 +401,11 @@ fn the_pulls_per_set_add_up_to_the_points() {
 /// broken. T2 keeps both spans' pulls — the one wire left ahead pulling
 /// a little less than the two behind — and takes the difference along the
 /// line, less than with the whole phase broken; the case's notes say what is solved and what
-/// is not checked. More subconductors than the bundle has: the case
-/// fails. Every subconductor: the whole-phase case, the same loads.
+/// is not checked. The case is solved in both readings (2026-11-25,
+/// [`expand_cases`]): the broken one gone (the larger unbalance) and
+/// hanging in the spacers (more down on T2, a smaller unbalance), each its
+/// own case. More subconductors than the bundle has: the case fails.
+/// Every subconductor: the whole-phase case, the same loads, one case.
 #[test]
 fn some_subconductors_broken_in_a_load_case() {
     let mut line = three_spans();
@@ -419,6 +422,16 @@ fn some_subconductors_broken_in_a_load_case() {
     };
     let part = broken(Some(1)).unwrap();
     let whole = broken(None).unwrap();
+    assert_eq!(whole.len(), 1);
+    let name = &whole[0].case.name;
+    assert_eq!(
+        part.iter().map(|c| c.case.name.clone()).collect::<Vec<_>>(),
+        [
+            format!("{name} (broken subconductors gone)"),
+            format!("{name} (broken subconductors hanging)")
+        ]
+    );
+    assert_eq!(part[1].case.set_name(), name);
     let t2 = at(&part[0], "T2");
     assert!(
         t2.pull_back[1] < -1000.0 && t2.pull_ahead[1] > 1000.0,
@@ -448,9 +461,50 @@ fn some_subconductors_broken_in_a_load_case() {
     assert!(
         notes.iter().any(|n| {
             n.starts_with("1 of 2 subconductors of S broken: the static state after the break")
-                && n.contains("NOT ON THE SAFE SIDE for the subconductors left")
+                && n.contains("the broken ones gone from the span")
+                && n.contains("other reading's own case (broken subconductors hanging)")
+                && n.contains("which subconductor breaks does not change the loads")
         }),
         "{notes:?}"
+    );
+    // Hanging: more down on T2 (the broken one's weight on the wire left),
+    // a smaller unbalance along the line; still balanced by the pulls.
+    let hung = at(&part[1], "T2");
+    assert!(hung.local[2] > t2.local[2] + 100.0, "{hung:?} {t2:?}");
+    assert!(
+        hung.local[1] < 0.0 && hung.local[1].abs() < t2.local[1].abs(),
+        "{hung:?} {t2:?}"
+    );
+    assert!(
+        (hung.pull_back[1] + hung.pull_ahead[1] - hung.local[1]).abs() < 1e-3,
+        "{hung:?}"
+    );
+    assert!(
+        part[1]
+            .notes
+            .iter()
+            .any(|n| n.contains("the broken ones hanging in the spacers of the wires left")),
+        "{:?}",
+        part[1].notes
+    );
+    // Solved outside the checks (not expanded): gone, the other reading
+    // said not solved.
+    let mut alone = LoadCase::from_weather("calm");
+    alone.set_broken(vec![BrokenWire {
+        section: "S".into(),
+        span: BrokenSpan::One(2),
+        set: None,
+        subconductors: Some(1),
+    }]);
+    let note = alone
+        .broken_wires()
+        .next()
+        .unwrap()
+        .partial_note(&line, None)
+        .unwrap();
+    assert!(
+        note.contains("NOT ON THE SAFE SIDE: the other reading, the broken ones hanging"),
+        "{note}"
     );
     assert!(
         !whole[0]
@@ -460,6 +514,7 @@ fn some_subconductors_broken_in_a_load_case() {
     );
     // Every subconductor is the whole phase.
     let both = broken(Some(2)).unwrap();
+    assert_eq!(both.len(), 1);
     assert_eq!(at(&both[0], "T2").local, all.local);
     assert!(!both[0].notes.iter().any(|n| n.contains("subconductors of")));
     // More than the bundle has.

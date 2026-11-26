@@ -292,20 +292,66 @@ tension rule see; the end pulls are the whole bundle's. Stress-strain
 curves take the span's tension per wire left too (checked against a
 linear cable with straight-line curves).
 
-**Conservative** (for the structures, between the two readings of a
-partial break): the broken subconductors are taken as **gone from the
-span**. Hanging in the spacers of the wires left they would add their
-weight to the span and pull more in it, so the unbalance on the
-structures would be smaller. The whole phase broken stays the larger
-unbalance and the default.
+**Two readings, each solved as its own case** (2026-11-25; before, the
+first only, the second said NOT ON THE SAFE SIDE). After the break the
+broken subconductor's two pieces stay clamped at their ends and held by
+the spacers of the wires left; where they are depends on the spacers'
+grip and on whether a broken end reaches the ground. Neither extreme is
+safe for every force, so both are solved
+(`ohl_line::solve::Break::hanging`), and a load case is solved as two
+cases, `<case> (broken subconductors gone)` and `<case> (broken
+subconductors hanging)` (`ohl_loads::expand_cases`, wherever loads are
+computed: the structures' checks, Compute structure loads, OHL-Structure's
+library cases); every check takes each as its own case and keeps the
+worst, naming it:
 
-**NOT ON THE SAFE SIDE**, said on the span of every such result
-(`ohl_line::solve::partial_break_flag`) and in the load case's notes:
-the **tension of the subconductors left**. With the broken ones hanging
-in their spacers they carry that weight as well, and their tension is
-higher than the one reported — not modelled and not checked. Exact: the
-broken subconductors as loads on the wires left (their weight at the
-spacers), with the spacers' own statics.
+- **gone from the span** — the span carries the share left \\( r \\) of
+  the weight and loads: the least pull left in it, so the **larger
+  unbalance along the line** at the structures next to the break (still smaller than the
+  whole phase broken, the default);
+- **hanging in the spacers of the wires left** — the span keeps \\( r \\)
+  of the stiffness but carries the **whole bundle's** weight, spread
+  loads, ice and wind, the broken pieces' own tension taken as none: the **larger
+  tension of the wires left** (so the larger pull at the section's ends)
+  and the **larger vertical loads**.
+  **Conservative:** a broken end resting on the ground (which would take
+  some of its weight off the wires left) is left out, and a broken piece
+  taut enough to share the pull would lower the tension of the wires
+  left.
+
+On the benchmark (`brokenwire-006`, the twin bundle of `004` with the
+broken subconductor hanging): the wire left at **50.26 kN** instead of
+41.83 kN (+20 %; one wire left of four, `007` against `005`: 93.22 kN
+instead of 74.20 kN, +26 %), the load down on the middle structure
+10.39 kN instead of 7.99 kN (+30 %: by statics about the whole bundle's
+weight of a span and the string, \\( 2 \times 15.97 \times 300.12 + 800 =
+10\,386.9 \\) N), the unbalance along the line 0.35 kN instead of
+0.82 kN. The statics at the clamp hold in both readings
+(\\( 2 \times 25\,304.44 - 50\,259.16 = 349.73 \\) N, the string's
+horizontal pull). The tension per wire left is what the strength warning
+sees ("above the wire's strength"). On the example line with its first section made a twin bundle and one subconductor of span 2 broken (2026-11-25): at the suspension structure next to the break 0.63 kN along the line gone against 0.29 kN hanging, but 12.3 kN down hanging against 9.5 kN gone, and at the section's two dead-ends 49.1 and 49.5 kN along the line hanging against 43.8 and 44.9 kN gone (the wires left pull harder) — neither reading bounds every force; the run took 0.94 s against 0.90 s with the whole phase broken. Expected cost: such a case solved
+twice (one more section solve per reading).
+
+**Which subconductor breaks** does not change the loads on the structure:
+the solve follows one wire per phase (the subconductors are alike, and the
+few centimetres between their heights are left out), and a string pinned
+at its attachment point takes the bundle's pull through that point
+whichever side it comes from — the yoke turns until it does. So a case
+names how many subconductors break, not which; "every one in turn" would
+give the same loads.
+
+**NOT ON THE SAFE SIDE**, said in the load case's notes: a set hung from
+**two strings or more at separate points** of the structure (a double
+tension string) and modelled as **one attachment point** — the couple of
+the bundle's one-sided pull (the broken subconductors' tension times their
+distance from the bundle's centre) is not put on the structure, so the
+cross-arm's torsion and one string's attachment load can be larger than
+computed; add that couple by hand (the strings as points of their own is
+a planned step). And a load case solved outside the checks (not expanded,
+e.g. a direct call of the solve) gives the gone reading only and says that
+the tension of the wires left and the vertical loads can be larger.
+Exact: the broken pieces with the spacers' own statics, the yoke and each
+string.
 
 **Simplification:** the string's stiffness is taken as given for one
 subconductor's share of its force (the line's model of a bundle: the
@@ -315,13 +361,16 @@ benchmark's reference does the same, so that it compares the break
 alone. Refused as for a whole break: the ruling-span method, a spacer or
 a jumper on a span point of the span.
 
-*Validation:* `brokenwire-004`, `005` (an independent evaluation: both
-spans as closed-form elastic catenaries, Newton on the clamp; the
+*Validation:* `brokenwire-004`, `005` (gone), `006`, `007` (hanging; an
+independent evaluation: both spans as closed-form elastic catenaries,
+Newton on the clamp; the
 statics above to \\( 10^{-7} \\) N in the reference, \\( 10^{-3} \\) N —
 the solver's tolerance — in the unit test); unit tests in `ohl-line`
 (\\( k = n \\) equal to the whole break, 2 of 4 equal to 1 of 2 per wire,
-the curves' tension per wire) and `ohl-loads` (the file, the notes, the
-loads).
+the curves' tension per wire; hanging: the structures carrying the whole
+weight as intact, more tension and more down, less along) and
+`ohl-loads` (the file, the notes, the loads, the two readings as two
+cases).
 
 **Simplification:** the static state after the break: the dynamic
 impact of the wire letting go (a code's impact factor goes into the load
@@ -355,8 +404,8 @@ as cases of their own, `<case> (span k broken)`. Test:
 `every_span_broken_checks_each_break_on_its_own` (ohl-loads).
 
 Checked against an independent evaluation (validation
-`brokenwire-001`…`003` (the whole phase; `004`, `005`: some
-subconductors), `benchmarks/wirefe/broken_wire.toml`): the
+`brokenwire-001`…`003` (the whole phase; `004`…`007`: some
+subconductors, gone and hanging), `benchmarks/wirefe/broken_wire.toml`): the
 section of `spancases` (two level 300 m spans, a 3 m suspension string
 of 800 N, strung at 28 kN at 15 °C), span 2 broken at 15 °C — the string
 swings 73.27° back into span 1 (\\( \tan\varphi = 9538.5 / (2466.7 + 400)

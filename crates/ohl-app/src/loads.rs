@@ -261,8 +261,9 @@ pub fn run(i: &Inputs, stages: &Stages, threads: usize) -> Option<Run> {
         .filter(|c| i.plan.as_ref().is_none_or(|p| p.solve.contains(&c.name)))
         .collect();
     let cases = ohl_loads::with_local(cases, i.local);
-    // A case of several wind directions: one case per direction.
-    let expanded = ohl_loads::expand_directions(&cases);
+    // A case of several wind directions: one case per direction; some
+    // subconductors of a bundle broken: one case per reading.
+    let expanded = ohl_loads::expand_cases(&cases, line);
     let threads = match threads {
         0 => std::thread::available_parallelism().map_or(1, |n| n.get()),
         n => n,

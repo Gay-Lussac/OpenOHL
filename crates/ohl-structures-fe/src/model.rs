@@ -23,8 +23,8 @@
 //!                           # buckling load (default) | "none": slack once shortened (version 6)
 //! # redundant_force = 2.5   # optional: redundant members also checked for this percentage of
 //!                           # the compression in the member they brace (version 7)
-//! # climbing_load = "1100 N"  # optional: flat members checked for this load at mid-length,
-//!                           # alone (version 7)
+//! # climbing_load = "1100 N"  # optional: every member checked for this vertical load at
+//!                           # mid-length, alone (version 7)
 //!
 
 //! [[material]]
@@ -789,7 +789,8 @@ pub struct Analysis {
     /// checked. Model file version 7, structure file version 16.
     pub redundant_force: Option<f64>,
     /// The optional climbing-load check (`[analysis] climbing_load`, N;
-    /// owner 2026-11-15): each flat member checked in bending for this
+    /// owner 2026-11-15; every member whatever its slope since 2026-11-25):
+    /// each design-checked member but cables checked for this vertical
     /// load at mid-length, alone, against first yield
     /// ([`crate::check::climbing_check`]); none (the default): not
     /// checked. Model file version 7, structure file version 16.

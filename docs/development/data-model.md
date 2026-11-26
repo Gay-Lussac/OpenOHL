@@ -257,7 +257,8 @@ set to none: OHL-Structure's `ohl_structure_edit::set_tension_compression`)
 and `.ohlfe` **6** (`TENSION_COMPRESSION_MODEL_VERSION`); nothing else
 changes. The optional checks `[analysis] redundant_force` (percent of the
 compression in the member a redundant member braces) and `climbing_load`
-(a force on flat members at mid-length, alone; both 2026-11-15, off when
+(a vertical force at mid-length of every member, alone — flat members
+only until 2026-11-25; both 2026-11-15, off when
 not given) made `.ohls` **16** (`structures::REDUNDANT_FORCE_VERSION`,
 `structures::CLIMBING_LOAD_VERSION`; written at 16 only when one is given:
 OHL-Structure's `ohl_structure_edit::set_redundant_force`,
@@ -1422,8 +1423,10 @@ piece, joint and compression, `check::Supported`, else why not; lines
 through a joint within `check::STRAIGHT_THROUGH_DEG`), its mark in what
 governs `check::REDUNDANT_FORCE`; `[analysis] climbing_load` (a force) →
 `Analysis::climbing_load` (N), `check::climbing_check` →
-`Vec<check::Climbing>` (member, usage, words; members within
-`check::CLIMBING_INCLINATION_DEG` of the horizontal), `check::climbing_note`;
+`Vec<check::Climbing>` (member, usage, words; every design-checked
+member but cables, whatever its slope, since 2026-11-25 — before, those
+within 30° of the horizontal; no format change), `check::climbing_note`;
+the validation calculation `structures.fe` outputs `climbing_<member>`;
 OHL-Structure's link carries it as `CaseResult::climbing`
 (`ClimbingResult`: member id, usage, words); `REDUNDANT_FORCE_MODEL_VERSION`
 and `CLIMBING_LOAD_MODEL_VERSION` 7, written only when given; in a structure
@@ -2933,11 +2936,22 @@ written at version 3 only when a case has one (`written_version`);
 written at 5 only then): `BrokenWire.subconductors` u32? — of a bundle,
 how many subconductors break in the span (1 to the section's `bundle`;
 none or all: the whole phase; `validate` refuses 0, `spans(line)` more
-than the bundle; `breaks(spans)` → `ohl_line::solve::Break { span,
-subconductors }` for `solve_section_breaks` / `solve_line_breaks`;
-`partial_note(line)` the case's note; no stored result changes: the
-span's tensions in `SpanShape` are per wire left, its flag
-`partial_break_flag`);
+than the bundle; `breaks(spans, hanging)` → `ohl_line::solve::Break {
+span, subconductors, hanging }` for `solve_section_breaks` /
+`solve_line_breaks` — `hanging` (2026-11-25, not in files) the broken
+subconductors hanging in the spacers of the wires left (the span's
+weight and loads the whole bundle's, its stiffness the share left)
+instead of gone; `is_partial(line)` fewer than the bundle;
+`partial_note(line, hanging)` the case's note; `LoadCase::hanging`
+bool? (not in files, as `of_set`): the reading of a case made by
+`ohl_loads::expand_cases(cases, line)` — `expand_directions`, then a case
+with a partial break as two, `<case> (broken subconductors gone)` /
+`(… hanging)`, `of_set` its set name; every loads path calls it
+(`structure_loads_at`, `prepare_structure_loads_at`, OHL-Design's
+structure loads run, OHL-Structure's `structure_case_loads`); no stored
+result changes: the span's tensions in `SpanShape` are per wire left, its
+flag `partial_break_flag(span, broken, bundle, hanging)`; the validation
+calculation `line.broken_wire` takes `hanging = true`);
 **version 6** (2026-11-15, owner: "a factor as for the wind to change the
 value compared to the conductor weather cases"; `LoadCase::uses_version_6`,
 written at 6 only then): `StructureOptions.ice` may be

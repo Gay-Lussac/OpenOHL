@@ -1200,7 +1200,9 @@ impl Calculation for StructureFe {
          r_<node>_<dof> (N, N m), usage_<member>, slack_<member> (cables and tension-only \
          members: 1 slack, 0 taut), bowed_<member> (tension-only members: 1 at their own \
          buckling load), iterations, passes (solves of the tension-only members' active-set \
-         iterations; 0: none), slip_passes (solves of the bolt slip; 0: none)"
+         iterations; 0: none), slip_passes (solves of the bolt slip; 0: none), and with the \
+         model's [analysis] climbing_load climbing_<member> (the climbing check's usage, \
+         alone: first yield)"
     }
 
     fn run(&self, inputs: &Inputs) -> Result<Outputs, String> {
@@ -1278,6 +1280,13 @@ impl Calculation for StructureFe {
         for u in &usage {
             if let Some(x) = u.usage {
                 out.insert(format!("usage_{}", model.members[u.member].id), x);
+            }
+        }
+        // The optional climbing check (alone, not a load case; every
+        // member since 2026-11-25).
+        for c in ohl_structures_fe::check::climbing_check(&model) {
+            if let Some(x) = c.usage {
+                out.insert(format!("climbing_{}", model.members[c.member].id), x);
             }
         }
         out.insert("iterations".into(), s.iterations as f64);
@@ -2362,7 +2371,9 @@ fn two_span_cable() -> Result<ohl_cables::Cable, String> {
 /// subconductors of the bundle broken
 /// ([`ohl_line::solve::solve_section_breaks`], roadmap O22 item 7); then
 /// also `h_broken_n`, the tension per wire left in the broken span (0
-/// with the whole phase broken).
+/// with the whole phase broken); with `hanging = true` the broken
+/// subconductors hanging in the spacers of the wires left
+/// ([`ohl_line::solve::Break::hanging`], 2026-11-25) instead of gone.
 struct BrokenWireSection;
 
 impl Calculation for BrokenWireSection {
@@ -2373,7 +2384,7 @@ impl Calculation for BrokenWireSection {
     fn description(&self) -> &'static str {
         "Two level spans and a suspension string, the wire of one span broken (inputs: \
          temperature, span 1 or 2; optional bundle and subconductors: some subconductors of a \
-         bundle broken); outputs h_n (the remaining span, per wire), h_broken_n (the broken \
+         bundle broken, and hanging = true: hanging in the spacers of the wires left); outputs h_n (the remaining span, per wire), h_broken_n (the broken \
          span, per wire left), clamp_x_m, clamp_z_m, swing_deg, string_n, along_n, down_n (the \
          load on the middle structure)"
     }
@@ -2398,6 +2409,10 @@ impl Calculation for BrokenWireSection {
             line.sections[0].bundle = bundle;
         }
         let subconductors = optional("subconductors")?;
+        let hanging = inputs
+            .get("hanging")
+            .and_then(toml::Value::as_bool)
+            .unwrap_or(false);
         let case = WeatherCase::still(
             "case",
             quantity_input::<Temperature>(inputs, "temperature")?,
@@ -2410,6 +2425,7 @@ impl Calculation for BrokenWireSection {
             &[Break {
                 span: span - 1,
                 subconductors,
+                hanging,
             }],
             &default_fe_budget(),
             &Coupling::default(),

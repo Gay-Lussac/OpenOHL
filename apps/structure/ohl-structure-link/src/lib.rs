@@ -577,9 +577,10 @@ pub fn structure_case_loads(
     let library_names: Vec<String> = cases.library.iter().map(|c| c.name.clone()).collect();
     let (mut lib, mut library_failed) = (Vec::new(), Vec::new());
     if !cases.library.is_empty() {
-        // A set of wind directions: one case per direction (OHL-Structure
-        // gets one case each).
-        let expanded = ohl_loads::expand_directions(&cases.library);
+        // A set of wind directions: one case per direction; some
+        // subconductors of a bundle broken: one case per reading
+        // (OHL-Structure gets one case each).
+        let expanded = ohl_loads::expand_cases(&cases.library, line);
         // At calculation level 3 or 4 the structures set up once for
         // every case (their stiffness, their own wind and ice per case;
         // level 4 their full models).
@@ -1485,7 +1486,7 @@ pub struct CaseResult {
     /// plates (or a model of its own file).
     pub plates: Vec<PlateUsage>,
     /// The optional climbing check (`[analysis] climbing_load`, owner
-    /// 2026-11-15): flat members under the climbing load alone — not this
+    /// 2026-11-15): every member under the climbing load alone — not this
     /// case's, the same in every case, apart from the members' usage;
     /// empty when the check is off.
     pub climbing: Vec<ClimbingResult>,
@@ -1496,7 +1497,7 @@ pub struct CaseResult {
 pub struct ClimbingResult {
     /// The member's id.
     pub member: String,
-    /// Share of its first-yield moment used (none: not checked).
+    /// Share of its first-yield stress used (none: not checked).
     pub usage: Option<f64>,
     /// In words.
     pub words: String,

@@ -54,7 +54,7 @@
 //! - **Optional, off by default** (owner 2026-11-15): redundant members
 //!   also for a share of the compression in the member they brace
 //!   (`[analysis] redundant_force`, [`redundant_supports`],
-//!   [`REDUNDANT_FORCE`]); flat members for a climbing load alone
+//!   [`REDUNDANT_FORCE`]); every member for a climbing load alone
 //!   (`[analysis] climbing_load`, [`climbing_check`]: a list of its own,
 //!   not in the usage).
 
@@ -711,45 +711,50 @@ fn with_redundant_force(
     }
 }
 
-/// Members within this angle of the horizontal are checked for the
-/// climbing load ([`climbing_check`]), degrees: those a climber stands on
-/// (horizontals, flat bracing and arms); steeper ones are hand-holds,
-/// not checked — said in the note.
-pub const CLIMBING_INCLINATION_DEG: f64 = 30.0;
-
 /// One member's climbing check ([`climbing_check`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Climbing {
     /// Member (index).
     pub member: usize,
-    /// Share of its first-yield moment used (none: no elastic modulus or
-    /// no yield strength).
+    /// Share of its first-yield stress used (none: no elastic modulus, no
+    /// yield strength, no area or no second moment for the moment's
+    /// amplification).
     pub usage: Option<f64>,
     /// In words.
     pub words: String,
 }
 
 /// The optional climbing-load check (`[analysis] climbing_load`, owner
-/// 2026-11-15; ASCE 10-97 commentary C2.2: members "that may be used for
-/// support by maintenance personnel when climbing" should carry a
-/// vertical load of 1100 N "applied independently of all other loads
-/// without permanent distortion"): every design-checked member other than
-/// a cable within [`CLIMBING_INCLINATION_DEG`] of the horizontal, the
-/// load at mid-length, **alone** (no load case), the member simply
-/// supported (its ends' restraint — the bolts' friction the commentary
-/// allows — left out: on the safe side), the whole load across it (not
-/// its component normal to the member: on the safe side): M = P L / 4 +
-/// q L² / 8 with q its own weight × its dead-load factor, against first
-/// yield W_el,min · f_y, W_el,min the smallest elastic modulus the
-/// section gives (an angle's about its minor principal axis v: it bends
-/// about its principal axes; a table section's the smaller of wy, wz).
-/// No load or strength factor: the commentary's criterion is no
-/// permanent distortion, i.e. no yield. Empty when the check is off.
+/// 2026-11-15; every member whatever its slope since 2026-11-25). ASCE
+/// 10-97 commentary C2.2: members "that may be used for support by
+/// maintenance personnel when climbing" should carry a vertical load of
+/// 1100 N "applied independently of all other loads without permanent
+/// distortion". Every design-checked member other than a cable (a guy is
+/// not climbed on and carries no bending), whatever its slope, is checked
+/// **alone** (no load case, no load or strength factor) for the vertical
+/// load P at mid-length, simply supported (its ends' restraint — the
+/// bolts' friction the commentary allows — left out: on the safe side):
+///
+/// - its component **across** the member, P cos θ (θ the member's slope
+///   from the horizontal), bends it: M = cos θ (P L / 4 + q L² / 8), q its
+///   own weight × its dead-load factor;
+/// - its component **along** the member, with the own weight's,
+///   N = sin θ (P + q L), is taken **whole, in compression, over the whole
+///   length** (conservative: in a member held at both ends the two halves
+///   share it, one of them in tension), adding N / A and amplifying the
+///   moment by 1 / (1 − N / N_cr), N_cr = π² E I_min / L² (pinned ends:
+///   conservative); N ≥ N_cr is over (it would buckle under it alone);
+///
+/// against first yield: N / A + M / (W_el,min (1 − N / N_cr)) ≤ f_y,
+/// W_el,min the smallest elastic modulus the section gives (an angle's
+/// about its minor principal axis v: it bends about its principal axes; a
+/// table section's the smaller of wy, wz). A flat member is checked as
+/// before (θ = 0: the whole load across); a vertical one in compression
+/// only. Empty when the check is off.
 pub fn climbing_check(model: &Model) -> Vec<Climbing> {
     let Some(p) = model.analysis.climbing_load else {
         return Vec::new();
     };
-    let flat = CLIMBING_INCLINATION_DEG.to_radians().sin();
     let mut out = Vec::new();
     for (k, m) in model.members.iter().enumerate() {
         if !m.check || m.kind == MemberKind::Cable {
@@ -757,9 +762,11 @@ pub fn climbing_check(model: &Model) -> Vec<Climbing> {
         }
         let (a, b) = (model.nodes[m.i].point, model.nodes[m.j].point);
         let l = model.length(m);
-        if l <= 0.0 || (b[2] - a[2]).abs() / l > flat + 1e-12 {
+        if l <= 0.0 {
             continue;
         }
+        let sin = ((b[2] - a[2]).abs() / l).min(1.0);
+        let cos = (1.0 - sin * sin).max(0.0).sqrt();
         let s = &model.sections[m.section];
         let mut moduli: Vec<f64> = [s.wy, s.wz].into_iter().flatten().collect();
         if let Some(p) = &s.profile {
@@ -771,44 +778,112 @@ pub fn climbing_check(model: &Model) -> Vec<Climbing> {
             .filter(|w| *w > 0.0)
             .min_by(|x, y| x.total_cmp(y));
         let q = s.weight() * model.dead_load_factor(m);
-        let moment = p * l / 4.0 + q * l * l / 8.0;
-        let (usage, words) = match (w, s.yield_strength) {
-            (Some(w), Some(fy)) => (
-                Some(moment / (w * fy)),
-                format!(
-                    "{:.2} kN at mid-length of {:.2} m: M {:.3} kN m (own weight {:.3}) of \
-                     W_el,min {:.2} cm³ × f_y {:.0} MPa = {:.3} kN m",
-                    p / 1000.0,
-                    l,
-                    moment / 1000.0,
-                    q * l * l / 8.0 / 1000.0,
-                    w * 1e6,
-                    fy / 1e6,
-                    w * fy / 1000.0
-                ),
-            ),
-            (None, _) => (
-                None,
-                "not checked: its section gives no elastic modulus".to_owned(),
-            ),
-            (_, None) => (
-                None,
-                "not checked: its section gives no yield strength".to_owned(),
-            ),
-        };
         out.push(Climbing {
             member: k,
-            usage,
-            words,
+            ..climbing_member(p, l, sin, cos, q, w, s)
         });
     }
     out
 }
 
-/// The climbing check in words, for the notes (none: off): how many flat
+/// One member's climbing check ([`climbing_check`]): load `p` at
+/// mid-length of length `l`, slope sine `sin` and cosine `cos`, own weight
+/// `q` per metre, smallest elastic modulus `w`, section `s`; the member
+/// index left 0.
+fn climbing_member(
+    p: f64,
+    l: f64,
+    sin: f64,
+    cos: f64,
+    q: f64,
+    w: Option<f64>,
+    s: &crate::model::Section,
+) -> Climbing {
+    let bends = cos > 1e-9;
+    let moment = cos * (p * l / 4.0 + q * l * l / 8.0);
+    let own = cos * q * l * l / 8.0;
+    let axial = sin * (p + q * l);
+    let n_cr = std::f64::consts::PI.powi(2) * s.e * s.i_min / (l * l);
+    let head = format!(
+        "{:.2} kN at mid-length of {:.2} m, {:.0}° from the horizontal",
+        p / 1000.0,
+        l,
+        sin.asin().to_degrees()
+    );
+    let not = |why: &str| (None, format!("not checked: its section gives no {why}"));
+    let (usage, words) = match (w, s.yield_strength) {
+        (_, None) => not("yield strength"),
+        (None, Some(_)) if bends => not("elastic modulus"),
+        _ if axial > 0.0 && s.area <= 0.0 => not("area"),
+        _ if axial > 0.0 && bends && n_cr <= 0.0 => {
+            not("second moment for buckling (the moment's amplification)")
+        }
+        _ if axial > 0.0 && n_cr > 0.0 && axial >= n_cr => (
+            Some(axial / n_cr),
+            format!(
+                "{head}: along it {:.3} kN ≥ N_cr {:.3} kN (π² E I_min / L², pinned): it would \
+                 buckle under the climbing load alone",
+                axial / 1000.0,
+                n_cr / 1000.0
+            ),
+        ),
+        (w, Some(fy)) => {
+            let amp = if axial > 0.0 && n_cr > 0.0 {
+                1.0 / (1.0 - axial / n_cr)
+            } else {
+                1.0
+            };
+            let bending = match w {
+                Some(w) if bends => moment * amp / (w * fy),
+                _ => 0.0,
+            };
+            let squash = if axial > 0.0 {
+                axial / (s.area * fy)
+            } else {
+                0.0
+            };
+            let mut words = format!(
+                "{head}: across M {:.3} kN m (own weight {:.3})",
+                moment / 1000.0,
+                own / 1000.0
+            );
+            if axial > 0.0 {
+                words.push_str(&format!(
+                    ", along N {:.3} kN (whole, compression), M × 1/(1 − N/N_cr) {:.3}",
+                    axial / 1000.0,
+                    amp
+                ));
+            }
+            if let Some(w) = w.filter(|_| bends) {
+                words.push_str(&format!(
+                    "; first yield W_el,min {:.2} cm³ × f_y {:.0} MPa = {:.3} kN m",
+                    w * 1e6,
+                    fy / 1e6,
+                    w * fy / 1000.0
+                ));
+            }
+            if axial > 0.0 {
+                words.push_str(&format!(
+                    "{} N/A {:.1} MPa of f_y {:.0} MPa",
+                    if bends { ", +" } else { "; first yield" },
+                    axial / s.area / 1e6,
+                    fy / 1e6
+                ));
+            }
+            (Some(bending + squash), words)
+        }
+    };
+    Climbing {
+        member: 0,
+        usage,
+        words,
+    }
+}
+
+/// The climbing check in words, for the notes (none: off): how many
 /// members were checked, how many exceed first yield (the worst named),
-/// those not checked, and that steeper members are not — said apart from
-/// the load cases' usage (owner 2026-11-15: a separate result).
+/// and those not checked — said apart from the load cases' usage (owner
+/// 2026-11-15: a separate result).
 pub fn climbing_note(model: &Model, climbing: &[Climbing]) -> Option<String> {
     let p = model.analysis.climbing_load?;
     let over: Vec<&Climbing> = climbing
@@ -824,11 +899,12 @@ pub fn climbing_note(model: &Model, climbing: &[Climbing]) -> Option<String> {
         .filter(|c| c.usage.is_some())
         .max_by(|a, b| usage_order(a.usage.unwrap_or(0.0), b.usage.unwrap_or(0.0)));
     let mut text = format!(
-        "climbing load (alone, not a load case; ASCE 10-97 commentary C2.2): {:.2} kN at \
-         mid-length of each member within {CLIMBING_INCLINATION_DEG:.0}° of the horizontal, \
-         simply supported, against first yield: {} member(s) checked",
+        "climbing load (alone, not a load case; ASCE 10-97 commentary C2.2): {:.2} kN \
+         vertical at mid-length of every design-checked member but cables, whatever its slope \
+         (across it bending it, simply supported; along it whole, in compression), against \
+         first yield: {} member(s) checked",
         p / 1000.0,
-        climbing.len()
+        climbing.len() - unchecked
     );
     if let Some(w) = worst {
         text.push_str(&format!(
@@ -858,15 +934,11 @@ pub fn climbing_note(model: &Model, climbing: &[Climbing]) -> Option<String> {
     }
     if unchecked > 0 {
         text.push_str(&format!(
-            "; NOT ON THE SAFE SIDE: {unchecked} not checked (no elastic modulus or yield \
-             strength), so an overload there would not be found; give their material"
+            "; NOT ON THE SAFE SIDE: {unchecked} not checked (their section gives no elastic \
+             modulus, yield strength, area or second moment), so a climber's weight could \
+             overload one unseen; give their section's properties and material"
         ));
     }
-    text.push_str(&format!(
-        "; members steeper than {CLIMBING_INCLINATION_DEG:.0}° not checked (NOT ON THE SAFE SIDE \
-         for any a climber stands on: a climber's weight could overload it; the climbing load \
-         is a planned step, check such members by hand until then)"
-    ));
     Some(text)
 }
 
