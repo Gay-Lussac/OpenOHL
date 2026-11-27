@@ -35,9 +35,11 @@
 //! what the estimated eccentricities take as their upper bounds (O45, until
 //! J5), a bend never tighter than one plate thickness, no single bolt (J8).
 //!
-//! **Expected cost**: reading a practice is microseconds; applying it
-//! changes what the layout tries, not how long one try takes (leaving a
-//! fabrication kind out makes a run a little faster, never slower).
+//! **Cost**: reading a practice is microseconds; applying it changes what
+//! the layout tries, not how long one try takes — but every end a value
+//! leaves unplaced by the first try goes through the later, costlier
+//! passes, so a stricter value makes a run longer (measured in L29, each
+//! value's time in [`DetailingPractice::rows`]).
 
 use toml::{Table, Value};
 
@@ -1087,9 +1089,11 @@ impl DetailingPractice {
                     .collect::<Vec<_>>()
                     .join(" → "),
                 "the forms an end may go onto; a form not allowed is never made (an end \
-                 needing it is left for a hand detail, a run a little faster); the order \
-                 decides only ties — today between a plate bent by a few degrees and one \
-                 welded in the member's own plane",
+                 needing it is left for a hand detail); the order decides only ties. Measured \
+                 (three real towers, 1 996 joints, a run again): bend not allowed 16 joints \
+                 whole fewer, 65 ends fewer, the run about 4.7 times as long; welded not \
+                 allowed 8 joints, 134 ends fewer, about 5 times as long (the ends left go \
+                 through the later, costlier passes); welded before bend: no change",
             ),
             (
                 &["faces.pattern"],
@@ -1098,22 +1102,25 @@ impl DetailingPractice {
                     FacePattern::DiagonalInner => "diagonal onto the inner face first".to_owned(),
                     FacePattern::LaterClassFirst => "the later class first".to_owned(),
                 },
-                "which of a face's ends is tried on the flange's other face first (L10); no \
-                 change in time",
+                "which of a face's ends is tried on the flange's other face first (L10). Measured \
+                 (three real towers, 1 996 joints, a run again): the later class first, 1 joint \
+                 whole and 2 ends more, 6 plates fewer (none worse); no measurable change in time",
             ),
             (
                 &["faces.both_sides_of_flange"],
                 "Members on either side of a flange",
                 yes(self.both_sides_of_flange),
-                "no: no end is turned onto a flange's other face (L10) — fewer ends laid out \
-                 where two meet on one face; a run a little faster",
+                "no: no end is turned onto a flange's other face (L10). Measured (three real \
+                 towers, 1 996 joints, a run again): 9 joints whole fewer, 25 ends fewer; no \
+                 measurable change in time",
             ),
             (
                 &["faces.both_faces_of_plate"],
                 "Both faces of one plate",
                 yes(self.both_faces_of_plate),
                 "no: an end on the inner side of a flange's plane stays on its own welded \
-                 plate (L11); no change in time",
+                 plate (L11). Measured (three real towers, 1 996 joints, a run again): as many \
+                 ends, 78 plates more; no measurable change in time",
             ),
             (
                 &["limits.gap", "limits.pull_back", "limits.shift"],
@@ -1124,52 +1131,67 @@ impl DetailingPractice {
                     crate::mm_text(self.pull_back),
                     crate::mm_text(self.shift)
                 ),
-                "the window's starting values; a smaller shift leaves more ends for a hand \
-                 detail and lowers the estimated eccentricities' upper bound; no change in time",
+                "Lay out joints' starting values (each run may change them). Measured (three \
+                 real towers, 1 996 joints, a run again): gap 20 mm instead of 10, 17 joints \
+                 whole and 51 ends fewer, 83 plates more, the run about 4.4 times as long; \
+                 pull-back 150 mm instead of 300, 191 joints whole and 758 ends fewer, about \
+                 6.6 times as long; shift 15 mm instead of 30, 20 ends more (none worse), no \
+                 measurable change in time — a smaller shift also lowers the estimated \
+                 eccentricities' upper bound",
             ),
             (
                 &["limits.flatness_deg"],
                 "Flatness",
                 format!("{}°", self.flatness_deg),
-                "the most an end's leg may lie off its flange and still bolt flat; stricter: \
-                 more ends on bent or welded plates (the joint details keep 2°); no change in \
-                 time",
+                "the most an end's leg may lie off its flange and still bolt flat (the joint \
+                 details keep 2°). Measured (three real towers, 1 996 joints, a run again): 1° \
+                 instead of 2°, 82 joints whole and 161 ends fewer, 211 plates more (bent or \
+                 welded), the run about 6.3 times as long",
             ),
             (
                 &["limits.small_bend_deg"],
                 "Small bend, at most",
                 format!("{}°", self.small_bend_deg),
-                "the most a plate is bent by a few degrees (L3) before a welded plate; smaller: \
-                 more welded plates; no change in time",
+                "the most a plate is bent by a few degrees (L3) before a welded plate. Measured \
+                 (three real towers, 1 996 joints, a run again): 10° instead of 20°, no change \
+                 in results or time",
             ),
             (
                 &["limits.own_plane_offset"],
                 "Welded plate's axis offset, at most",
                 crate::mm_text(self.own_plane_offset),
                 "the most a plate in a member's own plane may put its axis out beyond a plate's \
-                 thickness (L20, carried by the estimated eccentricities); smaller: more hand \
-                 details, smaller eccentricities; no change in time",
+                 thickness (L20, carried by the estimated eccentricities); smaller: smaller \
+                 eccentricities. Measured (three real towers, 1 996 joints, a run again): 20 mm \
+                 instead of 40, 8 joints whole and 17 ends fewer, the run about 4.7 times as \
+                 long",
             ),
             (
                 &["plates.bend_radius"],
                 "Bend's inside radius",
                 format!("{} × the plate's thickness", self.bend_radius),
-                "a bent plate's inside radius; larger: the bend reaches farther (a few ends \
-                 less room); the bend checks take it; no change in time",
+                "a bent plate's inside radius (the bend checks take it). Measured (three real \
+                 towers, 1 996 joints, a run again): 3 instead of 2 × the thickness, 14 joints \
+                 whole and 14 ends more, 13 plates fewer (25 joints better, 12 worse); no \
+                 measurable change in time",
             ),
             (
                 &["plates.between_least"],
                 "Plate between angles, least gap",
                 format!("{} × the thickest leg", self.between_least),
                 "the least gap of a built-up member a plate between its angles is laid out in \
-                 (L15); larger: more such ends by hand; no change in time",
+                 (L15). Measured (three real towers, 1 996 joints, a run again): 1.0 instead of \
+                 0.5 × the leg, 26 joints whole and 54 ends fewer, the run about 2.6 times as \
+                 long",
             ),
             (
                 &["plates.short"],
                 "Plates may stop short of the work point",
                 yes(self.short_plates),
                 "no: every plate reaches round the work point, or the ends on it are left for \
-                 a hand detail where it would run into something; no change in time",
+                 a hand detail where it would run into something. Measured (three real towers, \
+                 1 996 joints, a run again): 50 joints whole and 224 ends fewer, the run about \
+                 5 times as long",
             ),
             (
                 &["plates.least_thickness", "plates.thicknesses"],
@@ -1179,7 +1201,11 @@ impl DetailingPractice {
                  the least and to the next thickness listed (never thinner); thicker plates put \
                  their members' axes farther out (NOT ON THE SAFE SIDE, said) and may leave more \
                  ends where they run into something; a leg thicker than every listed plate: \
-                 its ends by hand; no change in time",
+                 its ends by hand. Measured (three real towers, 1 996 joints, a run again): \
+                 least 6 mm, 1 408 plates thicker, 37 joints whole and 98 ends fewer, plate \
+                 steel +6 %; the list 6 to 25 mm alone, 1 704 thicker, 8 joints whole more, \
+                 steel +10 %; least 8 mm with the list, 2 032 thicker, 49 joints whole and 106 \
+                 ends fewer, steel +25 %; each run about 4.3 to 5 times as long",
             ),
             (
                 &["bolts.count", "bolts.lines"],
@@ -1191,7 +1217,8 @@ impl DetailingPractice {
                     if self.bolt_lines == 1 { "" } else { "s" }
                 ),
                 "the provisional bolts of an end without bolts or a class preset; more bolts: \
-                 longer ends and plates, more pulled back; no change in time",
+                 longer ends and plates. Measured (three real towers, 1 996 joints, a run \
+                 again): 3 instead of 2, 8 ends and 4 plates fewer; no measurable change in time",
             ),
             (
                 &["classes"],
@@ -1209,7 +1236,8 @@ impl DetailingPractice {
                         .join(", ")
                 },
                 "the picked bolt's pattern for ends of that class (as the connection presets \
-                 are given per class); no change in time",
+                 are given per class). Measured (three real towers, 1 996 joints, a run again): \
+                 bracing 3 bolts, 8 ends and 4 plates fewer; no measurable change in time",
             ),
         ]
     }

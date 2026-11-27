@@ -47,8 +47,8 @@ out of its range is said in red, with why and what to give instead, and
    laid out stay as they are until Lay out joints runs again.
 
 **The window** (each field's (?) says its effect on the results and on the
-time, measured on eight private real lattice towers, 6 852 joints — the
-numbers below):
+time, measured on three private real lattice towers, 1 996 joints — the
+numbers under *Measured* below):
 
 | Field | What it does | Default | Range |
 |---|---|---|---|
@@ -112,7 +112,29 @@ unchanged.
 
 ## Measured
 
-Each value's effect is measured on eight private real towers ([theory](../theory/joint-layout.md#the-practice-measured-its-plate-thicknesses-and-its-editor-l29)).
+Each value changed alone, on three private real lattice towers (1 996
+joints), as a run again of Lay out joints on the laid-out towers, against
+the same run without a practice; time as CPU time, a change within about
+15 % is noise ([theory](../theory/joint-layout.md#the-practice-measured-its-plate-thicknesses-and-its-editor-l29),
+where the whole table is):
+
+- **A stricter value costs time as well as joints**: the ends it leaves
+  go through the layout's later, costlier passes. Not allowing bent or
+  welded plates, a larger gap (20 mm), a shorter pull-back (150 mm), a
+  stricter flatness (1°), a smaller axis offset (20 mm) or plates that
+  must reach round the work point each made the run about 4 to 7 times
+  as long, and left 8 to 191 joints of 1 110 fewer whole.
+- **Little or no effect**: the faces' order, either side of a flange,
+  both faces of a plate, the small bend's limit, welded before bend, three
+  bolts — time within noise.
+- **Better than the default on these towers**: a 15 mm shift (20 ends
+  more, none worse) and a bend radius of 3 × the thickness (14 joints
+  more whole). The defaults stay as they are until measured on more
+  towers.
+- **Plate thicknesses**: a 6 mm least made 1 408 of 2 555 plates thicker
+  and 37 joints fewer whole; the list 6 to 25 mm alone 1 704 thicker,
+  almost no change in the joints, 10 % more plate steel; each run about
+  4 to 5 times as long. Each thicker plate is said NOT ON THE SAFE SIDE.
 
 ## Good to know
 

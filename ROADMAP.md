@@ -4524,6 +4524,86 @@ only where it helps):
   > one more pass weighs one or two members on four of the eight towers,
   > none kept, the first run there longer by about that weighing, a run
   > again quicker by as much) → Recommended: keep.
+- [x] L29. **The detailing practice measured, its plate thicknesses, its
+  editor** (L24's questions 2 to 5; the owner, 2026-11-25: *"use
+  recommendations for l23 to l25"*). **Built 2026-11-26, in active
+  development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-practice-measured-its-plate-thicknesses-and-its-editor-l29),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/detailing-practice.md),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-26-joint-layout-the-detailing-practice-measured-its-plate-thicknesses-and-its-editor-o44-l29)).
+  (2) **Each value measured** on three of the eight private towers (the
+  three quickest, 1 996 of the 6 852 joints — the machine was shared
+  with other measuring runs, the eight would have taken days; the other
+  five still to be measured; the bundled ASCE 10-97 plugin built fresh
+  and checked to load before every run), one value changed per run, as
+  a run again on the laid-out towers (L27's result) against the same run
+  again without a practice (1 110 joints whole, 4 535 ends, 2 555
+  plates, 604 s CPU; kept privately; the table in the theory page and in
+  each field's (?)). Time as CPU time (wall time meaningless on the
+  shared machine; within about 15 %: noise). **A stricter value costs
+  time as well as joints** (its ends go through the later passes): bend
+  not allowed −16 whole / −65 ends, about 4.7 × the time; welded not
+  allowed −8 / −134, about 5 ×; gap 20 mm −17 / −51, 4.4 ×; pull-back
+  150 mm −191 / −758, 6.6 ×; flatness 1° −82 / −161, 6.3 ×; axis offset
+  20 mm −8 / −17, 4.7 ×; between-angles least 1.0 × −26 / −54, 2.6 ×;
+  plates not short −50 / −224, 5 ×; flange both sides no −9 / −25 and
+  plate both faces no (78 plates more), the later class first (+1 / +2),
+  bolts 3 (−8 ends, also for bracing alone) — time within noise; no
+  effect: welded before bend, small bend 10°. Better than the default:
+  shift 15 mm (+20 ends, none worse) and bend radius 3 × (+14 / +14,
+  25 better / 12 worse), time within noise. Plate thicknesses: least
+  6 mm 1 408 plates thicker, −37 / −98, steel +6 %; the list 6 to 25 mm
+  1 704 thicker, +8 / +1, steel +10 %; least 8 mm with the list 2 032
+  thicker, −49 / −106, steel +25 %; each about 4.3 to 5 × the time.
+
+  (3) **The plate thickness rules as data**: `[layout_practice.plates]`
+  `least_thickness` and `thicknesses` — a plate the thinnest listed at
+  least as thick as the thickest leg on it and the least, never thinner;
+  none listed that thick: by hand, said; a plate between a built-up
+  member's angles keeps the gap's thickness (the least holds); a plate
+  made thicker said NOT ON THE SAFE SIDE with the three parts (its
+  members' seat out of the flange, not in the analysis until O45 D,
+  grows by the extra); step 4's and L5's limits keep the leg's thickness.
+  Structure file version 30 (29 is L31's review tick), the practice's format 2 (1 without the
+  rules). (4) **The window's gap, pull-back and shift** stay the user's
+  per run; where they go beyond the practice given, said under the
+  settings and in the run's notes. (5) **Design › Detailing practice…**,
+  the tool-window pattern ([its page](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/detailing-practice.md)):
+  only what differs from the plugin's or the default written, one undo
+  step. **Found on the way, fixed**: a run on a laid-out file with a table
+  after its plates (the practice at its end) wrote the plates' sub-tables
+  before their own entry — the file no longer read; the run now takes
+  the nested tables' places too. Tests: `practice_tests.rs` (the rule,
+  its checks, the layout with it, the editor's table, settings beyond,
+  the run again with the practice at the file's end) and
+  `practice_ui_tests.rs` (the window: Save, refusal, Escape, Lay out
+  joints' line).
+  > **Owner:** (1) A plate made thicker than the thickest leg on it is
+  > said NOT ON THE SAFE SIDE (its members' seat out of the flange is not
+  > in the analysis and grows by the extra) → Recommended: accept as
+  > said, and schedule O45 D (the seat offsets of ends on plates in the
+  > analysis), which takes it out for every plate. (2) Step 4's "a plate's
+  > thickness farther out" and L5's move limit keep the leg's thickness,
+  > not the thicker plate's → Recommended: keep (the stricter; no
+  > eccentricity grows silently). (3) A plate between a built-up member's
+  > angles keeps the gap's thickness (the least holds, the list not) →
+  > Recommended: keep (the gap is the angles', not the shop's choice). (4)
+  > An end left for a hand detail because its plate, made thicker by the
+  > practice, runs into something says the clash but not that the
+  > practice's thickness caused it (the note for a thickness none listed
+  > gives does say why) → Recommended: a later small step (the plate's
+  > thickness with the practice and without it in that note). (5) The editor writes only
+  > the values that differ from the plugin's or the default →
+  > Recommended: keep (a plugin's later change still reaches the file).
+  > (6) The values measured (three of the eight towers; the other five
+  > still to run) → Recommended: keep every default (the layout as it
+  > was) and offer the measured effect in each field's (?), as built; two
+  > values did better on these towers — a shift of 15 mm (+20 ends, none
+  > worse) and a bend radius of 3 × the thickness (+14 joints whole, 25
+  > better / 12 worse) — Recommended: measure both on all eight towers
+  > (and the shift's gain explained) before making either the default;
+  > the plate thickness rules stay off by default (a shop's choice; with a
+  > 6 mm least, 1 408 of 2 555 plates thicker and 37 joints fewer whole).
 - [x] L31. **The joints left reviewed: a list with why, grouped by reason,
   and a reviewer's tick per joint** (the owner, 2026-11-26: *"setup ways to
   study the latest joint and lay them out. The goal is not to reach 100%
