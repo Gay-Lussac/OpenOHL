@@ -363,7 +363,17 @@ impl StructureApp {
                         .map_or(f64::MAX, |g| g.t)
                         + 1e-9
                 {
-                    " and the inner covers"
+                    // (L33) Between two plates: the second plate on its
+                    // leg's other face.
+                    if a.planes
+                        .1
+                        .as_deref()
+                        .is_some_and(|w| w.starts_with("between plates"))
+                    {
+                        " and the second plate"
+                    } else {
+                        " and the inner covers"
+                    }
                 } else {
                     ""
                 },

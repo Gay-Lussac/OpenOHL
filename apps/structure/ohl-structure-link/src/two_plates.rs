@@ -536,15 +536,36 @@ pub fn after_run(
             keep.push(p);
         } else {
             back.push(p.second.clone());
+            // The clashes it would bring, in words (the first three).
+            let new: Vec<String> = d1
+                .joint(&p.joint)
+                .map(|x| {
+                    let had: Vec<String> = d0
+                        .joint(&p.joint)
+                        .map(|y| y.clashes.iter().map(|c| c.words()).collect())
+                        .unwrap_or_default();
+                    x.clashes
+                        .iter()
+                        .map(|c| c.words())
+                        .filter(|w| !had.contains(w))
+                        .take(3)
+                        .collect()
+                })
+                .unwrap_or_default();
             not.push(format!(
-                "{} at {}: with a second plate {:.0} % (before {:.0} %), clashes {} (before {}): \
+                "{} at {}: with a second plate {:.0} % (before {:.0} %), clashes {} (before {}){}: \
                  not kept",
                 p.member,
                 p.joint,
                 p.usage[1] * 100.0,
                 p.usage[0] * 100.0,
                 clashes(&d1, &p.joint),
-                clashes(&d0, &p.joint)
+                clashes(&d0, &p.joint),
+                if new.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", new.join("; "))
+                }
             ));
         }
     }
@@ -571,7 +592,7 @@ pub fn after_run(
         keep.len(),
         keep.iter()
             .map(|p| format!(
-                "{} at {} between {} and {} ({} bolt(s) of its own), {:.0} % → {:.0} %",
+                "{} at {} between {} and {} ({} bolt(s) of its own), {:.0} % to {:.0} %",
                 p.member,
                 p.joint,
                 p.first,
@@ -582,7 +603,7 @@ pub fn after_run(
             ))
             .collect::<Vec<_>>()
             .join("; "),
-        if not.is_empty() {
+        if !not.is_empty() {
             format!("; not: {}", not.join("; "))
         } else {
             String::new()

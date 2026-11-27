@@ -23,7 +23,9 @@
 //!   `[plate.also_bolts]`) and their plate; their shank and the member
 //!   they bolt it onto (with a member running on in line; a built-up
 //!   member: the whole bolt); a bolt of a member end bolted onto that
-//!   member (they may be the same bolts).
+//!   member (they may be the same bolts);
+//! - (L33) a member end's bolts and its second plate (`[plate.paired]`):
+//!   they pass through it, their head or nut on its face.
 //!
 //! Each solid is cut into convex pieces (a profile's outline into convex
 //! polygons run along the member; a bolt's head, shank and nut) and each
@@ -838,6 +840,22 @@ fn clashes_of(
                         Together::Yes
                     }
                     Plate(m) if Some(m.as_str()) == onto => Together::ShankOnly,
+                    // (L33) The second plate of this end (`[plate.paired]`,
+                    // on the leg's other face, parallel to it): the end's
+                    // bolts pass through it as through the first, their
+                    // head or nut on its face.
+                    Plate(m)
+                        if !other_leg
+                            && plates
+                                .iter()
+                                .find(|q| &q.id == m)
+                                .and_then(|q| q.paired.as_ref())
+                                .is_some_and(|q| {
+                                    &q.member == member && onto == Some(q.first.as_str())
+                                }) =>
+                    {
+                        Together::Yes
+                    }
                     // A bolt of the leg a plate lies on (a splice's, at a
                     // leg running on through the joint): through the plate
                     // too (a common bolt).

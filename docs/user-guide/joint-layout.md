@@ -210,12 +210,15 @@ window for your tower):
 
 ## Two plates on one end
 
+![Lay out joints on an invented tower whose diagonal D1 fails by its bolts' shear (133 %): the note says D1 at N2 is given a second plate G1b between it and its own three bolts, 133 % to 67 %; the close-up before (D1 not yet on a plate) and after (D1 between plates G1 and G1b), no clash](../images/structure-tools/tool-lay-out-joints-two-plates.png)
+
 Where an end laid onto a plate fails the code's check by its bolts' shear,
 the layout can put a **second plate** on the other face of the end's leg
 (the end's bolts then shear in two planes), held by two or more bolts of its
 own through a packing into the first plate, nearer the joint. It is kept
 only where the end's usage falls and the joint has no more clashes; the
-run's notes name each such end and say why others could not take one. The
+run's notes name each such end and say why others could not take one (a
+second plate that would run into something: what, in words). The
 forces come from the structure's own load cases (on the command line, a
 table with `--loads`; `--no-two-plates` leaves every end on one plate).
 Both plates, the packing and the bolts show in the 3D view, the Detail tab,
@@ -223,6 +226,18 @@ the close-ups and the bill of materials; Joint details' sketch says the two
 shear planes. The second plate's own bolts are checked by the layout only
 (said NOT ON THE SAFE SIDE with the joint): lay the joints out again after
 the forces change. Built, in active development (not approved yet).
+
+The second plate needs room between the end's steel and the first plate's
+own bolts onto the leg, for its own bolts and the code's distances: where
+the end stops close to the joint, it runs into those bolts and is not kept
+(the note says so). On the invented tower of the pictures, D1's steel stops
+260 mm from the work point.
+
+![The 3D view on D1's end after Lay out joints: D1 between the first plate G1 and the second plate G1b, the end's bolts through both, the second plate's own bolts nearer the joint](../images/structure-tools/two-plates-3d.png)
+
+![The Detail tab on joint N2: D1 between G1 (6 mm) and G1b (6 mm), the second plate drawn on the other face of D1's leg with its own bolts; Joint details lists both plates, G1b with D1 onto it](../images/structure-tools/two-plates-detail.png)
+
+![Joint details with a bolt of D1 picked: the bolt clamps its leg and the second plate, then G1, in two shear planes; the sketch What the values mean with D1's values says "2 shear planes: between plates G1 and G1b" under the leg, the second plate's outline dashed over the bolts](../images/structure-tools/two-plates-sketch.png)
 
 ## Solve the clashes
 

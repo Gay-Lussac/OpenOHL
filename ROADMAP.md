@@ -5281,7 +5281,20 @@ joint layout's L28–L31 were merged, resumed 2026-11-27. **Stage 1 built
   joints only, not in Results' joint checks (said NOT ON THE SAFE SIDE with
   the joint) — *recommended: add them to the joint checks as a bolt group of
   their own, with SIA 263 6.2.2.5's packing reduction in the sia263 plugin
-  (an additive field for the packing)*.
+  (an additive field for the packing)*; (4) (found 2026-11-27 making the
+  pictures, after the clash fix below) the second plate's own bolts go
+  between the end's steel and the joint, where the first plate's bolts onto
+  the leg usually are: there it runs into them and is taken back (said),
+  so on towers whose plates hug the joint it will rarely be kept —
+  *recommended: let its own bolts be the first plate's leg bolts where
+  they fall within it (one bolt group), else stop it short of them with
+  its own bolts beside the end's*; (5) a group mixing bolt diameters gets
+  no bolt proposal (the quarter-capacity variant on the private towers
+  left 7 such groups above the target) — *recommended: a proposal per
+  diameter within the group*. Fixed 2026-11-27: the end's bolts through
+  its second plate were counted as clashes, so Lay out joints never kept
+  one; the run's note with an empty "not:" and the sketch's two-planes
+  label shrinking the drawing. Pictures in the user guides.
 - [ ] Stage 2 (M): level 3 members created from a level 2 outline (a
   first section per member from its role and length, then stage 1).
 - [ ] Stage 3 (M): the joint layout's "bigger member" option calling the

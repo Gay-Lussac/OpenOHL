@@ -93,14 +93,20 @@ groups, 40 s to 2.5 min of CPU time (three or four rounds).
 
 ### The bolts
 
+![Choose the members on the invented truss with its bolts given 10 kN per shear plane: every group's two 16 mm bolts fail by their shear (usage up to 306 %); the Bolts column proposes 5, 4 and 7 bolts of 16 mm beside each group's lighter section, the note says three groups where the bolts govern](../images/structure-tools/tool-member-sizing-bolts.png)
+
 Where a group fails only by its bolts' shear (the code's plugin says what
 governs), a heavier section would not help: the window's **Bolts** column
 proposes more of its own bolts, or a larger bolt of the project's bolt
 library where more do not fit the member ("2 × 16 mm to 4 × 16 mm"; hover
 for why). Ticking the group takes its bolts with its section; Apply writes
 both in one undo step. On the command line the proposal is the line
-`bolts … → …` under the group. Built, in active development (not approved
-yet).
+`bolts … → …` under the group. A group whose members' bolts differ in
+diameter, or whose bolts are given at its member ends (level 4), gets no
+bolt proposal: it stays above the target, said. Built, in active
+development (not approved yet).
+
+![The same window run again after Apply: no group changed, the Bolts column empty, the largest usage 87 %](../images/structure-tools/tool-member-sizing-bolts-after.png)
 
 ## What is and is not on the safe side
 

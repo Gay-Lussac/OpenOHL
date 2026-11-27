@@ -141,7 +141,11 @@ impl Shown {
             stops: a.cut.value,
             shift: Some(a.shift.0),
             planes: match (&a.planes.0.value, &a.planes.1) {
-                (Some(n), Some(why)) if *n >= 2 => Some((*n, why.clone())),
+                // Its first words only ("between plates G1 and G1b"): the
+                // drawing is scaled to fit its longest label.
+                (Some(n), Some(why)) if *n >= 2 => {
+                    Some((*n, why.split(" (").next().unwrap_or(why).to_owned()))
+                }
                 _ => None,
             },
         }

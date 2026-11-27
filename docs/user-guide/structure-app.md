@@ -861,6 +861,12 @@ at once, the Detail view in front, its details in front on the left
   it is, in the same words as the column's hover. With a bolt picked
   (Edit in the Detail view), that member end's values are written beside
   the names. As wide as the panel (narrower than 480 points: scrolled).
+  Where that end's bolts shear in two planes or more (between two plates,
+  or a built-up member's two angles on both faces of a plate), it says so
+  under the leg ("2 shear planes: between plates G1 and G1b"), the second
+  plate's outline dashed over the bolts (2026-11-27; built, in active
+  development, not approved yet; see
+  [Two plates on one end](joint-layout.md#two-plates-on-one-end)).
 
   ![The bolted leg of an angle seen flat, from its heel to its edge: the
   gauge from the heel to the gauge line, the edge distance from it to the
@@ -870,6 +876,8 @@ at once, the Detail view in front, its details in front on the left
   the shift of the axis beside the work point towards what the member
   bolts onto; a second gauge line
   faint](../images/joint-details/joint-values.svg)
+
+  ![What the values mean with a bolt of D1 picked on an invented tower: D1's values written beside the names, and under the leg "2 shear planes: between plates G1 and G1b"](../images/structure-tools/two-plates-sketch.png)
 
   - **Lines**: the gauge lines, rows of bolts along the leg, each at its
     own gauge from the heel (one to three; every second line staggered

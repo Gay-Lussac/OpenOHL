@@ -165,6 +165,10 @@ fn the_second_plate_is_drawn_and_counted() {
         "{:?}",
         a.grip
     );
+    // Nothing runs into anything: D1's bolts pass through the second plate,
+    // its packing and its own bolts lie clear of D1.
+    let words: Vec<String> = j.clashes.iter().map(|c| c.words()).collect();
+    assert!(words.is_empty(), "{words:#?}");
     let g2 = j.plates.iter().find(|p| p.id == "G1b").unwrap();
     let q = g2.paired.as_ref().expect("paired");
     assert_eq!(q.bolts.len(), 2);

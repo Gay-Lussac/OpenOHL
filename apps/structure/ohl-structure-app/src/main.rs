@@ -152,6 +152,8 @@ mod tests;
 #[cfg(test)]
 mod tool_window_tests;
 #[cfg(test)]
+mod two_plates_ui_tests;
+#[cfg(test)]
 mod ui_review_tests;
 
 /// The version `--version` prints: the workspace version and the build id

@@ -55,7 +55,7 @@ fn open(tag: &str) -> (Harness<'static, StructureApp>, std::path::PathBuf) {
 }
 
 /// Runs frames until the window's preview is there (at most ~30 s).
-fn wait_preview(h: &mut Harness<'static, StructureApp>) {
+pub(crate) fn wait_preview(h: &mut Harness<'static, StructureApp>) {
     for _ in 0..600 {
         h.step();
         let ready = h
@@ -69,14 +69,20 @@ fn wait_preview(h: &mut Harness<'static, StructureApp>) {
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    panic!("no preview");
+    panic!(
+        "no preview: {:?}",
+        h.state()
+            .layout_window
+            .as_ref()
+            .and_then(|w| w.error.as_ref())
+    );
 }
 
 /// Runs frames until Apply is enabled: the preview is the window's — its
 /// joints (with their similar ones once the joint details are worked out
 /// on their own thread: the preview is worked out again then) and the
 /// file's revision; at most ~30 s.
-fn wait_apply(h: &mut Harness<'static, StructureApp>) {
+pub(crate) fn wait_apply(h: &mut Harness<'static, StructureApp>) {
     use egui_kittest::kittest::NodeT;
     for _ in 0..600 {
         h.step();

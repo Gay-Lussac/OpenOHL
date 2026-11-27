@@ -5819,7 +5819,14 @@ with `--loads`); no load case: not weighed, said. Its plan:
 4. **kept only where it measures better**: the end's force over its
    capacity falls (the plugin's capacity with the joint details taken) and
    the joint has no more clashes than without it; otherwise taken back,
-   said.
+   said, with the clashes it would bring in words. The end's bolts pass
+   through the second plate (their head or nut on its face): not a clash
+   (`clash.rs`; before 2026-11-27 they were counted, and no second plate
+   was ever kept). It needs room between the end's steel and the first
+   plate's own bolts onto the leg: where the end stops close to the joint,
+   it runs into those bolts and is taken back (on the invented tower of
+   the user guide's pictures, kept with the end stopping 260 mm from the
+   work point).
 
 **The forces' split** — **conservative**: the first plate keeps the end's
 full force in its checks (as before); the second plate and its own bolts

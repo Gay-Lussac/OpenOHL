@@ -238,7 +238,12 @@ bolt with its hole and shear capacity, a capacity or hole of the old bolt
 removed).
 
 **Measured** on eight private towers (one vertical case, kept privately):
-see the effect table below.
+there no group's bolts govern — the same choice as without this step, the
+CPU time within the noise. With every bolt's shear capacity divided by
+four (a variant made so that they govern): 76 bolt proposals on seven of
+the eight towers; 7 groups (17 members) left above the target, each mixing
+bolts of 16 and 20 mm within the group, so without a proposal (said in the
+result); 698 s of CPU time for the eight against 548 s (+27 %).
 
 ## Conservative assumptions
 

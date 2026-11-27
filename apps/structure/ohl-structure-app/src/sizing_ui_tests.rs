@@ -236,3 +236,92 @@ fn escape_closes_the_sizing_window_and_changes_nothing() {
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// O49 stage 1b (2026-11-27): the bolts govern. The truss's bolts given
+/// 10 kN per shear plane: the bottom chord's two cannot carry its force,
+/// whatever its section — the window's Bolts column proposes more of its
+/// own (no bolt library beside it), Apply writes them with the sections in
+/// one undo step, and a run after it finds the bolts governing no more.
+/// The window's pictures before and after Apply (`OHL_RENDER_PNG`).
+#[test]
+fn the_bolts_are_proposed_and_applied() {
+    let dir =
+        std::env::temp_dir().join(format!("ohl-structure-sizing-bolts-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::write(dir.join("Sections/angles.ohlsec"), LIBRARY).unwrap();
+    let path = dir.join("sizing-truss.ohls");
+    std::fs::write(
+        &path,
+        TRUSS.replace(
+            "bolts = { diameter = \"16 mm\", count = 2 }",
+            "bolts = { diameter = \"16 mm\", count = 2, shear_capacity = \"10 kN\" }",
+        ),
+    )
+    .unwrap();
+    let mut h = harness(&path);
+    let before = h.state().file.as_ref().unwrap().text();
+    h.state_mut().open_sizing_window();
+    h.run_steps(2);
+    h.get_all_by_label("Choose the members")
+        .last()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    wait_result(&mut h);
+    let count = {
+        let w = h.state().sizing_window.as_ref().unwrap();
+        let s = &w.result.as_ref().unwrap().sizing;
+        let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
+        let b = bottom.bolts.as_ref().expect("bolts proposed");
+        assert_eq!(b.from, "2 × 16 mm");
+        b.pick.count
+    };
+    assert!(
+        h.query_all_by_label_contains("2 × 16 mm to ")
+            .next()
+            .is_some()
+    );
+    h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
+        1290.0, 890.0,
+    )));
+    crate::tool_window_tests::window_shot(&mut h, "Choose the members", "member-sizing-bolts");
+    h.get_all_by_label_contains("Apply (")
+        .next()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    let text = h.state().file.as_ref().unwrap().text();
+    assert!(
+        text.contains(&format!("count = {count}")),
+        "the bolts written"
+    );
+    // Run again: the bolts govern no more.
+    h.state_mut().open_sizing_window();
+    h.run_steps(2);
+    h.get_all_by_label("Choose the members")
+        .last()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    wait_result(&mut h);
+    {
+        let w = h.state().sizing_window.as_ref().unwrap();
+        let s = &w.result.as_ref().unwrap().sizing;
+        assert!(s.groups.iter().all(|g| g.bolts.is_none()), "{:?}", s.groups);
+        assert!(s.over_target.is_empty(), "{:?}", s.over_target);
+    }
+    h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
+        1290.0, 890.0,
+    )));
+    crate::tool_window_tests::window_shot(
+        &mut h,
+        "Choose the members",
+        "member-sizing-bolts-after",
+    );
+    h.key_press(eframe::egui::Key::Escape);
+    h.step();
+    h.state_mut().file.as_mut().unwrap().undo();
+    assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    std::fs::remove_dir_all(dir).ok();
+}
