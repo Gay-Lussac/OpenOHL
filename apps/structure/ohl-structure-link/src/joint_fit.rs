@@ -9,7 +9,7 @@
 //! joints agree.
 //!
 //! - **The code's distances** of an end with bolts of its own:
-//!   [`crate::member_view::rules_in`] — the very function Lay out joints'
+//!   `member_view::rules_in` — the very function Lay out joints'
 //!   edge rule and the bolt tools take (the code plugin's `bolt-distances`,
 //!   else the structure's default minimums, said). An end without bolts:
 //!   OpenOHL's default bolt for the member (the plugin's
@@ -245,7 +245,7 @@ fn mm(x: f64) -> String {
 }
 
 /// The code's needs of member `k`'s end `e` with bolts of its own:
-/// [`crate::member_view::rules_in`], cached by its basis. None: the end
+/// `member_view::rules_in`, cached by its basis. None: the end
 /// has no bolts of known diameter.
 fn own_need(model: &Model, k: usize, e: usize, cache: &mut FitCache) -> Option<EndNeed> {
     let basis = ohl_structures_fe::bolt_rules::basis(model, k, e, None, None)?;
