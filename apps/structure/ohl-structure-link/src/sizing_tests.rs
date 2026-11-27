@@ -424,23 +424,40 @@ fn apply_takes_the_ticked_groups_only() {
 
 /// The joint fit by hand: a 40 mm leg with a 16 mm bolt — 20 mm to the
 /// toe, below the default 1.5 d = 24 mm; a 16 mm bolt's hole in an L40×4
-/// is clear of its root (4 + 5 + 8 = 17 mm ≤ 20 mm). A 2 m member with
-/// two bolts at each end needs 2 × (2 × 24 + 48) mm: long enough; a 0.08 m
-/// one not.
+/// is clear of its root (4 + 5 + 8 = 17 mm ≤ 20 mm). AC goes on in line
+/// through C as CE: of one section, one part — its end at C holds no bolts
+/// (only A's checked); of two sections, a splice — both ends checked. A
+/// member with two bolts at an end needs 2 × 24 + 48 = 96 mm there: a 2 m
+/// member is long enough, a 0.08 m one not (96 mm with one end, 192 mm
+/// with both).
 #[test]
 fn joint_fit_by_hand() {
+    let fit = |text: &str| {
+        let t = StructureType::parse(std::path::Path::new("t.ohls"), text).unwrap();
+        let model = crate::model_of(&t, text, None, &library()).unwrap();
+        sizing::joint_fit(&model, &[0], &[0.0; 6], &sizing::FitRules::default())
+    };
     let small = TRUSS.replace("L80x8", "L40x4");
-    let t = StructureType::parse(std::path::Path::new("t.ohls"), &small).unwrap();
-    let model = crate::model_of(&t, &small, None, &library()).unwrap();
-    let (p, unknown) = sizing::joint_fit(&model, &[0], &[0.0; 6], &sizing::FitRules::default());
+    let (p, unknown) = fit(&small);
     assert_eq!(unknown, 0);
+    assert_eq!(p.len(), 1, "{p:?}");
+    assert!(p[0].words.contains("AC at A: 20 mm to the toe at mid-leg, below the code's edge distance 24 mm"), "{p:?}");
+    let spliced = small.replacen(
+        "id = \"CE\"\nnodes = [\"C\", \"E\"]\nsection = \"L40x4\"",
+        "id = \"CE\"\nnodes = [\"C\", \"E\"]\nsection = \"L45x4\"",
+        1,
+    );
+    let (p, _) = fit(&spliced);
     assert_eq!(p.len(), 2, "{p:?}");
-    assert!(p[0].words.contains("20 mm to the toe at mid-leg, below the code's edge distance 24 mm"), "{p:?}");
-    let short = small.replace("point = [\"2 m\", \"0 m\", \"0 m\"]", "point = [\"0.08 m\", \"0 m\", \"0 m\"]");
-    let t = StructureType::parse(std::path::Path::new("t.ohls"), &short).unwrap();
-    let model = crate::model_of(&t, &short, None, &library()).unwrap();
-    let (p, _) = sizing::joint_fit(&model, &[0], &[0.0; 6], &sizing::FitRules::default());
-    assert!(p.iter().any(|x| x.rule == sizing::FitRule::Length && x.words.contains("need 192 mm")), "{p:?}");
+    let short = |text: &str| text.replace("point = [\"2 m\", \"0 m\", \"0 m\"]", "point = [\"0.08 m\", \"0 m\", \"0 m\"]");
+    let length = |p: &[sizing::FitProblem], need: &str| {
+        p.iter()
+            .any(|x| x.rule == sizing::FitRule::Length && x.words.contains(need))
+    };
+    let (p, _) = fit(&short(&small));
+    assert!(length(&p, "need 96 mm"), "{p:?}");
+    let (p, _) = fit(&short(&spliced));
+    assert!(length(&p, "need 192 mm"), "{p:?}");
 }
 
 /// A section not in the library: its group left as it is, said.
@@ -478,4 +495,116 @@ fn summary_in_lines() {
     let lines = sizing::summary(&s);
     assert!(lines[0].starts_with("3 of 3 group(s) changed"), "{}", lines[0]);
     assert!(lines.iter().any(|l| l.starts_with("* top (1 member(s)): L80x8 → L50x5")), "{lines:#?}");
+}
+
+/// The detailing practice's plate thicknesses (O44 L29) as joint-fit
+/// limits: the shop makes plates up to 5 mm only, so a member with 6 mm
+/// legs or more cannot go onto a plate. The bottom chord needs an L60×6 at
+/// least for its check (AC: 60 kN in compression over 2 m; an L50×5 buckles
+/// at about 24 kN): no section of its family both passes and fits — the
+/// lightest passing taken, its problems said; the top chord (an L50×5)
+/// fits as before.
+#[test]
+fn the_practice_plates_limit_the_choice() {
+    let text = format!("{TRUSS}\n[layout_practice.plates]\nthicknesses = [\"4 mm\", \"5 mm\"]\n");
+    let s = size(&text, &Settings::default());
+    let free = size(TRUSS, &Settings::default());
+    let by = |s: &sizing::Sizing, n: &str| {
+        s.groups
+            .iter()
+            .find(|g| g.group.name == n)
+            .unwrap()
+            .clone()
+    };
+    let bottom = by(&s, "bottom");
+    assert_eq!(bottom.basis, sizing::Basis::FitNotMet, "{bottom:?}");
+    assert_eq!(bottom.to, by(&free, "bottom").to);
+    assert!(bottom.fit[1] > 0, "{bottom:?}");
+    assert_eq!(by(&s, "top").to, "L50x5");
+    assert!(
+        s.notes
+            .iter()
+            .any(|n| n.contains("legs thicker than every plate the detailing practice lists")),
+        "{:?}",
+        s.notes
+    );
+    assert!(
+        s.notes
+            .iter()
+            .any(|n| n.contains("joint fit by the detailing practice of this structure file's own")),
+        "{:?}",
+        s.notes
+    );
+    // Without the practice: the default, said.
+    assert!(
+        free.notes
+            .iter()
+            .any(|n| n == "joint fit by the default detailing practice"),
+        "{:?}",
+        free.notes
+    );
+}
+
+/// The practice's bolts per end for ends without bolts of their own: per
+/// member class, else its picked bolt's count (the layout's own values).
+#[test]
+fn the_practice_bolt_counts() {
+    let t: toml::Table = "[bolts]\ncount = 3\n[classes.bracing.bolts]\ncount = 4\n"
+        .parse()
+        .unwrap();
+    let p = crate::practice::in_force(Some(&t), None).unwrap();
+    let r = sizing::FitRules::of(p.as_ref(), None);
+    assert_eq!(r.picked_count(Some("bracing")), 4);
+    assert_eq!(r.picked_count(Some("leg")), 3);
+    assert_eq!(r.picked_count(None), 3);
+    assert!(r.has_rules());
+    let d = sizing::FitRules::default();
+    assert_eq!(d.picked_count(Some("bracing")), 2);
+    assert!(!d.has_rules());
+}
+
+/// Capacities written by hand describe their section: the group is left
+/// as it is, said; a structure analysed from a model file of its own and a
+/// target above 100 % are refused.
+#[test]
+fn what_the_sizer_leaves_and_refuses() {
+    let hand = TRUSS.replace(
+        "id = \"BD\"\nnodes = [\"B\", \"D\"]",
+        "id = \"BD\"\nnodes = [\"B\", \"D\"]\ncapacity_tension = \"100 kN\"",
+    );
+    let s = size(&hand, &Settings::default());
+    let top = s.groups.iter().find(|g| g.group.name == "top").unwrap();
+    assert!(top.not_sized && !top.changed(), "{top:?}");
+    assert!(top.why.contains("capacities written by hand"), "{}", top.why);
+    let run = |text: &str, settings: &Settings| {
+        let t = StructureType::parse(std::path::Path::new("t.ohls"), text).unwrap();
+        let lib = library();
+        let table = table(30e3);
+        let cases = cases();
+        sizing::size(
+            &SizingInput {
+                structure: &t,
+                text,
+                dir: None,
+                sections: &lib,
+                table: &table,
+                recipes: &[],
+                cases: &cases,
+                settings,
+            },
+            &ohl_core::budget::Budget::new(),
+        )
+    };
+    let over = run(
+        TRUSS,
+        &Settings {
+            target: 1.2,
+            ..Settings::default()
+        },
+    )
+    .unwrap_err();
+    assert!(over.contains("at most 100 %"), "{over}");
+    let own = TRUSS.replace("kind = \"lattice\"", "kind = \"lattice\"\nmodel = \"t.ohlfe\"");
+    let e = run(&own, &Settings::default()).unwrap_err();
+    assert!(e.contains("finite-element model file (t.ohlfe)"), "{e}");
 }

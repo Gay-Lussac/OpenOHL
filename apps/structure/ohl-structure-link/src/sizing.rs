@@ -110,6 +110,11 @@ impl Default for Settings {
 /// The most rounds by default.
 pub const DEFAULT_ROUNDS: usize = 10;
 
+/// The most times one round takes groups back because the structure did
+/// not solve with them lighter (each time at least one group; the
+/// program's bound on the work, not a standard's).
+pub const MAX_REPAIRS: usize = 20;
+
 /// What the sizer works on.
 pub struct SizingInput<'a> {
     /// The structure.
@@ -167,6 +172,8 @@ pub struct GroupChange {
     pub governs: String,
     /// Joint-fit problems before and after.
     pub fit: [usize; 2],
+    /// The joint-fit problems before and after, in words.
+    pub problems: [Vec<String>; 2],
     /// The lightest section passing without the joint-fit limits, where it
     /// differs from the proposal (the limits' effect).
     pub without_fit: Option<String>,
@@ -515,10 +522,28 @@ fn cancelled(budget: &Budget) -> bool {
     budget.token().is_some_and(|t| t.is_cancelled())
 }
 
+/// Why the forces of a choice could not be worked out: the words, and the
+/// members a buckling mode names (in compression at the joint moving
+/// most, straining most in the mode; empty for any other refusal).
+#[derive(Debug, Clone)]
+struct NotSolved {
+    words: String,
+    members: Vec<String>,
+}
+
+impl From<String> for NotSolved {
+    fn from(words: String) -> Self {
+        Self {
+            words,
+            members: Vec::new(),
+        }
+    }
+}
+
 /// The structure of `text` (its model, the counted self-weight as the run
 /// takes it) with every case solved. Err: the model does not build, or a
-/// case does not solve (named).
-fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, String> {
+/// case does not solve (named, with the members its buckling mode names).
+fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, NotSolved> {
     use ohl_structures::LibraryItem as _;
     let t = StructureType::parse(Path::new("structure.ohls"), text).map_err(|e| e.message)?;
     let mut model = crate::model_of(&t, text, input.dir, input.sections)?;
@@ -542,18 +567,31 @@ fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, St
         } else {
             0.0
         };
-        let loads = crate::fe_loads(&model, input.table, &c.name, self_weight)?;
+        let loads = crate::fe_loads(&model, input.table, &c.name, self_weight)
+            .map_err(NotSolved::from)?;
         ohl_structures_fe::analyse(&model, &loads, c.strength, &case_budget(budget))
             .map(|(s, _)| s)
-            .map_err(|e| {
-                format!(
+            .map_err(|e| NotSolved {
+                words: format!(
                     "case {}: did not solve: {}",
                     c.name,
                     ohl_structures_fe::refusal_text(&model, &e)
-                )
+                ),
+                members: match &e {
+                    ohl_structures_fe::FeError::Unstable {
+                        compressed,
+                        straining,
+                        ..
+                    } => compressed
+                        .iter()
+                        .map(|x| x.0.clone())
+                        .chain(straining.iter().cloned())
+                        .collect(),
+                    _ => Vec::new(),
+                },
             })
     });
-    let solutions = solved.into_iter().collect::<Result<Vec<_>, String>>()?;
+    let solutions = solved.into_iter().collect::<Result<Vec<_>, NotSolved>>()?;
     let n = model.members.len();
     let mut axial = vec![0.0f64; n];
     let mut compressed = vec![false; n];
@@ -695,6 +733,7 @@ fn pick(
     current: &[String],
     f: &Forces,
     index: &[Vec<usize>],
+    floor: &[Option<(String, String)>],
     rules: &FitRules,
     cache: &mut FitCache,
     budget: &Budget,
@@ -728,6 +767,13 @@ fn pick(
                 Some(fy) if c.area * fy * s.target < force => pointer[g] += 1,
                 _ => break,
             }
+        }
+        // Never lighter than a section a lighter one made the structure
+        // not solve with.
+        if let Some((id, _)) = &floor[g]
+            && let Some(at) = list.iter().position(|c| c.id == *id)
+        {
+            pointer[g] = pointer[g].max(at);
         }
     }
     let mut trials = 0;
@@ -982,7 +1028,7 @@ pub fn size_with(
     let rules = FitRules::for_structure(input.text, input.dir);
     let mut cache = FitCache::default();
     progress("the structure as it is: forces");
-    let f0 = forces(input, input.text, budget)?;
+    let f0 = forces(input, input.text, budget).map_err(|e| e.words)?;
     let groups = sizing_groups(input.structure, &f0.model, &s.split);
     if groups.is_empty() {
         return Err("no member with a section to size (a level 3 structure is needed)".into());
@@ -1046,22 +1092,88 @@ pub fn size_with(
     let mut settled = None;
     let mut last = None;
     let mut f = f0;
+    // The choice whose forces `f` are.
+    let mut solved = current0.clone();
+    // Per group the lightest section it may take again, and why: a lighter
+    // one made the structure not solve (a buckling mode through it).
+    let mut floor: Vec<Option<(String, String)>> = vec![None; groups.len()];
+    let group_of: HashMap<&str, usize> = groups
+        .iter()
+        .enumerate()
+        .flat_map(|(g, x)| x.members.iter().map(move |m| (m.as_str(), g)))
+        .collect();
+    let mass_of_id = |id: &str| {
+        input
+            .sections
+            .section(id)
+            .and_then(|x| mass_per_metre(input.sections, x))
+            .unwrap_or(0.0)
+    };
     // The forces of the structure as it is, kept for its joint fit.
     let mut f_first: Option<Forces> = None;
     for r in 0..s.rounds.max(1) {
         let t_round = Instant::now();
         if r > 0 {
             progress(&format!("round {}: forces with the new sections", r + 1));
-            let (text, _) = with_choice(&doc, &groups, &choice);
-            let next = forces(input, &text, budget)?;
+            let mut repairs = 0;
+            let next = loop {
+                let (text, _) = with_choice(&doc, &groups, &choice);
+                match forces(input, &text, budget) {
+                    Ok(x) => break x,
+                    Err(e) => {
+                        // A buckling mode with the lighter sections: the
+                        // groups it names made lighter go back to the
+                        // sections that solved (never lighter again), said;
+                        // none named: every group made lighter.
+                        let named: Vec<usize> = e
+                            .members
+                            .iter()
+                            .filter_map(|m| group_of.get(m.as_str()).copied())
+                            .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
+                            .collect();
+                        let back: Vec<usize> = if named.is_empty() {
+                            (0..groups.len())
+                                .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
+                                .collect()
+                        } else {
+                            named
+                        };
+                        repairs += 1;
+                        if back.is_empty() || repairs > MAX_REPAIRS {
+                            return Err(format!(
+                                "{} — with the sections chosen in round {r} (the structure as it \
+                                 is solves): no lighter group left to take back",
+                                e.words
+                            ));
+                        }
+                        progress(&format!(
+                            "round {}: {} group(s) taken back (the structure did not solve with \
+                             them lighter)",
+                            r + 1,
+                            back.len()
+                        ));
+                        for g in back {
+                            floor[g] = Some((
+                                solved[g].clone(),
+                                format!(
+                                    "with {} the structure did not solve ({})",
+                                    choice[g], e.words
+                                ),
+                            ));
+                            choice[g] = solved[g].clone();
+                        }
+                    }
+                }
+            };
+            solved = choice.clone();
             let old = std::mem::replace(&mut f, next);
             if f_first.is_none() {
                 f_first = Some(old);
             }
         }
         let p = pick(
-            input, &doc, &groups, &lists, &current0, &f, &index, &rules, &mut cache, budget,
-            progress,
+            input, &doc, &groups, &lists, &current0, &f, &index, &floor, &rules, &mut cache,
+            budget, progress,
         )?;
         let changed = p
             .choice
@@ -1117,7 +1229,7 @@ pub fn size_with(
     let (after_run, _) = full_run(input, &text, budget)?;
     let before = usages(&before_run)?;
     let after = usages(&after_run)?;
-    let f_after = forces(input, &text, budget)?;
+    let f_after = forces(input, &text, budget).map_err(|e| e.words)?;
     let all: Vec<usize> = index.iter().flatten().copied().collect();
     let (fit0, unknown0) = joint_fit_cached(&f_first.model, &all, &f_first.axial, &rules, &mut cache);
     let (fit1, _) = joint_fit_cached(&f_after.model, &all, &f_after.axial, &rules, &mut cache);
@@ -1131,6 +1243,13 @@ pub fn size_with(
     let (by0, by1) = (per_member(&fit0), per_member(&fit1));
     let count = |by: &HashMap<usize, usize>, ks: &[usize]| -> usize {
         ks.iter().map(|k| by.get(k).copied().unwrap_or(0)).sum()
+    };
+    let words = |fit: &[FitProblem], ks: &[usize]| -> Vec<String> {
+        let ks: std::collections::HashSet<usize> = ks.iter().copied().collect();
+        fit.iter()
+            .filter(|p| ks.contains(&p.member))
+            .map(|p| p.words.clone())
+            .collect()
     };
     let length_of = |ks: &[usize]| -> f64 {
         ks.iter()
@@ -1179,6 +1298,14 @@ pub fn size_with(
             ),
             None => (last.why[g].clone(), last.basis[g]),
         };
+        // Kept at a section a lighter one made the structure not solve
+        // with: said.
+        let why = match &floor[g] {
+            Some((at, words)) if *at == to => {
+                format!("{why}; not lighter than {at}: {words}")
+            }
+            _ => why,
+        };
         changes.push(GroupChange {
             group: grp.clone(),
             from: grp.section.clone(),
@@ -1189,6 +1316,7 @@ pub fn size_with(
             case: [c0, c1],
             governs: gov1,
             fit: [count(&by0, &index[g]), count(&by1, &index[g])],
+            problems: [words(&fit0, &index[g]), words(&fit1, &index[g])],
             without_fit,
             why,
             basis,
@@ -1405,6 +1533,7 @@ pub fn summary(sizing: &Sizing) -> Vec<String> {
         Settled::Cycle(w) | Settled::NotSettled(w) => out.push(w.clone()),
     }
     out.push(sizing.fit_effect.clone());
+    out.push(sizing.target_effect.clone());
     out.extend(sizing.notes.iter().cloned());
     for c in &sizing.groups {
         out.push(format!(

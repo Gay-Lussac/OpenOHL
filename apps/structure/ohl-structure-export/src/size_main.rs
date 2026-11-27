@@ -63,6 +63,9 @@ struct Args {
     /// Leave this group as it is (repeatable).
     #[arg(long)]
     keep: Vec<String>,
+    /// Print each group's joint-fit problems before and after, in words.
+    #[arg(long)]
+    problems: bool,
     /// Write the structure file with the changes taken here.
     #[arg(short, long)]
     output: Option<PathBuf>,
@@ -124,6 +127,15 @@ fn run(args: &Args) -> Result<bool, String> {
     )?;
     for line in sizing::summary(&s) {
         println!("{line}");
+    }
+    if args.problems {
+        for g in &s.groups {
+            for (when, list) in ["before", "after"].iter().zip(&g.problems) {
+                for p in list {
+                    println!("joint fit {when}: {} · {p}", g.group.name);
+                }
+            }
+        }
     }
     if let Some(out) = &args.output {
         let accepted: Vec<String> = if args.accept.is_empty() {

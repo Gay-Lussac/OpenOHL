@@ -62,11 +62,6 @@ pub struct SizingWindow {
 }
 
 impl SizingWindow {
-    /// A run is going on.
-    pub fn running(&self) -> bool {
-        self.job.is_some()
-    }
-
     /// Closed: a run going on is stopped.
     pub fn cancel(&self) {
         if let Some(job) = &self.job {
@@ -85,14 +80,17 @@ const MORE: &str = "For each member group (the members of one group with one sec
      lightest up. A section is taken when every member of the group passes: its usage by the \
      structure's design code (the code plugin loaded: ASCE 10-97 by default) at most the target \
      in every load case, the code's limits on the members' sizes (slenderness, flat width to \
-     thickness, least thickness: from the plugin), and the joint-fit limits (its leg takes its \
-     bolt at the usual gauge with the code's edge distance; it is long enough for the bolts its \
-     end force needs). Forces change with the sections' stiffness and weight, so the structure \
-     is solved again with the new sections and the choice made again, until it stops changing \
-     (a choice coming back: the heavier, said). The proposal is then a full run of the structure \
-     with the chosen sections — never estimated forces. Only a member's section changes (and its \
-     design data's thickness and w/t, which described the old section); never a work point, a \
-     roll or a group. Apply takes the ticked groups as one undo step.";
+     thickness, least thickness: from the plugin), and the joint-fit limits, with the rules Lay \
+     out joints uses (its leg takes its bolt at mid-leg with the code's edge distance; it is long \
+     enough for its bolts; a plate of the detailing practice takes its leg). Where no section \
+     both passes and fits, the lightest passing is taken and its joint-fit problems are said. \
+     Forces change with the sections' stiffness and weight, so the structure is solved again \
+     with the new sections and the choice made again, until it stops changing (a choice coming \
+     back: the heavier, said). The proposal is then a full run of the structure with the chosen \
+     sections — never estimated forces. Only a member's section changes (and its design data's \
+     thickness and w/t, which described the old section); never a work point, a roll or a \
+     group. Groups whose members carry capacities written by hand are left as they are. Apply \
+     takes the ticked groups as one undo step.";
 
 impl StructureApp {
     /// Opens the Choose the members window.
@@ -243,7 +241,8 @@ impl StructureApp {
                 ohl_ui::tool_window::intro(ui, INTRO, MORE, SIZING_ANCHOR, || {
                     crate::help::open_section(SIZING_PAGE.0, SIZING_PAGE.1)
                 });
-                setup(ui, &mut w.settings, &groups);
+                let last = w.result.as_ref().map(|r| &r.sizing);
+                setup(ui, &mut w.settings, &groups, last);
                 ui.separator();
                 if let Some(b) = &blocked {
                     crate::app::error_label(ui, b.as_str());
@@ -357,47 +356,70 @@ impl StructureApp {
     }
 }
 
-/// The numbered setup.
-fn setup(ui: &mut egui::Ui, s: &mut Settings, groups: &[String]) {
+/// A setting's measured effect and time, from the last run (none yet:
+/// said), small under it.
+fn effect(ui: &mut egui::Ui, last: Option<&Sizing>, words: impl Fn(&Sizing) -> String) {
+    let text = last.map_or_else(
+        || "Effect and time: shown after the first run (measured in it).".to_owned(),
+        |s| format!("Last run: {}", words(s)),
+    );
+    ui.label(egui::RichText::new(text).small());
+}
+
+/// The numbered setup (`last`: the last proposal, for each setting's
+/// measured effect and time).
+fn setup(ui: &mut egui::Ui, s: &mut Settings, groups: &[String], last: Option<&Sizing>) {
     ohl_ui::tool_window::heading(
         ui,
         "1. Target",
         "The largest usage a chosen section may have in any load case, by the structure's design \
-         code (1 = 100 % of its capacity). Lower keeps a reserve: heavier sections. The time \
-         hardly changes (each section tried is one check of every group at once).",
+         code (100 % = its capacity, the most allowed). Lower keeps a reserve: heavier sections. \
+         The time hardly changes (each section tried is one check of every group at once); the \
+         line under the field says the last run's effect, measured in it.",
     );
     ui.horizontal(|ui| {
         ohl_ui::tool_window::label(
             ui,
             "Target usage (%)",
-            "Default 100 %. A section is taken only when every member of its group stays at or \
-             below it in every case; the proposal's run says every member above it.",
+            "Default 100 % (the most allowed: above it a member would be chosen beyond its \
+             capacity). A section is taken only when every member of its group stays at or below \
+             it in every case; the proposal's run says every member above it.",
         );
         let mut pct = s.target * 100.0;
         if ui
-            .add(egui::DragValue::new(&mut pct).range(10.0..=200.0).speed(1.0).suffix(" %"))
+            .add(
+                egui::DragValue::new(&mut pct)
+                    .range(10.0..=100.0)
+                    .speed(1.0)
+                    .suffix(" %"),
+            )
             .changed()
         {
             s.target = pct / 100.0;
         }
     });
+    effect(ui, last, |x| x.target_effect.clone());
     ohl_ui::tool_window::heading(
         ui,
         "2. Limits",
         "The code's limits (slenderness, flat width to thickness, least thickness) come from the \
          design code's plugin and are always kept. The joint-fit limits keep a member \
-         connectable: its leg takes its bolt at mid-leg (the hole clear of the root fillet, the \
-         code's edge distance to the toe) and it is long enough for the bolts its end force needs \
-         (the code's end distance and spacing, one line of bolts).",
+         connectable, with the rules Lay out joints uses: its leg takes its bolt at mid-leg (the \
+         hole clear of the root fillet, the code's edge distance to the toe), it is long enough \
+         for the bolts its ends have or their force needs (the code's end distance and spacing, \
+         one line of bolts), and a plate the detailing practice's shop makes takes its leg \
+         (Structures › Detailing practice).",
     );
     ui.checkbox(&mut s.joint_fit, "Keep to the joint-fit limits")
         .on_hover_text(
-            "On (the default): a section whose leg cannot take its bolt, or a member too short for \
-             its bolts, is not taken. Off: the check alone; the proposal then says how many groups \
-             have joint-fit problems. Effect: after a run the window says how many groups the \
-             limits kept heavier and by how much mass (measured, worked out in the same run: no \
-             extra time).",
+            "On (the default): a section whose leg cannot take its bolt, a member too short for \
+             its bolts or one no listed plate takes is not taken where a connectable one passes \
+             (none passes: the lightest passing, its problems said). Off: the check alone; the \
+             proposal then says how many groups have joint-fit problems. Effect: the line under \
+             it says how many groups the limits kept heavier and by how much mass (measured in \
+             the same run: no extra time).",
         );
+    effect(ui, last, |x| x.fit_effect.clone());
     egui::CollapsingHeader::new("3. Groups")
         .id_salt("sizing-groups")
         .show(ui, |ui| {
@@ -442,6 +464,23 @@ fn setup(ui: &mut egui::Ui, s: &mut Settings, groups: &[String]) {
                 );
                 ui.add(egui::DragValue::new(&mut s.rounds).range(1..=50));
             });
+            effect(ui, last, |x| {
+                let each: Vec<String> = x
+                    .rounds
+                    .iter()
+                    .map(|r| format!("{:.1} s", r.took.as_secs_f64()))
+                    .collect();
+                format!(
+                    "{} round(s) ({}){}; {:.1} s in all",
+                    x.rounds.len(),
+                    each.join(", "),
+                    match &x.settled {
+                        sizing::Settled::Settled => ", settled",
+                        _ => ", not settled",
+                    },
+                    x.took.as_secs_f64()
+                )
+            });
         });
 }
 
@@ -479,7 +518,6 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
         s.took.as_secs_f64(),
         s.rounds.len()
     ));
-    ui.label(egui::RichText::new(&s.fit_effect).small());
     let warn = ui.visuals().warn_fg_color;
     match &s.settled {
         sizing::Settled::Settled => {}
@@ -487,14 +525,31 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
             ui.label(egui::RichText::new(x).color(warn));
         }
     }
-    for n in &s.notes {
-        let text = egui::RichText::new(n);
-        ui.label(if n.starts_with("NOT ON THE SAFE SIDE") || n.contains("off:") {
-            text.color(warn)
-        } else {
-            text.small()
-        });
+    // The notes: NOT ON THE SAFE SIDE first, always shown; the rest in a
+    // box of a fixed height (long reports scroll, the window stays
+    // closable).
+    let (safe, other): (Vec<&String>, Vec<&String>) = s
+        .notes
+        .iter()
+        .partition(|n| n.starts_with("NOT ON THE SAFE SIDE"));
+    for n in safe {
+        ui.label(egui::RichText::new(n).color(warn));
     }
+    egui::ScrollArea::vertical()
+        .id_salt("sizing-notes")
+        .max_height(90.0)
+        .show(ui, |ui| {
+            for n in other {
+                let text = egui::RichText::new(n);
+                ui.label(
+                    if n.contains("off:") || n.contains("cannot") || n.contains("by hand") {
+                        text.color(warn)
+                    } else {
+                        text.small()
+                    },
+                );
+            }
+        });
     if !s.over_target.is_empty() {
         ui.label(
             egui::RichText::new(format!(
@@ -592,7 +647,14 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
                         ui.label(if g.over_target { usage.color(warn) } else { usage })
                             .on_hover_text(&g.governs);
                         ui.label(&g.case[1]);
-                        ui.label(format!("{} → {}", g.fit[0], g.fit[1]));
+                        let fit = egui::RichText::new(format!("{} → {}", g.fit[0], g.fit[1]));
+                        ui.label(if g.fit[1] > 0 { fit.color(warn) } else { fit })
+                            .on_hover_text(if g.basis == sizing::Basis::FitNotMet {
+                                "No section of its family both passes and fits its joints: the \
+                                 lightest passing taken — its joints to detail by hand"
+                            } else {
+                                "Joint-fit problems with its section now → with the one chosen"
+                            });
                         ui.end_row();
                     }
                 });

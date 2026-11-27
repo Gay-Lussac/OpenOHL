@@ -34,7 +34,11 @@
 //!    the practice's count for its class) and ⌈N / P⌉ (N its largest force
 //!    over the cases, the strength factor taken out; P the force one bolt
 //!    passes by its code), each end needing 2 e + (n − 1) s (e, s: the
-//!    code's end distance and spacing).
+//!    code's end distance and spacing). An end where the member goes on in
+//!    line through its joint as a piece of the same section (within the
+//!    core's angle for one part) holds no bolts there: one part, by the
+//!    owner's rule of 2026-11-19 ("a change of section is a splice; the
+//!    same section is one part unless marked") — rules 1 and 2 skip it.
 //! 3. **A plate the shop makes** takes its leg: the practice's thicknesses
 //!    list one at least as thick as the member's leg (a plate is never
 //!    thinner than the thickest leg on it); none: an end onto a plate cannot
@@ -375,13 +379,55 @@ pub fn joint_fit_cached(
             .collect();
     let mut problems = Vec::new();
     let mut unknown = 0;
+    let mut at_node: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (j, m) in model.members.iter().enumerate() {
+        at_node.entry(m.i).or_default().push(j);
+        at_node.entry(m.j).or_default().push(j);
+    }
+    // The member's direction away from its end `e`'s joint.
+    let away = |k: usize, e: usize| -> [f64; 3] {
+        let m = &model.members[k];
+        let (a, b) = if e == 0 { (m.i, m.j) } else { (m.j, m.i) };
+        let (p, q) = (model.nodes[a].point, model.nodes[b].point);
+        let d = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+        let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-12);
+        [d[0] / l, d[1] / l, d[2] / l]
+    };
+    let cos_in_line = ohl_structures::connections::CONTINUOUS_ANGLE_DEG
+        .to_radians()
+        .cos();
+    // End `e` of member `k` goes on in line through its joint as a piece
+    // of the same section (the owner's rule of 2026-11-19: "a change of
+    // section is a splice; the same section is one part unless marked"):
+    // no end connection there to fit.
+    let continues = |k: usize, e: usize| -> bool {
+        let m = &model.members[k];
+        let node = if e == 0 { m.i } else { m.j };
+        let d = away(k, e);
+        at_node.get(&node).is_some_and(|list| {
+            list.iter().any(|&j| {
+                if j == k || model.members[j].section != m.section {
+                    return false;
+                }
+                let ej = if model.members[j].i == node { 0 } else { 1 };
+                let dj = away(j, ej);
+                -(d[0] * dj[0] + d[1] * dj[1] + d[2] * dj[2]) >= cos_in_line
+            })
+        })
+    };
     for &k in members {
         let Some(m) = model.members.get(k) else {
             continue;
         };
         let class = m.design.class.map(|c| c.as_str());
         let mut needs: Vec<Option<EndNeed>> = Vec::with_capacity(2);
-        for e in 0..2 {
+        let mut through = [false; 2];
+        for (e, through) in through.iter_mut().enumerate() {
+            if continues(k, e) {
+                *through = true;
+                needs.push(None);
+                continue;
+            }
             let need = match own_need(model, k, e, cache) {
                 Some(n) => Some(n),
                 None => match defaults.get(&k) {
@@ -416,7 +462,8 @@ pub fn joint_fit_cached(
         let mut length_known = true;
         for (e, need) in needs.iter().enumerate() {
             let Some(n) = need else {
-                length_known = false;
+                // A piece going on in line: nothing to hold at that end.
+                length_known &= through[e];
                 continue;
             };
             let joint = &model.nodes[if e == 0 { m.i } else { m.j }].id;
