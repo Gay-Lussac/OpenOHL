@@ -8,6 +8,71 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-27 (the member sizer: level 3 members chosen automatically, O49 stage 1)
+
+**For each member group the lightest section of the project's library
+that passes the code's check, the code's limits and the joint-fit limits,
+proposed, never applied silently** (roadmap O49; the owner, 2026-11-26:
+*"Would it maybe help the joints to also automate the level 3? (choice of
+members) where there would be a basic choice and then plugins can adapt
+the values based on norms"*, then *"Okay go ahead with the builder"*;
+built, in active development, not approved yet;
+[theory](../theory/member-sizing.md),
+[user guide](../user-guide/member-sizing.md)).
+
+- **The core's basic choice** (`ohl_structure_link::sizing`): per group
+  the sections of its family (shape and steel) tried from the lightest up
+  with the forces of the round, every open group at once per trial; the
+  forces solved again until the choice settles. A cycle: per group the
+  heaviest of the cycle's; not settled within the rounds (10, at least 2):
+  the heavier of the last two; a choice the structure does not solve with
+  (a buckling mode the lighter members let happen): the groups the mode
+  names made lighter go back to the sections that solved and are never
+  made lighter again, each said. The proposal is always a full run with
+  the chosen sections; every member above the target listed.
+- **Groups** (decided here, the smallest concept): the members of one
+  existing `group` with one section; members without a group with their
+  mirror images; the designer splits or keeps a group in the window. No
+  file field is added.
+- **The target** at most 100 %; groups whose members carry capacities
+  written by hand are left as they are; a structure analysed from a model
+  file of its own is refused (each said).
+- **A group no connectable section passes**: the lightest passing the
+  check and the code's limits, its joint-fit problems said (its joints to
+  detail by hand) — never left overloaded for the joints' sake.
+- **The plugins adapt the values**: the check through the loaded code
+  plugin (the core's simple check NOT ON THE SAFE SIDE, with what makes it
+  safe); **one additive optional export `member-limits`** in `code.wit`
+  (interface 0.3, ADR-0012 style; an empty list: no limit) for the limits
+  a usage does not hold, given by the bundled plugins from the standards'
+  text: ASCE 10-97 3.3 (1/8 in., suggested), 3.4 (L/r < 150 legs, KL/r <
+  200 others, ≤ 250 redundants), 3.7.1 (w/t ≤ 25); SIA 263 4.5.1.7 with
+  5.4.1.7 (λ_K ≤ 200 main, ≤ 250 secondary). Left out and listed: ASCE
+  10-97 3.4's tension-only members with draw, 3.8.1; SIA 263's 160 for
+  fatigue, 5.7.3.2.
+- **The joint-fit limits** (`ohl_structure_link::joint_fit`) with the
+  layout's own rules: the code's distances through the function Lay out
+  joints' edge rule takes; the detailing practice in force through one
+  function both now take (`joint_fit::practice_for`, Lay out joints'
+  window changed to call it); the leg takes its bolt at mid-leg, the
+  member holds its bolts, a listed plate takes its leg; pieces in line of
+  one group and section one part (the owner's rule of 2026-11-19).
+- **Core changes, each the smallest**: the `member-limits` export and its
+  host call (`ohl_plugins`, `ohl_member_check::limits`); the bundled
+  plugins' capacities keep L/r and w/t for it (`asce10`); nothing else in
+  the core.
+- **Measured** on eight private towers (kept privately) under the one
+  vertical load case their comparison set has — so the weights say
+  nothing of a real design, only that the method works: the sized
+  members' mass down by a fifth to three fifths, every member within its
+  target in the full run, the joint-fit problems of the towers as built
+  (all the toe's edge distance at mid-leg) none after; two towers needed
+  groups taken back for a buckling mode; 5 s to 2 min of CPU time per
+  tower.
+- Later stages in ROADMAP O49: members created from a level 2 outline, the
+  layout's "bigger member" calling the sizer, sizing with the layout in
+  the loop.
+
 ## 2026-11-26 (joint layout: Solve the clashes after the run, the joints left by reason, L30)
 
 **A pass after the run solving the joints left (a tick, off by default),

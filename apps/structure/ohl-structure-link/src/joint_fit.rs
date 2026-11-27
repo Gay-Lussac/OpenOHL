@@ -102,8 +102,12 @@ impl FitRules {
 
     /// The rules of the practice in force for structure file `text` in
     /// folder `dir` ([`practice_for`]).
-    pub fn for_structure(text: &str, dir: Option<&Path>) -> Self {
-        let (p, refused) = practice_for(text, dir);
+    pub fn for_structure(
+        structure: &ohl_structures::StructureType,
+        text: &str,
+        dir: Option<&Path>,
+    ) -> Self {
+        let (p, refused) = practice_for(structure.layout_practice.as_ref(), text, dir);
         Self::of(p.as_ref(), refused)
     }
 
@@ -134,23 +138,24 @@ impl FitRules {
 }
 
 /// **The detailing practice in force** for structure file `text` in folder
-/// `dir`, as Lay out joints takes it: the file's own `[layout_practice]`
-/// over its code plugin's answer, value by value, over the default (none);
-/// with why a practice given is not used (refused, or the plugin failed —
-/// the default, or the file's own alone, then applies).
+/// `dir` (`own`: its `[layout_practice]`), as Lay out joints takes it —
+/// the one function both use: the file's own table over its code plugin's
+/// answer, value by value, over the default (none); with why a practice
+/// given is not used (refused, or the plugin failed — the default, or the
+/// file's own alone, then applies).
 ///
 /// Expected cost: the file read and one plugin call per plugin, method and
 /// parameter file (kept for the session).
-pub fn practice_for(text: &str, dir: Option<&Path>) -> (Option<RecordedPractice>, Option<String>) {
-    use ohl_structures::LibraryItem as _;
-    let own = ohl_structures::StructureType::parse(Path::new("structure.ohls"), text)
-        .ok()
-        .and_then(|t| t.layout_practice);
+pub fn practice_for(
+    own: Option<&toml::Table>,
+    text: &str,
+    dir: Option<&Path>,
+) -> (Option<RecordedPractice>, Option<String>) {
     let (plugin, failed) = match crate::practice::plugin_practice(text, dir) {
         Ok(p) => (p, None),
         Err(e) => (None, Some(e)),
     };
-    match crate::practice::in_force(own.as_ref(), plugin.as_ref()) {
+    match crate::practice::in_force(own, plugin.as_ref()) {
         Ok(p) => (
             p,
             failed.map(|e| format!("{e}. The code plugin's detailing practice is not used.")),

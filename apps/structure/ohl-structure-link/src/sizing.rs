@@ -1096,7 +1096,7 @@ pub fn size_with(
         .parse()
         .map_err(|e| format!("the structure file does not read: {e}"))?;
     progress("the detailing practice in force");
-    let rules = FitRules::for_structure(input.text, input.dir);
+    let rules = FitRules::for_structure(input.structure, input.text, input.dir);
     let mut cache = FitCache::default();
     progress("the structure as it is: forces");
     let f0 = forces(input, input.text, budget).map_err(|e| e.words)?;

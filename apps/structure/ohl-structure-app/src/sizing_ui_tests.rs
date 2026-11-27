@@ -197,7 +197,9 @@ fn the_members_are_chosen_in_one_undo_step() {
         // The bundled code plugin: no simple-check warning, its limits
         // checked.
         assert!(
-            !s.notes.iter().any(|n| n.starts_with("NOT ON THE SAFE SIDE")),
+            !s.notes
+                .iter()
+                .any(|n| n.starts_with("NOT ON THE SAFE SIDE")),
             "{:?}",
             s.notes
         );

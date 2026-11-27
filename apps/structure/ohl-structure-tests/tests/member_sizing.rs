@@ -130,7 +130,7 @@ fn passes(text: &str, lib: &SectionLibrary) -> Result<bool, String> {
         &model,
         &ks,
         &forces,
-        &sizing::FitRules::for_structure(text, Some(&d)),
+        &sizing::FitRules::for_structure(&t, text, Some(&d)),
     );
     Ok(fit.is_empty())
 }

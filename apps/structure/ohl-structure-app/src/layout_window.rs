@@ -559,21 +559,13 @@ impl StructureApp {
         let Some(f) = self.file.as_ref() else {
             return (None, None);
         };
-        let own = f.structure().layout_practice.clone();
-        let (plugin, failed) = match ohl_structure_link::plugin_practice(
+        // The one function the member sizer's joint fit takes it by too
+        // (O49), so that both agree.
+        ohl_structure_link::joint_fit::practice_for(
+            f.structure().layout_practice.as_ref(),
             f.text_ref(),
             f.path().and_then(std::path::Path::parent),
-        ) {
-            Ok(p) => (p, None),
-            Err(e) => (None, Some(e)),
-        };
-        match ohl_structure_link::practice::in_force(own.as_ref(), plugin.as_ref()) {
-            Ok(p) => (
-                p,
-                failed.map(|e| format!("{e}. The code plugin's detailing practice is not used.")),
-            ),
-            Err(e) => (None, Some(ohl_structure_link::practice::refused_note(&e))),
-        }
+        )
     }
 
     /// The layout's settings as the Lay out joints window would run them

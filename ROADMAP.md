@@ -34,7 +34,7 @@ Guiding principles:
 **Contents**
 - [Next, in order](#next-in-order-owner-2026-11-19): the owner's order of 2026-11-19 across both applications
 - [Part A — OHL-Design (the line)](#part-a--ohl-design-the-line): open O3, O13–O15, O18, O22–O43; U7, U8, U11, U13, U14 (done: O1, O16, U10, U12); Phases 1–5 for the line
-- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): open O4, O7, O8, O10, O12, O19–O21, O44, O45; U1, U2, U4–U6 (done: O5, O6); structure analysis, structures in their own axes, structure–line interaction
+- [Part B — OHL-Structure (the structures)](#part-b--ohl-structure-the-structures): open O4, O7, O8, O10, O12, O19–O21, O44, O45, O49; U1, U2, U4–U6 (done: O5, O6); structure analysis, structures in their own axes, structure–line interaction
 - [Part C — Shared](#part-c--shared): open O9, O11, O17 (the country server and OHL-Server), O46, O47 (done: O2); Phase 0, the engine, plugins, formats, server and version control, Phase 6, cross-cutting, further ahead
 
 The phases below record what is built. Phases map to GitHub milestones;
@@ -5191,6 +5191,62 @@ fits, an upper bound — the 30 mm shift limit, or the plate case's offset
 where a plate would be needed — said "upper bound"; the bolts from the
 class presets first, from the forces (B) next if too rough; the seat
 offsets measured once as an option (D).
+
+### O49. The member sizer: level 3 members chosen automatically
+The owner, 2026-11-26: *"Would it maybe help the joints to also automate
+the level 3? (choice of members) where there would be a basic choice and
+then plugins can adapt the values based on norms"*, then, on the plan
+(the core's basic choice, the plugins' values, proposals only, never
+silent): *"Okay go ahead with the builder"* — paused that day until the
+joint layout's L28–L31 were merged, resumed 2026-11-27. **Stage 1 built
+2026-11-27, in active development, not approved yet**
+([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/member-sizing.md),
+[user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/member-sizing.md)).
+- [x] Stage 1 (L): **the core's basic choice** — per member group (one
+  `group` with one section; members without a group with their mirror
+  images; split or kept by the designer) the lightest section of the
+  project's library in its family (shape and steel) passing the code's
+  check at the target (100 % at most), the code's limits and the
+  joint-fit limits; the forces solved again until the choice settles (a
+  cycle or no settling: the heavier, said; a choice the structure does
+  not solve with taken back, never lighter again, said); the proposal a
+  full run with the chosen sections. **The plugins' values**: the code's
+  check through the loaded plugin (the core's simple check NOT ON THE
+  SAFE SIDE, said), the code's limits through a new optional export
+  `member-limits` (interface 0.3, additive; asce10: 3.3, 3.4, 3.7.1;
+  sia263: 4.5.1.7), the bolt distances and default bolts as before.
+  **The joint-fit limits** with the rules Lay out joints uses (the code's
+  distances by the layout's own function, the detailing practice in
+  force by one function both now take; the leg takes its bolt at
+  mid-leg, the member holds its bolts, a listed plate takes its leg;
+  pieces in line of one group one part). Proposals only: Design ›
+  Choose the members… (each group's change with its mass, usage,
+  governing case and joint-fit problems before and after; Apply one undo
+  step), `ohl-structure-size` on the command line. No file format change.
+  Validation `structsize-001` (brute force over 216 combinations).
+  Measured on eight private towers (kept privately).
+- [ ] Stage 2 (M): level 3 members created from a level 2 outline (a
+  first section per member from its role and length, then stage 1).
+- [ ] Stage 3 (M): the joint layout's "bigger member" option calling the
+  sizer for the member (one group, its joint's members' fit as the
+  target).
+- [ ] Stage 4 (L): sizing with the joint layout in the loop (each round's
+  choice laid out, the joints left fed back as limits).
+**Questions for the owner** (each with a recommendation):
+1. On the private towers the joint-fit limits kept about two thirds of
+   the groups one size heavier than their check alone needs (a few per
+   cent of the mass), all by one rule: the code's edge distance to the toe
+   with the bolt at mid-leg — the towers as built break it at a few
+   hundred member ends each (narrow legs, their own bolts). Keep the
+   mid-leg gauge (as Lay out joints draws one line)? *Recommended: keep
+   it for now — it is what the layout builds; a gauge per leg width (a
+   gauge table) as a detailing-practice value, used by the layout and the
+   sizer alike, as the next step if the owner wants the narrower legs.*
+2. A choice the structure does not solve with is taken back group by
+   group and never made lighter again. *Recommended: keep (on the safe
+   side, said per group); revisit with stage 4.*
+3. Groups whose members carry capacities written by hand are left as
+   they are. *Recommended: keep (they describe the old section).*
 
 ### Done and taken out of this list
 Built, in active development (not approved yet).

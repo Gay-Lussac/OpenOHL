@@ -59,9 +59,6 @@ mod member_panel;
 mod menus;
 mod notices;
 mod orient_window;
-mod sizing_window;
-#[cfg(test)]
-mod sizing_ui_tests;
 mod plate_outline_ui;
 mod plugins_ui;
 mod pole_panel;
@@ -72,6 +69,9 @@ mod review_window;
 mod roll_ui;
 mod rows;
 mod section_editor;
+#[cfg(test)]
+mod sizing_ui_tests;
+mod sizing_window;
 mod solids;
 mod solve_window;
 mod start;

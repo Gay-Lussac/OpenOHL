@@ -261,9 +261,9 @@ with them says it per member.
 
 Measured on the validation truss below (the bundled ASCE 10-97 plugin; the
 whole run about 0.6 s of CPU time, most of it the program's start and the
-plugin's loading) and, for the time, on eight real towers of 2 500 to
-3 900 members (kept privately): about 5 s to 1 min of CPU time for 40 to
-360 groups, three or four rounds. The window shows each setting's effect
+plugin's loading) and, for the time, on eight real towers of 600 to
+2 700 members (kept privately): about 5 s to 2 min of CPU time for 40 to
+360 groups, two to four rounds. The window shows each setting's effect
 and the rounds' times measured in the last run.
 
 | Setting | Default | Effect (validation truss) | Time |
@@ -272,7 +272,7 @@ and the rounds' times measured in the last run.
 | Keep to the joint-fit limits | on | off: the top chord an L40×4 instead of an L50×5 (79 → 76 kg) with 2 joint-fit problems (its 16 mm bolts do not fit its 40 mm legs); the window says how many groups the limits kept heavier and the mass, worked out in the same run | none extra |
 | Split a group | none | the web split: each diagonal and the post its own section, 79 → 70 kg, more different sections | a little more per split group |
 | Keep a group | none | left as it is | less |
-| Rounds at most | 10 (at least 2) | the truss settles in 2, the towers in 3 or 4; one round could not show a choice holds with its own forces | one solve of every case and one trial per section tried, per round |
+| Rounds at most | 10 (at least 2) | the truss settles in 2, the towers in 2 to 4; one round could not show a choice holds with its own forces | one solve of every case and one trial per section tried, per round |
 
 ## Validation and tests
 

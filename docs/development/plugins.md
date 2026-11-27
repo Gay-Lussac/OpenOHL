@@ -1155,6 +1155,31 @@ further optional export carries them:
   before and keeps its own default (the bundled plugins before 2026-11-26:
   a 20 mm bolt). Both bundled plugins have it
   ([ASCE 10-97](../theory/asce10.md#tension), [SIA 263](../theory/sia263.md)).
+- `member-limits` (2026-11-27, `code.wit`, additive: found by its export
+  name; it takes `member-check-full`'s and `member-check-bracing`'s
+  records, the four member exports bound together in the world
+  `member-limits-export`; roadmap O49, the owner's words of 2026-11-26:
+  "there would be a basic choice and then plugins can adapt the values
+  based on norms"): `member-limits(method, full-input,
+  list<member-bracing>) -> result<list<member-limit>, string>`. **The
+  limits the code puts on its members' sizes** that a usage does not hold
+  (a compression member's slenderness, a leg's flat width to thickness, a
+  member's least thickness), each worked out by the plugin's own rules:
+  `member-limit` — the member's id, `name` (what is bounded, in words),
+  `value` (the member's, as the code works it out), `maximum` and
+  `minimum` (each optional, at least one given), `compression` (it holds
+  only for a member compressed in a load case) and `clause`. No load
+  case is sent; where a length depends on one (a crossing's other
+  diagonal in tension) the plugin takes the longer. An empty list: no
+  limit on these members (nothing checked). The host refuses a limit for
+  a member not sent, without a name, with a value or bound that is not a
+  number or with neither bound (`ohl_plugins::member_limits`,
+  `MEMBER_LIMITS_EXPORT`, `WasmHost::member_limits`;
+  `ohl_member_check::limits::{limits, Limit, Limits}`). Only OHL-Structure's
+  member sizer uses it ([theory](../theory/member-sizing.md#the-codes-limits-member-limits));
+  a plugin without it gives no limits and the sizer says so, NOT ON THE
+  SAFE SIDE. Both bundled plugins have it (ASCE 10-97 3.3, 3.4, 3.7.1;
+  SIA 263 4.5.1.7).
 - `joint-check-groups` (2026-11-19, `code.wit`, additive: found by its
   export name, its own records, world `joint-check-groups-export`; stage
   4.5 of the joint details): `check-joint-groups(method, group-input) ->
