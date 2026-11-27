@@ -638,6 +638,36 @@ standard's is along a line of force). A new gauge line is kept clear of
 the root fillet (\\( t + r + d/2 \\) from the heel: geometry, not a code
 rule).
 
+## Shear planes and one-sided joints (O49 stage 1b, 2026-11-27)
+
+Built, in active development, not approved yet. The owner asked: *"Are
+the bolt capacities checked too? And if it's a one sided bolt or 2 (if
+you have two plates, one on each side it's to sided and if only one it's
+just one. This changes capacity in most codes"*.
+
+**The shear planes of an end's bolts** are OpenOHL's, worked out from the
+plies they pass through (`ohl_structures_fe::member_ends::worked_planes`)
+and sent with the end (`planes`, `planes-why`): one per cover of a splice;
+one lapped onto a member or a plate; **two** where a second plate held by
+bolts of its own lies on the other face of the leg (the joint layout's
+L33, `[plate.paired]`), or where a built-up member's two angles lie on
+both faces of a plate filling their gap (no more than 2 mm thinner than
+the gap); a second plate without bolts of its own carries no force: one.
+Planes the plies prove count over the member's design data
+(`proved_planes`), a difference said; a number given with the end's bolts
+wins, a difference said. The bolt shear is then count × planes × the
+capacity per plane (4.3.2, as before).
+
+**Rules for one-sided joints, read in ASCE 10-97 and ASCE/SEI 48-19** (2026-11-27): **none found**.
+ASCE 10-97 4.1 takes the bolts of a connection as carrying it equally;
+4.3.2 gives the bolt's design shear (the threads in or out of the shear
+plane) and 4.4 the bearing, with no reduction for a single lap, one bolt
+row or packings (C4.3.2, C4.4 neither); a single angle's eccentric
+connection is in its column curves (3.7.4). ASCE/SEI 48-19 (steel poles:
+6.2.2, C6.2.2, 6.2.5) has none either. Nothing is left out, so nothing is
+said not on the safe side for it.
+
+
 ## End conditions
 
 > **When the connections are taken (2026-11-11).** The check reads a member end's `[[connection]]` only when the structure file asks for it (`joint_details = true`) **and** is level 4 (every checked member end with its joint detail). Otherwise — the default — the members are checked in the simple form: the member's own design data only, the ends assumed eccentric and not restrained where nothing is given. That simple form does not check a connection's bolt shear, bearing and net section nor the moment of a shifted end, which can govern: it is **not on the safe side for those**, and the results say which form was used. Everything below that names a connection applies when they are taken.

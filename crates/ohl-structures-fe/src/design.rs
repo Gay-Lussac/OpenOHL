@@ -317,8 +317,25 @@ pub struct EndDesign {
     /// within 1°, of the same section, roll and reference): no
     /// connection at this end ([`crate::member_ends::link_continuous`]).
     pub continuous: Option<usize>,
+    /// The second plate on the other face of its bolted leg (L33,
+    /// `[plate.paired]`, 2026-11-27): the end lies between it and the plate
+    /// it bolts onto; none: no second plate.
+    pub paired: Option<Paired>,
     /// What could not be used ("bolt M16: in no bolt library").
     pub notes: Vec<String>,
+}
+
+/// The second plate of a member end lying between two plates (L33,
+/// `[plate.paired]`, 2026-11-27).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Paired {
+    /// Its id.
+    pub id: String,
+    /// Its thickness, m.
+    pub thickness: f64,
+    /// Held by bolts of its own into the first plate (only then does it
+    /// carry a share: the end's bolts in two shear planes).
+    pub held: bool,
 }
 
 impl MemberDesign {

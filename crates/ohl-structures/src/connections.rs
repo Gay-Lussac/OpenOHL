@@ -101,6 +101,22 @@
 //! #   version 23; none: the joint's leg)
 //! outline = [["0 m", "0 m", "10 m"], …]   # its flat in its members' plane
 //!
+//! [[plate]]               # the second plate of a member end lying
+//! id = "G4"               #   between two plates (2026-11-27, version 31,
+//! joint = "N7"            #   the automatic joint layout's L33): on the
+//! thickness = "8 mm"      #   other face of D12's bolted leg, D12's bolts
+//! outline = [["0 m", "0 m", "10 m"], …]   # through G1, D12 and it
+//!
+//! [plate.paired]
+//! plate = "G1"            # the first plate (D12's `onto`)
+//! member = "D12"          # the end lying between the two
+//! packing = "6 mm"        # between the plates where they hold each other
+//! #   (none: the end's leg thickness)
+//! bolts = { count = 2, diameter = "16 mm", grade = "8.8" }   # its own bolts
+//! bolt_points = [["90 mm", "35 mm"], ["140 mm", "35 mm"]]   # through it,
+//! #   the packing and G1: along the member from the joint's work point and
+//! #   across its leg from the heel, nearer the joint than the end's steel
+//!
 //! [plate.bend]            # bent from another plate of the joint
 //! to = "G1"               #   (2026-11-19, version 22): G1 and G3 are the
 //! angle = "90 deg"        #   two flats of one bent plate; the angle it
@@ -132,6 +148,15 @@
 //! weight from the developed area; never welded, never one assembly of
 //! welded plates): each flat is checked as a flat plate with the members
 //! bolted onto it ([`StructureType::bent_pairs`]).
+//!
+//! A **second plate** (`[plate.paired]`, 2026-11-27, the automatic joint
+//! layout's L33, [`PlatePaired`]) lies on the other face of a member end's
+//! bolted leg, the end between it and the first plate (the end's `onto`),
+//! the end's bolts through both: two shear planes — but only where the
+//! second plate is held to the first by its own bolts through a packing
+//! (as thick as the end's leg) nearer the joint than the end's steel; a
+//! second plate without them carries no force of its own (one plane,
+//! said).
 //!
 //! A **welded plate** is several plates welded together so that every
 //! member bolting onto the joint reaches one of them (owner 2026-11-04).
@@ -659,6 +684,51 @@ pub const PLATE_BETWEEN_VERSION: u32 = 25;
 /// a plate gives them.
 pub const PLATE_ALSO_BOLTS_VERSION: u32 = 26;
 
+/// The structure file version of a second plate on the other face of a
+/// member end's bolted leg (`[plate.paired]`, 2026-11-27, the automatic
+/// joint layout's L33): a file is written at 31 only when a plate gives
+/// one.
+pub const PLATE_PAIRED_VERSION: u32 = 31;
+
+/// The second plate of a member end lying between two plates
+/// (`[plate.paired]`, 2026-11-27, structure file version 31, the
+/// automatic joint layout's L33; the owner's words of that day: "if you
+/// have two plates, one on each side it's two sided"): this plate lies on
+/// the other face of `member`'s bolted leg at the joint, the end between it
+/// and `plate` (the end's `onto`), the end's bolts through all three. It
+/// is held by its own bolts through a packing into `plate`, nearer the
+/// joint than the end's steel: only then does it carry a share of the
+/// end's force (the end's bolts in two shear planes); without them, one
+/// plane (said).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatePaired {
+    /// The first plate: the end's `onto`, a plate of the same joint.
+    pub plate: String,
+    /// The member whose end lies between the two plates.
+    pub member: String,
+    /// The packing between the two plates where they hold each other (none:
+    /// the end's leg thickness).
+    #[serde(default)]
+    pub packing: Option<Length>,
+    /// Its own bolts through it, the packing and the first plate (none: not
+    /// held — one shear plane at the end).
+    #[serde(default)]
+    pub bolts: Option<ConnectionBolts>,
+    /// Each of those bolts where it is: along the member from the joint's
+    /// work point and across its bolted leg from the heel (nearer the joint
+    /// than the end's steel).
+    #[serde(default)]
+    pub bolt_points: Vec<[Length; 2]>,
+}
+
+impl PlatePaired {
+    /// It is held by bolts of its own into the first plate.
+    pub fn held(&self) -> bool {
+        self.bolts.as_ref().is_some_and(|b| b.count > 0)
+    }
+}
+
 /// A plate bent from another plate of its joint (`[plate.bend]`,
 /// 2026-11-19, structure file version 22): the two are the two flats of
 /// one bent plate, folded along `line`. Read as one part (its weight from
@@ -749,6 +819,12 @@ pub struct TypePlate {
     /// these onto the other); none: held as before.
     #[serde(default)]
     pub also_bolts: Option<PlateLegBolts>,
+    /// The second plate of a member end lying between two plates
+    /// (`[plate.paired]`, 2026-11-27, version 31, the automatic joint
+    /// layout's L33): which end, the first plate, its packing and its own
+    /// bolts into the first plate; none: a plate as before.
+    #[serde(default)]
+    pub paired: Option<PlatePaired>,
 }
 
 impl TypePlate {
@@ -1164,6 +1240,40 @@ impl StructureType {
                     "plate {}: on {m}: it does not meet at joint {} (the joint's leg taken)",
                     p.id, p.joint
                 ));
+            }
+            if let Some(q) = &p.paired {
+                let first = self
+                    .plates
+                    .iter()
+                    .any(|x| x.id == q.plate && x.joint == p.joint && x.id != p.id);
+                let end = self.connections.iter().find(|c| {
+                    c.member == q.member
+                        && c.joint == p.joint
+                        && c.onto.as_deref() == Some(q.plate.as_str())
+                });
+                if !first {
+                    out.push(format!(
+                        "plate {}: paired with {}: no other plate there (kept, not used)",
+                        p.id, q.plate
+                    ));
+                } else if end.is_none() {
+                    out.push(format!(
+                        "plate {}: paired: the end of {} at joint {} does not bolt onto {} (kept, \
+                         not used)",
+                        p.id, q.member, p.joint, q.plate
+                    ));
+                } else if end.is_some_and(|c| c.leg == Some(BoltedLeg::Both)) {
+                    out.push(format!(
+                        "plate {}: paired: {} is bolted by both legs (kept, not used)",
+                        p.id, q.member
+                    ));
+                } else if !q.held() {
+                    out.push(format!(
+                        "plate {}: second plate of {} without bolts of its own into {}: it \
+                         carries no force (one shear plane)",
+                        p.id, q.member, q.plate
+                    ));
+                }
             }
             if p.between && p.on.is_none() {
                 out.push(format!(

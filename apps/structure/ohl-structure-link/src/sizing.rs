@@ -52,6 +52,12 @@
 //! images (`[[symmetry]]`) of the same section; the designer may split a
 //! group (each member with its mirror images alone).
 //!
+//! **The bolts** (stage 1b, 2026-11-27, [`crate::sizing_bolts`]): a
+//! group failing only by the bolt shear its plugin names is not made
+//! heavier for it — the bolts govern: more of its own bolts, else a larger
+//! bolt of the project's library, proposed within the joint-fit limits
+//! and written by Apply with its sections.
+//!
 //! Groups whose members carry capacities written by hand, and structures
 //! analysed from a finite-element model file of their own, are not sized
 //! (said). Later stages are in ROADMAP O49.
@@ -71,6 +77,7 @@ use toml_edit::DocumentMut;
 use crate::CaseToRun;
 use crate::joint_fit::joint_fit_cached;
 pub use crate::joint_fit::{FitCache, FitProblem, FitRule, FitRules, joint_fit};
+use crate::sizing_bolts::{self, BoltChange, BoltPick, Caps};
 
 /// The note of a sizing by the core's simple check: what it leaves out,
 /// why that can be unsafe, what makes it safe.
@@ -193,12 +200,17 @@ pub struct GroupChange {
     pub over_target: bool,
     /// Left as it is (not sized: its section not in the library, asked).
     pub not_sized: bool,
+    /// Its bolts proposed where they govern (stage 1b): none where they
+    /// do not, or where no proposal could be made (`bolts_govern` says).
+    pub bolts: Option<BoltChange>,
+    /// Where the bolts govern, in words (none: they do not).
+    pub bolts_govern: Option<String>,
 }
 
 impl GroupChange {
-    /// Changed.
+    /// Changed: its section, or its bolts.
     pub fn changed(&self) -> bool {
-        self.from != self.to
+        self.from != self.to || self.bolts.is_some()
     }
 }
 
@@ -477,16 +489,22 @@ fn set_section(doc: &mut DocumentMut, id: &str, section: &str) -> Vec<&'static s
 }
 
 /// `doc` with each group of `groups` at its section in `choice` (the ones
-/// at their own section untouched): the text, and per group the fields
-/// removed.
+/// at their own section untouched) and its members' bolts as `bolts` (none:
+/// as they are): the text, and per group the fields removed.
 fn with_choice(
     doc: &DocumentMut,
     groups: &[Group],
     choice: &[String],
+    bolts: &[Option<BoltPick>],
 ) -> (String, Vec<Vec<&'static str>>) {
     let mut doc = doc.clone();
     let mut removed = vec![Vec::new(); groups.len()];
     for (k, g) in groups.iter().enumerate() {
+        if let Some(Some(b)) = bolts.get(k) {
+            for id in &g.members {
+                sizing_bolts::set_bolts(&mut doc, id, b);
+            }
+        }
         if choice[k] == g.section {
             continue;
         }
@@ -513,6 +531,10 @@ struct Forces {
     axial: Vec<f64>,
     /// Per member: compressed in a case.
     compressed: Vec<bool>,
+    /// Per member its largest tension over the strength factor, N.
+    tension: Vec<f64>,
+    /// Per member its largest compression over the strength factor, N.
+    compression: Vec<f64>,
 }
 
 /// A fresh budget for one case: 200 iterations, 30 s, `budget`'s cancel.
@@ -652,12 +674,17 @@ fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, No
     let n = model.members.len();
     let mut axial = vec![0.0f64; n];
     let mut compressed = vec![false; n];
+    let mut tension = vec![0.0f64; n];
+    let mut compression = vec![0.0f64; n];
     for (c, s) in cases.iter().zip(&solutions) {
         let strength = if c.strength > 0.0 { c.strength } else { 1.0 };
         for (k, f) in s.members.iter().enumerate().take(n) {
             axial[k] = axial[k].max(f.axial.abs() / strength);
             if f.axial < 0.0 {
                 compressed[k] = true;
+                compression[k] = compression[k].max(-f.axial / strength);
+            } else {
+                tension[k] = tension[k].max(f.axial / strength);
             }
         }
     }
@@ -667,14 +694,20 @@ fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, No
         solutions,
         axial,
         compressed,
+        tension,
+        compression,
     })
 }
 
 /// Per member of `model` its largest usage over the solved cases of
 /// `forces` (none: not checked or no capacity) — the plugin's check of
-/// the model's code (one call), else the core's own.
-fn trial_usage(model: &Model, forces: &Forces) -> Result<Vec<Option<f64>>, String> {
+/// the model's code (one call), else the core's own — and its capacities
+/// as the plugin gave them (none: no plugin, or none for it).
+type TrialUsage = (Vec<Option<f64>>, Vec<Option<Caps>>);
+
+fn trial_usage(model: &Model, forces: &Forces) -> Result<TrialUsage, String> {
     let n = model.members.len();
+    let mut caps: Vec<Option<Caps>> = vec![None; n];
     let mut out: Vec<Option<f64>> = vec![Some(0.0); n];
     let mut seen = vec![false; n];
     let mut take = |k: usize, u: Option<f64>| {
@@ -711,6 +744,26 @@ fn trial_usage(model: &Model, forces: &Forces) -> Result<Vec<Option<f64>>, Strin
                         take(u.member, u.usage);
                     }
                 }
+                let place: HashMap<&str, usize> = model
+                    .members
+                    .iter()
+                    .enumerate()
+                    .map(|(k, m)| (m.id.as_str(), k))
+                    .collect();
+                for g in &c.results {
+                    if let Some(&k) = place.get(g.id.as_str()) {
+                        let by = |name: &str| {
+                            g.capacities
+                                .iter()
+                                .find(|x| x.0 == name)
+                                .map(|x| (x.1, x.2.clone()))
+                        };
+                        caps[k] = Some(Caps {
+                            tension: by("tension"),
+                            compression: by("compression"),
+                        });
+                    }
+                }
             }
             Some(Err(e)) => return Err(e),
             None => return Err("the code's plugin was not found".into()),
@@ -727,7 +780,7 @@ fn trial_usage(model: &Model, forces: &Forces) -> Result<Vec<Option<f64>>, Strin
             out[k] = None;
         }
     }
-    Ok(out)
+    Ok((out, caps))
 }
 
 /// The broken limits of the members of `model` (`compressed`: per member,
@@ -776,6 +829,10 @@ struct Pick {
     why: Vec<String>,
     trials: usize,
     limits_note: Option<String>,
+    /// Per group its bolts proposed (stage 1b; none: as they are).
+    bolts: Vec<Option<BoltPick>>,
+    /// Per group, where the bolts govern, in words.
+    bolts_govern: Vec<Option<String>>,
 }
 
 /// Per group the lightest candidate passing with the forces `f` (`index`:
@@ -796,9 +853,16 @@ fn pick(
     cache: &mut FitCache,
     budget: &Budget,
     progress: &(dyn Fn(&str) + Sync),
+    bolt_plan: &BoltPlan,
 ) -> Result<Pick, String> {
     let s = input.settings;
     let n = groups.len();
+    // Stage 1b: per group its bolts (carried from the round before), the
+    // proposals tried, the library bolt taken (its place in the options).
+    let mut bolts: Vec<Option<BoltPick>> = bolt_plan.now.clone();
+    let mut bolt_tries = vec![0usize; n];
+    let mut bolt_option: Vec<Option<usize>> = vec![None; n];
+    let mut bolts_govern: Vec<Option<String>> = vec![None; n];
     let mut pointer = vec![0usize; n];
     let mut done: Vec<Option<usize>> = vec![None; n];
     let mut no_fit: Vec<Option<usize>> = vec![None; n];
@@ -860,13 +924,13 @@ fn pick(
                 _ => current[g].clone(),
             })
             .collect();
-        let (text, _) = with_choice(doc, groups, &choice);
+        let (text, _) = with_choice(doc, groups, &choice, &bolts);
         let t = {
             use ohl_structures::LibraryItem as _;
             StructureType::parse(Path::new("structure.ohls"), &text).map_err(|e| e.message)?
         };
         let model = crate::model_of(&t, &text, input.dir, input.sections)?;
-        let usage = trial_usage(&model, f)?;
+        let (usage, caps) = trial_usage(&model, f)?;
         let limits = ohl_member_check::limits::limits(&model)?;
         if let Limits::Unknown(why) = &limits {
             limits_note = Some(why.clone());
@@ -883,8 +947,10 @@ fn pick(
             cache,
         );
         let mut misfit: HashMap<usize, usize> = HashMap::new();
+        let mut misfit_rules: HashMap<usize, Vec<FitRule>> = HashMap::new();
         for p in &fit {
             *misfit.entry(p.member).or_default() += 1;
+            misfit_rules.entry(p.member).or_default().push(p.rule);
         }
         for &g in &trying {
             let worst = index[g].iter().try_fold(0.0f64, |w, &k| {
@@ -905,6 +971,57 @@ fn pick(
                 && best[g].is_none_or(|b| u < b.0)
             {
                 best[g] = Some((u, pointer[g]));
+            }
+            // Stage 1b: failing only by the bolt shear its plugin names —
+            // a heavier section does not raise it: more of its own bolts
+            // (the same section tried again); not fitting the member (its
+            // length, its leg), the next larger bolt of the library.
+            if let Ok(base) = &bolt_plan.base[g]
+                && bolt_tries[g] < sizing_bolts::MAX_BOLT_TRIES
+            {
+                let now = bolts[g].clone().unwrap_or_else(|| base.clone());
+                if !ok_usage
+                    && let Some(r) = sizing_bolts::short_by(
+                        &index[g],
+                        &usage,
+                        &caps,
+                        &f.tension,
+                        &f.compression,
+                        s.target,
+                    )
+                {
+                    let count = ((f64::from(now.count) * r) - 1e-9)
+                        .ceil()
+                        .max(f64::from(now.count + 1));
+                    bolts[g] = Some(BoltPick {
+                        count: count as u32,
+                        ..now
+                    });
+                    bolt_tries[g] += 1;
+                    bolts_govern[g] = Some(format!(
+                        "the bolts govern (bolt shear, {:.0} % of their capacity): a heavier \
+                         section does not raise it",
+                        r * s.target * 100.0
+                    ));
+                    continue;
+                }
+                let bolt_misfit = index[g].iter().any(|k| misfit.contains_key(k))
+                    && index[g].iter().all(|k| {
+                        misfit_rules.get(k).is_none_or(|rs| {
+                            rs.iter()
+                                .all(|r| matches!(r, FitRule::Length | FitRule::LegTakesBolt))
+                        })
+                    });
+                if bolts[g].is_some() && ok_usage && ok_limits && !ok_fit && bolt_misfit {
+                    let next = bolt_option[g].map_or(0, |i| i + 1);
+                    if let Some(o) = bolt_plan.options[g].get(next) {
+                        let count = sizing_bolts::count_for(&now, now.count, o);
+                        bolts[g] = Some(BoltPick { count, ..o.clone() });
+                        bolt_option[g] = Some(next);
+                        bolt_tries[g] += 1;
+                        continue;
+                    }
+                }
             }
             if ok_usage && ok_limits && ok_fit {
                 done[g] = Some(pointer[g]);
@@ -963,6 +1080,14 @@ fn pick(
             one[g] = Some(list[i].id.clone());
         }
     }
+    for g in 0..n {
+        if bolts_govern[g].is_some()
+            && let Some(b) = &bolts[g]
+        {
+            let w = bolts_govern[g].take().unwrap_or_default();
+            bolts_govern[g] = Some(format!("{w}: {} proposed", b.words()));
+        }
+    }
     Ok(Pick {
         choice: out,
         basis,
@@ -971,7 +1096,18 @@ fn pick(
         why,
         trials,
         limits_note,
+        bolts,
+        bolts_govern,
     })
+}
+
+/// The bolt proposals of a sizing (stage 1b): per group its own bolts as
+/// they are (Err: why it has none to propose), the larger library bolts it
+/// may take, and its bolts now (carried from round to round).
+struct BoltPlan {
+    base: Vec<Result<BoltPick, String>>,
+    options: Vec<Vec<BoltPick>>,
+    now: Vec<Option<BoltPick>>,
 }
 
 /// A full run of the structure of `text` (as OHL-Structure's run, no
@@ -1165,6 +1301,29 @@ pub fn size_with(
         })
         .collect();
     let current0: Vec<String> = groups.iter().map(|g| g.section.clone()).collect();
+    let bolt_lib = input
+        .dir
+        .map(|d| ohl_structures::bolts::BoltLibrary::beside(d).0)
+        .unwrap_or_default();
+    let mut bolt_plan = {
+        let base: Vec<Result<BoltPick, String>> = index
+            .iter()
+            .map(|ks| sizing_bolts::base(&f0.model, ks))
+            .collect();
+        let options = base
+            .iter()
+            .map(|b| match b {
+                Ok(b) => sizing_bolts::options(&bolt_lib, b),
+                Err(_) => Vec::new(),
+            })
+            .collect();
+        BoltPlan {
+            base,
+            options,
+            now: vec![None; groups.len()],
+        }
+    };
+    let mut bolts_govern: Vec<Option<String>> = vec![None; groups.len()];
     let mut choice = current0.clone();
     let mut history: Vec<Vec<String>> = vec![choice.clone()];
     let mut rounds: Vec<Round> = Vec::new();
@@ -1196,7 +1355,7 @@ pub fn size_with(
             progress(&format!("round {}: forces with the new sections", r + 1));
             let mut repairs = 0;
             let next = loop {
-                let (text, _) = with_choice(&doc, &groups, &choice);
+                let (text, _) = with_choice(&doc, &groups, &choice, &bolt_plan.now);
                 match forces(input, &text, budget) {
                     Ok(x) => break x,
                     Err(e) => {
@@ -1296,8 +1455,14 @@ pub fn size_with(
         }
         let p = pick(
             input, &doc, &groups, &lists, &current0, &f, &index, &part_of, &floor, &rules,
-            &mut cache, budget, progress,
+            &mut cache, budget, progress, &bolt_plan,
         )?;
+        bolt_plan.now = p.bolts.clone();
+        for (g, w) in p.bolts_govern.iter().enumerate() {
+            if w.is_some() {
+                bolts_govern[g] = w.clone();
+            }
+        }
         let changed = p.choice.iter().zip(&choice).filter(|(a, b)| a != b).count();
         rounds.push(Round {
             changed,
@@ -1342,7 +1507,7 @@ pub fn size_with(
     let f_first = f_first.unwrap_or(f);
     // The final run: a full analysis with the chosen sections.
     progress("the final run with the chosen sections");
-    let (text, removed) = with_choice(&doc, &groups, &choice);
+    let (text, removed) = with_choice(&doc, &groups, &choice, &bolt_plan.now);
     let (before_run, _) = full_run(input, input.text, budget)?;
     let (after_run, _) = full_run(input, &text, budget)?;
     let before = usages(&before_run)?;
@@ -1459,6 +1624,18 @@ pub fn size_with(
                 .collect(),
             over_target: u1.is_none_or(|u| u > s.target * (1.0 + 1e-12)),
             not_sized: not_sized[g].is_some(),
+            bolts: match (&bolt_plan.base[g], &bolt_plan.now[g]) {
+                (Ok(b), Some(p)) if p != b => Some(BoltChange {
+                    from: b.words(),
+                    to: p.words(),
+                    pick: p.clone(),
+                }),
+                _ => None,
+            },
+            bolts_govern: match (&bolts_govern[g], &bolt_plan.base[g]) {
+                (Some(w), _) => Some(w.clone()),
+                (None, _) => None,
+            },
         });
     }
     changes.sort_by(|a, b| {
@@ -1517,6 +1694,14 @@ pub fn size_with(
                  Structures › Detailing practice, or detail them by hand)"
             ));
         }
+    }
+    let bolted = changes.iter().filter(|c| c.bolts.is_some()).count();
+    if bolted > 0 {
+        notes.push(format!(
+            "{bolted} group(s) where the bolts govern (bolt shear, which a heavier section does \
+             not raise): more bolts or a larger bolt proposed, within the joint-fit limits; Apply \
+             writes them with the sections"
+        ));
     }
     let not_met = changes
         .iter()
@@ -1641,7 +1826,12 @@ pub fn apply(text: &str, sizing: &Sizing, accepted: &[String]) -> Result<String,
             if member_table(&mut doc, id).is_none() {
                 return Err(format!("member {id} is no longer in the file: size again"));
             }
-            set_section(&mut doc, id, &c.to);
+            if c.from != c.to {
+                set_section(&mut doc, id, &c.to);
+            }
+            if let Some(b) = &c.bolts {
+                sizing_bolts::set_bolts(&mut doc, id, &b.pick);
+            }
         }
     }
     Ok(doc.to_string())
@@ -1701,6 +1891,16 @@ pub fn summary(sizing: &Sizing) -> Vec<String> {
                 format!("; removed: {}", c.removed.join(", "))
             }
         ));
+        match (&c.bolts, &c.bolts_govern) {
+            (Some(b), _) => out.push(format!(
+                "    bolts {} → {} — {}",
+                b.from,
+                b.to,
+                c.bolts_govern.as_deref().unwrap_or("the bolts govern")
+            )),
+            (None, Some(w)) => out.push(format!("    {w}")),
+            (None, None) => {}
+        }
     }
     for o in &sizing.over_target {
         out.push(format!(

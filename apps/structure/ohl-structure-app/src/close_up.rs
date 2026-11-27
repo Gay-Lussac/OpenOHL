@@ -282,6 +282,13 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
         for (tris, nv) in slab(&poly, through, pl.thickness) {
             add(tris, base, Some(nv), None);
         }
+        // (L33) A second plate's packing, as the plate.
+        if let Some(q) = pl.paired.as_ref().filter(|q| q.packing_outline.len() >= 3) {
+            let poly: Vec<[f64; 3]> = q.packing_outline.iter().map(|x| rel(*x)).collect();
+            for (tris, nv) in slab(&poly, q.packing_through, q.packing) {
+                add(tris, base, Some(nv), None);
+            }
+        }
         // Its weld seams: a fillet along each, between the two plates.
         for w in &pl.welds {
             let [s0, s1] = w.ends.map(rel);
@@ -324,6 +331,19 @@ pub fn pieces_with(j: &JointDetail, dark: bool, fine: f64, coarse: f64) -> Vec<P
                 let poly: Vec<[f64; 3]> = poly.iter().map(|q| rel(*q)).collect();
                 if let Some(nv) = normal_of(&poly) {
                     add(fan(&poly), base, Some(nv), Some(part));
+                }
+            }
+        }
+    }
+    // (L33) A second plate's own bolts through its packing into the first.
+    for q in j.plates.iter().filter_map(|p| p.paired.as_ref()) {
+        let Some(d) = q.diameter else { continue };
+        for p in &q.bolts {
+            for (poly, part) in ohl_structure_link::bolt_faces(*p, q.bolt_axis, d, q.grip, q.drawn)
+            {
+                let poly: Vec<[f64; 3]> = poly.iter().map(|x| rel(*x)).collect();
+                if let Some(nv) = normal_of(&poly) {
+                    add(fan(&poly), [200, 202, 196, 255], Some(nv), Some(part));
                 }
             }
         }

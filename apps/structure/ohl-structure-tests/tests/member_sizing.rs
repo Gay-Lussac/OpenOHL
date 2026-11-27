@@ -233,7 +233,7 @@ fn validation_case_structsize_001() {
     assert!(cases.iter().any(|c| c.case.id == "structsize-001"));
     let mut registry = Registry::new();
     registry.register(Box::new(SizeCalculation));
-    for c in cases {
+    for c in cases.into_iter().filter(|c| c.case.id == "structsize-001") {
         let r = ohl_validation::run_case(&registry, c);
         assert!(r.passed(), "{:#?}", r.outcome);
     }

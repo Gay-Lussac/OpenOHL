@@ -5783,3 +5783,64 @@ out), 114 of 9 429 leg pieces with estimates flagged, on 22 towers — 110 of
 them leg extensions' pieces Orient angles finds no faces for (±3.8° to
 ±4.1°), four at ±13.5° where Orient's faces say 0°; on the towers as
 imported (the import's rolls, no Orient) 4 212 of 8 695.
+
+## Two plates on one member end (L33)
+
+(2026-11-27, with O49 stage 1b; built, in active development, not
+approved yet.) The owner: *"Also make sure the joint layout can have 2
+plates if needed and shows them properly"*.
+
+**What it is.** A second plate on the other face of an end's bolted leg,
+the end between it and the plate it bolts onto (the first plate), the
+end's bolts through the three: two shear planes. A plate bolted only by the
+end's bolts carries no net force (statics), so the second plate is **held
+by bolts of its own** through a **packing** as thick as the end's leg into
+the first plate, nearer the joint than the end's steel
+(`[plate.paired]`, structure file version 31).
+
+**When Lay out joints plans it** (setting on by default): after the run,
+where an end laid onto a plate (bolted by one leg, not already paired)
+fails the code's check by the bolt shear at that end — the plugin's
+capacity, tension or compression, governed by "bolt shear at" that joint,
+with the forces of the file's own load cases (the command line: a table
+with `--loads`); no load case: not weighed, said. Its plan:
+
+1. its own bolts: the end's bolt, on the end's first gauge line, as many as
+   half the end's largest force needs by the code's force one bolt passes
+   in the first plate (`bolt_rules`), two at least, from the end's steel
+   back towards the work point at the code's end distance and spacing;
+2. each inside the first plate with the code's edge and end distance, and
+   past the work point none (else not planned, said);
+3. its outline: from the last own bolt's end distance to the end's last
+   bolt's, across from the gauge less the edge distance to the farthest
+   line's plus it — not nearer the heel than the leg's thickness and root
+   radius (else it would run into the end's other leg: not planned, said);
+   the first plate's thickness and steel;
+4. **kept only where it measures better**: the end's force over its
+   capacity falls (the plugin's capacity with the joint details taken) and
+   the joint has no more clashes than without it; otherwise taken back,
+   said.
+
+**The forces' split** — **conservative**: the first plate keeps the end's
+full force in its checks (as before); the second plate and its own bolts
+take half — the share each plane takes in the codes' bolt shear rule that
+gives the two planes (ASCE 10-97 4.1, 4.3.2; SIA 263 Table 16 per plane);
+no code read gives another split (owner question). The second plate's
+own bolts are checked by Lay out joints only: **NOT ON THE SAFE SIDE** in
+Results' joint checks (said with the joint): (1) those bolts and SIA 263
+6.2.2.5's reduction for a packing thicker than d/3 are left out there,
+(2) a change of forces after the layout could overload them unseen, (3) lay
+the joints out again after the forces change, or check them by hand.
+
+**Drawn** in the 3D view, the Detail tab, the close-ups and the joint
+sheets (the plate, its packing, its own bolts; the end's bolts longer by
+its thickness), Joint details' sketch saying the two planes; counted in the
+bill of materials (the plate, the packing, its bolts by their grip);
+picking the plate or its packing selects it.
+
+**Not built**: a second plate where one plate would be thicker than the
+practice's thickest (the first plate keeps the full force, so a second
+never thins it).
+
+**Measured** on the eight private towers (one vertical case; kept
+privately): see O49 stage 1b in the roadmap.

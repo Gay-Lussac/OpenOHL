@@ -671,3 +671,88 @@ fn what_the_sizer_leaves_and_refuses() {
     let e = run(&own, &Settings::default()).unwrap_err();
     assert!(e.contains("finite-element model file (t.ohlfe)"), "{e}");
 }
+
+/// O49 stage 1b (2026-11-27): the bolts govern. The truss checked by the
+/// bundled ASCE 10-97 plugin, its bolts given 10 kN per plane: AC's 60 kN
+/// needs six (20 kN with its two), more than any section gives — the
+/// group is not made heavier for it, its bolts are proposed (more of its
+/// own: no bolt library beside it), within the joint-fit limits; the run
+/// with them passes; Apply writes them with the sections; a group not
+/// ticked keeps its bolts.
+#[test]
+fn the_bolts_govern() {
+    let text = TRUSS
+        .replace("capacity = \"simple\"", "capacity = \"asce10-97\"")
+        .replace(
+            "bolts = { diameter = \"16 mm\", count = 2 }",
+            "bolts = { diameter = \"16 mm\", count = 2, shear_capacity = \"10 kN\" }",
+        );
+    let s = size(&text, &Settings::default());
+    let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
+    let b = bottom.bolts.as_ref().expect("bolts proposed");
+    assert!(b.pick.count >= 6, "{b:?}");
+    assert_eq!(b.from, "2 × 16 mm");
+    assert!(
+        bottom
+            .bolts_govern
+            .as_ref()
+            .is_some_and(|w| w.starts_with("the bolts govern (bolt shear")),
+        "{bottom:?}"
+    );
+    assert!(s.over_target.is_empty(), "{:?}", s.over_target);
+    assert!(
+        s.notes
+            .iter()
+            .any(|n| n.contains("group(s) where the bolts govern")),
+        "{:?}",
+        s.notes
+    );
+    assert!(
+        sizing::summary(&s)
+            .iter()
+            .any(|l| l.starts_with("    bolts 2 × 16 mm → ")),
+        "{:?}",
+        sizing::summary(&s)
+    );
+    let applied = sizing::apply(&text, &s, std::slice::from_ref(&bottom.group.name)).unwrap();
+    let t = StructureType::parse(std::path::Path::new("t.ohls"), &applied).unwrap();
+    let count = |id: &str| {
+        let m = crate::model_of(&t, &applied, None, &library()).unwrap();
+        m.members
+            .iter()
+            .find(|m| m.id == id)
+            .and_then(|m| m.design.bolts)
+            .map(|b| b.count)
+    };
+    assert_eq!(count("AC"), Some(b.pick.count));
+    assert_eq!(count("BD"), Some(2));
+}
+
+/// O49 stage 1b: a larger bolt of the library where more of the group's
+/// own do not fit; the count by the per-plane capacities.
+#[test]
+fn a_larger_bolt_by_its_capacity() {
+    use crate::sizing_bolts::{BoltPick, count_for};
+    let m16 = BoltPick {
+        count: 6,
+        diameter: 0.016,
+        hole: None,
+        shear_capacity: Some(60e3),
+        bolt: None,
+    };
+    let m20 = BoltPick {
+        count: 2,
+        diameter: 0.020,
+        hole: Some(0.022),
+        shear_capacity: Some(94e3),
+        bolt: Some("M20".into()),
+    };
+    assert_eq!(count_for(&m16, 6, &m20), 4);
+    let m20_bare = BoltPick {
+        shear_capacity: None,
+        ..m20.clone()
+    };
+    // By the areas: 6 × (16/20)² = 3.84.
+    assert_eq!(count_for(&m16, 6, &m20_bare), 4);
+    assert_eq!(m20.words(), "2 × 20 mm (M20)");
+}

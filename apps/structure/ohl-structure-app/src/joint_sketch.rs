@@ -121,6 +121,9 @@ pub struct Shown {
     pub stops: Option<f64>,
     /// Shift (none: 0).
     pub shift: Option<f64>,
+    /// Two shear planes or more worked out from the plies, and why
+    /// (O49 stage 1b / L33: "between plates G1 and G1b …"); none: one.
+    pub planes: Option<(u32, String)>,
 }
 
 impl Shown {
@@ -137,6 +140,10 @@ impl Shown {
             ecc: a.eccentricity.value,
             stops: a.cut.value,
             shift: Some(a.shift.0),
+            planes: match (&a.planes.0.value, &a.planes.1) {
+                (Some(n), Some(why)) if *n >= 2 => Some((*n, why.clone())),
+                _ => None,
+            },
         }
     }
 }
@@ -260,6 +267,28 @@ fn prims(v: &Shown) -> Vec<Prim> {
     for x in &bolts {
         out.push(Prim::Bolt([*x, g], false));
         out.push(Prim::Bolt([*x - pitch / 2.0, g2], true));
+    }
+    // (O49 stage 1b / L33) Its bolts in two shear planes or more: said
+    // under the leg (between two plates: the second plate's outline over
+    // the bolts, dashed).
+    if let Some((n, why)) = &v.planes {
+        out.push(Prim::Line(
+            vec![
+                [-end - 2.0 * pitch - 25.0, g - 25.0],
+                [-end + 25.0, g - 25.0],
+                [-end + 25.0, g2 + 20.0],
+                [-end - 2.0 * pitch - 25.0, g2 + 20.0],
+                [-end - 2.0 * pitch - 25.0, g - 25.0],
+            ],
+            Ink::Onto,
+        ));
+        out.push(Prim::Label {
+            at: [x0 / 2.0, -58.0],
+            text: format!("{n} shear planes: {why}"),
+            anchor: Anchor::Below,
+            tip: None,
+            faint: true,
+        });
     }
     // Across the leg, at the left: the gauge and the edge distance.
     let xd = x0 - 22.0;
@@ -995,6 +1024,7 @@ mod tests {
             ecc: Some(0.0118),
             stops: Some(0.120),
             shift: Some(-0.015),
+            planes: Some((2, "between plates G1 and G1b".into())),
         };
         let mut bad = Vec::new();
         for v in [Shown::default(), values] {

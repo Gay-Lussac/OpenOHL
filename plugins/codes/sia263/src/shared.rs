@@ -77,12 +77,24 @@ pub fn end_bolts(
             {
                 notes.push(format!("shear planes: {g} given ({w} worked out: {why})"));
             }
-            // A splice's covers count over the member's design data (they
-            // are the end's own); a lap's one plane only where nothing
-            // else says (as before: the member's, else 1).
-            let splice = worked.filter(|_| matches!(e.onto, Some(Onto::Splice)));
+            // A splice's covers, and two planes the plies prove (two
+            // plates, a plate in a built-up member's gap: O49 stage 1b,
+            // 2026-11-27, OpenOHL's `member_ends::proved_planes`), count
+            // over the member's design data (they are the end's own); a
+            // lap's one plane only where nothing else says (as before: the
+            // member's, else 1). The member's differing: said.
+            let proved = worked.filter(|w| proved_planes(e.onto.as_ref(), w.0));
+            if let (None, Some((w, why)), Some(m)) = (own.shear_planes, proved, d.bolts)
+                && m.shear_planes != *w
+            {
+                notes.push(format!(
+                    "shear planes: {} in the member's design data, {w} worked out ({why}): the \
+                     worked out taken",
+                    m.shear_planes
+                ));
+            }
             own.shear_planes
-                .or(splice.map(|w| w.0))
+                .or(proved.map(|w| w.0))
                 .or(d.bolts.map(|b| b.shear_planes))
                 .or(worked.map(|w| w.0))
                 .unwrap_or(1)
@@ -93,6 +105,14 @@ pub fn end_bolts(
         grade: own.grade.or(same.and_then(|b| b.grade)),
     };
     Some((b, own.shear_capacity_shank, own.threads_in_shear))
+}
+
+/// Whether `planes` worked out for an end onto `onto` are proved by its
+/// plies and so count over the member's design data: a splice's covers,
+/// or two planes or more (O49 stage 1b, 2026-11-27; the same rule as
+/// OpenOHL's `ohl_structures_fe::member_ends::proved_planes`).
+pub fn proved_planes(onto: Option<&Onto>, planes: u32) -> bool {
+    matches!(onto, Some(Onto::Splice)) || planes >= 2
 }
 
 /// The torsional radius of gyration r_t (ASCE 10-97 Eq. 3.9-2): √((C_w +

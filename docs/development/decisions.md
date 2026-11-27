@@ -8,6 +8,37 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-27 (the bolts in the member sizer, shear planes from the geometry, two plates on one end: O49 stage 1b, O44 L33)
+
+The owner: *"Are the bolt capacities checked too? And if it's a one sided bolt or 2 (if you have two plates, one on each side it's to sided and if only one it's just one. This changes capacity in most codes"*; on the plan: *"Yes please. Also make sure
+the joint layout can have 2 plates if needed and shows them properly"*.
+Built, in active development, not approved yet.
+
+- **Shear planes from the plies, one rule** (`member_ends::worked_planes`):
+  two where a second plate held by bolts of its own lies on the other face
+  of the leg, or where a built-up member's two angles lie on both faces of
+  a plate filling their gap (no more than 2 mm thinner: SIA 263 7.4.1.2's
+  packings are not counted); a second plate without bolts of its own: one
+  (it carries no force). Planes the plies prove count over the member's
+  design data (`proved_planes`, the plugins' copy alike), a difference
+  said. *Why*: more planes give more capacity; only the geometry may give
+  them.
+- **The second plate is held by its own bolts through a packing into the
+  first** (`[plate.paired]`, version 31): statics — a plate bolted only by
+  the end's bolts carries no net force. Its share: half the end's force,
+  the split the codes' per-plane bolt shear rule gives; the first plate
+  keeps the full force (conservative). Owner question.
+- **The sizer when the bolts govern**: bolt shear does not depend on the
+  section — a group failing only by it gets more of its own bolts, else a
+  larger library bolt, never a heavier section for that reason; bearing,
+  block shear and net section can be cured by a heavier section and go on
+  as before. Proposals only, written by Apply with the sections.
+- **Rules read in the standards**: ASCE 10-97 and ASCE/SEI 48-19 have no
+  single-lap, one-row or packing reduction (none applied, none needed);
+  SIA 263's one-sided rules (6.2.4.4, 6.2.4.5) are in the plugin already;
+  6.2.2.5 (packings) and 6.2.2.2 (long joints) are not applied — said and
+  asked. No plugin interface change.
+
 ## 2026-11-27 (the member sizer: level 3 members chosen automatically, O49 stage 1)
 
 **For each member group the lightest section of the project's library

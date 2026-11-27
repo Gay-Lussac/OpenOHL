@@ -91,6 +91,17 @@ How long it takes, measured: under a second on the invented truss of the
 pictures; on real towers of 2 300 to 2 700 members with 300 to 360
 groups, 40 s to 2.5 min of CPU time (three or four rounds).
 
+### The bolts
+
+Where a group fails only by its bolts' shear (the code's plugin says what
+governs), a heavier section would not help: the window's **Bolts** column
+proposes more of its own bolts, or a larger bolt of the project's bolt
+library where more do not fit the member ("2 × 16 mm to 4 × 16 mm"; hover
+for why). Ticking the group takes its bolts with its section; Apply writes
+both in one undo step. On the command line the proposal is the line
+`bolts … → …` under the group. Built, in active development (not approved
+yet).
+
 ## What is and is not on the safe side
 
 - The proposal's usage is a full run of the structure with the chosen

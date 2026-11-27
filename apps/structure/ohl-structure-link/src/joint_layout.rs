@@ -364,6 +364,15 @@ pub struct LayoutSettings {
     /// plates, than without. On by default; off: as before (such an end
     /// planned on the angle facing it).
     pub between_plates: bool,
+    /// L33, 2026-11-27 (the owner: "make sure the joint layout can have 2
+    /// plates if needed"): an end laid onto a plate that fails the code's
+    /// check by the bolt shear at that end gets a second plate on the other
+    /// face of its leg, held by bolts of its own through a packing into the
+    /// first (`[plate.paired]`, structure file version 31;
+    /// [`crate::two_plates::after_run`]), kept only where the end's usage
+    /// falls and the joint has no more clashes. On by default; off: as
+    /// before (one plate).
+    pub two_plates: bool,
     /// L16, 2026-11-22 (L15's question 4): an end is planned on the face
     /// of the leg of what the layout lays it onto that the joint details
     /// then seat it on (`joints::seat_face`: the face given at
@@ -592,6 +601,7 @@ impl Default for LayoutSettings {
             plane_hosts: true,
             base_holds: true,
             between_plates: true,
+            two_plates: true,
             seat_as_drawn: true,
             planes_high_to_low: false,
             weigh_turns: true,

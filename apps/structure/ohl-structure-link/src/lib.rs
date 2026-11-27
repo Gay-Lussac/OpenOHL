@@ -140,6 +140,7 @@ pub use ohl_member_check as plugin_check;
 mod quantities;
 mod run;
 pub mod sizing;
+pub mod sizing_bolts;
 #[cfg(test)]
 mod sizing_tests;
 pub mod solve;
@@ -148,6 +149,7 @@ pub mod solve_pass;
 mod solve_pass_tests;
 #[cfg(test)]
 mod solve_tests;
+pub mod two_plates;
 mod volumes;
 pub mod weighed_turns;
 #[cfg(test)]
@@ -186,7 +188,8 @@ pub use joints::{
 pub use layout_run::{
     END_FIELDS, Followed, JointOutcome, LayoutRecord, LayoutRun, ONTO_HAND, PlaneTurnRow,
     RECORD_ID, RECORD_KIND, RecordSettings, RunAsk, follow, follow_read, follow_whole, lay_out,
-    lay_out_whole, plan_relaxed, preset_area, presets_by_class, provisional_bolts, touched,
+    lay_out_loads, lay_out_whole, plan_relaxed, preset_area, presets_by_class, provisional_bolts,
+    touched,
 };
 pub use leg_roll::{LegRoll, RollEstimate, leg_rolls, piece_rolls};
 pub use leg_splices::{LegSplice, leg_splices};

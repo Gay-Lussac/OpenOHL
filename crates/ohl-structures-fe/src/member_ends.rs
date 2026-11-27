@@ -36,7 +36,7 @@ use ohl_structures::connections::{
 };
 
 use crate::design::{
-    Bolts, ConnectedLeg, EndBolts, EndDesign, Ends, MemberClass, MemberDesign, Onto,
+    Bolts, ConnectedLeg, EndBolts, EndDesign, Ends, MemberClass, MemberDesign, Onto, Paired,
 };
 use crate::model::{Model, Section};
 
@@ -493,7 +493,42 @@ pub(crate) fn read_connections(
                 },
             }
         });
-        e.planes = worked_planes(e.onto.as_ref(), c.face);
+        // L33: the second plate on the other face of its bolted leg.
+        if let Some(Onto::Plate { id, .. }) = &e.onto {
+            e.paired = plates
+                .iter()
+                .find(|p| {
+                    p.joint == c.joint
+                        && p.paired
+                            .as_ref()
+                            .is_some_and(|q| q.member == c.member && &q.plate == id)
+                })
+                .filter(|_| c.leg != Some(BoltedLeg::Both))
+                .map(|p| Paired {
+                    id: p.id.clone(),
+                    thickness: p.thickness.si(),
+                    held: p.paired.as_ref().is_some_and(|q| q.held()),
+                });
+        }
+        let gap = match model.members[idx].section {
+            k if k < model.sections.len() => match model.sections[k].profile.as_ref() {
+                Some(p) => match p.shape {
+                    ohl_sections::Shape::DoubleAngle { gap, .. } => Some(gap),
+                    _ => None,
+                },
+                None => None,
+            },
+            _ => None,
+        };
+        e.planes = worked_planes(
+            e.onto.as_ref(),
+            c.face,
+            Through {
+                paired: e.paired.as_ref(),
+                gap,
+                both_legs: c.leg == Some(BoltedLeg::Both),
+            },
+        );
         if let Some(b) = &c.bolts {
             let lib = b.bolt.as_deref().and_then(|id| bolts.get(id));
             if let (Some(id), None) = (&b.bolt, lib) {
@@ -766,10 +801,60 @@ fn splice_onto(s: &TypeSplice, leg: Option<BoltedLeg>) -> Onto {
     }
 }
 
-/// The shear planes per bolt worked out from what the end bolts onto
-/// and where it sits: one per cover of a splice; one bolted directly
-/// onto a member or a plate (lapped, nested or not).
-pub fn worked_planes(onto: Option<&Onto>, face: Option<Face>) -> Option<(u32, String)> {
+/// What else a member end's bolts pass through, for [`worked_planes`]
+/// (2026-11-27, O49 stage 1b: the shear planes from the geometry).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Through<'a> {
+    /// A second plate on the other face of its bolted leg (L33).
+    pub paired: Option<&'a Paired>,
+    /// Its section is two angles back to back with this gap, m.
+    pub gap: Option<f64>,
+    /// Bolted by both legs.
+    pub both_legs: bool,
+}
+
+/// How much thinner than a built-up member's gap a plate in it may be and
+/// still be taken as filling it (SIA 263 7.4.1.2: gaps of more than 2 mm
+/// are filled with packings, which [`worked_planes`] does not count), m.
+pub const GAP_FILLED: f64 = 0.002;
+
+/// A plate fills two angles' gap `gap` (m) when its thickness `t` is no
+/// more than the gap (0.1 mm allowed for rounding) and no more than
+/// [`GAP_FILLED`] less: the bolts pass angle, plate, angle.
+pub fn fills_gap(t: f64, gap: f64) -> bool {
+    t <= gap + 1e-4 && t >= gap - GAP_FILLED
+}
+
+/// The shear planes of a bolt through a plate lying between two angles
+/// (L15's plate between a built-up member's angles, its own bolts through
+/// the angle on each face; a built-up member's end whose angles lie on
+/// both faces of a plate filling their gap): two where an angle lies on
+/// each face (`across`: the other angle's leg lies straight across the
+/// plate, so the bolt passes through both), else one — with the words.
+/// One function for the joints' checks and the member check (O49 stage
+/// 1b): never more planes than the plies prove.
+pub fn planes_between_angles(across: bool) -> (u32, &'static str) {
+    if across {
+        (2, "an angle on each face of the plate: angle, plate, angle")
+    } else {
+        (1, "an angle on one face of the plate only")
+    }
+}
+
+/// The shear planes per bolt worked out from what the end bolts onto,
+/// where it sits and what else its bolts pass through (`through`; O49
+/// stage 1b, 2026-11-27): one per cover of a splice; one bolted directly
+/// onto a member (lapped, nested or not); onto a plate one — two where a
+/// second plate held by bolts of its own lies on the other face of its
+/// leg (L33), or where its section's two angles back to back lie on both
+/// faces of a plate filling their gap ([`fills_gap`], bolted by one leg).
+/// Never more planes than the plies prove: a second plate not held carries
+/// no force of its own (one, said).
+pub fn worked_planes(
+    onto: Option<&Onto>,
+    face: Option<Face>,
+    through: Through,
+) -> Option<(u32, String)> {
     match onto? {
         Onto::Splice { planes, .. } => Some((
             *planes,
@@ -786,9 +871,47 @@ pub fn worked_planes(onto: Option<&Onto>, face: Option<Face>) -> Option<(u32, St
                 _ => "lapped onto the member".into(),
             },
         )),
-        Onto::Plate { .. } => Some((1, "lapped onto the plate".into())),
+        Onto::Plate { id, thickness } => Some(match (through.paired, through.gap) {
+            (Some(p), _) if p.held => (
+                2,
+                format!(
+                    "between plates {id} and {} (one on each face of its leg, {} held by its \
+                     own bolts into {id})",
+                    p.id, p.id
+                ),
+            ),
+            (Some(p), _) => (
+                1,
+                format!(
+                    "lapped onto the plate ({} on its other face has no bolts of its own into \
+                     {id}: it carries no force)",
+                    p.id
+                ),
+            ),
+            (None, Some(gap)) if !through.both_legs && fills_gap(*thickness, gap) => {
+                let (n, why) = planes_between_angles(true);
+                (
+                    n,
+                    format!(
+                        "its two angles on both faces of plate {id} ({:.0} mm in their {:.0} mm \
+                         gap): {why}",
+                        thickness * 1e3,
+                        gap * 1e3
+                    ),
+                )
+            }
+            _ => (1, "lapped onto the plate".into()),
+        }),
         Onto::Other(_) => None,
     }
+}
+
+/// Whether `planes` worked out for an end onto `onto` are proved by its
+/// plies and so count over the member's design data: a splice's covers,
+/// or two planes or more (O49 stage 1b; the plugins' `end_bolts` take the
+/// same rule).
+pub fn proved_planes(onto: Option<&Onto>, planes: u32) -> bool {
+    matches!(onto, Some(Onto::Splice { .. })) || planes >= 2
 }
 
 /// Bolt shear stress over the bolt's ultimate strength, on the root area
@@ -901,12 +1024,24 @@ pub fn end_bolts(
             {
                 notes.push(format!("shear planes: {g} given ({w} worked out: {why})"));
             }
-            // A splice's covers count over the member's design data (they
-            // are the end's own); a lap's one plane only where nothing
-            // else says (as before: the member's, else 1).
-            let splice = worked.filter(|_| matches!(e.onto, Some(Onto::Splice { .. })));
+            // A splice's covers, and two planes the plies prove (two
+            // plates, a plate in a built-up member's gap: O49 stage 1b),
+            // count over the member's design data (they are the end's
+            // own); a lap's one plane only where nothing else says (as
+            // before: the member's, else 1). The member's differing from
+            // the plies' proof: said.
+            let proved = worked.filter(|w| proved_planes(e.onto.as_ref(), w.0));
+            if let (None, Some((w, why)), Some(m)) = (own.shear_planes, proved, d.bolts)
+                && m.shear_planes != *w
+            {
+                notes.push(format!(
+                    "shear planes: {} in the member's design data, {w} worked out ({why}): the \
+                     worked out taken",
+                    m.shear_planes
+                ));
+            }
             own.shear_planes
-                .or(splice.map(|w| w.0))
+                .or(proved.map(|w| w.0))
                 .or(d.bolts.map(|b| b.shear_planes))
                 .or(worked.map(|w| w.0))
                 .unwrap_or(1)

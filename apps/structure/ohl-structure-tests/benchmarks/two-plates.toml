@@ -1,0 +1,91 @@
+# Two plates on one member end (roadmap O49 stage 1b and O44 L33,
+# 2026-11-27; built, in active development, not approved yet), in the
+# benchmark format. Run by
+# `apps/structure/ohl-structure-tests/tests/two_plates.rs` (the calculation
+# is the structure application's: the core's `ohl validate` cannot reach
+# it). Invented bar, section and plates.
+
+[[case]]
+id = "structsize-002"
+title = "A member end between two plates: twice the one plate's bolt shear capacity, the code's usage halved"
+calculation = "structure.two_planes"
+reference = "By hand, ASCE 10-97 4.3.2 as the bundled plugin takes it (count × shear planes × the bolt's shear capacity per plane): D1's end at N2 has two 16 mm bolts of 20 kN per plane. One plate (G1): 2 × 1 × 20 kN = 40 kN; between G1 and G1b, G1b held by its own two bolts through a packing into G1: 2 × 2 × 20 kN = 80 kN. The bearing of the two bolts on D1's 8 mm leg, 2 × 1.5 × 510 MPa × 16 mm × 8 mm = 195.8 kN (4.4), and its net section, (about 12.3 cm² − (17.5 + 1.6) mm × 8 mm) × 355 MPa × 0.9 = about 345 kN (3.10.1, 3.10.2), stay above both; the end at N1 has eight bolts (160 kN). With 30 kN of tension: usage 30/40 = 0.75 with one plate, 30/80 = 0.375 with two (strength factor 1)"
+notes = "N1 (0, 0, 0) fixed, N2 (2 m, 0, 0) held in y and z; D1 an L80×8 (S355, f_u 510 MPa) from N1 to N2, a truss member; 30 kN along x at N2 (tension in D1); the members' own weight off; level 4, the joint details taken (joint_details = true). capacity_one, capacity_two: D1's tension capacity by the bundled ASCE 10-97 plugin without and with the second plate (kN); usage_one, usage_two: its usage in the run of the structure's own load; ratio: usage_two / usage_one; planes_two: the shear planes worked out at N2 with the second plate."
+max_seconds = 120.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+name = "Two plates angles (invented)"
+default_material = "s355"
+[[material]]
+id = "s355"
+name = "Steel (invented)"
+elasticity = "210 GPa"
+shear_modulus = "81 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+ultimate = "510 MPa"
+[[section]]
+id = "L80x8"
+shape = "equal_angle"
+h = "80 mm"
+t = "8 mm"
+r = "9 mm"
+'''
+inputs.model = '''
+format = "ohl-structure"
+version = 31
+id = "two-plates"
+name = "Two plates (invented)"
+kind = "lattice"
+joint_details = true
+[analysis]
+self_weight = false
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "D1"
+nodes = ["N1", "N2"]
+section = "L80x8"
+design = { class = "bracing", connected_leg = "long", bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_capacity = "20 kN" } }
+[[load]]
+node = "N2"
+force = ["30 kN", "0 kN", "0 kN"]
+[[connection]]
+member = "D1"
+joint = "N1"
+leg = "long"
+bolts = { count = 8, diameter = "16 mm" }
+[[connection]]
+member = "D1"
+joint = "N2"
+onto = "G1"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm" }
+[[plate]]
+id = "G1"
+joint = "N2"
+thickness = "10 mm"
+[[plate]]
+id = "G1b"
+joint = "N2"
+thickness = "10 mm"
+[plate.paired]
+plate = "G1"
+member = "D1"
+packing = "8 mm"
+bolts = { count = 2, diameter = "16 mm" }
+bolt_points = [["0.02 m", "0.045 m"], ["0.06 m", "0.045 m"]]
+'''
+expected.capacity_one = { value = 40.0, abs_tol = 1e-6 }
+expected.capacity_two = { value = 80.0, abs_tol = 1e-6 }
+expected.usage_one = { value = 0.75, abs_tol = 1e-6 }
+expected.usage_two = { value = 0.375, abs_tol = 1e-6 }
+expected.ratio = { value = 0.5, abs_tol = 1e-9 }
+expected.planes_two = { value = 2.0, abs_tol = 0.0 }

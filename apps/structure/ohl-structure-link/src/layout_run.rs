@@ -962,6 +962,17 @@ pub struct RunAsk<'a> {
 /// them over every joint its member reaches ([`crate::own_turns`],
 /// [`LayoutSettings::own_turns_weighed`]).
 pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
+    lay_out_loads(text, ask, None)
+}
+
+/// [`lay_out`] with the forces of its two-plate step (L33,
+/// [`crate::two_plates::after_run`]) from `loads` (none: the file's own load
+/// cases).
+pub fn lay_out_loads(
+    text: &str,
+    ask: &RunAsk<'_>,
+    loads: Option<&crate::two_plates::Loads<'_>>,
+) -> Result<LayoutRun, String> {
     // (L24) A detailing practice refused: said in the run's notes (the
     // default used).
     let mut run = lay_out_turns(text, ask)?;
@@ -970,6 +981,8 @@ pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     if ask.settings.solve_left {
         run = crate::solve_pass::after_run(run, ask)?;
     }
+    // (L33) A second plate where an end fails by the bolt shear at it.
+    run = crate::two_plates::after_run(run, ask, loads)?;
     if let Some(n) = &ask.settings.practice_refused {
         run.notes.insert(0, n.clone());
     }

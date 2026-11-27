@@ -599,6 +599,7 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
                         "Group",
                         "Members",
                         "Section",
+                        "Bolts",
                         "Mass (kg)",
                         "Usage",
                         "Governing case",
@@ -633,6 +634,20 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
                             why.push_str(&format!("; removed: {r}"));
                         }
                         ui.label(section).on_hover_text(why);
+                        // O49 stage 1b: the bolts where they govern.
+                        match (&g.bolts, &g.bolts_govern) {
+                            (Some(b), w) => {
+                                ui.label(format!("{} to {}", b.from, b.to))
+                                    .on_hover_text(w.as_deref().unwrap_or("the bolts govern"));
+                            }
+                            (None, Some(w)) => {
+                                ui.label(egui::RichText::new("govern").color(warn))
+                                    .on_hover_text(w);
+                            }
+                            (None, None) => {
+                                ui.label("");
+                            }
+                        }
                         ui.label(format!("{:.1} to {:.1}", g.mass[0], g.mass[1]));
                         let usage = egui::RichText::new(format!(
                             "{} to {}",

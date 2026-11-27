@@ -197,6 +197,49 @@ resistance (class 4) in the check instead. ASCE 10-97 3.3's 3/16 in. for
 connection plates is a plate's, not a member's: the detailing practice's
 plate thicknesses hold it.
 
+## The bolts (stage 1b)
+
+(2026-11-27; built, in active development, not approved yet.) The owner:
+*"Are the bolt capacities checked too? And if it's a one sided bolt or 2
+…"*, then *"Yes please"*. The bolts are checked by the code's plugin in
+its member check (ASCE 10-97: bolt shear 4.3.2, bearing 4.4, block shear,
+net section at each end; SIA 263: Table 16, 6.2.4.4, 6.2.4.5), on the
+shear planes the plies prove (the plugins' theory pages). The bolt shear —
+count × planes × the capacity per plane — **does not depend on the
+section**: a heavier section never raises it. So, per trial:
+
+1. A group whose members above the target **all fail by the capacity
+   their plugin says the bolt shear governs** (the plugin's capacity named
+   "bolt shear", tension or compression, the larger force over capacity;
+   a member whose usage comes from a nominal force — ASCE 10-97's on a
+   redundant member — where the bolt shear governs every capacity it has)
+   is not moved to a heavier section for it: **the bolts govern**. Its
+   members' own bolts (`[member.design] bolts`) are proposed, at least
+   ⌈n · ratio⌉ of them (n their count, ratio the force over the bolt shear
+   capacity over the target), at least one more each try; the same section
+   is tried again (the plugin's check is the judge).
+2. Where more of them **do not fit** (the joint-fit limits: the member's
+   length for the code's end distances and spacing, its leg for the bolt),
+   the next larger bolt of the project's bolt library (one per diameter,
+   the one with a shear capacity with the threads in the shear plane where
+   given — on the safe side), as many as pass as the group's count did, by
+   the bolts' per-plane capacities (else their areas).
+3. A group failing by **bearing, block shear or the net section** goes on
+   as before: those depend on the section's thickness and area, a heavier
+   section can help.
+
+At most 12 bolt proposals per group per round (the program's bound); the
+bolts proposed carry over to the next round. A group whose bolts are
+given at its members' ends (`[[connection]]`, level 4), differ in diameter
+within the group or are not given has no bolt proposal. The window's
+**Bolts** column and the command line's line under the group show them;
+Apply writes them in the same undo step as the sections (the count; a new
+bolt with its hole and shear capacity, a capacity or hole of the old bolt
+removed).
+
+**Measured** on eight private towers (one vertical case, kept privately):
+see the effect table below.
+
 ## Conservative assumptions
 
 - **Conservative**: a member without a class is taken as one of ASCE
@@ -217,6 +260,8 @@ plate thicknesses hold it.
 - **Conservative**: the joint fit's bolts in one line (the longest
   arrangement) and an end distance on both sides of each end's group; the
   code's distances of a default bolt never below the default minimums.
+- **Conservative**: a bolt proposal is tried until the plugin's check
+  passes; bolts proposed in a round are never fewer in the next.
 - **Assumed, not a safety question** (they decide whether a joint can be
   built, not its strength; Lay out joints checks the real joint): the
   gauge at mid-leg; the length between the joints' work points (the steel
@@ -285,6 +330,15 @@ and the rounds' times measured in the last run.
   limits and the joint fit). Each group is held by another rule, none by
   its usage: the bottom chord by 3.4's L/r < 150 of a leg, the top chord
   by the joint fit, the web by 3.4's KL/r < 200.
+- The validation case `structsize-002`
+  (`apps/structure/ohl-structure-tests/benchmarks/two-plates.toml`, run by
+  `two_plates.rs`): a bar whose end lies between two plates — its bolt
+  shear capacity twice the one plate's (40 → 80 kN), its usage half (0.75 →
+  0.375), by hand.
+- Unit tests (`sizing_tests::the_bolts_govern`,
+  `a_larger_bolt_by_its_capacity`): a truss whose bolts govern — more
+  bolts proposed, the run passes, Apply writes them for the ticked group
+  only; the count of a larger bolt by its capacity.
 - Unit tests (`ohl-structure-link` `sizing_tests`): the groups (by group
   and section, split, mirror images), the lightest passing section per
   group and the next lighter failing, the joint-fit limits by hand (pieces

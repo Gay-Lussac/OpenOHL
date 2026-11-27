@@ -726,3 +726,85 @@ fn both_legs_bolted_hole_each_leg() {
         Some(3)
     );
 }
+
+/// O49 stage 1b / L33 (2026-11-27): D1's end at N2 between plate G1 (its
+/// `onto`) and plate G2 on the other face of its long leg, G2 held by two
+/// bolts of its own through a packing into G1: two shear planes per bolt,
+/// worked out from the plies, over the member's design data (said). Bolt
+/// shear at N2 2 × 60 kN × 2 = 240 kN; the bearing of its two bolts on
+/// its 6 mm leg, 2 × 1.5 × 510 MPa × 16 mm × 6 mm = 146.88 kN, then
+/// governs (by hand) — with one plate the bolts' 120 kN did. G2 without
+/// bolts of its own carries no force: one plane, said. The end at N4
+/// has four bolts (240 kN): it does not govern.
+#[test]
+fn two_plates_give_two_shear_planes() {
+    let file = |held: &str| {
+        format!(
+            "[[plate]]\nid = \"G1\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+             [[plate]]\nid = \"G2\"\njoint = \"N2\"\nthickness = \"8 mm\"\n\
+             [plate.paired]\nplate = \"G1\"\nmember = \"D1\"\n{held}\
+             [[connection]]\nmember = \"D1\"\njoint = \"N2\"\nonto = \"G1\"\nleg = \"long\"\n\
+             bolts = {{ count = 2, diameter = \"16 mm\" }}\n\
+             [[connection]]\nmember = \"D1\"\njoint = \"N4\"\nbolts = {{ count = 4, diameter = \"16 mm\" }}\n"
+        )
+    };
+    let held = "bolts = { count = 2, diameter = \"16 mm\" }\n\
+                bolt_points = [[\"0.1 m\", \"0.03 m\"], [\"0.15 m\", \"0.03 m\"]]\n";
+    let m = model(&file(held), &BoltLibrary::default());
+    let d = &m.members[D1].design;
+    let end = d.ends[1].as_ref().unwrap();
+    let (n, why) = end.planes.clone().unwrap();
+    assert_eq!(n, 2);
+    assert!(why.starts_with("between plates G1 and G2"), "{why}");
+    let mut notes = Vec::new();
+    let b = ohl_structures_fe::member_ends::end_bolts(d, Some(end), &mut notes)
+        .unwrap()
+        .0;
+    assert_eq!(b.shear_planes, 2);
+    assert!(
+        notes
+            .iter()
+            .any(|x| x.starts_with("shear planes: 1 in the member's design data, 2 worked out")),
+        "{notes:?}"
+    );
+    let (t, what) = capacity(&m, D1).tension.unwrap();
+    let bearing = 2.0 * 1.5 * 510e6 * 0.016 * 0.006;
+    assert!((t - bearing).abs() < 1e-6, "{t} {what}");
+    assert_eq!(what, "bearing at N2");
+    // G2 not held: one plane, said; the bolts' 120 kN govern again.
+    let m = model(&file(""), &BoltLibrary::default());
+    let end = m.members[D1].design.ends[1].as_ref().unwrap();
+    let (n, why) = end.planes.clone().unwrap();
+    assert_eq!(n, 1);
+    assert!(why.contains("G2 on its other face has no bolts"), "{why}");
+    let (t, what) = capacity(&m, D1).tension.unwrap();
+    assert!((t - 120e3).abs() < 1e-6, "{t} {what}");
+    assert_eq!(what, "bolt shear at N2");
+}
+
+/// O49 stage 1b: two angles back to back on both faces of a plate filling
+/// their gap (within 2 mm thinner, SIA 263 7.4.1.2) — two planes; a
+/// thinner plate (packings needed), both legs bolted, or onto a member —
+/// one; never more planes than the plies prove.
+#[test]
+fn a_plate_in_a_built_up_gap_gives_two_planes() {
+    use ohl_structures_fe::design::Onto;
+    use ohl_structures_fe::member_ends::{Through, worked_planes};
+    let plate = |t: f64| Onto::Plate {
+        id: "G1".into(),
+        thickness: t,
+    };
+    let gap = |g: f64, both: bool| Through {
+        paired: None,
+        gap: Some(g),
+        both_legs: both,
+    };
+    let n = |o: &Onto, t: Through| worked_planes(Some(o), None, t).unwrap().0;
+    assert_eq!(n(&plate(0.010), gap(0.010, false)), 2);
+    assert_eq!(n(&plate(0.009), gap(0.010, false)), 2);
+    assert_eq!(n(&plate(0.007), gap(0.010, false)), 1);
+    assert_eq!(n(&plate(0.012), gap(0.010, false)), 1);
+    assert_eq!(n(&plate(0.010), gap(0.010, true)), 1);
+    assert_eq!(n(&Onto::Member(0), gap(0.010, false)), 1);
+    assert_eq!(n(&plate(0.010), Through::default()), 1);
+}

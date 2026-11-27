@@ -77,6 +77,14 @@ struct RunArgs {
     /// Print the run's notes.
     #[arg(long)]
     notes: bool,
+    /// O44 L33: a load table (CSV, as the structure application writes
+    /// it) for the forces of the two-plate step, instead of the file's own
+    /// load cases.
+    #[arg(long)]
+    loads: Option<PathBuf>,
+    /// O44 L33: no second plate on any end (one plate each, as before).
+    #[arg(long)]
+    no_two_plates: bool,
     /// The file written.
     #[arg(short, long)]
     output: PathBuf,
@@ -119,6 +127,7 @@ fn run(a: &RunArgs) -> Result<(), String> {
         exact_plan: true,
         clash_tries: true,
         solve_left: a.solve_left,
+        two_plates: !a.no_two_plates,
         ..Default::default()
     };
     let ask = ohl_structure_link::RunAsk {
@@ -129,7 +138,24 @@ fn run(a: &RunArgs) -> Result<(), String> {
         joints: (!a.joints.is_empty()).then(|| a.joints.iter().cloned().collect()),
         replace_hand: a.replace_hand,
     };
-    let r = ohl_structure_link::lay_out(&text, &ask)
+    let table = match &a.loads {
+        Some(p) => Some(
+            std::fs::read_to_string(p)
+                .map_err(|e| format!("{}: {e}", p.display()))
+                .and_then(|t| {
+                    ohl_structure_loads::LoadTable::from_csv(&t)
+                        .map_err(|e| format!("{}: {e}", p.display()))
+                })?,
+        ),
+        None => None,
+    };
+    let loads = table
+        .as_ref()
+        .map(|table| ohl_structure_link::two_plates::Loads {
+            table,
+            recipes: &[],
+        });
+    let r = ohl_structure_link::lay_out_loads(&text, &ask, loads.as_ref())
         .map_err(|e| format!("{}: {e}", a.file.display()))?;
     std::fs::write(&a.output, &r.text).map_err(|e| format!("{}: {e}", a.output.display()))?;
     if a.notes {

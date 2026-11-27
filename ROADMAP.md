@@ -5110,6 +5110,28 @@ only where it helps):
   > for → Recommended: traced with L30's reason classes (a run should say
   > why it left every joint where members meet). (5) Next: L30's classes
   > in `reason_group` (one line).
+- [x] L33. **Two plates on one member end** (the owner, 2026-11-27, with
+  O49 stage 1b: *"Also make sure the joint layout can have 2 plates if
+   needed and shows them properly"*). **Built 2026-11-27, in active
+   development, not approved yet.** A second plate on the other face of an
+   end's bolted leg, held by bolts of its own through a packing (as thick
+   as the leg) into the first plate, nearer the joint than the end's steel
+   (`[plate.paired]`, structure file version 31): the end's bolts in two
+   shear planes. Lay out joints plans it (setting on by default; the
+   command line's `--loads` / `--no-two-plates`) where an end laid onto a
+   plate fails the code's check by the bolt shear at that end (the forces
+   of the file's own load cases or the table given), its own bolts as half
+   the end's force needs, inside the first plate with the code's distances,
+   clear of the end's other leg; kept only where the end's usage falls and
+   its joint has no more clashes; each said in the run's notes. Drawn in
+   the 3D view, the Detail tab, the close-ups, the joint sheets and Joint
+   details' sketch (its two planes said); the end's bolts longer by its
+   thickness; its packing and bolts counted in the bill of materials;
+   picking it or its packing selects it. Not built: a second plate where
+   one plate would be thicker than the practice's thickest (the first
+   plate keeps the full force, so a second never thins it); the second
+   plate's own bolts in Results' joint checks (owner question 3 of O49
+   stage 1b).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
@@ -5225,6 +5247,41 @@ joint layout's L28–L31 were merged, resumed 2026-11-27. **Stage 1 built
   step), `ohl-structure-size` on the command line. No file format change.
   Validation `structsize-001` (brute force over 216 combinations).
   Measured on eight private towers (kept privately).
+- [x] Stage 1b (M), the owner, 2026-11-27: *"Are the bolt capacities checked too? And if it's a one sided bolt or 2 (if you have two plates, one on each side it's to sided and if only one it's just one. This changes capacity in most codes"*, then, on the
+  plan: *"Yes please. Also make sure the joint layout can have 2 plates if
+  needed and shows them properly"* (the two plates: O44 L33). **Built
+  2026-11-27, in active development, not approved yet.** **Shear planes
+  from the geometry**: an end between two plates (the second held by bolts
+  of its own) and a built-up member's two angles on both faces of a plate
+  filling their gap count two planes, one function in the core
+  (`member_ends::worked_planes`, `planes_between_angles` shared with the
+  joints' L15 plate between angles), the plugins' end bolts taking the
+  same rule (`proved_planes`): planes the plies prove count over the
+  member's design data, a difference said; never more planes than the
+  plies prove. **One-sided rules read in the standards** (theory pages):
+  ASCE 10-97 and ASCE/SEI 48-19 have none for a single lap, one bolt row or
+  packings; SIA 263 gives its bolt resistances per shear plane (Table 16)
+  and 6.2.4.4/6.2.4.5 (an angle by one bolt row, one bolt; already in the
+  sia263 plugin), 6.2.2.5 (packings), 6.2.2.2 (long joints), 6.2.6.3
+  (grip above 5 d). No interface change. **The sizer when the bolts
+  govern**: a group failing only by the bolt shear its plugin names is not
+  made heavier for it — more of its own bolts, else a larger bolt of the
+  project's library, within the joint-fit limits; shown in Choose the
+  members… (Bolts column) and `ohl-structure-size`; Apply writes them with
+  the sections. Validation `structsize-002` (two planes: capacity twice,
+  usage half, by hand). Measured on eight private towers (kept privately).
+  **Questions for the owner** (each with a recommendation): (1) the second
+  plate and its own bolts are checked for half the end's force (the share
+  the bolt shear rule gives each plane), the first plate with the full force
+  — *recommended: keep; a code clause for the split would replace it*;
+  (2) SIA 263 6.2.2.2 (long joints, L_j > 15 d) is not in the sia263
+  plugin, and the sizer's added bolts can make a joint long — *recommended:
+  add it to the plugin next (the end's bolt pattern is sent)*; (3) the
+  second plate's own bolts through the packing are checked by Lay out
+  joints only, not in Results' joint checks (said NOT ON THE SAFE SIDE with
+  the joint) — *recommended: add them to the joint checks as a bolt group of
+  their own, with SIA 263 6.2.2.5's packing reduction in the sia263 plugin
+  (an additive field for the packing)*.
 - [ ] Stage 2 (M): level 3 members created from a level 2 outline (a
   first section per member from its role and length, then stage 1).
 - [ ] Stage 3 (M): the joint layout's "bigger member" option calling the

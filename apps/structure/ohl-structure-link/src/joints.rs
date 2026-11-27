@@ -552,6 +552,11 @@ pub struct PlateDetail {
     /// False: as before (also where the file says so but the member is no
     /// built-up member of angles with such a gap: said in `notes`).
     pub between: bool,
+    /// The second plate of a member end lying between two plates (O44 L33,
+    /// `[plate.paired]`, structure file version 31): its packing and its
+    /// own bolts into the first plate, as drawn
+    /// ([`crate::two_plates::detail_pairs`]); none: a plate as before.
+    pub paired: Option<crate::two_plates::PairedDetail>,
 }
 
 impl PlateDetail {
@@ -1088,6 +1093,8 @@ pub(crate) fn joint_details_and_model(
             .collect();
         weld_plates(&mut plates, &t.welded_assemblies(&n.id), &plates_here);
         bend_plates(&mut plates, &t.bent_pairs(&n.id), &plates_here);
+        // (L33) The second plates of the ends lying between two plates.
+        crate::two_plates::detail_pairs(&t, &n.id, &mut arrivals, &mut plates, bolts);
         // Steel in the same place (2026-11-18): each clash a problem of
         // the member ends in it, a note of the plates.
         let clashes = if level3 {
@@ -3372,6 +3379,7 @@ fn plate(
             bend: None,
             held_by: held_by_of(p),
             between: seat.is_some_and(|s| s.between),
+            paired: None,
         };
     }
     // Nothing bolted onto it and no outline given: nothing to draw it
@@ -3398,6 +3406,7 @@ fn plate(
             bend: None,
             held_by: held_by_of(p),
             between: seat.is_some_and(|s| s.between),
+            paired: None,
         };
     }
     // Its shape (owner 2026-11-02: "use the corner width it's bolted onto
@@ -3551,6 +3560,7 @@ fn plate(
         bend: None,
         held_by: held_by_of(p),
         between: seat.is_some_and(|s| s.between),
+        paired: None,
     }
 }
 
@@ -3722,14 +3732,15 @@ pub(crate) fn plate_leg_arrival(
         bolts: Valued::of(set, Source::Given),
         // (L15) Between two angles back to back: through the plate and both
         // angles, two shear planes (unless given).
-        planes: (
-            match (b.shear_planes, &between) {
-                (Some(n), _) => Valued::of(n.max(1), Source::Given),
-                (None, Some((_, _, true))) => Valued::of(2, Source::WorkedOut),
-                (None, _) => Valued::of(1, Source::Given),
-            },
-            None,
-        ),
+        // (O49 stage 1b) The rule the member check takes too.
+        planes: match (b.shear_planes, &between) {
+            (Some(n), _) => (Valued::of(n.max(1), Source::Given), None),
+            (None, Some((_, _, across))) => {
+                let (n, why) = ohl_structures_fe::member_ends::planes_between_angles(*across);
+                (Valued::of(n, Source::WorkedOut), Some(why.to_owned()))
+            }
+            (None, None) => (Valued::of(1, Source::Given), None),
+        },
         bolt_points: flat.iter().map(|q| at(q[0], q[1])).collect(),
         bolt_axis: match &between {
             Some((f, _, _)) => scale(f.out, -1.0),

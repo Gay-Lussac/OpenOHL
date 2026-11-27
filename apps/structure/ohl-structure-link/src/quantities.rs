@@ -411,6 +411,42 @@ pub(crate) fn quantities_of(
                 automatic: layout.made.contains_key(&p.id),
                 estimated: !p.outline_given,
             });
+            // (L33) A second plate's packing and its own bolts through it
+            // into the first plate (as the end's bolts, their grip through
+            // the packing, the second plate and the first).
+            if let Some(q) = &p.paired {
+                let area = polygon_area(&q.packing_outline);
+                if area > 0.0 {
+                    parts.push(Part {
+                        kind: PartKind::Plate,
+                        item: format!("packing {} mm{material}", mm(q.packing)),
+                        id: format!("{} packing", p.id),
+                        joint: Some(j.id.clone()),
+                        count: 1,
+                        quantity: area,
+                        mass: plate_mass(area, q.packing, rho),
+                        light: plate_mass(area, q.packing, rho),
+                        automatic: false,
+                        estimated: false,
+                    });
+                }
+                if let Some(a) = j.arrivals.iter().find(|a| a.member == q.member)
+                    && let Some(b) = &a.bolts.value
+                    && !q.bolts.is_empty()
+                {
+                    let mut own = a.clone();
+                    own.bolt_points = q.bolts.clone();
+                    own.bolt_flat = Vec::new();
+                    own.other_points = Vec::new();
+                    own.grip = q.grip;
+                    let mut set = b.clone();
+                    set.count = q.bolts.len() as u32;
+                    if let Some(d) = q.diameter {
+                        set.diameter = d;
+                    }
+                    parts.extend(bolt_parts(&own, &j.id, &set, bolts, false, &mut tally));
+                }
+            }
             for w in &p.welds {
                 let thinner = thickness
                     .get(w.with.as_str())

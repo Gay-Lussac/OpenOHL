@@ -408,6 +408,38 @@ pub fn bolt_solids(d: &JointDetails) -> Vec<BoltSolid> {
                 });
             }
         }
+        // (L33) A second plate's own bolts through its packing into the
+        // first plate.
+        for q in j.plates.iter().filter_map(|p| p.paired.as_ref()) {
+            let Some(d) = q.diameter else { continue };
+            for p in &q.bolts {
+                let polys = crate::bolt_faces(*p, q.bolt_axis, d, q.grip, q.drawn);
+                let all: Vec<[f64; 3]> = polys.iter().flat_map(|f| f.0.iter().copied()).collect();
+                let mid = mean(&all);
+                let faces = polys
+                    .iter()
+                    .filter_map(|(poly, _)| {
+                        let mut nv = normal_of(poly)?;
+                        if dot(nv, sub(mean(poly), mid)) < 0.0 {
+                            nv = scale(nv, -1.0);
+                        }
+                        Some(SolidFace {
+                            triangles: fan(poly),
+                            normal: nv,
+                        })
+                    })
+                    .collect();
+                out.push(BoltSolid {
+                    joint: j.id.clone(),
+                    member: q.member.clone(),
+                    at: *p,
+                    assumed: false,
+                    clash: false,
+                    diameter: d,
+                    faces,
+                });
+            }
+        }
     }
     out
 }
@@ -432,8 +464,22 @@ pub fn plate_solids(d: &JointDetails) -> Vec<PlateSolid> {
                     ends: s.0,
                     faces: s.1,
                     misfit: misfit_onto(&p.id)
-                        || (p.outline_given && !p.notes.is_empty())
+                        || (p.outline_given && !p.notes.is_empty() && p.paired.is_none())
                         || j.clashes.iter().any(|c| c.involves_plate(&p.id)),
+                });
+            }
+            // (L33) A second plate's packing: picked as that plate.
+            if let Some(q) = &p.paired
+                && let Some(s) = slab(&q.packing_outline, Some(q.packing_through), q.packing)
+            {
+                out.push(PlateSolid {
+                    id: p.id.clone(),
+                    joint: j.id.clone(),
+                    cover: false,
+                    thickness: q.packing,
+                    ends: s.0,
+                    faces: s.1,
+                    misfit: false,
                 });
             }
         }

@@ -223,6 +223,63 @@ pub fn face_view(d: &JointDetail, face: &str) -> FaceView {
             }
         }
     }
+    // (L33) A second plate's packing and its own bolts (their holes, as
+    // the bolts' outlines seen end on).
+    for p in &d.plates {
+        let Some(q) = &p.paired else { continue };
+        if q.packing_outline.len() >= 3 {
+            let pts: Vec<[f64; 2]> = q.packing_outline.iter().map(|x| to(*x)).collect();
+            let n = pts.len() as f64;
+            let mid = [
+                pts.iter().map(|x| x[0]).sum::<f64>() / n,
+                pts.iter().map(|x| x[1]).sum::<f64>() / n,
+            ];
+            marks.push(Mark::Line {
+                points: pts,
+                closed: true,
+                kind: LineKind::Plate,
+            });
+            marks.push(Mark::Text {
+                at: mid,
+                text: format!("{} packing · {:.0} mm", p.id, q.packing * 1000.0),
+                label: false,
+            });
+        }
+        let r = q.diameter.unwrap_or(0.016) / 2.0;
+        let axis = q.bolt_axis;
+        let u = {
+            let k = if axis[0].abs() < 0.9 {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            let c = [
+                axis[1] * k[2] - axis[2] * k[1],
+                axis[2] * k[0] - axis[0] * k[2],
+                axis[0] * k[1] - axis[1] * k[0],
+            ];
+            let l = dot(c, c).sqrt().max(1e-12);
+            scale(c, 1.0 / l)
+        };
+        let v = [
+            axis[1] * u[2] - axis[2] * u[1],
+            axis[2] * u[0] - axis[0] * u[2],
+            axis[0] * u[1] - axis[1] * u[0],
+        ];
+        for b in &q.bolts {
+            let pts: Vec<[f64; 2]> = (0..12)
+                .map(|i| {
+                    let t = i as f64 * std::f64::consts::TAU / 12.0;
+                    to(add(*b, add(scale(u, r * t.cos()), scale(v, r * t.sin()))))
+                })
+                .collect();
+            marks.push(Mark::Line {
+                points: pts,
+                closed: true,
+                kind: LineKind::Edge,
+            });
+        }
+    }
     for a in &d.arrivals {
         let length = a.length.min(cut);
         let along = |s: f64| add(o, scale(a.direction, s));

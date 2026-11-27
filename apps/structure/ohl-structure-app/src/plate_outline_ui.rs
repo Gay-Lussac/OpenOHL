@@ -550,6 +550,7 @@ mod tests {
                 bend: None,
                 held_by: None,
                 between: false,
+                paired: None,
             }],
             splices: Vec::new(),
             completeness: ohl_structure_link::Completeness::Complete,

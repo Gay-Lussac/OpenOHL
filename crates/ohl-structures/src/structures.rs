@@ -321,8 +321,12 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// layout's L29) adds the detailing practice's plate thickness rules
 /// (`[layout_practice.plates]` `least_thickness` and `thicknesses`:
 /// [`LAYOUT_PRACTICE_THICKNESS_VERSION`]); a file is written at 30 only
-/// when its practice gives one.
-pub const STRUCTURE_FILE_VERSION: u32 = 30;
+/// when its practice gives one. Version 31 (2026-11-27, the automatic
+/// joint layout's L33) adds the second plate of a member end lying between
+/// two plates (`[plate.paired]`: [`crate::connections::PlatePaired`],
+/// [`crate::connections::PLATE_PAIRED_VERSION`]); a file is written at 31
+/// only when a plate gives one.
+pub const STRUCTURE_FILE_VERSION: u32 = 31;
 
 /// The structure file version of a joint's review tick (`reviewed` on a
 /// `[[node]]`, O44 L31, 2026-11-26).

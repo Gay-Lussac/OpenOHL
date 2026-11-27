@@ -208,6 +208,22 @@ window for your tower):
   [theory](../theory/estimated-eccentricities.md)); a welded plate's
   offset is taken there too.
 
+## Two plates on one end
+
+Where an end laid onto a plate fails the code's check by its bolts' shear,
+the layout can put a **second plate** on the other face of the end's leg
+(the end's bolts then shear in two planes), held by two or more bolts of its
+own through a packing into the first plate, nearer the joint. It is kept
+only where the end's usage falls and the joint has no more clashes; the
+run's notes name each such end and say why others could not take one. The
+forces come from the structure's own load cases (on the command line, a
+table with `--loads`; `--no-two-plates` leaves every end on one plate).
+Both plates, the packing and the bolts show in the 3D view, the Detail tab,
+the close-ups and the bill of materials; Joint details' sketch says the two
+shear planes. The second plate's own bolts are checked by the layout only
+(said NOT ON THE SAFE SIDE with the joint): lay the joints out again after
+the forces change. Built, in active development (not approved yet).
+
 ## Solve the clashes
 
 ![The Solve the clashes window on an invented joint: the clashes before and after, what the solution changes (steel stopping short, a plate added), the joint's close-up before and after, Apply and Cancel](../images/structure-tools/tool-solve-the-clashes.png)
