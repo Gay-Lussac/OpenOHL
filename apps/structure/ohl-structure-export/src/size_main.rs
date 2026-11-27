@@ -53,7 +53,8 @@ struct Args {
     /// for the bolts): a chosen member may then not be connectable.
     #[arg(long)]
     no_joint_fit: bool,
-    /// The most rounds of forces and choice.
+    /// The most rounds of forces and choice (at least 2: one round cannot
+    /// show a choice holds with its own forces).
     #[arg(long, default_value_t = sizing::DEFAULT_ROUNDS)]
     rounds: usize,
     /// Split this group: each member (with its mirror images) sized alone

@@ -271,16 +271,13 @@ impl StructureApp {
                     proposal(ui, &r.sizing, &mut w.accepted);
                 }
                 use ohl_ui::tool_window::{Keys, Pressed, buttons};
-                let n = w
-                    .result
-                    .as_ref()
-                    .map_or(0, |r| {
-                        r.sizing
-                            .groups
-                            .iter()
-                            .filter(|g| g.changed() && w.accepted.contains(&g.group.name))
-                            .count()
-                    });
+                let n = w.result.as_ref().map_or(0, |r| {
+                    r.sizing
+                        .groups
+                        .iter()
+                        .filter(|g| g.changed() && w.accepted.contains(&g.group.name))
+                        .count()
+                });
                 let (label, enabled, why) = if fresh {
                     (
                         format!("Apply ({n} group(s))"),
@@ -462,7 +459,7 @@ fn setup(ui: &mut egui::Ui, s: &mut Settings, groups: &[String], last: Option<&S
                      within them: the heavier of the last two choices, said. Time: one solve of \
                      every case and one check per section tried, per round.",
                 );
-                ui.add(egui::DragValue::new(&mut s.rounds).range(1..=50));
+                ui.add(egui::DragValue::new(&mut s.rounds).range(sizing::MIN_ROUNDS..=50));
             });
             effect(ui, last, |x| {
                 let each: Vec<String> = x
@@ -506,8 +503,8 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
     let changed = s.groups.iter().filter(|g| g.changed()).count();
     let trials: usize = s.rounds.iter().map(|r| r.trials).sum();
     ui.label(format!(
-        "{changed} of {} group(s) changed: mass {:.0} → {:.0} kg, largest usage {} → {}, joint-fit \
-         problems {} → {}. Worked out in {:.1} s ({} round(s), {trials} trial(s); measured).",
+        "{changed} of {} group(s) changed: mass {:.0} to {:.0} kg, largest usage {} to {}, joint-fit \
+         problems {} to {}. Worked out in {:.1} s ({} round(s), {trials} trial(s); measured).",
         s.groups.len(),
         s.mass[0],
         s.mass[1],
@@ -624,36 +621,38 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
                         ui.label(name).on_hover_text(g.group.members.join(", "));
                         ui.label(g.group.members.len().to_string());
                         let section = if g.changed() {
-                            format!("{} → {}", g.from, g.to)
+                            format!("{} to {}", g.from, g.to)
                         } else {
                             format!("{} (kept)", g.from)
                         };
                         let mut why = g.why.clone();
                         if let Some(x) = &g.without_fit {
-                            why.push_str(&format!(
-                                "; without the joint-fit limits: {x}"
-                            ));
+                            why.push_str(&format!("; without the joint-fit limits: {x}"));
                         }
                         for r in &g.removed {
                             why.push_str(&format!("; removed: {r}"));
                         }
                         ui.label(section).on_hover_text(why);
-                        ui.label(format!("{:.1} → {:.1}", g.mass[0], g.mass[1]));
+                        ui.label(format!("{:.1} to {:.1}", g.mass[0], g.mass[1]));
                         let usage = egui::RichText::new(format!(
-                            "{} → {}",
+                            "{} to {}",
                             pct(g.usage[0]),
                             pct(g.usage[1])
                         ));
-                        ui.label(if g.over_target { usage.color(warn) } else { usage })
-                            .on_hover_text(&g.governs);
+                        ui.label(if g.over_target {
+                            usage.color(warn)
+                        } else {
+                            usage
+                        })
+                        .on_hover_text(&g.governs);
                         ui.label(&g.case[1]);
-                        let fit = egui::RichText::new(format!("{} → {}", g.fit[0], g.fit[1]));
+                        let fit = egui::RichText::new(format!("{} to {}", g.fit[0], g.fit[1]));
                         ui.label(if g.fit[1] > 0 { fit.color(warn) } else { fit })
                             .on_hover_text(if g.basis == sizing::Basis::FitNotMet {
                                 "No section of its family both passes and fits its joints: the \
                                  lightest passing taken — its joints to detail by hand"
                             } else {
-                                "Joint-fit problems with its section now → with the one chosen"
+                                "Joint-fit problems with its section now to with the one chosen"
                             });
                         ui.end_row();
                     }

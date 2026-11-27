@@ -31,7 +31,11 @@ fn inputs(i: &Inputs) -> Result<(String, SectionLibrary), String> {
         .and_then(|v| v.as_str())
         .ok_or("no model")?
         .to_owned();
-    let lib = SectionLibrary::parse(i.get("sections").and_then(|v| v.as_str()).ok_or("no sections")?)?;
+    let lib = SectionLibrary::parse(
+        i.get("sections")
+            .and_then(|v| v.as_str())
+            .ok_or("no sections")?,
+    )?;
     Ok((model, lib))
 }
 
@@ -110,7 +114,9 @@ fn passes(text: &str, lib: &SectionLibrary) -> Result<bool, String> {
     let bolts = ohl_structures::bolts::BoltLibrary::default();
     let model = ohl_structures_fe::Model::from_structure_type_with_bolts(text, lib, &bolts, None)?;
     let model = plugin_check::find(model, Some(&d))?;
-    if let plugin_check::limits::Limits::Given { limits, .. } = plugin_check::limits::limits(&model)? {
+    if let plugin_check::limits::Limits::Given { limits, .. } =
+        plugin_check::limits::limits(&model)?
+    {
         for l in limits {
             let id = &model.members[l.member].id;
             if (!l.compression || compressed[id]) && l.broken() {
@@ -120,7 +126,12 @@ fn passes(text: &str, lib: &SectionLibrary) -> Result<bool, String> {
     }
     let ks: Vec<usize> = (0..model.members.len()).collect();
     let forces: Vec<f64> = model.members.iter().map(|m| axial[&m.id]).collect();
-    let (fit, _) = sizing::joint_fit(&model, &ks, &forces, &sizing::FitRules::for_structure(text, Some(&d)));
+    let (fit, _) = sizing::joint_fit(
+        &model,
+        &ks,
+        &forces,
+        &sizing::FitRules::for_structure(text, Some(&d)),
+    );
     Ok(fit.is_empty())
 }
 
@@ -234,11 +245,18 @@ fn validation_case_structsize_001() {
 #[test]
 fn the_bundled_code_sizes_the_truss() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("benchmarks/member-sizing.toml");
-    let cases = ohl_validation::parse_cases(&root, &std::fs::read_to_string(&root).unwrap()).unwrap();
+    let cases =
+        ohl_validation::parse_cases(&root, &std::fs::read_to_string(&root).unwrap()).unwrap();
     let (text, lib) = inputs(&cases[0].case.inputs).unwrap();
     let s = sized(&text, &lib).unwrap();
     assert!(s.over_target.is_empty(), "{:?}", s.over_target);
-    assert!(!s.notes.iter().any(|n| n.starts_with("NOT ON THE SAFE SIDE")), "{:?}", s.notes);
+    assert!(
+        !s.notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE")),
+        "{:?}",
+        s.notes
+    );
     assert!(s.mass[1] < s.mass[0]);
     assert!(passes(&s.text, &lib).unwrap());
     // The CLI's lines.

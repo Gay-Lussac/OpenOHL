@@ -69,8 +69,8 @@ use ohl_structures_fe::{Model, Solution};
 use toml_edit::DocumentMut;
 
 use crate::CaseToRun;
-pub use crate::joint_fit::{FitCache, FitProblem, FitRule, FitRules, joint_fit};
 use crate::joint_fit::joint_fit_cached;
+pub use crate::joint_fit::{FitCache, FitProblem, FitRule, FitRules, joint_fit};
 
 /// The note of a sizing by the core's simple check: what it leaves out,
 /// why that can be unsafe, what makes it safe.
@@ -87,7 +87,7 @@ pub struct Settings {
     pub target: f64,
     /// Keep to the joint-fit limits ([`crate::joint_fit`]).
     pub joint_fit: bool,
-    /// The most rounds of forces and choice.
+    /// The most rounds of forces and choice (at least [`MIN_ROUNDS`]).
     pub rounds: usize,
     /// Groups split: each member (with its mirror images) sized alone.
     pub split: Vec<String>,
@@ -109,6 +109,11 @@ impl Default for Settings {
 
 /// The most rounds by default.
 pub const DEFAULT_ROUNDS: usize = 10;
+
+/// The fewest rounds: one round cannot show that a choice holds with its
+/// own forces (not settled, the heavier of the last two — the sections as
+/// they are — would be taken).
+pub const MIN_ROUNDS: usize = 2;
 
 /// The most times one round takes back the groups a failed solve names
 /// (each time at least one group); then every group made lighter goes
@@ -286,7 +291,10 @@ fn mass_per_metre(lib: &SectionLibrary, s: &ohl_sections::Section) -> Option<f64
 
 /// The family of library section `s`: its shape's kind and its material.
 fn family(lib: &SectionLibrary, s: &ohl_sections::Section) -> (String, Option<String>) {
-    (s.shape.as_str().to_owned(), lib.material_of(s).map(|m| m.id.clone()))
+    (
+        s.shape.as_str().to_owned(),
+        lib.material_of(s).map(|m| m.id.clone()),
+    )
 }
 
 /// The sections of the library in the family of section `id`, the
@@ -526,12 +534,14 @@ fn cancelled(budget: &Budget) -> bool {
 /// Why the forces of a choice could not be worked out: the words, the
 /// members a buckling mode names (in compression at the joint moving
 /// most, straining most in the mode) and the members meeting at the joints
-/// a refusal names as moving most (empty for any other refusal).
+/// a refusal names as moving most, with those joints' places (empty for
+/// any other refusal).
 #[derive(Debug, Clone)]
 struct NotSolved {
     words: String,
     members: Vec<String>,
     around: Vec<String>,
+    places: Vec<[f64; 3]>,
 }
 
 impl From<String> for NotSolved {
@@ -540,8 +550,19 @@ impl From<String> for NotSolved {
             words,
             members: Vec::new(),
             around: Vec::new(),
+            places: Vec::new(),
         }
     }
+}
+
+/// The places of the joints `joints` of `model` (by id).
+fn places_of(model: &Model, joints: &[String]) -> Vec<[f64; 3]> {
+    model
+        .nodes
+        .iter()
+        .filter(|n| joints.contains(&n.id))
+        .map(|n| n.point)
+        .collect()
 }
 
 /// The members of `model` meeting at the joints `joints` (by id).
@@ -588,8 +609,8 @@ fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, No
         } else {
             0.0
         };
-        let loads = crate::fe_loads(&model, input.table, &c.name, self_weight)
-            .map_err(NotSolved::from)?;
+        let loads =
+            crate::fe_loads(&model, input.table, &c.name, self_weight).map_err(NotSolved::from)?;
         ohl_structures_fe::analyse(&model, &loads, c.strength, &case_budget(budget))
             .map(|(s, _)| s)
             .map_err(|e| {
@@ -616,6 +637,12 @@ fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, No
                         FeError::Unstable { joints, .. }
                         | FeError::Implausible { joints, .. }
                         | FeError::Mechanism { joints, .. } => members_at(&model, joints),
+                        _ => Vec::new(),
+                    },
+                    places: match &e {
+                        FeError::Unstable { joints, .. }
+                        | FeError::Implausible { joints, .. }
+                        | FeError::Mechanism { joints, .. } => places_of(&model, joints),
                         _ => Vec::new(),
                     },
                 }
@@ -763,6 +790,7 @@ fn pick(
     current: &[String],
     f: &Forces,
     index: &[Vec<usize>],
+    part_of: &[Option<usize>],
     floor: &[Option<(String, String)>],
     rules: &FitRules,
     cache: &mut FitCache,
@@ -846,7 +874,14 @@ fn pick(
         let broken = broken(&limits, &f.compressed);
         let members: Vec<usize> = trying.iter().flat_map(|&g| index[g].clone()).collect();
         // Worked out with the limits off too: their effect is said.
-        let (fit, _) = joint_fit_cached(&model, &members, &f.axial, rules, cache);
+        let (fit, _) = joint_fit_cached(
+            &model,
+            &members,
+            &f.axial,
+            rules,
+            &|k| part_of.get(k).copied().flatten(),
+            cache,
+        );
         let mut misfit: HashMap<usize, usize> = HashMap::new();
         for p in &fit {
             *misfit.entry(p.member).or_default() += 1;
@@ -968,7 +1003,9 @@ fn full_run(
 
 /// Per member id its largest usage in `run` over the cases, with the case
 /// and what governs; a case that did not solve: refused.
-fn usages(run: &crate::StructureRun) -> Result<HashMap<String, (Option<f64>, String, String)>, String> {
+fn usages(
+    run: &crate::StructureRun,
+) -> Result<HashMap<String, (Option<f64>, String, String)>, String> {
     let mut out: HashMap<String, (Option<f64>, String, String)> = HashMap::new();
     for c in &run.cases {
         let r = match &c.fe {
@@ -982,7 +1019,11 @@ fn usages(run: &crate::StructureRun) -> Result<HashMap<String, (Option<f64>, Str
                 .or_insert((Some(0.0), String::new(), String::new()));
             match (e.0, m.usage) {
                 (Some(a), Some(b)) if b > a || b.is_nan() || e.1.is_empty() => {
-                    *e = (Some(if b.is_nan() { f64::INFINITY } else { b }), c.name.clone(), m.governs.clone());
+                    *e = (
+                        Some(if b.is_nan() { f64::INFINITY } else { b }),
+                        c.name.clone(),
+                        m.governs.clone(),
+                    );
                 }
                 (_, None) => *e = (None, c.name.clone(), m.governs.clone()),
                 _ => {}
@@ -1079,6 +1120,13 @@ pub fn size_with(
                 .collect()
         })
         .collect();
+    // Per member of the model its sizing group (none: not sized).
+    let mut part_of: Vec<Option<usize>> = vec![None; f0.model.members.len()];
+    for (g, ks) in index.iter().enumerate() {
+        for &k in ks {
+            part_of[k] = Some(g);
+        }
+    }
     let mut not_sized: Vec<Option<String>> = vec![None; groups.len()];
     let lists: Vec<Option<Vec<Candidate>>> = groups
         .iter()
@@ -1091,9 +1139,11 @@ pub fn size_with(
             // Capacities written by hand describe the section they were
             // written for: never kept on another one, never removed
             // silently — the group is left, said.
-            if let Some(m) = index[k].iter().map(|&i| &f0.model.members[i]).find(|m| {
-                m.capacity_tension.is_some() || m.capacity_compression.is_some()
-            }) {
+            if let Some(m) = index[k]
+                .iter()
+                .map(|&i| &f0.model.members[i])
+                .find(|m| m.capacity_tension.is_some() || m.capacity_compression.is_some())
+            {
                 not_sized[k] = Some(format!(
                     "left as it is: member {} has capacities written by hand (capacity_tension, \
                      capacity_compression), which describe its section {} — remove them to size \
@@ -1141,7 +1191,7 @@ pub fn size_with(
     };
     // The forces of the structure as it is, kept for its joint fit.
     let mut f_first: Option<Forces> = None;
-    for r in 0..s.rounds.max(1) {
+    for r in 0..s.rounds.max(MIN_ROUNDS) {
         let t_round = Instant::now();
         if r > 0 {
             progress(&format!("round {}: forces with the new sections", r + 1));
@@ -1155,18 +1205,23 @@ pub fn size_with(
                         // groups made lighter go back to the sections that
                         // solved (never lighter again), said — those of
                         // the members the mode names, else those meeting
-                        // at the joints it moves most, else every group
-                        // made lighter.
+                        // at the joints it moves most, else the nearer
+                        // half of the groups made lighter (by their
+                        // members' distance to those joints), after
+                        // MAX_REPAIRS tries every group made lighter.
+                        let is_lighter = |g: usize| mass_of_id(&choice[g]) < mass_of_id(&solved[g]);
                         let lighter = |ids: &[String]| -> Vec<usize> {
                             let mut out: Vec<usize> = ids
                                 .iter()
                                 .filter_map(|m| group_of.get(m.as_str()).copied())
-                                .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
+                                .filter(|&g| is_lighter(g))
                                 .collect();
                             out.sort_unstable();
                             out.dedup();
                             out
                         };
+                        let all: Vec<usize> =
+                            (0..groups.len()).filter(|&g| is_lighter(g)).collect();
                         repairs += 1;
                         let mut back = Vec::new();
                         if repairs < MAX_REPAIRS {
@@ -1174,11 +1229,39 @@ pub fn size_with(
                             if back.is_empty() {
                                 back = lighter(&e.around);
                             }
+                            if back.is_empty() && !e.places.is_empty() && all.len() > 1 {
+                                let model = &f.model;
+                                let near = |g: usize| -> f64 {
+                                    index[g]
+                                        .iter()
+                                        .map(|&k| {
+                                            let m = &model.members[k];
+                                            let (a, b) =
+                                                (model.nodes[m.i].point, model.nodes[m.j].point);
+                                            let c = [
+                                                (a[0] + b[0]) / 2.0,
+                                                (a[1] + b[1]) / 2.0,
+                                                (a[2] + b[2]) / 2.0,
+                                            ];
+                                            e.places
+                                                .iter()
+                                                .map(|p| {
+                                                    (p[0] - c[0]).powi(2)
+                                                        + (p[1] - c[1]).powi(2)
+                                                        + (p[2] - c[2]).powi(2)
+                                                })
+                                                .fold(f64::INFINITY, f64::min)
+                                        })
+                                        .fold(f64::INFINITY, f64::min)
+                                };
+                                let mut by: Vec<(f64, usize)> =
+                                    all.iter().map(|&g| (near(g), g)).collect();
+                                by.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                                back = by.iter().take(all.len().div_ceil(2)).map(|x| x.1).collect();
+                            }
                         }
                         if back.is_empty() {
-                            back = (0..groups.len())
-                                .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
-                                .collect();
+                            back = all;
                         }
                         if back.is_empty() {
                             return Err(format!(
@@ -1213,15 +1296,10 @@ pub fn size_with(
             }
         }
         let p = pick(
-            input, &doc, &groups, &lists, &current0, &f, &index, &floor, &rules, &mut cache,
-            budget, progress,
+            input, &doc, &groups, &lists, &current0, &f, &index, &part_of, &floor, &rules,
+            &mut cache, budget, progress,
         )?;
-        let changed = p
-            .choice
-            .iter()
-            .zip(&choice)
-            .filter(|(a, b)| a != b)
-            .count();
+        let changed = p.choice.iter().zip(&choice).filter(|(a, b)| a != b).count();
         rounds.push(Round {
             changed,
             trials: p.trials,
@@ -1257,7 +1335,7 @@ pub fn size_with(
             Settled::NotSettled(format!(
                 "not settled within {} round(s): per group the heavier of the last two choices \
                  taken (on the safe side)",
-                s.rounds.max(1)
+                s.rounds.max(MIN_ROUNDS)
             ))
         }
     };
@@ -1272,8 +1350,23 @@ pub fn size_with(
     let after = usages(&after_run)?;
     let f_after = forces(input, &text, budget).map_err(|e| e.words)?;
     let all: Vec<usize> = index.iter().flatten().copied().collect();
-    let (fit0, unknown0) = joint_fit_cached(&f_first.model, &all, &f_first.axial, &rules, &mut cache);
-    let (fit1, _) = joint_fit_cached(&f_after.model, &all, &f_after.axial, &rules, &mut cache);
+    let part = |k: usize| part_of.get(k).copied().flatten();
+    let (fit0, unknown0) = joint_fit_cached(
+        &f_first.model,
+        &all,
+        &f_first.axial,
+        &rules,
+        &part,
+        &mut cache,
+    );
+    let (fit1, _) = joint_fit_cached(
+        &f_after.model,
+        &all,
+        &f_after.axial,
+        &rules,
+        &part,
+        &mut cache,
+    );
     let per_member = |fit: &[FitProblem]| -> HashMap<usize, usize> {
         let mut out = HashMap::new();
         for p in fit {
@@ -1426,7 +1519,10 @@ pub fn size_with(
             ));
         }
     }
-    let not_met = changes.iter().filter(|c| c.basis == Basis::FitNotMet).count();
+    let not_met = changes
+        .iter()
+        .filter(|c| c.basis == Basis::FitNotMet)
+        .count();
     if not_met > 0 {
         notes.push(format!(
             "{not_met} group(s) with no section of their family both passing and fitting their \
@@ -1589,13 +1685,17 @@ pub fn summary(sizing: &Sizing) -> Vec<String> {
             c.mass[1],
             pct(c.usage[0]),
             pct(c.usage[1]),
-            if c.case[1].is_empty() { "-" } else { &c.case[1] },
+            if c.case[1].is_empty() {
+                "-"
+            } else {
+                &c.case[1]
+            },
             c.fit[0],
             c.fit[1],
             c.why,
-            c.without_fit
-                .as_ref()
-                .map_or(String::new(), |w| format!("; without the joint-fit limits {w}")),
+            c.without_fit.as_ref().map_or(String::new(), |w| format!(
+                "; without the joint-fit limits {w}"
+            )),
             if c.removed.is_empty() {
                 String::new()
             } else {

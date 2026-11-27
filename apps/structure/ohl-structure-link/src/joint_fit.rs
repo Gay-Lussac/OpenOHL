@@ -359,22 +359,35 @@ pub fn joint_fit(
     axial: &[f64],
     rules: &FitRules,
 ) -> (Vec<FitProblem>, usize) {
-    joint_fit_cached(model, members, axial, rules, &mut FitCache::default())
+    joint_fit_cached(
+        model,
+        members,
+        axial,
+        rules,
+        &|_| None,
+        &mut FitCache::default(),
+    )
 }
 
 /// [`joint_fit`] with the code's answers kept in `cache` (one plugin call
-/// per distinct bolt, part and edge over a whole sizing).
+/// per distinct bolt, part and edge over a whole sizing) and `part`: the
+/// sizing group of a member of the model (none: not sized). Two pieces in
+/// line are one part only where both are of one group, or both of none,
+/// and of one section — never by a section two groups happen to share in
+/// one trial.
 pub fn joint_fit_cached(
     model: &Model,
     members: &[usize],
     axial: &[f64],
     rules: &FitRules,
+    part: &dyn Fn(usize) -> Option<usize>,
     cache: &mut FitCache,
 ) -> (Vec<FitProblem>, usize) {
+    let asked: std::collections::HashSet<usize> = members.iter().copied().collect();
     let defaults: BTreeMap<usize, ohl_member_check::default_bolts::DefaultBolt> =
         ohl_member_check::default_bolts::default_bolts(model)
             .into_iter()
-            .filter(|d| members.contains(&d.member))
+            .filter(|d| asked.contains(&d.member))
             .map(|d| (d.member, d))
             .collect();
     let mut problems = Vec::new();
@@ -406,7 +419,7 @@ pub fn joint_fit_cached(
         let d = away(k, e);
         at_node.get(&node).is_some_and(|list| {
             list.iter().any(|&j| {
-                if j == k || model.members[j].section != m.section {
+                if j == k || model.members[j].section != m.section || part(j) != part(k) {
                     return false;
                 }
                 let ej = if model.members[j].i == node { 0 } else { 1 };
@@ -500,9 +513,7 @@ pub fn joint_fit_cached(
                     });
                 }
             }
-            let needed = n
-                .force
-                .map_or(1.0, |p| (force / p).ceil().max(1.0));
+            let needed = n.force.map_or(1.0, |p| (force / p).ceil().max(1.0));
             let count = f64::from(n.count.unwrap_or(1).max(1)).max(needed);
             length_needed += 2.0 * n.end + (count - 1.0) * n.spacing;
         }

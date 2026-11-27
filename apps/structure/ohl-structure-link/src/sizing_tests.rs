@@ -274,7 +274,10 @@ fn groups_by_group_and_section() {
     // Split: each member alone, named with its group.
     let g = sizing::sizing_groups(&t, &model, &["web".into()]);
     assert_eq!(g.len(), 5);
-    assert!(g.iter().any(|g| g.name == "web · BC" && g.members == ["BC"]));
+    assert!(
+        g.iter()
+            .any(|g| g.name == "web · BC" && g.members == ["BC"])
+    );
     // Two sections in one group: two groups.
     let two = TRUSS.replacen(
         "id = \"CE\"\nnodes = [\"C\", \"E\"]\nsection = \"L80x8\"",
@@ -283,8 +286,14 @@ fn groups_by_group_and_section() {
     );
     let t = StructureType::parse(std::path::Path::new("t.ohls"), &two).unwrap();
     let g = sizing::sizing_groups(&t, &model, &[]);
-    assert!(g.iter().any(|g| g.name == "bottom · L80x8" && g.members == ["AC"]));
-    assert!(g.iter().any(|g| g.name == "bottom · L90x9" && g.members == ["CE"]));
+    assert!(
+        g.iter()
+            .any(|g| g.name == "bottom · L80x8" && g.members == ["AC"])
+    );
+    assert!(
+        g.iter()
+            .any(|g| g.name == "bottom · L90x9" && g.members == ["CE"])
+    );
 }
 
 /// Each group's choice passes, and the next lighter section of its family
@@ -300,8 +309,14 @@ fn the_lightest_passing_section_per_group() {
     let top = by("top");
     assert_eq!(top.to, "L50x5", "{:#?}", s.groups);
     assert_eq!(top.without_fit.as_deref(), Some("L40x4"));
-    assert!(s.fit_effect.contains("kept 1 group(s) heavier"), "{}", s.fit_effect);
-    let order = ["L40x4", "L45x4", "L50x5", "L60x6", "L70x7", "L80x8", "L90x9", "L100x10"];
+    assert!(
+        s.fit_effect.contains("kept 1 group(s) heavier"),
+        "{}",
+        s.fit_effect
+    );
+    let order = [
+        "L40x4", "L45x4", "L50x5", "L60x6", "L70x7", "L80x8", "L90x9", "L100x10",
+    ];
     for g in &s.groups {
         assert!(g.changed(), "{g:?}");
         assert!(g.usage[1].unwrap() <= 1.0, "{g:?}");
@@ -336,8 +351,16 @@ fn the_lightest_passing_section_per_group() {
     assert!(s.mass[1] < s.mass[0]);
     assert!(s.over_target.is_empty());
     // The core's simple check: NOT ON THE SAFE SIDE, said; no code limits.
-    assert!(s.notes.iter().any(|n| n.starts_with("NOT ON THE SAFE SIDE: sized by the core's simple check")));
-    assert!(s.notes.iter().any(|n| n.contains("limits on the members' sizes") && n.contains("not checked")));
+    assert!(
+        s.notes
+            .iter()
+            .any(|n| n.starts_with("NOT ON THE SAFE SIDE: sized by the core's simple check"))
+    );
+    assert!(
+        s.notes
+            .iter()
+            .any(|n| n.contains("limits on the members' sizes") && n.contains("not checked"))
+    );
     // AC's design thickness and w/t described the L80×8: removed, said.
     assert!(by("bottom").removed.iter().any(|r| r.contains("thickness")));
 }
@@ -368,7 +391,12 @@ fn settings_change_the_choice() {
     let top = loose.groups.iter().find(|g| g.group.name == "top").unwrap();
     assert_eq!(top.to, "L40x4");
     assert_eq!(top.fit[1], 2, "{top:?}");
-    assert!(loose.notes.iter().any(|n| n.starts_with("joint-fit limits off")));
+    assert!(
+        loose
+            .notes
+            .iter()
+            .any(|n| n.starts_with("joint-fit limits off"))
+    );
     // Kept: left as it is.
     let kept = size(
         TRUSS,
@@ -393,12 +421,19 @@ fn the_loop_settles_with_self_weight() {
     let chosen = sizing::apply(
         &heavy,
         &s,
-        &s.groups.iter().map(|g| g.group.name.clone()).collect::<Vec<_>>(),
+        &s.groups
+            .iter()
+            .map(|g| g.group.name.clone())
+            .collect::<Vec<_>>(),
     )
     .unwrap();
     assert_eq!(chosen, s.text);
     let t = StructureType::parse(std::path::Path::new("t.ohls"), &chosen).unwrap();
-    assert!(t.members.iter().all(|m| m.section.as_deref() != Some("L80x8")));
+    assert!(
+        t.members
+            .iter()
+            .all(|m| m.section.as_deref() != Some("L80x8"))
+    );
 }
 
 /// Apply takes only the groups ticked (one edit), and refuses a file whose
@@ -419,7 +454,11 @@ fn apply_takes_the_ticked_groups_only() {
     assert!(!text.contains("width_thickness"));
     assert!(text.contains("bolts = { diameter = \"16 mm\", count = 2 }"));
     let gone = TRUSS.replace("id = \"BD\"", "id = \"BX\"");
-    assert!(sizing::apply(&gone, &s, &["top".into()]).unwrap_err().contains("BD"));
+    assert!(
+        sizing::apply(&gone, &s, &["top".into()])
+            .unwrap_err()
+            .contains("BD")
+    );
 }
 
 /// The joint fit by hand: a 40 mm leg with a 16 mm bolt — 20 mm to the
@@ -441,7 +480,11 @@ fn joint_fit_by_hand() {
     let (p, unknown) = fit(&small);
     assert_eq!(unknown, 0);
     assert_eq!(p.len(), 1, "{p:?}");
-    assert!(p[0].words.contains("AC at A: 20 mm to the toe at mid-leg, below the code's edge distance 24 mm"), "{p:?}");
+    assert!(
+        p[0].words
+            .contains("AC at A: 20 mm to the toe at mid-leg, below the code's edge distance 24 mm"),
+        "{p:?}"
+    );
     let spliced = small.replacen(
         "id = \"CE\"\nnodes = [\"C\", \"E\"]\nsection = \"L40x4\"",
         "id = \"CE\"\nnodes = [\"C\", \"E\"]\nsection = \"L45x4\"",
@@ -449,7 +492,12 @@ fn joint_fit_by_hand() {
     );
     let (p, _) = fit(&spliced);
     assert_eq!(p.len(), 2, "{p:?}");
-    let short = |text: &str| text.replace("point = [\"2 m\", \"0 m\", \"0 m\"]", "point = [\"0.08 m\", \"0 m\", \"0 m\"]");
+    let short = |text: &str| {
+        text.replace(
+            "point = [\"2 m\", \"0 m\", \"0 m\"]",
+            "point = [\"0.08 m\", \"0 m\", \"0 m\"]",
+        )
+    };
     let length = |p: &[sizing::FitProblem], need: &str| {
         p.iter()
             .any(|x| x.rule == sizing::FitRule::Length && x.words.contains(need))
@@ -463,15 +511,22 @@ fn joint_fit_by_hand() {
 /// A section not in the library: its group left as it is, said.
 #[test]
 fn a_section_outside_the_library_is_left() {
-    let own = TRUSS.replace("group = \"top\"", "group = \"top\"").replacen(
-        "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"L80x8\"",
-        "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"own\"",
-        1,
-    ) + "\n[[section]]\nid = \"own\"\narea = \"10 cm2\"\niy = \"50 cm4\"\niz = \"50 cm4\"\ni_min = \"20 cm4\"\nmaterial = \"m\"\n[[material]]\nid = \"m\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n";
+    let own = TRUSS
+        .replace("group = \"top\"", "group = \"top\"")
+        .replacen(
+            "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"L80x8\"",
+            "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"own\"",
+            1,
+        )
+        + "\n[[section]]\nid = \"own\"\narea = \"10 cm2\"\niy = \"50 cm4\"\niz = \"50 cm4\"\ni_min = \"20 cm4\"\nmaterial = \"m\"\n[[material]]\nid = \"m\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n";
     let s = size(&own, &Settings::default());
     let top = s.groups.iter().find(|g| g.group.name == "top").unwrap();
     assert!(top.not_sized && !top.changed());
-    assert!(top.why.contains("not in the project's section library"), "{}", top.why);
+    assert!(
+        top.why.contains("not in the project's section library"),
+        "{}",
+        top.why
+    );
 }
 
 /// The heavier of a cycle per group.
@@ -493,8 +548,17 @@ fn a_cycle_takes_the_heavier() {
 fn summary_in_lines() {
     let s = size(TRUSS, &Settings::default());
     let lines = sizing::summary(&s);
-    assert!(lines[0].starts_with("3 of 3 group(s) changed"), "{}", lines[0]);
-    assert!(lines.iter().any(|l| l.starts_with("* top (1 member(s)): L80x8 → L50x5")), "{lines:#?}");
+    assert!(
+        lines[0].starts_with("3 of 3 group(s) changed"),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("* top (1 member(s)): L80x8 → L50x5")),
+        "{lines:#?}"
+    );
 }
 
 /// The detailing practice's plate thicknesses (O44 L29) as joint-fit
@@ -509,13 +573,8 @@ fn the_practice_plates_limit_the_choice() {
     let text = format!("{TRUSS}\n[layout_practice.plates]\nthicknesses = [\"4 mm\", \"5 mm\"]\n");
     let s = size(&text, &Settings::default());
     let free = size(TRUSS, &Settings::default());
-    let by = |s: &sizing::Sizing, n: &str| {
-        s.groups
-            .iter()
-            .find(|g| g.group.name == n)
-            .unwrap()
-            .clone()
-    };
+    let by =
+        |s: &sizing::Sizing, n: &str| s.groups.iter().find(|g| g.group.name == n).unwrap().clone();
     let bottom = by(&s, "bottom");
     assert_eq!(bottom.basis, sizing::Basis::FitNotMet, "{bottom:?}");
     assert_eq!(bottom.to, by(&free, "bottom").to);
@@ -575,7 +634,11 @@ fn what_the_sizer_leaves_and_refuses() {
     let s = size(&hand, &Settings::default());
     let top = s.groups.iter().find(|g| g.group.name == "top").unwrap();
     assert!(top.not_sized && !top.changed(), "{top:?}");
-    assert!(top.why.contains("capacities written by hand"), "{}", top.why);
+    assert!(
+        top.why.contains("capacities written by hand"),
+        "{}",
+        top.why
+    );
     let run = |text: &str, settings: &Settings| {
         let t = StructureType::parse(std::path::Path::new("t.ohls"), text).unwrap();
         let lib = library();
@@ -604,7 +667,10 @@ fn what_the_sizer_leaves_and_refuses() {
     )
     .unwrap_err();
     assert!(over.contains("at most 100 %"), "{over}");
-    let own = TRUSS.replace("kind = \"lattice\"", "kind = \"lattice\"\nmodel = \"t.ohlfe\"");
+    let own = TRUSS.replace(
+        "kind = \"lattice\"",
+        "kind = \"lattice\"\nmodel = \"t.ohlfe\"",
+    );
     let e = run(&own, &Settings::default()).unwrap_err();
     assert!(e.contains("finite-element model file (t.ohlfe)"), "{e}");
 }
