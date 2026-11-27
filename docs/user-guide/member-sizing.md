@@ -89,7 +89,7 @@ with: a change to either asks to choose again before Apply.
 
 How long it takes, measured: under a second on the invented truss of the
 pictures; on real towers of 2 300 to 2 700 members with 300 to 360
-groups, 40 s to 2 min of CPU time (three or four rounds).
+groups, 40 s to 2.5 min of CPU time (three or four rounds).
 
 ## What is and is not on the safe side
 

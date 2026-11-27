@@ -66,8 +66,8 @@ built, in active development, not approved yet;
   nothing of a real design, only that the method works: the sized
   members' mass down by a fifth to three fifths, every member within its
   target in the full run, the joint-fit problems of the towers as built
-  (all the toe's edge distance at mid-leg) none after; two towers needed
-  groups taken back for a buckling mode; 5 s to 2 min of CPU time per
+  (nearly all the toe's edge distance at mid-leg) none after; two towers needed
+  groups taken back for a buckling mode; 5 s to 2.5 min of CPU time per
   tower.
 - Later stages in ROADMAP O49: members created from a level 2 outline, the
   layout's "bigger member" calling the sizer, sizing with the layout in

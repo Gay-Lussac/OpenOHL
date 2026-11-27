@@ -262,7 +262,7 @@ with them says it per member.
 Measured on the validation truss below (the bundled ASCE 10-97 plugin; the
 whole run about 0.6 s of CPU time, most of it the program's start and the
 plugin's loading) and, for the time, on eight real towers of 600 to
-2 700 members (kept privately): about 5 s to 2 min of CPU time for 40 to
+2 700 members (kept privately): about 5 s to 2.5 min of CPU time for 40 to
 360 groups, two to four rounds. The window shows each setting's effect
 and the rounds' times measured in the last run.
 
