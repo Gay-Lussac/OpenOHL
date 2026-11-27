@@ -8,6 +8,39 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-27 (joint layout: a whole part decided at once, item 2's worse joints traced, a fourth pass, the searches to 5 mm, L32)
+
+**Members one part with another decided as a whole part at once; L1's
+guard's fallback taken back where it writes a joint worse; the passes kept at three;
+the pull-back and shift searches every 5 mm** (roadmap O44 L32, L28's questions 3, 6 and 7 and the
+owner's pull-back suggestion of 2026-11-27; built, in active development,
+not approved yet;
+[theory](../theory/joint-layout.md#a-whole-part-decided-at-once-l32)).
+
+- **A whole part at once** (`own_turns`, with `own_turns_weighed`): the
+  members joined `continuous` (in the file or either layout) are one
+  candidate, as L19 weighs a run: every joint any of them reaches, L28's
+  rule, every member at its roll with the far-out welded plates or every
+  member held at its roll without them — never apart. A row for every
+  member (no format change). Measured on the eight private towers (the default run): 59 parts decided (26 with, 33 without the plates); A alone 25 joints better, 16 worse, 15 ends fewer; found on the way: the run's own turns write the pieces of a part with rolls 180° apart (33 of the 59 with the plates) — an owner question. L32 as built (A, B, D): 105 joints better, 21 worse, 68 member ends more, 2.9 % more CPU time.
+- **Item 2's worse joints traced** (L28's 14, on today's program): the
+  turns the far-out plates change at a member's other joint (a bracing's
+  half turn; a piece of a part half-turned alone) — decided in the default
+  run by L28 item 1 and now by the whole part; and L1's guard planning a
+  joint again as today, which then wrote fewer ends still. **Fixed**:
+  `LayoutSettings::guard_taken_back` (on): a joint L1's guard planned
+  again as today that then lays out worse than before the guard is taken
+  back to its plan before it (L1's choices again) and not guarded so
+  again. Measured on the eight private towers (a run without L28 item 1, as item 2 was measured): 65 joints better, 2 worse, the run 11 % longer.
+- **A fourth pass** (L28's passes and rounds at four): before L32 no tower's third pass held a roll; with L32 one tower's did — there a fourth pass decided one member more (kept with the plates), every joint laid out the same, the run 7 % longer. Kept at three.
+- **The pull-back and shift searches** (`LayoutSettings::range_search`,
+  `RangeSearch`, `RANGE_PRECISION` 5 mm — the owner's value): the four
+  searches that stepped a millimetre at a time over the pull-back or shift
+  range (a bent plate's holding bolts slid, the shifts of L5, L11 and an
+  end's concentric place) can search the far end first and back by
+  bisection, or every 5 mm; the place taken is always one checked and
+  found to fit; the ordinary cut stays computed exactly. Measured on the eight private towers (a run without L28 item 1): the run's time about the same whatever the form (within 1 %: the searches are a very small part of it); bisection 2 joints better, 2 worse (not kept); **the 5 mm scan no joint worse, 14 better** (plates 0.3 % longer in all) — kept as the default (`RangeSearch::Scan`), the millimetre search selectable.
+
 ## 2026-11-27 (owner answers: the joint layout's L28 recommendations; the pull-back searches to 5 mm)
 
 **The joint layout's L28 questions** (roadmap O44 L28; owner, 2026-11-27:

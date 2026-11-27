@@ -40,8 +40,14 @@
 //! layout record's `own_turns`: a roll kept without them is held by later
 //! runs (never turned again, as L25's turns); a row still current is not
 //! decided again, so a run again on the result changes nothing. Members
-//! one part with another (their rolls alike) are not decided here: their
-//! roll stays the one chosen with the plates, said. Where the roll is the
+//! one part with another (O44 L32, the owner's "go ahead" of 2026-11-27)
+//! are decided **as a whole part at once**, as L19 weighs a run: over every
+//! joint any of its members reaches, every member at its roll with the
+//! plates or every member at its roll without them (held), never apart; the
+//! rolls either way are the run's (where they lie more than
+//! [`PART_ALIKE_DEG`] apart along the part, said); a part with a member
+//! reaching a joint the run does not lay out is left with the roll chosen
+//! with the plates, said. Where the roll is the
 //! designer's the run turns nothing, so nothing differs. Nothing here
 //! changes a member's size, work point or what is checked: it chooses
 //! between two rolls the run would write anyway.
@@ -110,14 +116,38 @@ pub fn asked(s: &LayoutSettings) -> bool {
     s.own_turns_weighed && s.own_offset_analysed && !s.turns_without_own
 }
 
-/// A member to decide.
-struct Candidate {
+/// A member of a candidate: its rolls before, with and without the
+/// far-out welded plates, as written.
+struct CandMember {
     member: String,
-    /// The joints it reaches (both ends).
-    reach: Vec<String>,
     before: String,
     with: String,
     without: String,
+}
+
+/// A member to decide — or (O44 L32) a whole part: members one part with
+/// another (`continuous`), decided at once.
+struct Candidate {
+    /// The member, or the part's members in the file's order.
+    members: Vec<CandMember>,
+    /// The joints any of them reaches (both ends of each).
+    reach: Vec<String>,
+}
+
+impl Candidate {
+    /// The member's id, or the part's first.
+    fn member(&self) -> &str {
+        &self.members[0].member
+    }
+
+    /// Its members' ids, joined.
+    fn ids(&self) -> String {
+        self.members
+            .iter()
+            .map(|c| c.member.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 /// **Decide the turns the far-out welded plates change** (see the module),
@@ -171,7 +201,10 @@ pub(crate) fn weigh_own_then_flange(
 pub const ROUNDS: usize = 3;
 
 /// The members whose roll the run `r0` (with the far-out welded plates)
-/// and `rb` (the turns chosen without them) write otherwise, to decide.
+/// and `rb` (the turns chosen without them) write otherwise, to decide —
+/// each alone, or (O44 L32) with every member one part with it (written
+/// `continuous` in the file or either run) as one: the whole part at once.
+/// And the parts not decided (a member reaching a joint not asked).
 fn candidates(
     text: &str,
     r0: &LayoutRun,
@@ -182,48 +215,113 @@ fn candidates(
         .map_err(|e| e.message)?;
     let rec = LayoutRecord::of(&t);
     let (ra, rbr) = (rolls_in(&r0.text)?, rolls_in(&rb.text)?);
-    let parts = |r: &LayoutRun| -> Result<BTreeSet<String>, String> {
-        let x = StructureType::parse(std::path::Path::new("structure.ohls"), &r.text)
+    // The pieces one part with each other, from the file and both runs.
+    let mut joined: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for x in [text, r0.text.as_str(), rb.text.as_str()] {
+        let x = StructureType::parse(std::path::Path::new("structure.ohls"), x)
             .map_err(|e| e.message)?;
-        Ok(x.connections
+        for c in &x.connections {
+            if c.kind() != ohl_structures::connections::ConnectionKind::Continuous {
+                continue;
+            }
+            let Some(onto) = &c.onto else { continue };
+            joined
+                .entry(c.member.clone())
+                .or_default()
+                .insert(onto.clone());
+            joined
+                .entry(onto.clone())
+                .or_default()
+                .insert(c.member.clone());
+        }
+    }
+    let order: BTreeMap<&str, usize> = t
+        .members
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (m.id.as_str(), i))
+        .collect();
+    let nodes_of: BTreeMap<&str, &[String; 2]> = t
+        .members
+        .iter()
+        .map(|m| (m.id.as_str(), &m.nodes))
+        .collect();
+    let now = |m: &str| -> String {
+        t.members
             .iter()
-            .filter(|c| c.kind() == ohl_structures::connections::ConnectionKind::Continuous)
-            .flat_map(|c| [Some(c.member.clone()), c.onto.clone()])
-            .flatten()
-            .collect())
+            .find(|x| x.id == m)
+            .map(|x| roll_text(x.roll.as_ref()))
+            .unwrap_or_default()
     };
-    let one_part: BTreeSet<String> = parts(r0)?.union(&parts(rb)?).cloned().collect();
+    // The part of `m`: every member one part with it, in the file's order.
+    let part_of = |m: &str| -> Vec<String> {
+        let mut seen: BTreeSet<String> = [m.to_owned()].into();
+        let mut todo = vec![m.to_owned()];
+        while let Some(x) = todo.pop() {
+            for y in joined.get(&x).into_iter().flatten() {
+                if order.contains_key(y.as_str()) && seen.insert(y.clone()) {
+                    todo.push(y.clone());
+                }
+            }
+        }
+        let mut v: Vec<String> = seen.into_iter().collect();
+        v.sort_by_key(|x| order.get(x.as_str()).copied().unwrap_or(usize::MAX));
+        v
+    };
+    let rolls = |m: &str| -> (String, String) {
+        (
+            ra.get(m).cloned().unwrap_or_else(|| now(m)),
+            rbr.get(m).cloned().unwrap_or_else(|| now(m)),
+        )
+    };
+    let decided = |m: &str| rec.own_turns.get(m).is_some_and(|r| r.current(&t, m));
     let mut out = Vec::new();
     let mut left = Vec::new();
+    let mut taken: BTreeSet<String> = BTreeSet::new();
     for m in &t.members {
         let (Some(with), Some(without)) = (ra.get(&m.id), rbr.get(&m.id)) else {
             continue;
         };
-        if with == without || !m.nodes.iter().all(|n| targets.contains(n)) {
+        if with == without || taken.contains(&m.id) || decided(&m.id) {
             continue;
         }
-        if rec
-            .own_turns
-            .get(&m.id)
-            .is_some_and(|r| r.current(&t, &m.id))
-        {
+        let part = part_of(&m.id);
+        taken.extend(part.iter().cloned());
+        let reach: BTreeSet<String> = part
+            .iter()
+            .filter_map(|x| nodes_of.get(x.as_str()))
+            .flat_map(|n| n.iter().cloned())
+            .collect();
+        if !reach.iter().all(|n| targets.contains(n)) {
+            // (A member alone so: not decided, as before L32; a part said.)
+            if part.len() > 1 {
+                left.push(part.join(", "));
+            }
             continue;
         }
-        if one_part.contains(&m.id) {
-            left.push(m.id.clone());
+        // (A part whose every member turned otherwise is decided already,
+        // and still so: not decided again.)
+        if part.iter().all(|x| {
+            let (w, o) = rolls(x);
+            w == o || decided(x)
+        }) {
             continue;
         }
-        let before = rec
-            .rolled
-            .get(&m.id)
-            .cloned()
-            .unwrap_or_else(|| roll_text(m.roll.as_ref()));
+        let members = part
+            .iter()
+            .map(|x| {
+                let (with, without) = rolls(x);
+                CandMember {
+                    member: x.clone(),
+                    before: rec.rolled.get(x).cloned().unwrap_or_else(|| now(x)),
+                    with,
+                    without,
+                }
+            })
+            .collect();
         out.push(Candidate {
-            member: m.id.clone(),
-            reach: m.nodes.to_vec(),
-            before,
-            with: with.clone(),
-            without: without.clone(),
+            members,
+            reach: reach.into_iter().collect(),
         });
     }
     Ok((out, left))
@@ -246,23 +344,25 @@ fn text_with(
         rec.own_turns.insert(m.clone(), r.clone());
     }
     for &k in held {
-        let c = &cands[k];
-        put_roll(&mut doc, &c.member, &c.without);
-        rec.rolled.remove(&c.member);
-        let row = rows.get(&c.member).cloned().unwrap_or_else(|| OwnTurnRow {
-            before: c.before.clone(),
-            with: c.with.clone(),
-            without: c.without.clone(),
-            kind: WITHOUT.to_owned(),
-            words: String::new(),
-        });
-        rec.own_turns.insert(
-            c.member.clone(),
-            OwnTurnRow {
+        // (A part: every member at its roll without the plates, held.)
+        for c in &cands[k].members {
+            put_roll(&mut doc, &c.member, &c.without);
+            rec.rolled.remove(&c.member);
+            let row = rows.get(&c.member).cloned().unwrap_or_else(|| OwnTurnRow {
+                before: c.before.clone(),
+                with: c.with.clone(),
+                without: c.without.clone(),
                 kind: WITHOUT.to_owned(),
-                ..row
-            },
-        );
+                words: String::new(),
+            });
+            rec.own_turns.insert(
+                c.member.clone(),
+                OwnTurnRow {
+                    kind: WITHOUT.to_owned(),
+                    ..row
+                },
+            );
+        }
     }
     rec.write(&mut doc);
     Ok(doc.to_string())
@@ -390,17 +490,22 @@ fn weigh_own_pass(
     let reach: Vec<Vec<String>> = cands.iter().map(|c| c.reach.clone()).collect();
     // As the L19 weighing takes them: the roll with the plates the turn,
     // the roll without them before it (one member each).
+    // (A part: its members turned as one, as L19 weighs a run.)
     let as_turns: Vec<TurnCandidate> = cands
         .iter()
         .map(|c| TurnCandidate {
-            run: c.member.clone(),
+            run: c.member().to_owned(),
             kind: "own".to_owned(),
             stage: 2,
-            members: vec![TurnRoll {
-                member: c.member.clone(),
-                before: c.without.clone(),
-                with: c.with.clone(),
-            }],
+            members: c
+                .members
+                .iter()
+                .map(|x| TurnRoll {
+                    member: x.member.clone(),
+                    before: x.without.clone(),
+                    with: x.with.clone(),
+                })
+                .collect(),
         })
         .collect();
     let at = |r: &LayoutRun, k: usize| -> Vec<Counts> {
@@ -529,34 +634,86 @@ fn weigh_own_pass(
             )
         };
         let (ef, pf) = sum(&at(fin, k));
-        let words = format!(
-            "{}: its turn chosen with the far-out welded plates (L20 item 2) writes roll {}, \
-             chosen without them {} — its joints {joints} lay out {ew} member end(s) on {pw} \
-             plate(s) with them, {eo} on {po} without them; {why}; as written: {ef} end(s) on \
-             {pf} plate(s)",
-            c.member,
-            shown(&c.with),
-            shown(&c.without),
+        let effect = format!(
+            "{joints} lay out {ew} member end(s) on {pw} plate(s) with them, {eo} on {po} \
+             without them; {why}; as written: {ef} end(s) on {pf} plate(s)"
         );
-        notes.push(words.clone());
-        let with = if kind == WITH {
-            fin_rolls
-                .get(&c.member)
-                .cloned()
-                .unwrap_or_else(|| c.with.clone())
-        } else {
-            c.with.clone()
+        // A member alone: its words as before (O44 L28); a part (O44 L32):
+        // its members and their rolls either way, decided at once.
+        let (note, row_words): (String, Vec<String>) = match c.members.as_slice() {
+            [x] => {
+                let w = format!(
+                    "{}: its turn chosen with the far-out welded plates (L20 item 2) writes roll \
+                     {}, chosen without them {} — its joints {effect}",
+                    x.member,
+                    shown(&x.with),
+                    shown(&x.without),
+                );
+                (w.clone(), vec![w])
+            }
+            xs => {
+                let rolls = |f: fn(&CandMember) -> &str| -> String {
+                    let first = f(&xs[0]);
+                    if xs.iter().all(|x| f(x) == first) {
+                        return format!("roll {} for all", shown(first));
+                    }
+                    let each = xs
+                        .iter()
+                        .map(|x| format!("{} {}", x.member, shown(f(x))))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    // (Said where the run writes the pieces' rolls more
+                    // than 2° apart: not alike along the part.)
+                    let apart = apart_deg(xs.iter().map(f));
+                    if apart > PART_ALIKE_DEG {
+                        format!("{each} (not alike along the part: {apart:.0}° apart)")
+                    } else {
+                        each
+                    }
+                };
+                let what = format!(
+                    "one part, decided at once (O44 L32): their turns chosen with the far-out \
+                     welded plates (L20 item 2) write {}, chosen without them {} — the joints any \
+                     of them reaches, {effect}",
+                    rolls(|x| x.with.as_str()),
+                    rolls(|x| x.without.as_str()),
+                );
+                let ids = c.ids();
+                let rows: Vec<String> = xs
+                    .iter()
+                    .map(|x| {
+                        let others: Vec<&str> = xs
+                            .iter()
+                            .filter(|y| y.member != x.member)
+                            .map(|y| y.member.as_str())
+                            .collect();
+                        format!("{}: with {}, {what}", x.member, others.join(", "))
+                    })
+                    .collect();
+                (format!("{ids}: {what}"), rows)
+            }
         };
-        rows.insert(
-            c.member.clone(),
-            OwnTurnRow {
-                before: c.before.clone(),
-                with,
-                without: c.without.clone(),
-                kind: kind.to_owned(),
-                words,
-            },
-        );
+        notes.push(note);
+        for (x, words) in c.members.iter().zip(row_words) {
+            let with = if kind == WITH {
+                fin_rolls
+                    .get(&x.member)
+                    .cloned()
+                    .unwrap_or_else(|| x.with.clone())
+            } else {
+                x.with.clone()
+            };
+            rows.insert(
+                x.member.clone(),
+                OwnTurnRow {
+                    before: x.before.clone(),
+                    with,
+                    without: x.without.clone(),
+                    kind: kind.to_owned(),
+                    words,
+                },
+            );
+        }
     }
     let held: BTreeSet<usize> = all.difference(&with_kept).copied().collect();
     let settled = text_with(text, &cands, &held, &rows)?;
@@ -581,12 +738,26 @@ fn weigh_own_pass(
         }
     };
     out.seconds = r0.seconds + seconds;
+    let parts = cands.iter().filter(|c| c.members.len() > 1).count();
+    let in_parts: usize = cands
+        .iter()
+        .filter(|c| c.members.len() > 1)
+        .map(|c| c.members.len())
+        .sum();
     let mut head = vec![format!(
         "the turns the far-out welded plates change (L28): {} member(s) decided with and \
-         without those plates over every joint they reach — the roll with them kept at \
+         without those plates over every joint they reach{} — the roll with them kept at \
          {n_with}, without them at {n_without}; the weighing laid the tower out {layouts} more \
          time(s) ({seconds:.1} s, measured)",
-        cands.len()
+        cands.len(),
+        if parts > 0 {
+            format!(
+                ", {parts} of them whole parts of members one part with another ({in_parts} \
+                 members, each part decided at once, O44 L32)"
+            )
+        } else {
+            String::new()
+        }
     )];
     if !left.is_empty() {
         head.push(own_part_words(&left));
@@ -598,19 +769,53 @@ fn weigh_own_pass(
     Ok((out, settled, head, n_without > 0))
 }
 
+/// How far apart the pieces of a part may lie in roll and still be said
+/// alike, degrees (O44 L32; J9's 2° for pieces in line: the mean written).
+pub const PART_ALIKE_DEG: f64 = 2.0;
+
+/// The most two of `rolls` (as written) lie apart, degrees (0 to 180).
+fn apart_deg<'a>(rolls: impl Iterator<Item = &'a str>) -> f64 {
+    let r: Vec<f64> = rolls
+        .map(|x| crate::weighed_turns::roll_radians(x).to_degrees())
+        .collect();
+    let mut most = 0.0_f64;
+    for (i, a) in r.iter().enumerate() {
+        for b in &r[i + 1..] {
+            let d = (a - b).rem_euclid(360.0);
+            most = most.max(d.min(360.0 - d));
+        }
+    }
+    most
+}
+
 /// A roll as said (none: "none").
 fn shown(roll: &str) -> &str {
     if roll.is_empty() { "none" } else { roll }
 }
 
-/// The members one part with another whose roll the far-out welded plates
-/// change, left with the roll chosen with them, in words.
+/// The parts (members one part with another) whose roll the far-out welded
+/// plates change, left with the roll chosen with them because a member
+/// reaches a joint the run does not lay out (O44 L32: a part is decided
+/// over every joint any of its members reaches), in words.
 fn own_part_words(left: &[String]) -> String {
     format!(
-        "the turns the far-out welded plates change (L28): {} member(s) one part with another \
-         left with the roll chosen with those plates (not decided here: their rolls stay \
-         alike): {}",
+        "the turns the far-out welded plates change (L28): {} part(s) of members one part with \
+         another left with the roll chosen with those plates (not decided: a member reaches a \
+         joint not laid out by this run): {}",
         left.len(),
-        left.join(", ")
+        left.join("; ")
     )
+}
+
+#[cfg(test)]
+mod tests {
+    /// The pieces' rolls apart, degrees: across 180° and none as 0°.
+    #[test]
+    fn rolls_apart() {
+        let d = super::apart_deg(["90.79 deg", "-89.24 deg"].into_iter());
+        assert!((d - 179.97).abs() < 1e-6, "{d}");
+        let d = super::apart_deg(["179.21 deg", "-179.5 deg", "180 deg"].into_iter());
+        assert!((d - 1.29).abs() < 1e-6, "{d}");
+        assert_eq!(super::apart_deg(["", "0 deg"].into_iter()), 0.0);
+    }
 }

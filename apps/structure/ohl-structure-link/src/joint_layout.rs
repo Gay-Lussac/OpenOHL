@@ -542,6 +542,95 @@ pub struct LayoutSettings {
     /// [`LayoutSettings::own_offset_analysed`]. On by default; off: a bent
     /// plate at most a plate's thickness off, as before.
     pub bent_offset_analysed: bool,
+    /// O44 L32 (the owner's suggestion, 2026-11-27): how the searches
+    /// stepping over the pull-back or the shift range — a bent plate's
+    /// holding bolts slid along the leg, an end moved sideways — find the
+    /// least that fits ([`RangeSearch`]). The ordinary cut is computed
+    /// directly (exact) whatever this is.
+    pub range_search: RangeSearch,
+    /// O44 L32 (L28's question 6, item 2's joints laid out worse traced):
+    /// a joint L1's guard planned again as today (laid out with fewer ends
+    /// than today's plan of it) that then lays out worse than before the
+    /// guard — fewer ends, or as many on more plates: today's plan counted
+    /// ends (on far-out plates among them) that the writing could not keep
+    /// — is taken back to its plan before the guard, L1's names again, and
+    /// not guarded so again (traced on the private towers: from three ends
+    /// down to one). On by default; off: as before.
+    pub guard_taken_back: bool,
+}
+
+/// How a search over the pull-back or the shift range finds the least
+/// slide or shift that fits (O44 L32; the owner, 2026-11-27: "pulling back
+/// more then bringing it back or using a bisection to find the optimal
+/// value within 5mm more precision is not needed"). Whatever the form, the
+/// place taken is one that was checked and fits — never less clearance
+/// than needed: a coarser form can only take a longer slide or a larger
+/// shift than the least (by less than [`RANGE_PRECISION`], where fitting
+/// once means fitting further out), never a place not checked.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RangeSearch {
+    /// A millimetre at a time from the nearest (before L32): the least
+    /// that fits to the millimetre; up to every millimetre checked.
+    Millimetre,
+    /// The far end first ("pulling back more"); where it fits there,
+    /// brought back by bisection to within [`RANGE_PRECISION`] (the place
+    /// taken always one checked and fitting); where it does not fit there,
+    /// every [`RANGE_PRECISION`] from the nearest ([`RangeSearch::Scan`]).
+    /// Bisection takes fitting once as fitting further out: where something
+    /// else is met further out it can take a longer slide or larger shift
+    /// than the least (still one that fits). Measured: two joints worse.
+    Bisect,
+    /// Every [`RANGE_PRECISION`] from the nearest, the far end last: never
+    /// skips a stretch that fits wider than that. The default since L32
+    /// (measured on the eight private towers: no joint worse than the
+    /// millimetre search, 14 better, the run's time within 1 %).
+    #[default]
+    Scan,
+}
+
+/// The precision of the coarser range searches ([`RangeSearch::Bisect`],
+/// [`RangeSearch::Scan`]), m: **the owner's value** (2026-11-27: "within
+/// 5mm more precision is not needed"), not a standard's.
+pub const RANGE_PRECISION: f64 = 0.005;
+
+/// The least step `k` of `1..=steps` (whole millimetres out) at which `at`
+/// gives a place, as `form` searches ([`RangeSearch`]); none where none
+/// checked does. Deterministic.
+fn least_step<T>(steps: i64, form: RangeSearch, mut at: impl FnMut(i64) -> Option<T>) -> Option<T> {
+    if steps < 1 {
+        return None;
+    }
+    let p = ((RANGE_PRECISION * 1000.0).round() as i64).max(1);
+    // Every p mm from the nearest, the far end last.
+    let scan = move |skip_far: bool| {
+        (1..)
+            .map(move |i| i * p)
+            .take_while(move |&k| k < steps)
+            .chain((!skip_far).then_some(steps))
+    };
+    match form {
+        RangeSearch::Millimetre => (1..=steps).find_map(&mut at),
+        RangeSearch::Scan => scan(false).find_map(&mut at),
+        RangeSearch::Bisect => {
+            let Some(mut best) = at(steps) else {
+                return scan(true).find_map(&mut at);
+            };
+            // (0: the place as it is, not fitting — the callers check it
+            // first.)
+            let (mut lo, mut hi) = (0, steps);
+            while hi - lo > p {
+                let mid = lo + (hi - lo) / 2;
+                match at(mid) {
+                    Some(v) => {
+                        best = v;
+                        hi = mid;
+                    }
+                    None => lo = mid,
+                }
+            }
+            Some(best)
+        }
+    }
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -617,6 +706,8 @@ impl Default for LayoutSettings {
             own_turns_weighed: true,
             turns_without_own: false,
             bent_offset_analysed: true,
+            range_search: RangeSearch::default(),
+            guard_taken_back: true,
         }
     }
 }
@@ -1447,7 +1538,13 @@ fn bent_over(
             need.is_none_or(|n| at(b[0]).min(at(b[1])) >= n - 1e-9)
                 && holds_clear(b, gauge, &holes, spacing_min)
         };
-        match slide_holds(bx, o.along_host.signum(), s.pull_back, clear) {
+        match slide_holds(
+            bx,
+            o.along_host.signum(),
+            s.pull_back,
+            s.range_search,
+            clear,
+        ) {
             Some(b) => bx = b,
             None => {
                 return Err(all(
@@ -1630,21 +1727,23 @@ fn holds_clear(b: [f64; 2], gauge: f64, holes: &[[f64; 2]], spacing: f64) -> boo
 
 /// A bent plate's two holding bolts at `bx` (along the leg, m) slid along
 /// it until `clear` holds — L2's follow-up (b), 2026-11-20: as they are
-/// where it holds already; else the least slide, in millimetre steps up to
+/// where it holds already; else the least slide, in whole millimetres up to
 /// `reach` (the longest pull-back), either way — `out` (the sign of away
-/// from the work point along the leg) first on a tie. None: no place within
-/// `reach`. Deterministic.
+/// from the work point along the leg) first on a tie —, searched as `form`
+/// says (O44 L32, [`RangeSearch`]). None: no place within `reach` found.
+/// Deterministic.
 fn slide_holds(
     bx: [f64; 2],
     out: f64,
     reach: f64,
+    form: RangeSearch,
     clear: impl Fn([f64; 2]) -> bool,
 ) -> Option<[f64; 2]> {
     if clear(bx) {
         return Some(bx);
     }
     let steps = (reach * 1000.0).round() as i64;
-    (1..=steps).find_map(|k| {
+    least_step(steps, form, |k| {
         [out, -out].into_iter().find_map(|w| {
             let d = w * k as f64 * 0.001;
             let b = [bx[0] + d, bx[1] + d];
@@ -7157,23 +7256,22 @@ fn shift_past_toe(
     let floor = x.floor.as_ref().map_or(0.0, |f| f.0);
     let conc = concentric_of(x);
     let steps = (s.shift_limit * 1000.0 + 1e-9).floor() as i64;
-    for n in 1..=steps {
-        for sign in [1.0, -1.0] {
+    // (O44 L32: searched as the settings say, [`RangeSearch`].)
+    least_step(steps, s.range_search, |n| {
+        [1.0, -1.0].into_iter().find_map(|sign| {
             let moved = conc + sign * n as f64 * 0.001;
             let (clear, _) = cut_need(strips, p.k, others, s, moved);
             let cut = clear.max(floor);
             let c = past_toe(x, &Placed { k: p.k, cut, moved }, s.gap);
             let c = ceil_to(c.max(cut), 0.001);
-            if c.is_finite() && c <= limit + 1e-9 && partner_misfit(x, c, moved, s).is_none() {
-                return Some(Placed {
+            (c.is_finite() && c <= limit + 1e-9 && partner_misfit(x, c, moved, s).is_none())
+                .then_some(Placed {
                     k: p.k,
                     cut: c,
                     moved,
-                });
-            }
-        }
-    }
-    None
+                })
+        })
+    })
 }
 
 /// `lo` and `hi` narrowed to the cuts `c` with `a ≤ v0 + c·dv ≤ b`.
@@ -7220,45 +7318,44 @@ fn land_moved(
         0
     };
     let (lo_y, hi_y) = (x.t + x.r + x.nut, x.width - x.edge);
-    for n in 0..=steps {
-        for sign in [1.0, -1.0] {
-            if n == 0 && sign < 0.0 {
-                continue;
-            }
-            let moved = if can {
-                conc + sign * n as f64 * 0.001
-            } else {
-                p.moved
-            };
-            let (need, _) = cut_need(strips, p.k, others, s, moved);
-            let mut lo = need.max(floor);
-            let mut hi = limit;
-            for (along, line) in &x.bolts {
-                let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
-                let q = x.at(*along, l);
-                narrow(&mut lo, &mut hi, q[1], x.u[1], lo_y, hi_y);
-                if x.host_ends {
-                    narrow(
-                        &mut lo,
-                        &mut hi,
-                        (q[0] - x.w[0]) * x.host_along,
-                        x.u[0] * x.host_along,
-                        from + x.host_end,
-                        f64::INFINITY,
-                    );
-                }
-            }
-            let c = ceil_to(lo, 0.001);
-            if c.is_finite() && c <= hi + 1e-9 && partner_misfit(x, c, moved, s).is_none() {
-                return Some(Placed {
-                    k: p.k,
-                    cut: c,
-                    moved,
-                });
+    // The least cut that lands every bolt with the end moved `moved`.
+    let fits = |moved: f64| -> Option<Placed> {
+        let (need, _) = cut_need(strips, p.k, others, s, moved);
+        let mut lo = need.max(floor);
+        let mut hi = limit;
+        for (along, line) in &x.bolts {
+            let l = x.gauges.get(*line).copied().unwrap_or(0.0) + moved;
+            let q = x.at(*along, l);
+            narrow(&mut lo, &mut hi, q[1], x.u[1], lo_y, hi_y);
+            if x.host_ends {
+                narrow(
+                    &mut lo,
+                    &mut hi,
+                    (q[0] - x.w[0]) * x.host_along,
+                    x.u[0] * x.host_along,
+                    from + x.host_end,
+                    f64::INFINITY,
+                );
             }
         }
-    }
-    None
+        let c = ceil_to(lo, 0.001);
+        (c.is_finite() && c <= hi + 1e-9 && partner_misfit(x, c, moved, s).is_none()).then_some(
+            Placed {
+                k: p.k,
+                cut: c,
+                moved,
+            },
+        )
+    };
+    // Pulled back further where it is; else moved sideways (O44 L32:
+    // searched as the settings say, [`RangeSearch`]).
+    fits(if can { conc } else { p.moved }).or_else(|| {
+        least_step(steps, s.range_search, |n| {
+            [1.0, -1.0]
+                .into_iter()
+                .find_map(|sign| fits(conc + sign * n as f64 * 0.001))
+        })
+    })
 }
 
 /// The least cut (from the work point) that takes strip `k`, moved `moved`
@@ -7479,23 +7576,29 @@ fn place(
             Some(w) => partner_why = Some(w),
         }
     }
-    // A shift: the smallest that fits, a millimetre at a time.
+    // A shift: the smallest that fits, in whole millimetres (O44 L32:
+    // searched as the settings say, [`RangeSearch`]).
     if x.shift_per.is_some() && !x.hand_shift {
         let steps = (s.shift_limit * 1000.0 + 1e-9).floor() as i64;
-        for n in 1..=steps {
-            for sign in [1.0, -1.0] {
+        let found = least_step(steps, s.range_search, |n| {
+            [1.0, -1.0].into_iter().find_map(|sign| {
                 let moved = concentric + sign * n as f64 * 0.001;
                 let (c, _) = cut_at(moved);
-                if c <= limit {
-                    let cut = ceil_to(c, 0.001);
-                    match partner(cut, moved) {
-                        None => return Ok(Placed { k, cut, moved }),
-                        Some(w) => {
-                            partner_why.get_or_insert(w);
-                        }
+                if c > limit {
+                    return None;
+                }
+                let cut = ceil_to(c, 0.001);
+                match partner(cut, moved) {
+                    None => Some(Placed { k, cut, moved }),
+                    Some(w) => {
+                        partner_why.get_or_insert(w);
+                        None
                     }
                 }
-            }
+            })
+        });
+        if let Some(p) = found {
+            return Ok(p);
         }
     }
     if let Some(w) = partner_why {
@@ -8683,7 +8786,7 @@ mod back_tests {
 
 #[cfg(test)]
 mod slide_tests {
-    use super::{holds_clear, slide_holds};
+    use super::{RANGE_PRECISION, RangeSearch, holds_clear, least_step, slide_holds};
 
     /// L2's follow-up (b): a bent plate's holding bolts on a hole of the
     /// leg slide along it the least that keeps the default minimum spacing
@@ -8699,31 +8802,96 @@ mod slide_tests {
         // the second bolt on it).
         let holes = [[0.10, gauge]];
         let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
-        let b = slide_holds(bx, 1.0, 0.3, clear).unwrap();
+        let mm = RangeSearch::Millimetre;
+        let b = slide_holds(bx, 1.0, 0.3, mm, clear).unwrap();
         assert!(near(b, [0.148, 0.196]), "{b:?}");
         // A hole midway between them: 72 mm either way, a tie — away from
         // the work point first, whichever way the leg runs (`out`).
         let holes = [[0.124, gauge]];
         let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
-        let b = slide_holds(bx, 1.0, 0.3, clear).unwrap();
+        let b = slide_holds(bx, 1.0, 0.3, mm, clear).unwrap();
         assert!(near(b, [0.172, 0.220]), "{b:?}");
-        let b = slide_holds(bx, -1.0, 0.3, clear).unwrap();
+        let b = slide_holds(bx, -1.0, 0.3, mm, clear).unwrap();
         assert!(near(b, [0.028, 0.076]), "{b:?}");
         // A hole just ahead of the second bolt: back towards the work
         // point by the least that clears it (6 mm), not out past it.
         let holes = [[0.19, gauge]];
         let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
-        let b = slide_holds(bx, 1.0, 0.3, clear).unwrap();
+        let b = slide_holds(bx, 1.0, 0.3, mm, clear).unwrap();
         assert!(near(b, [0.094, 0.142]), "{b:?}");
         // A hole off the gauge line by the spacing: they stay.
         let holes = [[0.10, gauge + spacing]];
         let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
-        assert_eq!(slide_holds(bx, 1.0, 0.3, clear), Some(bx));
+        assert_eq!(slide_holds(bx, 1.0, 0.3, mm, clear), Some(bx));
         // Holes every 40 mm along the gauge line: no place within the reach
         // (the layout then leaves the plate, said).
         let holes: Vec<[f64; 2]> = (-20..40).map(|k| [f64::from(k) * 0.04, gauge]).collect();
         let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
-        assert_eq!(slide_holds(bx, 1.0, 0.3, clear), None);
+        assert_eq!(slide_holds(bx, 1.0, 0.3, mm, clear), None);
+    }
+
+    /// O44 L32: the coarser searches over the pull-back or shift range
+    /// take a place they checked and found clear, never nearer than the
+    /// least clear one and less than 5 mm farther (where clear once means
+    /// clear further out); the plain scan never skips a clear stretch wider
+    /// than 5 mm, and bisection where the far end is not clear scans so.
+    #[test]
+    fn the_coarser_range_searches_stay_on_the_clear_side_within_5_mm() {
+        let forms = [
+            RangeSearch::Millimetre,
+            RangeSearch::Bisect,
+            RangeSearch::Scan,
+        ];
+        // Clear from `least` mm on, up to 300 mm.
+        for least in [1, 2, 4, 5, 6, 37, 150, 299, 300] {
+            for f in forms {
+                let mut checked = Vec::new();
+                let got = least_step(300, f, |k| {
+                    checked.push(k);
+                    (k >= least).then_some(k)
+                })
+                .unwrap();
+                assert!(got >= least && got < least + 5, "{f:?} {least}: {got}");
+                assert!(checked.contains(&got), "{f:?} {least}");
+                if f == RangeSearch::Bisect {
+                    assert!(checked.len() <= 8, "{f:?} {least}: {checked:?}");
+                }
+            }
+        }
+        // Clear nowhere: none, whatever the form.
+        for f in forms {
+            assert_eq!(least_step(300, f, |_| None::<i64>), None, "{f:?}");
+            assert_eq!(least_step(0, f, Some), None, "{f:?}");
+        }
+        // Clear only from 40 to 50 mm (something else met further out):
+        // the far end not clear, so bisection scans like the plain scan
+        // and both find the stretch; the millimetre search its start.
+        let stretch = |k: i64| ((40..=50).contains(&k)).then_some(k);
+        assert_eq!(least_step(300, RangeSearch::Millimetre, stretch), Some(40));
+        assert_eq!(least_step(300, RangeSearch::Scan, stretch), Some(40));
+        assert_eq!(least_step(300, RangeSearch::Bisect, stretch), Some(40));
+        // Clear from 10 to 20 mm and again from 200 mm: bisection, the far
+        // end clear, takes the far stretch (a longer slide, still clear —
+        // what the theory page says it can do); the scan the near one.
+        let two = |k: i64| ((10..=20).contains(&k) || k >= 200).then_some(k);
+        assert_eq!(least_step(300, RangeSearch::Scan, two), Some(10));
+        let b = least_step(300, RangeSearch::Bisect, two).unwrap();
+        assert!((200..205).contains(&b), "{b}");
+        // A bent plate's holding bolts slid by each form: clear, and within
+        // 5 mm of the millimetre search's slide, the same way.
+        let (gauge, spacing) = (0.045, 0.048);
+        let bx = [0.10, 0.148];
+        let holes = [[0.10, gauge]];
+        let clear = |b: [f64; 2]| holds_clear(b, gauge, &holes, spacing);
+        let exact = slide_holds(bx, 1.0, 0.3, RangeSearch::Millimetre, clear).unwrap();
+        for f in forms {
+            let b = slide_holds(bx, 1.0, 0.3, f, clear).unwrap();
+            assert!(clear(b), "{f:?}");
+            assert!(
+                b[0] >= exact[0] - 1e-9 && b[0] < exact[0] + RANGE_PRECISION,
+                "{f:?}: {b:?} {exact:?}"
+            );
+        }
     }
 }
 

@@ -4894,19 +4894,74 @@ only where it helps):
   > recommendations go ahead"; (3), (6) and (7) are L32, with the owner's
   > pull-back searches to 5 mm:
   > [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-27-owner-answers-the-joint-layouts-l28-recommendations-the-pull-back-searches-to-5-mm)).
-- [ ] L32. **A whole part decided at once, item 2's worse joints traced, a
+- [x] L32. **A whole part decided at once, item 2's worse joints traced, a
   fourth pass, the pull-back searches to 5 mm** (L28's questions 3, 6 and
   7, the owner's "Okay with recommendations go ahead" and his pull-back
-  suggestion, 2026-11-27). **In active development, not approved yet.**
-  A: members one part with another whose roll the far-out welded plates
-  change decided as a whole part at once over every joint any of its
-  members reaches (L28's rule, L19's weighing of a run). B: the joint
-  kinds behind item 2's 14 joints worse traced, fixed where a fix measures
-  better. C: L28's passes measured at four. D: the searches stepping a
-  millimetre at a time over the pull-back or shift range (a bent plate's
-  holding bolts slid, the sideways shifts) searched to 5 mm — the far end
-  first and back by bisection, or a plain 5 mm scan — measured against
-  the millimetre search; the ordinary cut stays computed exactly.
+  suggestion, 2026-11-27). **Built 2026-11-27, in active development, not
+  approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-whole-part-decided-at-once-l32),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-27-joint-layout-a-whole-part-decided-at-once-item-2s-worse-joints-traced-a-fourth-pass-the-searches-to-5-mm-l32);
+  no format change). **A. A whole part at once** (`own_turns`): members
+  joined `continuous` (in the file or either layout) are one candidate, as
+  L19 weighs a run — every joint any of them reaches, L28's rule, every
+  member at its roll with the far-out plates or every member held at its
+  roll without them, never apart; a row per member; said once per part
+  (and where the run's rolls lie more than 2° apart along the part).
+  **B. Item 2's worse joints traced**: a bracing half-turned for a far-out
+  bent plate at its other joint (decided by L28 item 1 in the default run);
+  a piece of a part half-turned alone (decided now by A); L1's guard
+  planning a joint again as today, which then wrote fewer ends still
+  (three → one) — **fixed**: `LayoutSettings::guard_taken_back` (on), such
+  a fallback taken back to the plan before the guard. **C. A fourth pass**
+  measured: one tower reaches it; it decides one member more, every joint
+  the same, the run 7 % longer — kept at three. **D. The searches over the
+  pull-back or shift range** (`LayoutSettings::range_search`): a bent
+  plate's holding bolts slid, the shifts of L5, L11 and an end's concentric
+  place, a millimetre at a time before; bisection (far end first, back to
+  5 mm) and a plain 5 mm scan measured — **the 5 mm scan kept** as the
+  default; each place taken is checked and fits; the ordinary cut stays
+  exact. Measured on the eight private towers (6 852 joints; kept
+  privately; the bundled ASCE 10-97 plugin built fresh and checked to load
+  before every run; CPU time; L27's laid files laid out again):
+
+  | | joints whole | member ends | plates | better / worse | CPU time |
+  |---|---|---|---|---|---|
+  | D: 1 mm (run without L28 item 1) | 4 246 | 15 379 | 8 464 | — | 6 384 s |
+  | D: bisection | 4 246 | 15 371 | 8 456 | 2 / 2 | 6 316 s |
+  | D: 5 mm scan (kept) | 4 246 | 15 391 | 8 478 | 14 / 0 | 6 309 s |
+  | B: guard's fallback taken back (same run) | 4 247 | 15 447 | 8 531 | 65 / 2 | 7 111 s (+11 %) |
+  | default run before L32 | 4 235 | 15 382 | 8 446 | — | 12 855 s |
+  | A alone | 4 234 | 15 367 | 8 392 | 25 / 16 | 12 939 s |
+  | **L32 as built** | 4 234 | 15 450 | 8 479 | **105 / 21** | 13 228 s (+2.9 %) |
+
+  Item 2 in the run as built (on against off, six towers): 42 joints
+  better, 9 worse (L28: 49 / 14 without item 1); none of the traced kinds
+  left. 59 parts decided (26 with, 33 without the plates). **Found**: the
+  run's own turns write the pieces of a part with rolls 180° apart (33 of
+  the 59 parts with the plates; 24 kept so) — where a part is held at its
+  rolls without the plates they come alike again and ends the run had laid
+  out with the pieces apart are lost (the 8 joints A lays out worse on the
+  two tension towers of one design).
+  > **Owner:** (1) A whole part decided at once, on with L28's weighing (A
+  > alone: 25 joints better, 16 worse, 15 ends fewer — the approved rule
+  > on parts, and pieces brought alike again) → Recommended: keep (pieces
+  > of one part are never decided apart). (2) The run's own half and
+  > quarter turns and other faces turn a piece of a part alone (rolls 180°
+  > apart along a part written one piece: 33 of 59 parts) → Recommended:
+  > next, turn a part as a whole in those turns (as L19 and L25 do),
+  > measured; until then said in the notes. (3) L1's guard's fallback taken
+  > back where it writes a joint worse, on by default (65 better, 2 worse,
+  > 11 % more time in the run without item 1) → Recommended: keep. (4) Item
+  > 2's 9 joints still worse in the run as built (8 on one tower from item
+  > 1's mixed-case rule — the roll without the plates kept where with them
+  > one joint was better and one worse — and one with one plate more) →
+  > Recommended: accept (the approved rule, said in the theory); revisit
+  > only if the mixed cases are reopened (L28's question 2). (5) The fourth
+  > pass: pays nothing on the eight towers, 7 % more time on the one tower
+  > reaching it → Recommended: keep three. (6) The 5 mm scan the default
+  > (no joint worse, 14 better, the run's time the same — the searches are
+  > a very small part of a run; bisection laid out 2 joints worse) →
+  > Recommended: keep the scan; the millimetre search stays selectable.
 - [x] L29. **The detailing practice measured, its plate thicknesses, its
   editor** (L24's questions 2 to 5; the owner, 2026-11-25: *"use
   recommendations for l23 to l25"*). **Built 2026-11-26, in active

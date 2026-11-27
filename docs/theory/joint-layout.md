@@ -432,9 +432,10 @@ left free — also of those left for want of room, plates under them refused too
 
 ## Moved sideways: the shift
 
-Only where concentric does not fit, the end is moved sideways, a
-millimetre at a time either way, the smallest move first, up to the
-**shift limit** (a setting). The move is written as the connection's
+Only where concentric does not fit, the end is moved sideways, either
+way, the smallest move first, up to the **shift limit** (a setting) —
+searched every 5 mm since L32 (before, a millimetre at a time:
+[the searches to 5 mm](#the-pull-back-and-shift-searches-to-5-mm-l32)). The move is written as the connection's
 `shift` (beyond the concentric place). The analysis takes it as a rigid
 end offset (an eccentricity the force line passes the work point by):
 the moments where a frame member meets the joint; where only bars meet
@@ -1672,7 +1673,8 @@ with the usage it costs).
 *The guard — the clear rule*: each joint is planned with and without the
 moves; the plan with them is kept only where it lays out **more ends, or
 as many on fewer plates**; else the plan without (no move). Deterministic
-(both plans are). With the moves' search a millimetre at a time, a run
+(both plans are). With the moves' search a millimetre at a time (every 5 mm
+since L32), a run
 takes about a quarter more time (measured below).
 
 Each move is said with the end in the window's notes ("D2: moved 3 mm
@@ -4598,9 +4600,10 @@ the welded plates gain mostly *through* turns.
    A roll kept without the plates is held by later runs (never turned
    again, as L25's turns); a row still the member's is not decided again,
    so a run again on the result changes nothing. Members one part with
-   another (their rolls stay alike) are not decided: they keep the roll
-   chosen with the plates, said. Then L25's half and quarter turns are
-   weighed on the file so settled.
+   another (their rolls stay alike) were not decided (they kept the roll
+   chosen with the plates, said); since L32 a whole part is decided at
+   once ([below](#a-whole-part-decided-at-once-l32)). Then L25's half and
+   quarter turns are weighed on the file so settled.
 
 **Not on the safe side?** The weighing chooses between two rolls the run
 would write anyway; it changes no member's size, work point or what is
@@ -4717,6 +4720,249 @@ modelled yet — check those members by hand. The bend itself is checked as
 every bent plate's (L3's bend row; the measurements ran without the bends'
 checks, as L25–L27 did).
 
+## A whole part decided at once (L32)
+
+(L28's question 3, the owner's "Okay with recommendations go ahead" of
+2026-11-27; roadmap O44 L32. Built 2026-11-27, in active development, not
+approved yet. No format change: the layout record's `own_turns` gains a
+row for every member of a part.)
+
+**Why.** L28 decides each member whose roll the far-out welded plates
+change over every joint it reaches — but left the members one part with
+another (written `continuous`: a leg's or chord's run, a bracing through a
+joint) with the roll chosen with the plates (9 to 17 such members per
+tower on the private towers): deciding one piece of a part alone could
+turn it apart from the others.
+
+**What the run does** (`ohl_structure_link::own_turns`, with
+`LayoutSettings::own_turns_weighed`): the members one part with each other
+— joined by `continuous` connections in the file or in either layout —
+form one candidate, as L19 weighs a run in line (one candidate, all its
+members turned as one, `weighed_turns::TurnCandidate`): its reach is every
+joint any of its members reaches; L28's rule unchanged — every member at
+its roll chosen with the plates only where each of those joints is laid
+out no worse than with every member at its roll chosen without them and
+one better, and no joint elsewhere worse where a member turned otherwise
+meets them; else every member at its roll without them, held by later
+runs (a tie too). Never some pieces one way and some the other; the
+rolls either way are the ones the run writes — where the pieces' rolls lie
+more than 2° apart along the part (`PART_ALIKE_DEG`, J9's 2°), the notes
+say so ("not alike along the part: … apart"; see the measurement). Each part
+is said once in the notes ("…, …: one part, decided at once (O44 L32):
+…", both rolls of each member where they differ, the
+joints' ends and plates either way, which kept and why) and every member
+gets its row in `own_turns` (the same kind). A part with a member reaching
+a joint the run does not lay out (a run on some joints only) is left with
+the roll chosen with the plates, said. Tested on an invented body: a
+decided member split into two pieces in line written one part — both
+decided together, each kind once, a run again the same file.
+
+**Not on the safe side?** As L28: the weighing chooses between two sets of
+rolls the run writes anyway; no member's size, work point or check
+changes.
+
+**Measured** (2026-11-27, kept privately; the eight private towers' files
+L27 laid out, laid out again with the default settings — L28's weighing
+on — with the bundled ASCE 10-97 plugin built fresh and checked to load
+before every run; time as CPU time; 6 852 joints; the base the same run
+on today's program before L32):
+
+| | joints whole | member ends | plates | joints better / worse | CPU time |
+|---|---|---|---|---|---|
+| base (before L32) | 4 235 | 15 382 | 8 446 | — | 12 855 s |
+| a whole part at once (A alone) | 4 234 | 15 367 | 8 392 | 25 / 16 | 12 939 s (+0.7 %) |
+| **L32 as built** (A, L1's guard's fallback taken back, the 5 mm scan) | 4 234 | 15 450 | 8 479 | 105 / 21 | 13 228 s (+2.9 %) |
+
+- **59 parts decided** on six of the eight towers (A alone; 64 with the
+  whole of L32; parts of two members; 26 kept at their rolls with the far-out plates, 33 held at
+  their rolls without them); the run lays the tower out no more often
+  than before (a part is one candidate among the others).
+- A alone lays out 25 joints better and 16 worse (15 member ends fewer,
+  54 plates fewer): deciding a part's pieces together changes rolls L28
+  left as the run wrote them, and L28's approved rule (the roll with the
+  plates kept only where every joint is no worse and one better; mixed
+  cases and ties without them) then gives up some joints the run's own
+  rolls laid out better. **Found on the way**: the run itself writes the
+  pieces of a part with rolls 180° apart (one piece half-turned alone: the
+  run's half and quarter turns and L10's other faces choose each member's
+  roll by its own joints) — 33 of the 59 parts with the far-out plates, 14
+  without them; 24 of the parts kept so. Where a part held at its rolls
+  without the plates brings them alike again, ends the run had laid out
+  with the pieces apart are lost: the 8 joints worse on the two tension
+  towers of one design are all of that kind. Pieces of one part turned
+  apart cannot be built as one piece — an owner question (turn a part as
+  a whole in the run's own turns).
+- With the whole of L32 (the guard's fallback taken back, item B; the
+  5 mm scan, item D) the run lays out 68 member ends more than before L32,
+  105 joints better and 21 worse, in 2.9 % more CPU time.
+
+## Item 2's joints laid out worse, traced (L32)
+
+(L28's question 6, the owner's "Okay with recommendations go ahead" of
+2026-11-27; roadmap O44 L32 item B. Built 2026-11-27, in active
+development, not approved yet.)
+
+L28 item 2 (a plate bent once carrying its axis offset, only where no
+welded plate fits) laid out 14 joints of the eight private towers worse
+(49 better). Traced again on today's program (the same towers, item 2 on
+and off, L28 item 1 off as when it was measured):
+
+- **A bracing's half turn** (two joints on each of the three suspension
+  towers of one design, mirrored; one joint on a fourth tower): the member
+  is turned half a turn because at its *other* joint the far-out bent plate
+  lays out an end with the turn — counted in the turn's choice — and at
+  this joint the turn leaves it, another end taking its place on two more
+  plates (as many ends, one plate → three). A turn the far-out plates
+  change: in the default run L28 item 1 decides it with and without them
+  over every joint the member reaches (L28's run with both items on had
+  none of these joints worse).
+- **A piece of a part half-turned** (two joints of one tower, mirrored):
+  the same, for a piece written one part with the next — its turn changed
+  by the far-out plates while L28 item 1 left parts undecided. Decided now
+  as a whole part ([above](#a-whole-part-decided-at-once-l32)).
+- **L1's guard falling back worse** (five joints on the two tension
+  towers of one design): with item 2, the joint's plan *as today*
+  (without L1's choices of what an end bolts onto) counts an end on a
+  far-out bent plate; written, the clash rounds take ends back, so the
+  joint lays out fewer ends than that plan and L1's guard plans it again as
+  today — which, written, lays out fewer still (three ends → one); L20's
+  guard then plans it without the far-out plates, still as today (one
+  end). Each guard compares the joint written against a *plan*, never
+  against what the joint laid out before the guard. **Fixed**
+  (`LayoutSettings::guard_taken_back`, on by default): a joint L1's guard
+  planned again as today that then lays out worse than before the guard
+  (fewer ends, or as many on more plates) is taken back to its plan before
+  the guard, L1's choices written again, and not guarded so again. A
+  first form (L1's guard skipped where the joint met L20's reference) laid
+  out one joint worse on one tower and was replaced.
+
+**Measured** (2026-11-27, kept privately; the eight private towers' files
+L27 laid out, laid out again without L28 item 1 — as item 2 was measured
+— with the bundled ASCE 10-97 plugin built fresh and checked to load
+before every run; time as CPU time; 6 852 joints): with the fallback taken
+back, 4 246 → 4 247 joints whole, 15 379 → 15 447 member ends, 8 464 →
+8 531 plates; **65 joints better, 2 worse** (one end fewer at each);
+the run 11 % longer (6 384 → 7 111 s: the joints taken back are planned
+and written once more). Against the same run with
+item 2 off (four towers), the tension tower's three such joints are no
+longer worse; the turn-caused ones stay worse in this run without item 1.
+
+**Item 2 in the run as built** (the default run with all of L32, item 2
+on against off, six of the eight towers — the two left out are of the
+first suspension tower's design): 3 017 → 3 013 joints whole, 11 202 →
+11 236 member ends, 6 183 → 6 256 plates, **42 joints better, 9 worse**
+(L28 measured 49 / 14 without item 1). None of the traced kinds is left:
+the half-turned bracings are decided by L28 item 1, the half-turned piece
+by the whole part, the guard's fallback taken back. Left: on one tension
+tower two joint kinds, each four times mirrored (8 joints, whole → not
+whole, one end fewer), where item 1 decided a bracing's turn on a *mixed
+case* (with the plates one of its joints better, the other worse) for the
+roll without them — L28's approved rule — and that roll is not the one
+the run writes with item 2 off (the other members' rolls differ there);
+and one joint on another tower with one plate more. Both stay, said here:
+the first is the approved rule's (L28's question 2), the second one plate.
+
+## A fourth pass, measured (L32)
+
+(L28's question 7, the owner's "Okay with recommendations go ahead" of
+2026-11-27; roadmap O44 L32 item C. Measured 2026-11-27, nothing changed.)
+
+L28's passes (`own_turns::OWN_PASSES`) and its rounds with L25's turns
+(`own_turns::ROUNDS`) stop at three. Measured on the eight private towers
+(the default run): before L32 no tower's third pass held a roll any
+more; with L32 as built one tower's did (said in its notes). There the
+passes and rounds at four (a program built so for the measurement): the
+fourth pass decided one member more — kept at its roll with the far-out
+plates, so nothing held — and laid out every joint exactly as with three
+(joints whole, member ends, plates and plate length the same), the run 7 %
+longer (2 531 → 2 719 s CPU). On the other seven towers a fourth pass
+never runs (their passes end earlier). **Kept at three**: the fourth pass
+pays nothing measurable; the member it would decide is decided by a run
+again (said in the notes).
+
+## The pull-back and shift searches to 5 mm (L32)
+
+(The owner, 2026-11-27: *"For the pull back value, maybe it's worth
+pulling back more then bringing it back or using a bisection to find the
+optimal value within 5mm more precision is not needed"*; roadmap O44 L32
+item D. Built 2026-11-27, in active development, not approved yet.)
+
+**Which searches.** The ordinary concentric cut is computed directly —
+the least cut that clears the flange's heel, the bolts and the steel,
+rounded up to the millimetre — with no search: exact, unchanged. Four
+searches stepped a millimetre at a time over the pull-back or the shift
+range, checking a place at each step:
+
+- a bent plate's two holding bolts slid along the other leg until clear of
+  its holes (J2b's follow-up, up to the longest pull-back either way: up
+  to 600 checks);
+- an end moved sideways when its concentric cut does not fit (the shift,
+  up to the shift limit either way);
+- an end going onto a plate moved sideways so that its bolts pass the
+  flange within the pull-back (L11);
+- an end of a face moved sideways to bolt directly instead of on a plate
+  (L5).
+
+(The search for a plate's own holding bolts' place inside its outline
+steps 2 mm over the plate, not over the pull-back or shift range: left.)
+
+**The forms** (`LayoutSettings::range_search`, `RangeSearch`;
+`RANGE_PRECISION` 5 mm, **the owner's value, not a standard's**):
+
+- *a millimetre at a time* (before L32): from the nearest, the least that
+  fits to the millimetre;
+- *bisection* (the owner's "pulling back more then bringing it back"):
+  the far end first; where it fits there, brought back by halving the
+  range until the place taken (always one checked and found to fit) is
+  within 5 mm of one checked and found not to fit; where the far end does
+  not fit, every 5 mm from the nearest. About eight checks instead of up
+  to 300 per direction. Bisection takes *fitting once* as *fitting further
+  out*: where something else is met further out (a hole, another member)
+  it can take the far stretch — a longer slide or a larger shift than the
+  least, still a place that fits;
+- *a 5 mm scan*: every 5 mm from the nearest, the far end last; never
+  skips a stretch that fits wider than 5 mm.
+
+*On the safe side*: whatever the form, the place taken is one that was
+checked and fits — an end never gets less clearance than it needs, and
+the cut that follows a shift is computed as before (exact, rounded up).
+A coarser form can only move a pair of holding bolts up to 5 mm farther,
+or shift an end up to 5 mm more than the least (the shift an eccentricity
+the analysis takes, as every shift) — or, by bisection where something is
+met further out, take the far stretch. This is the only place where the
+layout's computed values are coarsened, by the owner's leave.
+
+**Measured** (2026-11-27, kept privately; the eight private towers' files
+L27 laid out, laid out again — a run without L28 item 1, so that only the
+searches differ — with the bundled ASCE 10-97 plugin built fresh and
+checked to load before every run; time as CPU time; 6 852 joints):
+
+| form | joints whole | member ends | plates | plate length (largest extent, summed) | joints better / worse | CPU time |
+|---|---|---|---|---|---|---|
+| a millimetre at a time | 4 246 | 15 379 | 8 464 | 1 599.6 m | — | 6 384 s |
+| bisection | 4 246 | 15 371 | 8 456 | 1 598.8 m | 2 / 2 | 6 316 s (−1.1 %) |
+| **5 mm scan (kept)** | 4 246 | 15 391 | 8 478 | 1 604.5 m | 14 / 0 | 6 309 s (−1.2 %) |
+
+- **Time**: the searches are a very small part of a run — whichever form,
+  the run takes about as long (about 1 % less, within the spread of
+  repeated runs). The owner's aim of a quicker search is met per search
+  (bisection: about 8 checks instead of up to 300 per direction; the scan
+  up to 60), not in the run.
+- **Bisection** laid out two joints worse (one joint kind, mirrored: an
+  end moved sideways to bolt directly where the millimetre search had left
+  it on its plate, so three ends lost their plate's host — five ends → one)
+  and two better: not kept.
+- **The 5 mm scan** laid out no joint worse and 14 better (12 ends more on
+  two towers of one design, one joint kind repeated: a member laid out on
+  a plate at a shift on the 5 mm grid where the least shift clashed after
+  writing), plates 0.3 % longer in all. **Kept as the default**
+  (`RangeSearch::Scan`): no joint worse than the millimetre search and the
+  run no slower (the rule set for it: the faster form whose joints are no
+  worse); the millimetre search stays selectable (`RangeSearch::Millimetre`).
+  *On the safe side* as above: a shift or slide up to 4 mm more than the
+  least, each place checked; the shift is carried into the analysis as
+  every shift.
+
 ## The clash check
 
 Every solid at a joint — each member's steel as placed from its cut to
@@ -4786,6 +5032,8 @@ the same towers:
 | How far an end of a face going onto a plate is moved to bolt directly (L5) | the plate's thickness (at most the shift limit) | on the safe side relative to the plate it replaces: no larger an eccentricity than the plate's own offset out of the flange, and in the analysis as a shift; the shift limit measured on six private real towers (about a fifth fewer plates, but moves of 15 mm median): a question to the owner |
 | How far out of today's choice's flange an end must lie to be named onto a member ending at the joint by its plane (L13) | 10° | measured on the 78 private towers: the ends 5° to 10° out made 250 joints worse and 137 better (a bent plate lays many out); those farther out 1 to 4 times more better than worse |
 | Passes planning a joint again with the members named but not laid out where the file draws them (L8) | 2 | a bound on the extra work: on six private real towers the second pass found 3 more joints (of about 1 190 in the first), one plate more |
+| How finely the searches over the pull-back or the shift range step (L32, `RANGE_PRECISION`, `RangeSearch::Scan`) | every 5 mm | the owner's value ("within 5mm more precision is not needed"); measured on the eight private towers: no joint worse than a millimetre at a time, 14 better, the run's time within 1 % ([the searches to 5 mm](#the-pull-back-and-shift-searches-to-5-mm-l32)) |
+| L1's guard's fallback taken back where it writes the joint worse (L32, `LayoutSettings::guard_taken_back`) | on | measured on the eight private towers (a run without L28 item 1): 65 joints better, 2 worse, the run 11 % longer ([item 2's joints traced](#item-2s-joints-laid-out-worse-traced-l32)); off: as before |
 
 ## The detailing practice (L24)
 

@@ -2134,6 +2134,9 @@ fn lay_out_once(
                         between_kept: guard.borrow().between_kept.clone(),
                         level: BTreeMap::new(),
                         no_level: guard.borrow().no_level.clone(),
+                        before_plain: BTreeMap::new(),
+                        plain_names: BTreeMap::new(),
+                        unplain: guard.borrow().unplain.clone(),
                     });
                     let turns: BTreeMap<&String, f64> = t.iter().map(|(m, x)| (m, *x)).collect();
                     let p = planned_in(&turns, &turn_s, &scratch)?;
@@ -2752,10 +2755,52 @@ fn lay_out_once(
                     let laid = if o.written { o.plan.ends.len() } else { 0 };
                     if laid < n
                         && !g.plain.contains(&o.joint)
+                        && !g.unplain.contains(&o.joint)
                         && !back15.contains(&o.joint)
                         && !kept15.contains(&o.joint)
                     {
                         back.push(o.joint.clone());
+                    }
+                }
+                // O44 L32 (item 2's joints laid out worse, traced): a joint
+                // L1's guard planned again as today that then lays out
+                // worse than before it (fewer ends, or as many on more
+                // plates) — today's plan counted ends the writing could not
+                // keep — taken back to its plan before the guard, L1's
+                // names again, and not guarded so again.
+                let mut unback: Vec<String> = Vec::new();
+                if settings.guard_taken_back {
+                    for o in &outcomes {
+                        let Some(&(n0, p0)) = g.before_plain.get(&o.joint) else {
+                            continue;
+                        };
+                        let now = outcome(o);
+                        if g.plain.contains(&o.joint)
+                            && worse(now, (n0, p0))
+                            && !back.contains(&o.joint)
+                            && !back15.contains(&o.joint)
+                            && !kept15.contains(&o.joint)
+                        {
+                            unback.push(o.joint.clone());
+                        }
+                    }
+                    for o in &outcomes {
+                        if back.contains(&o.joint) {
+                            g.before_plain.insert(o.joint.clone(), outcome(o));
+                        }
+                    }
+                }
+                for j in &unback {
+                    g.plain.remove(j);
+                    g.unplain.insert(j.clone());
+                    touched.insert(j.clone());
+                    if let Some(list) = g.plain_names.remove(j) {
+                        let mut doc = planning.borrow_mut();
+                        let mut c = connection_edits::Connections::of(&doc);
+                        for (m, h) in list {
+                            let _ =
+                                c.set(&mut doc, &m, j, "onto", h.map(FieldValue::Word).as_ref());
+                        }
                     }
                 }
                 // L11's guard: a joint its steps changed laid out with fewer
@@ -2770,6 +2815,7 @@ fn lay_out_once(
                     if laid < n
                         && !g.no_l11.contains(&o.joint)
                         && !back.contains(&o.joint)
+                        && !unback.contains(&o.joint)
                         && !back15.contains(&o.joint)
                         && !kept15.contains(&o.joint)
                     {
@@ -2798,6 +2844,7 @@ fn lay_out_once(
                     if (laid < n || (laid == n && plates > np))
                         && !g.no_level.contains(&o.joint)
                         && !back.contains(&o.joint)
+                        && !unback.contains(&o.joint)
                         && !back11.contains(&o.joint)
                         && !back15.contains(&o.joint)
                         && !kept15.contains(&o.joint)
@@ -2814,6 +2861,13 @@ fn lay_out_once(
                     touched.insert(j.clone());
                     if let Some(list) = onto_back.remove(j) {
                         let mut doc = planning.borrow_mut();
+                        // (O44 L32: L1's names, to come back to.)
+                        g.plain_names.insert(
+                            j.clone(),
+                            list.iter()
+                                .map(|(m, _)| (m.clone(), onto_in(&doc, m, j)))
+                                .collect(),
+                        );
                         let mut c = connection_edits::Connections::of(&doc);
                         for (m, was) in list {
                             let _ =
@@ -2822,6 +2876,7 @@ fn lay_out_once(
                     }
                 }
                 if !back.is_empty()
+                    || !unback.is_empty()
                     || !back11.is_empty()
                     || !back15.is_empty()
                     || !kept15.is_empty()
@@ -3731,6 +3786,14 @@ struct Guard {
     level: BTreeMap<String, (usize, usize)>,
     /// L20: the joints planned without the level plates' second holders.
     no_level: BTreeSet<String>,
+    /// O44 L32: the joints L1's guard planned again as today, with what
+    /// they laid out before ([`LayoutSettings::guard_taken_back`]).
+    before_plain: BTreeMap<String, (usize, usize)>,
+    /// O44 L32: what L1's names were at those joints (member, onto).
+    plain_names: BTreeMap<String, Vec<(String, Option<String>)>>,
+    /// O44 L32: the joints taken back to their plan before L1's guard
+    /// (it laid them out worse), not guarded so again.
+    unplain: BTreeSet<String>,
 }
 
 /// Join `x` at joint `j` written into `doc` (its end's `kind` and `onto`,
