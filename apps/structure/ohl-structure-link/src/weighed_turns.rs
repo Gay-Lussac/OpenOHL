@@ -344,16 +344,17 @@ pub fn candidates_for(t: &StructureType, joints: Option<&BTreeSet<String>>) -> V
 /// The layout run on `text` (the file with every turn of `cands` applied)
 /// with each turn weighed over every joint it reaches (see the module); the
 /// joints asked must hold every joint the turns reach ([`candidates_for`]).
-/// Then (O44 L25) the half and quarter turns for an outstanding leg
-/// pointing into the flange weighed on the file so settled
-/// ([`crate::flange_turns`]).
+/// Then (O44 L28) each turn the far-out welded plates change decided with
+/// and without them ([`crate::own_turns`]) and (O44 L25) the half and
+/// quarter turns for an outstanding leg pointing into the flange weighed on
+/// the file so settled ([`crate::flange_turns`]).
 pub fn weigh_turns(
     text: &str,
     cands: &[TurnCandidate],
     ask: &RunAsk<'_>,
 ) -> Result<LayoutRun, String> {
     let (r, settled, extra) = weigh(text, cands, ask)?;
-    crate::flange_turns::weigh_flange_turns(&settled, r, &extra, ask).map(|x| x.0)
+    crate::own_turns::weigh_own_then_flange(&settled, r, &extra, ask).map(|x| x.0)
 }
 
 /// **Settle the turns** of `text` the layout record lists as not weighed
@@ -362,7 +363,9 @@ pub fn weigh_turns(
 /// every joint it reaches out better, the others' rolls back to before,
 /// their rows gone — and that run. None: nothing to weigh. For a window
 /// that lays out the file several ways (the proposals' effects): weighed
-/// once, the rest laid out from the settled file. O44 L25: then the half
+/// once, the rest laid out from the settled file. O44 L28 and L25: then
+/// each turn the far-out welded plates change decided with and without
+/// them ([`crate::own_turns`], its rows written alike), and the half
 /// and quarter turns for an outstanding leg pointing into the flange
 /// weighed too ([`crate::flange_turns`]; after the plane turns on the
 /// whole tower, else on the joints asked and every joint their members
@@ -386,20 +389,25 @@ pub fn settle_turns(text: &str, ask: &RunAsk<'_>) -> Result<Option<(String, Layo
     } else {
         (text.to_owned(), None, Vec::new())
     };
-    let flange = ask.settings.flange_half || ask.settings.flange_quarter;
-    match (r0, flange) {
+    // (O44 L28: then each turn the far-out welded plates change decided
+    // with and without them, before L25's turns.)
+    let more = ask.settings.flange_half
+        || ask.settings.flange_quarter
+        || crate::own_turns::asked(ask.settings);
+    match (r0, more) {
         (None, false) => Ok(None),
         (Some(r), false) => Ok(Some((text1, r))),
         (Some(r0), true) => {
             let (run, settled) =
-                crate::flange_turns::weigh_flange_turns(&text1, r0, &extra, &whole)?;
+                crate::own_turns::weigh_own_then_flange(&text1, r0, &extra, &whole)?;
             Ok(Some((settled, run)))
         }
         (None, true) => {
             // (Nothing weighed before: L25's on the joints asked and the
             // other ends of the members meeting there — every joint such a
             // member reaches — not on the whole tower, for the window's
-            // time; the whole tower where every joint is asked.)
+            // time; the whole tower where every joint is asked. L28's so
+            // too.)
             let near = match &ask.joints {
                 None => None,
                 Some(js) => {
@@ -420,7 +428,7 @@ pub fn settle_turns(text: &str, ask: &RunAsk<'_>) -> Result<Option<(String, Layo
             };
             let r0 = lay_out_plain(&text1, &near)?;
             let (run, settled) =
-                crate::flange_turns::weigh_flange_turns(&text1, r0, &extra, &near)?;
+                crate::own_turns::weigh_own_then_flange(&text1, r0, &extra, &near)?;
             if settled == text1 {
                 return Ok(None);
             }
@@ -715,7 +723,7 @@ pub(crate) fn helps(before: &[Counts], after: &[Counts]) -> bool {
 }
 
 /// Each member's roll in the structure file `text`, as written.
-fn rolls_in(text: &str) -> Result<BTreeMap<String, String>, String> {
+pub(crate) fn rolls_in(text: &str) -> Result<BTreeMap<String, String>, String> {
     let doc: DocumentMut = text.parse().map_err(|e| format!("not TOML: {e}"))?;
     let mut out = BTreeMap::new();
     if let Some(a) = doc

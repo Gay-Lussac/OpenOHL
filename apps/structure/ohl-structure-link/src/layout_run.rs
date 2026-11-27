@@ -79,7 +79,9 @@ pub const ALSO: &str = "also_bolts";
 /// The record's mark of a plate in its member's own plane welded to the
 /// flat plate (`made`, with [`OWN_PLANE`]; L20 item 2) that puts its
 /// member's axis more than the plate's thickness farther out of the flange
-/// than a flat plate would: "axis_out=23.4", that offset in millimetres —
+/// than a flat plate would — or (L28) bent once from it putting the axis
+/// that far out of or nearer the flange: "axis_out=23.4", that offset's
+/// size in millimetres —
 /// carried into the analysis by the estimated eccentricities
 /// ([`crate::eccentricities`]); without them the analysis says NOT ON THE
 /// SAFE SIDE for such ends.
@@ -175,6 +177,13 @@ pub struct LayoutRecord {
     /// roll in later runs (never turned again); a row still current is not
     /// weighed again; Lay out joints applies an offered turn when ticked.
     pub flange_turns: BTreeMap<String, crate::flange_turns::FlangeTurnRow>,
+    /// O44 L28: the members whose turn L20 item 2's far-out welded plates
+    /// change, decided with and without them ([`crate::own_turns`]): member
+    /// → its roll before the run, the roll chosen with them and without
+    /// them, which was kept and the words. The roll without them kept is
+    /// held by later runs (never turned again); a row still current is not
+    /// decided again.
+    pub own_turns: BTreeMap<String, crate::own_turns::OwnTurnRow>,
     /// The option **estimated eccentricities** (O45, owner 2026-11-19;
     /// `estimated_eccentricities = true`, written only when on): at level
     /// 3 the analysis takes the member ends' eccentricities the layout's
@@ -460,6 +469,20 @@ impl LayoutRecord {
                 r.oriented.insert(row[0].clone(), (row[1].clone(), k));
             }
         }
+        for row in rows("own_turns") {
+            if row.len() == 6 {
+                r.own_turns.insert(
+                    row[0].clone(),
+                    crate::own_turns::OwnTurnRow {
+                        before: row[1].clone(),
+                        with: row[2].clone(),
+                        without: row[3].clone(),
+                        kind: row[4].clone(),
+                        words: row[5].clone(),
+                    },
+                );
+            }
+        }
         for row in rows("flange_turns") {
             if row.len() == 5 {
                 r.flange_turns.insert(
@@ -486,6 +509,7 @@ impl LayoutRecord {
             && self.oriented.is_empty()
             && self.plane_turns.is_empty()
             && self.flange_turns.is_empty()
+            && self.own_turns.is_empty()
             && self.provisional.is_empty()
     }
 
@@ -671,6 +695,26 @@ impl LayoutRecord {
                                     m.clone(),
                                     r.before.clone(),
                                     r.with.clone(),
+                                    r.kind.clone(),
+                                    r.words.clone(),
+                                ]
+                            })
+                            .collect(),
+                    ),
+                );
+            }
+            if !self.own_turns.is_empty() {
+                t.insert(
+                    "own_turns",
+                    list(
+                        self.own_turns
+                            .iter()
+                            .map(|(m, r)| {
+                                vec![
+                                    m.clone(),
+                                    r.before.clone(),
+                                    r.with.clone(),
+                                    r.without.clone(),
                                     r.kind.clone(),
                                     r.words.clone(),
                                 ]
@@ -890,7 +934,10 @@ pub struct RunAsk<'a> {
 /// O44 L25: then the members left with an end whose outstanding leg points
 /// into the flange laid out turned by half a turn and a quarter turn,
 /// weighed so too ([`crate::flange_turns`], [`LayoutSettings::flange_half`],
-/// [`LayoutSettings::flange_quarter`]).
+/// [`LayoutSettings::flange_quarter`]). O44 L28: before those, each turn
+/// the far-out welded plates (L20 item 2) change decided with and without
+/// them over every joint its member reaches ([`crate::own_turns`],
+/// [`LayoutSettings::own_turns_weighed`]).
 pub fn lay_out(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
     // (L24) A detailing practice refused: said in the run's notes (the
     // default used).
@@ -912,7 +959,7 @@ fn lay_out_turns(text: &str, ask: &RunAsk<'_>) -> Result<LayoutRun, String> {
         }
     }
     let r0 = lay_out_plain(text, ask)?;
-    crate::flange_turns::weigh_flange_turns(text, r0, &[], ask).map(|x| x.0)
+    crate::own_turns::weigh_own_then_flange(text, r0, &[], ask).map(|x| x.0)
 }
 
 /// [`lay_out`] without weighing the turns the record lists: the file's
@@ -1284,6 +1331,14 @@ fn lay_out_once(
     // turned again by the run.
     for (m, r) in &record.flange_turns {
         if r.applied() && members_here.contains_key(m.as_str()) && r.current(t, &record.rolled, m) {
+            held.insert(m.clone());
+        }
+    }
+    // O44 L28: a member whose turn chosen without L20 item 2's far-out
+    // welded plates was kept (decided with and without them): its roll
+    // kept, never turned again by the run.
+    for (m, r) in &record.own_turns {
+        if r.held() && members_here.contains_key(m.as_str()) && r.current(t, m) {
             held.insert(m.clone());
         }
     }
@@ -1736,8 +1791,12 @@ fn lay_out_once(
     // weighed on plans without the plates between a built-up member's
     // angles, as before L15: the newest step never changes a member's
     // roll; the plans are made with them afterwards.)
+    // (L28: L20 item 2's far-out welded plates left out too where the
+    // run is asked to choose the turns without them — the second layout of
+    // [`crate::own_turns`].)
     let turn_s = LayoutSettings {
         between_plates: false,
+        own_offset_analysed: settings.own_offset_analysed && !settings.turns_without_own,
         ..settings.clone()
     };
     let flat_only = LayoutSettings {
@@ -3517,11 +3576,17 @@ fn plans_of(
             .count();
         // (Item 2: where a plate in its member's own plane puts its axis
         // farther out than a plate's thickness.)
+        // (L28: a plate bent once putting it more than a plate's thickness
+        // out of or nearer the flange too.)
         let far_out = settings.own_offset_analysed
             && p.plates.iter().any(|q| {
-                q.own
-                    .as_ref()
-                    .is_some_and(|w| w.out_more > q.thickness + 1e-9)
+                q.own.as_ref().is_some_and(|w| {
+                    if w.bend.is_some() {
+                        w.out_more.abs() > q.thickness + 1e-9
+                    } else {
+                        w.out_more > q.thickness + 1e-9
+                    }
+                })
             });
         if !plain
             && !no_level
@@ -5373,6 +5438,13 @@ fn write_plan(
             if radius.is_none() {
                 auto.insert(BENT.into());
             }
+            // L28 (L23's question 5): bent once with its member's axis more
+            // than the plate's thickness out of (or nearer) the flange: the
+            // offset recorded for the analysis, as the welded plate's —
+            // its size (taken of either sign there).
+            if o.out_more.abs() > pl.thickness + 1e-9 {
+                auto.insert(format!("{OWN_OUT}{:.1}", o.out_more.abs() * 1000.0));
+            }
             ohl_structure_edit::edits::raise_version(
                 doc,
                 i64::from(ohl_structures::connections::PLATE_BEND_VERSION),
@@ -5827,6 +5899,11 @@ fn follow_parsed(
         .flange_turns
         .retain(|m, _| roll(t0, m) == roll(&t1, m));
     changed_record |= record.flange_turns.len() != before_flange;
+    // (O44 L28: so too a member decided with and without the far-out
+    // welded plates.)
+    let before_own = record.own_turns.len();
+    record.own_turns.retain(|m, _| roll(t0, m) == roll(&t1, m));
+    changed_record |= record.own_turns.len() != before_own;
     for (id, (_, fields)) in record.made.iter_mut() {
         let (a, b) = (
             t0.plates.iter().find(|p| &p.id == id),

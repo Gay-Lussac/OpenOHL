@@ -1115,11 +1115,11 @@ pub fn analyse_structure_with(
             .collect();
         if !outs.is_empty() {
             run.notes.push(format!(
-                "NOT ON THE SAFE SIDE: {} plate(s) in their member's own plane laid out with the \
-                 member's axis more than the plate's thickness farther out of the flange (up to \
-                 {:.0} mm) — that offset is not in this analysis, so its moment is missing and \
-                 a usage can be too low (the estimated eccentricities carry it, an option at \
-                 level 3)",
+                "NOT ON THE SAFE SIDE: {} plate(s) in their member's own plane (welded, or bent \
+                 once) laid out with the member's axis more than the plate's thickness out of \
+                 (or nearer) the flange (up to {:.0} mm) — that offset is not in this analysis, \
+                 so its moment is missing and a usage can be too low (the estimated \
+                 eccentricities carry it, an option at level 3)",
                 outs.len(),
                 outs.iter().fold(0.0f64, |a, b| a.max(*b)) * 1000.0
             ));
