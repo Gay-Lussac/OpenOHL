@@ -70,6 +70,7 @@ mod joint_classes_tests;
 pub mod joint_envelope;
 #[cfg(test)]
 mod joint_envelope_tests;
+pub mod joint_fit;
 pub mod joint_fixes;
 mod joint_groups;
 #[cfg(test)]

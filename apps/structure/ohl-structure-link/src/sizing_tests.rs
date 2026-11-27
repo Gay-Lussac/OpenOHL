@@ -11,7 +11,7 @@
 //! (`web`). The core's simple check (tension A f_y, compression the
 //! smaller of A f_y and π² E I_v / L²), every member bolted with two 16 mm
 //! bolts (the default minimums: edge 1.5 d = 24 mm — a 40 mm leg has 20 mm
-//! to the toe at mid-leg: it does not take them).
+//! to the toe at mid-leg and a 45 mm one 22.5 mm: neither takes them).
 
 use ohl_sections::SectionLibrary;
 use ohl_structure_loads::{At, LoadRow, LoadTable, Source};
@@ -290,15 +290,15 @@ fn groups_by_group_and_section() {
 /// Each group's choice passes, and the next lighter section of its family
 /// fails its check or its joint fit: the lightest passing. The 40 mm legs
 /// pass the check of BD (30 kN tension: 307 mm² × 355 MPa = 109 kN) but
-/// not the joint fit (20 mm to the toe, 24 mm needed): L45×4 instead,
-/// said with the limits' effect.
+/// not the joint fit (20 mm to the toe, 24 mm needed; the 45 mm legs 22.5
+/// mm): L50×5 instead, said with the limits' effect.
 #[test]
 fn the_lightest_passing_section_per_group() {
     let s = size(TRUSS, &Settings::default());
     assert_eq!(s.settled, sizing::Settled::Settled);
     let by = |n: &str| s.groups.iter().find(|g| g.group.name == n).unwrap();
     let top = by("top");
-    assert_eq!(top.to, "L45x4", "{:#?}", s.groups);
+    assert_eq!(top.to, "L50x5", "{:#?}", s.groups);
     assert_eq!(top.without_fit.as_deref(), Some("L40x4"));
     assert!(s.fit_effect.contains("kept 1 group(s) heavier"), "{}", s.fit_effect);
     let order = ["L40x4", "L45x4", "L50x5", "L60x6", "L70x7", "L80x8", "L90x9", "L100x10"];
@@ -309,9 +309,9 @@ fn the_lightest_passing_section_per_group() {
         assert!(g.mass[1] < g.mass[0]);
         assert_eq!(g.fit[1], 0, "{g:?}");
         let at = order.iter().position(|x| *x == g.to).unwrap();
-        if at > 1 {
+        if at > 0 && g.without_fit.is_none() {
             // The next lighter fails the check (no joint-fit problem from
-            // 45 mm legs up).
+            // 50 mm legs up).
             let lighter = sizing::apply(
                 TRUSS,
                 &sizing::Sizing {
@@ -409,7 +409,7 @@ fn apply_takes_the_ticked_groups_only() {
     let text = sizing::apply(TRUSS, &s, &["top".into()]).unwrap();
     let t = StructureType::parse(std::path::Path::new("t.ohls"), &text).unwrap();
     for m in &t.members {
-        let want = if m.id == "BD" { "L45x4" } else { "L80x8" };
+        let want = if m.id == "BD" { "L50x5" } else { "L80x8" };
         assert_eq!(m.section.as_deref(), Some(want), "{}", m.id);
     }
     // AC kept: its design data untouched.
@@ -425,21 +425,22 @@ fn apply_takes_the_ticked_groups_only() {
 /// The joint fit by hand: a 40 mm leg with a 16 mm bolt — 20 mm to the
 /// toe, below the default 1.5 d = 24 mm; a 16 mm bolt's hole in an L40×4
 /// is clear of its root (4 + 5 + 8 = 17 mm ≤ 20 mm). A 2 m member with
-/// two ends of one bolt needs 4 × 24 mm: long enough; a 0.08 m one not.
+/// two bolts at each end needs 2 × (2 × 24 + 48) mm: long enough; a 0.08 m
+/// one not.
 #[test]
 fn joint_fit_by_hand() {
     let small = TRUSS.replace("L80x8", "L40x4");
     let t = StructureType::parse(std::path::Path::new("t.ohls"), &small).unwrap();
     let model = crate::model_of(&t, &small, None, &library()).unwrap();
-    let (p, unknown) = sizing::joint_fit(&model, &[0], &[0.0; 6]);
+    let (p, unknown) = sizing::joint_fit(&model, &[0], &[0.0; 6], &sizing::FitRules::default());
     assert_eq!(unknown, 0);
     assert_eq!(p.len(), 2, "{p:?}");
     assert!(p[0].words.contains("20 mm to the toe at mid-leg, below the code's edge distance 24 mm"), "{p:?}");
     let short = small.replace("point = [\"2 m\", \"0 m\", \"0 m\"]", "point = [\"0.08 m\", \"0 m\", \"0 m\"]");
     let t = StructureType::parse(std::path::Path::new("t.ohls"), &short).unwrap();
     let model = crate::model_of(&t, &short, None, &library()).unwrap();
-    let (p, _) = sizing::joint_fit(&model, &[0], &[0.0; 6]);
-    assert!(p.iter().any(|x| x.rule == sizing::FitRule::Length && x.words.contains("need 96 mm")), "{p:?}");
+    let (p, _) = sizing::joint_fit(&model, &[0], &[0.0; 6], &sizing::FitRules::default());
+    assert!(p.iter().any(|x| x.rule == sizing::FitRule::Length && x.words.contains("need 192 mm")), "{p:?}");
 }
 
 /// A section not in the library: its group left as it is, said.
@@ -476,5 +477,5 @@ fn summary_in_lines() {
     let s = size(TRUSS, &Settings::default());
     let lines = sizing::summary(&s);
     assert!(lines[0].starts_with("3 of 3 group(s) changed"), "{}", lines[0]);
-    assert!(lines.iter().any(|l| l.starts_with("* top (1 member(s)): L80x8 → L45x4")), "{lines:#?}");
+    assert!(lines.iter().any(|l| l.starts_with("* top (1 member(s)): L80x8 → L50x5")), "{lines:#?}");
 }

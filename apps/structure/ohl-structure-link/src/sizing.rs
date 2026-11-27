@@ -20,11 +20,14 @@
 //! - **the code's limits** on the members' sizes (slenderness, flat width
 //!   to thickness, least thickness) from the plugin's `member-limits`
 //!   export ([`ohl_member_check::limits`]); none known: said;
-//! - **the joint-fit limits** ([`joint_fit`]): the leg takes its bolt (the
-//!   hole clear of the root fillet at the usual gauge, the code's edge
-//!   distance kept to the toe) and the member is long enough for the bolts
-//!   its end force needs (the code's end distance and spacing) — a choice
-//!   never lands on a member that cannot be connected.
+//! - **the joint-fit limits** ([`crate::joint_fit`]): the leg takes its
+//!   bolt (the hole clear of the root fillet at the layout's gauge, the
+//!   code's edge distance kept to the toe), the member is long enough for
+//!   the bolts its ends need (the code's end distance and spacing), a
+//!   plate the shop makes takes its leg (the detailing practice in force,
+//!   as Lay out joints takes it) — a choice never lands on a member that
+//!   cannot be connected where a connectable one passes (none: the
+//!   lightest passing, its problems said).
 //!
 //! **The loop**: the forces of the structure as it is; per group the
 //! lightest passing section with those forces (each trial one model and
@@ -49,8 +52,9 @@
 //! images (`[[symmetry]]`) of the same section; the designer may split a
 //! group (each member with its mirror images alone).
 //!
-//! The detailing practice's own plate and bolt rules (O44 L29) plug in at
-//! one place ([`practice_fit`]); later stages are in ROADMAP O49.
+//! Groups whose members carry capacities written by hand, and structures
+//! analysed from a finite-element model file of their own, are not sized
+//! (said). Later stages are in ROADMAP O49.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -65,13 +69,23 @@ use ohl_structures_fe::{Model, Solution};
 use toml_edit::DocumentMut;
 
 use crate::CaseToRun;
+pub use crate::joint_fit::{FitCache, FitProblem, FitRule, FitRules, joint_fit};
+use crate::joint_fit::joint_fit_cached;
+
+/// The note of a sizing by the core's simple check: what it leaves out,
+/// why that can be unsafe, what makes it safe.
+pub const SIMPLE_NOTE: &str = "NOT ON THE SAFE SIDE: sized by the core's simple check (Euler \
+     buckling, gross yield) — it leaves out a design code's column curve, imperfections, net \
+     sections and connections, so a chosen section can be too small for a design code's check; \
+     load the design code's plugin ([analysis] capacity, e.g. asce10-97 or sia263-2013) and \
+     choose again to make it safe";
 
 /// The sizer's settings (stored in no file).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The largest usage a chosen section may have (1: its capacity).
     pub target: f64,
-    /// Keep to the joint-fit limits ([`joint_fit`]).
+    /// Keep to the joint-fit limits ([`crate::joint_fit`]).
     pub joint_fit: bool,
     /// The most rounds of forces and choice.
     pub rounds: usize,
@@ -158,6 +172,8 @@ pub struct GroupChange {
     pub without_fit: Option<String>,
     /// Why, in words.
     pub why: String,
+    /// How the choice was made.
+    pub basis: Basis,
     /// The design data removed with the change, in words.
     pub removed: Vec<String>,
     /// A member of the group above the target after.
@@ -231,6 +247,9 @@ pub struct Sizing {
     /// The effect of the joint-fit limits in words (groups kept heavier by
     /// them, the mass).
     pub fit_effect: String,
+    /// The effect of a target below 100 % in words (groups kept heavier by
+    /// it, the mass, with the last round's forces).
+    pub target_effect: String,
     /// The structure file with every proposal taken.
     pub text: String,
     /// How long the whole run took.
@@ -616,342 +635,6 @@ fn trial_usage(model: &Model, forces: &Forces) -> Result<Vec<Option<f64>>, Strin
     Ok(out)
 }
 
-/// The rule a joint-fit problem breaks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FitRule {
-    /// The leg does not take its bolt at the usual gauge (the hole not
-    /// clear of the root fillet, or the code's edge distance to the toe).
-    LegTakesBolt,
-    /// The member is not long enough for the bolts its end force needs.
-    Length,
-    /// The leg takes no bolt of the structure's bolt library.
-    NoBolt,
-    /// A rule of the detailing practice ([`practice_fit`]).
-    Practice,
-}
-
-/// One joint-fit problem.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FitProblem {
-    /// The member (its index in the model).
-    pub member: usize,
-    /// Its end (none: the member as a whole).
-    pub end: Option<usize>,
-    /// The rule.
-    pub rule: FitRule,
-    /// In words.
-    pub words: String,
-}
-
-/// The code's distances for one bolt in one part: end, spacing, edge (m)
-/// and the force one bolt passes (N; none: not known).
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Distances {
-    end: f64,
-    spacing: f64,
-    edge: f64,
-    force: Option<f64>,
-}
-
-/// The distances asked, by what they depend on (few distinct keys in a
-/// tower: a plugin call each).
-type DistanceCache = HashMap<String, Option<Distances>>;
-
-/// Millimetres for the words.
-fn mm(x: f64) -> String {
-    format!("{:.0}", x * 1000.0)
-}
-
-/// The code's distances for a bolt of diameter `d` in a part `t` thick of
-/// ultimate strength `fu` (`bolts`: the end's bolts' data; `sheared`,
-/// `redundant` as the bolt tools take them): the plugin's
-/// `bolt-distances-full` without an analysis, else its `bolt-distances`,
-/// else the structure's default minimums (no force known). Cached.
-#[allow(clippy::too_many_arguments)]
-fn distances(
-    model: &Model,
-    d: f64,
-    t: f64,
-    fu: Option<f64>,
-    bolts: Option<&ohl_structures_fe::bolt_rules::EndBolts>,
-    sheared: bool,
-    redundant: bool,
-    cache: &mut DistanceCache,
-) -> Option<Distances> {
-    let key = format!(
-        "{d:e}|{t:e}|{fu:?}|{sheared}|{redundant}|{:?}",
-        bolts.map(|b| (
-            b.shear_planes,
-            b.shear_capacity,
-            b.shear_capacity_shank,
-            b.ultimate,
-            b.threads_in_shear,
-            &b.grade
-        ))
-    );
-    if let Some(x) = cache.get(&key) {
-        return *x;
-    }
-    let assumed = || {
-        let m = &model.bolt_defaults;
-        Some(Distances {
-            end: m.end * d,
-            spacing: m.spacing * d,
-            edge: m.edge * d,
-            force: bolts.and_then(|b| b.shear_capacity.map(|c| c * f64::from(b.shear_planes))),
-        })
-    };
-    let out = match model.capacity_plugin.as_ref() {
-        Some(p) => {
-            use ohl_plugins::bolt_distances as dist;
-            use ohl_plugins::bolt_distances_full as full;
-            let input = full::DistanceInput {
-                diameter: d,
-                thickness: t,
-                ultimate: fu,
-                analysis_force: None,
-                bolts: Some(full::Bolts {
-                    count: 1,
-                    shear_planes: bolts.map_or(1, |b| b.shear_planes.max(1)),
-                    shear_capacity: bolts.and_then(|b| b.shear_capacity),
-                    shear_capacity_shank: bolts.and_then(|b| b.shear_capacity_shank),
-                    ultimate: bolts.and_then(|b| b.ultimate),
-                    threads_in_shear: bolts.and_then(|b| b.threads_in_shear),
-                    grade: bolts.and_then(|b| b.grade.clone()).unwrap_or_default(),
-                }),
-                sheared_edge: sheared,
-                redundant,
-                parameters: p
-                    .parameters
-                    .as_ref()
-                    .map(|x| x.1.clone())
-                    .unwrap_or_default(),
-            };
-            match ohl_member_check::joints::minimum_distances_full(p, &input) {
-                Ok(Some(x)) => Some(Distances {
-                    end: x.end,
-                    spacing: x.spacing,
-                    edge: x.edge,
-                    force: x.bolt_force,
-                }),
-                Ok(None) => ohl_member_check::joints::minimum_distances(
-                    p,
-                    &dist::DistanceInput {
-                        diameter: d,
-                        thickness: t,
-                        ultimate: fu,
-                        bolt_force: None,
-                        sheared_edge: sheared,
-                        redundant,
-                    },
-                )
-                .ok()
-                .map(|x| Distances {
-                    end: x.end,
-                    spacing: x.spacing,
-                    edge: x.edge,
-                    force: None,
-                })
-                .or_else(assumed),
-                Err(_) => assumed(),
-            }
-        }
-        None => assumed(),
-    };
-    cache.insert(key, out);
-    out
-}
-
-/// What an end's bolt is fitted with: the bolt's diameter, the part's
-/// thickness and ultimate strength, the bolts' data, the bolted leg (width,
-/// thickness, root radius; none: not an angle), sheared, redundant.
-struct EndBolt {
-    d: f64,
-    t: f64,
-    fu: Option<f64>,
-    bolts: Option<ohl_structures_fe::bolt_rules::EndBolts>,
-    leg: Option<(f64, f64, f64)>,
-    sheared: bool,
-    redundant: bool,
-}
-
-/// The joint-fit problems of the members `members` of `model` under their
-/// largest end forces `axial` (N per member, the strength factor taken
-/// out): per end, the leg takes its bolt at the usual gauge (mid-leg: the
-/// hole clear of the root fillet, t + r + d/2 from the heel; the code's
-/// edge distance to the toe); per member, its length between its joints
-/// holds both ends' bolts in one line — n = ⌈N / P⌉ bolts each (P: the
-/// force one bolt passes by its code, in this leg), 2 e + (n − 1) s an end
-/// (e, s: the code's end distance and spacing). The bolt: the end's own
-/// (its data), else OpenOHL's default bolt for the member
-/// ([`ohl_member_check::default_bolts`]). Members with neither: not
-/// checked (counted in the second value).
-pub fn joint_fit(model: &Model, members: &[usize], axial: &[f64]) -> (Vec<FitProblem>, usize) {
-    let mut cache = DistanceCache::new();
-    joint_fit_cached(model, members, axial, &mut cache)
-}
-
-fn joint_fit_cached(
-    model: &Model,
-    members: &[usize],
-    axial: &[f64],
-    cache: &mut DistanceCache,
-) -> (Vec<FitProblem>, usize) {
-    let defaults: HashMap<usize, ohl_member_check::default_bolts::DefaultBolt> =
-        ohl_member_check::default_bolts::default_bolts(model)
-            .into_iter()
-            .map(|d| (d.member, d))
-            .collect();
-    let mut problems = Vec::new();
-    let mut unknown = 0;
-    for &k in members {
-        let Some(m) = model.members.get(k) else {
-            continue;
-        };
-        let s = &model.sections[m.section];
-        let mut ends: Vec<Option<EndBolt>> = Vec::with_capacity(2);
-        for e in 0..2 {
-            let b = match ohl_structures_fe::bolt_rules::basis(model, k, e, None, None) {
-                Some(b) => Some(EndBolt {
-                    d: b.diameter,
-                    t: b.thickness,
-                    fu: b.ultimate,
-                    leg: b.leg.map(|(w, t)| (w, t, b.root)),
-                    bolts: b.bolts,
-                    sheared: b.sheared,
-                    redundant: b.redundant,
-                }),
-                None => match defaults.get(&k) {
-                    Some(dflt) => match dflt.diameter {
-                        Some(d) => {
-                            let leg = s
-                                .profile
-                                .as_ref()
-                                .and_then(|p| ohl_member_check::default_bolts::leg(&p.shape));
-                            Some(EndBolt {
-                                d,
-                                t: m.design.thickness.or(leg.map(|l| l.1)).unwrap_or(0.0),
-                                fu: s.ultimate,
-                                bolts: None,
-                                leg,
-                                sheared: ohl_structures_fe::bolt_rules::sheared_edge(
-                                    s, None, false,
-                                ),
-                                redundant: m.design.class
-                                    == Some(ohl_structures_fe::design::MemberClass::Redundant),
-                            })
-                        }
-                        None => {
-                            if e == 0 {
-                                problems.push(FitProblem {
-                                    member: k,
-                                    end: None,
-                                    rule: FitRule::NoBolt,
-                                    words: format!("{}: {}", m.id, dflt.why),
-                                });
-                            }
-                            None
-                        }
-                    },
-                    None => {
-                        unknown += 1;
-                        None
-                    }
-                },
-            };
-            ends.push(b);
-        }
-        let mut length_needed = 0.0;
-        let mut length_known = true;
-        for (e, b) in ends.iter().enumerate() {
-            let Some(b) = b else {
-                length_known = false;
-                continue;
-            };
-            let dist = distances(
-                model,
-                b.d,
-                b.t,
-                b.fu,
-                b.bolts.as_ref(),
-                b.sheared,
-                b.redundant,
-                cache,
-            );
-            let joint = &model.nodes[if e == 0 { m.i } else { m.j }].id;
-            if let (Some((w, t, r)), Some(x)) = (b.leg, dist) {
-                let g = w / 2.0;
-                let least = t + r + b.d / 2.0;
-                if g < least - 1e-9 {
-                    problems.push(FitProblem {
-                        member: k,
-                        end: Some(e),
-                        rule: FitRule::LegTakesBolt,
-                        words: format!(
-                            "{} at {joint}: the {} mm bolt's hole not clear of the root fillet at \
-                             mid-leg ({} mm from the heel, at least {} mm)",
-                            m.id,
-                            mm(b.d),
-                            mm(g),
-                            mm(least)
-                        ),
-                    });
-                } else if w - g < x.edge - 1e-9 {
-                    problems.push(FitProblem {
-                        member: k,
-                        end: Some(e),
-                        rule: FitRule::LegTakesBolt,
-                        words: format!(
-                            "{} at {joint}: {} mm to the toe at mid-leg, below the code's edge \
-                             distance {} mm for the {} mm bolt",
-                            m.id,
-                            mm(w - g),
-                            mm(x.edge),
-                            mm(b.d)
-                        ),
-                    });
-                }
-            }
-            match dist {
-                Some(x) => {
-                    let n = match x.force {
-                        Some(p) if p > 0.0 => {
-                            ((axial.get(k).copied().unwrap_or(0.0) / p).ceil()).max(1.0)
-                        }
-                        _ => 1.0,
-                    };
-                    length_needed += 2.0 * x.end + (n - 1.0) * x.spacing;
-                }
-                None => length_known = false,
-            }
-            problems.extend(practice_fit(model, k, e));
-        }
-        let length = model.length(m);
-        if length_known && length_needed > length + 1e-9 {
-            problems.push(FitProblem {
-                member: k,
-                end: None,
-                rule: FitRule::Length,
-                words: format!(
-                    "{}: {} mm between its joints, its bolts in one line need {} mm (both ends: \
-                     the code's end distances and spacing, the bolts its force needs)",
-                    m.id,
-                    mm(length),
-                    mm(length_needed)
-                ),
-            });
-        }
-    }
-    (problems, unknown)
-}
-
-/// **The seam for the detailing practice's rules** (O44 L29, to come; ROADMAP
-/// O49 stage 4): the practice's own plate and bolt rules as joint-fit
-/// limits on member `member`'s end `end` of `model`. None yet.
-pub fn practice_fit(_model: &Model, _member: usize, _end: usize) -> Vec<FitProblem> {
-    Vec::new()
-}
-
 /// The broken limits of the members of `model` (`compressed`: per member,
 /// compressed in a case — a compression limit holds only then).
 fn broken(limits: &Limits, compressed: &[bool]) -> HashMap<usize, Vec<Limit>> {
@@ -969,17 +652,40 @@ fn broken(limits: &Limits, compressed: &[bool]) -> HashMap<usize, Vec<Limit>> {
     out
 }
 
+/// How a group's choice was made in a round.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Basis {
+    /// The lightest of its family passing the check and every limit.
+    Passes,
+    /// No section of its family passes the check and the code's limits
+    /// and also fits its joints: the lightest passing the check and the
+    /// code's limits, its joint-fit problems said.
+    FitNotMet,
+    /// No section of its family passes the check at the target: the one
+    /// using least of those meeting the code's limits.
+    LeastUsage,
+    /// Nothing meets the code's limits with a usage, or not sized: left as
+    /// it is.
+    Left,
+}
+
 /// One round's choice with the forces of `f`.
 struct Pick {
     choice: Vec<String>,
+    basis: Vec<Basis>,
     without_fit: Vec<Option<String>>,
+    /// Per group the lightest passing at a usage of 1 where it differs
+    /// (the target below 1: its effect, measured with this round's
+    /// forces).
+    at_one: Vec<Option<String>>,
     why: Vec<String>,
     trials: usize,
     limits_note: Option<String>,
 }
 
 /// Per group the lightest candidate passing with the forces `f` (`index`:
-/// the model's member places of each group's members).
+/// the model's member places of each group's members; `rules`: the
+/// detailing practice's).
 #[allow(clippy::too_many_arguments)]
 fn pick(
     input: &SizingInput,
@@ -989,6 +695,8 @@ fn pick(
     current: &[String],
     f: &Forces,
     index: &[Vec<usize>],
+    rules: &FitRules,
+    cache: &mut FitCache,
     budget: &Budget,
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<Pick, String> {
@@ -997,18 +705,19 @@ fn pick(
     let mut pointer = vec![0usize; n];
     let mut done: Vec<Option<usize>> = vec![None; n];
     let mut no_fit: Vec<Option<usize>> = vec![None; n];
-    // The lowest usage among candidates passing the limits, for a group
-    // nothing passes: (usage, candidate).
+    let mut at_one: Vec<Option<usize>> = vec![None; n];
+    // The lowest usage among candidates meeting the code's limits, for a
+    // group nothing passes: (usage, candidate).
     let mut best: Vec<Option<(f64, usize)>> = vec![None; n];
     let mut open = vec![false; n];
-    // The largest strength factor (a candidate whose A·f_y times it is
-    // below the force cannot pass any code: skipped).
-    let strength = f.cases.iter().map(|c| c.strength).fold(1.0f64, f64::max);
     for g in 0..n {
         let Some(list) = &lists[g] else {
             continue;
         };
         open[g] = true;
+        // A candidate whose gross yield A·f_y is below the force (N over
+        // the strength factor, the largest over the cases) passes no
+        // code's check: skipped (only ever a lighter one skipped).
         let force = index[g]
             .iter()
             .map(|&k| f.axial.get(k).copied().unwrap_or(0.0))
@@ -1016,20 +725,21 @@ fn pick(
         while pointer[g] < list.len() {
             let c = &list[pointer[g]];
             match c.fy {
-                Some(fy) if c.area * fy * strength * s.target < force => pointer[g] += 1,
+                Some(fy) if c.area * fy * s.target < force => pointer[g] += 1,
                 _ => break,
             }
         }
     }
     let mut trials = 0;
     let mut limits_note = None;
-    let mut cache = DistanceCache::new();
     loop {
         if cancelled(budget) {
             return Err("cancelled".into());
         }
         let trying: Vec<usize> = (0..n)
-            .filter(|&g| open[g] && done[g].is_none() && pointer[g] < lists[g].as_ref().map_or(0, Vec::len))
+            .filter(|&g| {
+                open[g] && done[g].is_none() && pointer[g] < lists[g].as_ref().map_or(0, Vec::len)
+            })
             .collect();
         if trying.is_empty() {
             break;
@@ -1060,7 +770,7 @@ fn pick(
         let broken = broken(&limits, &f.compressed);
         let members: Vec<usize> = trying.iter().flat_map(|&g| index[g].clone()).collect();
         // Worked out with the limits off too: their effect is said.
-        let (fit, _) = joint_fit_cached(&model, &members, &f.axial, &mut cache);
+        let (fit, _) = joint_fit_cached(&model, &members, &f.axial, rules, cache);
         let mut misfit: HashMap<usize, usize> = HashMap::new();
         for p in &fit {
             *misfit.entry(p.member).or_default() += 1;
@@ -1071,18 +781,21 @@ fn pick(
             });
             let ok_usage = worst.is_some_and(|u| u <= s.target * (1.0 + 1e-12));
             let ok_limits = index[g].iter().all(|k| !broken.contains_key(k));
-            let ok_fit = index[g].iter().all(|k| !misfit.contains_key(k));
+            let ok_fit = !s.joint_fit || index[g].iter().all(|k| !misfit.contains_key(k));
             if ok_usage && ok_limits && no_fit[g].is_none() {
                 no_fit[g] = Some(pointer[g]);
             }
+            if worst.is_some_and(|u| u <= 1.0 + 1e-12) && ok_limits && ok_fit && at_one[g].is_none()
+            {
+                at_one[g] = Some(pointer[g]);
+            }
             if ok_limits
-                && (ok_fit || !s.joint_fit)
                 && let Some(u) = worst
                 && best[g].is_none_or(|b| u < b.0)
             {
                 best[g] = Some((u, pointer[g]));
             }
-            if ok_usage && ok_limits && (ok_fit || !s.joint_fit) {
+            if ok_usage && ok_limits && ok_fit {
                 done[g] = Some(pointer[g]);
             } else {
                 pointer[g] += 1;
@@ -1091,28 +804,41 @@ fn pick(
         trials += 1;
     }
     let mut out = current.to_vec();
+    let mut basis = vec![Basis::Left; n];
     let mut why = vec![String::new(); n];
     let mut without_fit = vec![None; n];
+    let mut one = vec![None; n];
     for g in 0..n {
         let Some(list) = &lists[g] else {
             continue;
         };
-        match (done[g], best[g]) {
-            (Some(i), _) => {
+        match (done[g], no_fit[g], best[g]) {
+            (Some(i), _, _) => {
                 out[g] = list[i].id.clone();
+                basis[g] = Basis::Passes;
                 why[g] = "the lightest of its family passing the check and every limit".into();
             }
-            (None, Some((u, i))) => {
+            (None, Some(i), _) => {
                 out[g] = list[i].id.clone();
+                basis[g] = Basis::FitNotMet;
+                why[g] = "no section of its family passes the check and the code's limits and \
+                          also fits its joints: the lightest passing the check and the code's \
+                          limits, its joint-fit problems said (its joints to detail by hand)"
+                    .into();
+            }
+            (None, None, Some((u, i))) => {
+                out[g] = list[i].id.clone();
+                basis[g] = Basis::LeastUsage;
                 why[g] = format!(
                     "no section of its family passes at the target: the one using least ({:.0} %) \
-                     of those meeting the limits",
+                     of those meeting the code's limits",
                     u * 100.0
                 );
             }
-            (None, None) => {
-                why[g] = "no section of its family meets the limits and has a usage: left as it is"
-                    .into();
+            (None, None, None) => {
+                why[g] =
+                    "no section of its family meets the code's limits with a usage: left as it is"
+                        .into();
             }
         }
         if let Some(i) = no_fit[g]
@@ -1120,10 +846,17 @@ fn pick(
         {
             without_fit[g] = Some(list[i].id.clone());
         }
+        if let Some(i) = at_one[g]
+            && list[i].id != out[g]
+        {
+            one[g] = Some(list[i].id.clone());
+        }
     }
     Ok(Pick {
         choice: out,
+        basis,
         without_fit,
+        at_one: one,
         why,
         trials,
         limits_note,
@@ -1227,13 +960,27 @@ pub fn size_with(
 ) -> Result<Sizing, String> {
     let started = Instant::now();
     let s = input.settings;
-    if !(s.target > 0.0 && s.target.is_finite()) {
-        return Err(format!("the target usage must be above 0 (not {})", s.target));
+    if !(s.target > 0.0 && s.target <= 1.0) {
+        return Err(format!(
+            "the target usage must be above 0 and at most 100 % (not {:.0} %): above 100 % a \
+             member would be chosen beyond its capacity",
+            s.target * 100.0
+        ));
+    }
+    if let Some(file) = &input.structure.model {
+        return Err(format!(
+            "this structure's members are analysed from its own finite-element model file \
+             ({file}): their sections are in that file, which the sizer does not change — size \
+             a structure whose members are in its own file"
+        ));
     }
     let doc: DocumentMut = input
         .text
         .parse()
         .map_err(|e| format!("the structure file does not read: {e}"))?;
+    progress("the detailing practice in force");
+    let rules = FitRules::for_structure(input.text, input.dir);
+    let mut cache = FitCache::default();
     progress("the structure as it is: forces");
     let f0 = forces(input, input.text, budget)?;
     let groups = sizing_groups(input.structure, &f0.model, &s.split);
@@ -1263,6 +1010,20 @@ pub fn size_with(
         .map(|(k, g)| {
             if s.keep.iter().any(|x| *x == g.name) {
                 not_sized[k] = Some("left as it is (asked)".into());
+                return None;
+            }
+            // Capacities written by hand describe the section they were
+            // written for: never kept on another one, never removed
+            // silently — the group is left, said.
+            if let Some(m) = index[k].iter().map(|&i| &f0.model.members[i]).find(|m| {
+                m.capacity_tension.is_some() || m.capacity_compression.is_some()
+            }) {
+                not_sized[k] = Some(format!(
+                    "left as it is: member {} has capacities written by hand (capacity_tension, \
+                     capacity_compression), which describe its section {} — remove them to size \
+                     the group",
+                    m.id, g.section
+                ));
                 return None;
             }
             match candidates(input.sections, &g.section) {
@@ -1299,7 +1060,8 @@ pub fn size_with(
             }
         }
         let p = pick(
-            input, &doc, &groups, &lists, &current0, &f, &index, budget, progress,
+            input, &doc, &groups, &lists, &current0, &f, &index, &rules, &mut cache, budget,
+            progress,
         )?;
         let changed = p
             .choice
@@ -1357,10 +1119,24 @@ pub fn size_with(
     let after = usages(&after_run)?;
     let f_after = forces(input, &text, budget)?;
     let all: Vec<usize> = index.iter().flatten().copied().collect();
-    let (fit0, unknown0) = joint_fit(&f_first.model, &all, &f_first.axial);
-    let (fit1, _) = joint_fit(&f_after.model, &all, &f_after.axial);
-    let count = |fit: &[FitProblem], ks: &[usize]| fit.iter().filter(|p| ks.contains(&p.member)).count();
-    let length_of = |ks: &[usize]| -> f64 { ks.iter().map(|&k| f_first.model.length(&f_first.model.members[k])).sum() };
+    let (fit0, unknown0) = joint_fit_cached(&f_first.model, &all, &f_first.axial, &rules, &mut cache);
+    let (fit1, _) = joint_fit_cached(&f_after.model, &all, &f_after.axial, &rules, &mut cache);
+    let per_member = |fit: &[FitProblem]| -> HashMap<usize, usize> {
+        let mut out = HashMap::new();
+        for p in fit {
+            *out.entry(p.member).or_default() += 1;
+        }
+        out
+    };
+    let (by0, by1) = (per_member(&fit0), per_member(&fit1));
+    let count = |by: &HashMap<usize, usize>, ks: &[usize]| -> usize {
+        ks.iter().map(|k| by.get(k).copied().unwrap_or(0)).sum()
+    };
+    let length_of = |ks: &[usize]| -> f64 {
+        ks.iter()
+            .map(|&k| f_first.model.length(&f_first.model.members[k]))
+            .sum()
+    };
     let mass_of = |id: &str, length: f64| -> f64 {
         input
             .sections
@@ -1372,6 +1148,8 @@ pub fn size_with(
     let mut changes: Vec<GroupChange> = Vec::new();
     let mut fit_heavier = 0;
     let mut fit_mass = 0.0;
+    let mut target_heavier = 0;
+    let mut target_mass = 0.0;
     for (g, grp) in groups.iter().enumerate() {
         let length = length_of(&index[g]);
         let (u0, c0, _) = group_usage(grp, &before);
@@ -1382,9 +1160,24 @@ pub fn size_with(
             fit_heavier += 1;
             fit_mass += mass_of(&to, length) - mass_of(w, length);
         }
-        let why = match &not_sized[g] {
-            Some(w) => w.clone(),
-            None => last.why[g].clone(),
+        if let Some(w) = last.at_one[g].as_ref().filter(|w| **w != to) {
+            target_heavier += 1;
+            target_mass += mass_of(&to, length) - mass_of(w, length);
+        }
+        let (why, basis) = match &not_sized[g] {
+            Some(w) => (w.clone(), Basis::Left),
+            None if last.choice[g] != to => (
+                format!(
+                    "{} (the heavier of the last choices: {})",
+                    last.why[g],
+                    match &settled {
+                        Settled::Cycle(_) => "a cycle",
+                        _ => "not settled",
+                    }
+                ),
+                last.basis[g],
+            ),
+            None => (last.why[g].clone(), last.basis[g]),
         };
         changes.push(GroupChange {
             group: grp.clone(),
@@ -1395,9 +1188,10 @@ pub fn size_with(
             usage: [u0, u1],
             case: [c0, c1],
             governs: gov1,
-            fit: [count(&fit0, &index[g]), count(&fit1, &index[g])],
+            fit: [count(&by0, &index[g]), count(&by1, &index[g])],
             without_fit,
             why,
+            basis,
             removed: removed[g]
                 .iter()
                 .map(|f| format!("design {f} (it described {})", grp.section))
@@ -1426,25 +1220,21 @@ pub fn size_with(
         .collect();
     over.sort_by(|a, b| b.usage.total_cmp(&a.usage).then(a.member.cmp(&b.member)));
     let worst = |u: &HashMap<String, (Option<f64>, String, String)>| {
-        u.values().filter_map(|x| x.0).fold(None, |w: Option<f64>, x| Some(w.map_or(x, |w| w.max(x))))
+        u.values()
+            .filter_map(|x| x.0)
+            .fold(None, |w: Option<f64>, x| Some(w.map_or(x, |w| w.max(x))))
     };
     let mut notes = Vec::new();
     if f_first.model.capacity_plugin.is_none() {
-        notes.push(
-            "NOT ON THE SAFE SIDE: sized by the core's simple check (Euler buckling, gross yield): \
-             it leaves out a design code's column curve, imperfections, net sections and \
-             connections, so a chosen section can be too small for a design code; load the \
-             design code's plugin ([analysis] capacity, e.g. asce10-97 or sia263-2013) and size \
-             again to make it safe"
-                .to_owned(),
-        );
+        notes.push(SIMPLE_NOTE.to_owned());
     }
     if let Some(why) = &last.limits_note {
         notes.push(format!(
             "NOT ON THE SAFE SIDE: the code's limits on the members' sizes (slenderness, flat \
-             width to thickness, least thickness) not checked — {why}; a chosen section can pass \
-             its usage and still break such a limit; a code plugin with the member-limits export \
-             (the bundled asce10 and sia263) checks them"
+             width to thickness, least thickness) are not checked — {why}; a chosen section can \
+             pass its usage and still break such a limit of the code (a slender member the code \
+             does not allow); a code plugin with the member-limits export (the bundled asce10 \
+             and sia263) checks them: load it and choose again"
         ));
     }
     if !s.joint_fit {
@@ -1453,6 +1243,27 @@ pub fn size_with(
              for them (its joints may not be buildable)"
                 .to_owned(),
         );
+    } else {
+        notes.push(format!("joint fit by {}", rules.source));
+        if let Some(r) = &rules.refused {
+            notes.push(r.clone());
+        }
+        let practice = fit1.iter().filter(|p| p.rule == FitRule::Practice).count();
+        if practice > 0 {
+            notes.push(format!(
+                "{practice} member(s) with legs thicker than every plate the detailing practice \
+                 lists: their ends onto a plate cannot be laid out (list a thicker plate in \
+                 Structures › Detailing practice, or detail them by hand)"
+            ));
+        }
+    }
+    let not_met = changes.iter().filter(|c| c.basis == Basis::FitNotMet).count();
+    if not_met > 0 {
+        notes.push(format!(
+            "{not_met} group(s) with no section of their family both passing and fitting their \
+             joints: the lightest passing taken, their joint-fit problems said (their joints to \
+             detail by hand)"
+        ));
     }
     if unknown0 > 0 {
         notes.push(format!(
@@ -1477,6 +1288,14 @@ pub fn size_with(
             input.structure.extensions.len()
         ));
     }
+    if input.structure.detail() == ohl_structures::Detail::Joints {
+        notes.push(
+            "level 4: the joints' details were laid out for the sections as they are — after \
+             Apply, a changed member's plates, bolts and cuts no longer match it; lay the joints \
+             out again (Design › Lay out joints) and check them"
+                .to_owned(),
+        );
+    }
     let fit_effect = if s.joint_fit {
         if fit_heavier == 0 {
             "the joint-fit limits made no group heavier".to_owned()
@@ -1488,6 +1307,22 @@ pub fn size_with(
         }
     } else {
         "the joint-fit limits off".to_owned()
+    };
+    let target_effect = if s.target < 1.0 {
+        if target_heavier == 0 {
+            format!(
+                "the target {:.0} % made no group heavier than 100 % would",
+                s.target * 100.0
+            )
+        } else {
+            format!(
+                "the target {:.0} % kept {target_heavier} group(s) heavier than 100 % would \
+                 (+{target_mass:.0} kg, with the last round's forces)",
+                s.target * 100.0
+            )
+        }
+    } else {
+        "the target 100 %: each section up to its capacity".to_owned()
     };
     let sized = |c: &GroupChange| !c.not_sized;
     Ok(Sizing {
@@ -1503,6 +1338,7 @@ pub fn size_with(
         notes,
         over_target: over,
         fit_effect,
+        target_effect,
         text,
         took: started.elapsed(),
     })
