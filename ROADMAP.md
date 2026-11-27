@@ -5131,7 +5131,11 @@ only where it helps):
    one plate would be thicker than the practice's thickest (the first
    plate keeps the full force, so a second never thins it); the second
    plate's own bolts in Results' joint checks (owner question 3 of O49
-   stage 1b).
+   stage 1b). **Answered 2026-11-27: as recommended** (O49 stage 1b's
+   questions): the split kept; the second plate's own bolts in Results'
+   joint checks and the second plate on the first plate's leg bolts (or
+   stopped short of them) — O49 stage 1c; its own bolts the joint's bolt
+   size (the owner: one bolt size per joint).
 - Not built yet, J6's rest: built-up members arriving (as the end, not
   what it bolts onto), holding bolts onto a built-up member's angle (a
   plate on its outer face).
@@ -5291,10 +5295,33 @@ joint layout's L28–L31 were merged, resumed 2026-11-27. **Stage 1 built
   its own bolts beside the end's*; (5) a group mixing bolt diameters gets
   no bolt proposal (the quarter-capacity variant on the private towers
   left 7 such groups above the target) — *recommended: a proposal per
-  diameter within the group*. Fixed 2026-11-27: the end's bolts through
+  diameter within the group*; (6) (found in the same measurement) a group
+  the bolts govern with no bolt proposal possible goes, by stage 1's "least
+  usage" rule, to the lightest of equally failing sections — *recommended:
+  keep its current section in that case (said)*.
+  > **Answered 2026-11-27: as recommended** (owner: *"Okay with
+  > recommendations go ahead"*): (1) kept until a code clause gives a
+  > split; (2)–(6) built as stage 1c (below). Then, the same day: *"for the
+  > bolts please try to use the same ones for a joint. this would ease the
+  > construction once outside"* — one bolt size (diameter and grade) per
+  > joint wherever it can (stage 1c)
+  > ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-27-owner-o49-stage-1b-and-l33-recommendations-approved-one-bolt-size-per-joint)).
+  Fixed 2026-11-27: the end's bolts through
   its second plate were counted as clashes, so Lay out joints never kept
   one; the run's note with an empty "not:" and the sketch's two-planes
   label shrinking the drawing. Pictures in the user guides.
+- [ ] Stage 1c (M), the owner's answers of 2026-11-27 to stage 1b's
+  questions (above): (A) SIA 263 6.2.2.2 (long joints) in the sia263
+  plugin from the end's bolt pattern; (B) the second plate's own bolts in
+  Results' joint checks as a bolt group of their own, SIA 263 6.2.2.5's
+  packing reduction in the sia263 plugin through an additive packing
+  field; (C) a group the bolts govern with no bolt proposal keeps its
+  current section (said); (D) bolt proposals per diameter within a group,
+  one bolt size per joint wherever it can (more bolts of the joint's size;
+  else the whole joint to the larger size, every bolt there changed and
+  said; mixed sizes only where one size cannot fit, said with the reason);
+  (E) the second plate on the first plate's leg bolts where they fall
+  within it (one bolt group), else stopped short of them (O44 L33).
 - [ ] Stage 2 (M): level 3 members created from a level 2 outline (a
   first section per member from its role and length, then stage 1).
 - [ ] Stage 3 (M): the joint layout's "bigger member" option calling the
