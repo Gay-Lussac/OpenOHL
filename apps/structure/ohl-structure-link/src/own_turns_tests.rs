@@ -21,6 +21,12 @@ fn settings(weighed: bool) -> LayoutSettings {
         // (L25's turns apart: what is decided here alone.)
         flange_half: false,
         flange_quarter: false,
+        // (The invented body measured before L32 — the millimetre search,
+        // L1's guard's fallback kept: with L32's taken back its joints lay
+        // out better with the plates and every member keeps the roll with
+        // them, one kind only.)
+        range_search: crate::joint_layout::RangeSearch::Millimetre,
+        guard_taken_back: false,
         ..Default::default()
     }
 }
@@ -205,4 +211,112 @@ fn a_roll_kept_without_the_plates_is_held_and_an_edit_drops_its_row() {
             .contains_key("D00"),
         "the follow drops the row"
     );
+}
+
+/// `text` with member `m` split at its middle into two pieces in line,
+/// `{m}a` and `{m}b`, written one part (`continuous`) at the new joint.
+fn split(text: &str, m: &str) -> String {
+    let t = parse(text);
+    let x = t.members.iter().find(|x| x.id == m).unwrap();
+    let p = |n: &str| t.nodes.iter().find(|y| y.id == n).unwrap().point;
+    let (a, b) = (p(&x.nodes[0]), p(&x.nodes[1]));
+    let mid: Vec<f64> = (0..3).map(|k| (a[k] + b[k]).meters() / 2.0).collect();
+    let mut doc: toml_edit::DocumentMut = text.parse().unwrap();
+    let ms = doc["member"].as_array_of_tables_mut().unwrap();
+    let k = ms
+        .iter()
+        .position(|y| y.get("id").and_then(|v| v.as_str()) == Some(m))
+        .unwrap();
+    let mut second = ms.get(k).unwrap().clone();
+    let first = ms.get_mut(k).unwrap();
+    let (n0, n1) = (x.nodes[0].clone(), x.nodes[1].clone());
+    first["id"] = toml_edit::value(format!("{m}a"));
+    first["nodes"] = toml_edit::value(toml_edit::Array::from_iter([n0, "JM".to_owned()]));
+    second["id"] = toml_edit::value(format!("{m}b"));
+    second["nodes"] = toml_edit::value(toml_edit::Array::from_iter(["JM".to_owned(), n1]));
+    ms.push(second);
+    let mut s = doc.to_string();
+    s.push_str(&format!(
+        "\n[[node]]\nid = \"JM\"\npoint = [\"{} m\", \"{} m\", \"{} m\"]\n\n[[connection]]\n\
+         member = \"{m}a\"\njoint = \"JM\"\nkind = \"continuous\"\nonto = \"{m}b\"\n",
+        mid[0], mid[1], mid[2]
+    ));
+    s
+}
+
+/// O44 L32: members one part with another decided as a whole part at
+/// once — a decided member of the invented body split into two pieces in
+/// line written one part: both pieces decided together (the same kind,
+/// their rolls alike), over every joint either reaches, said as one part;
+/// a run again decides nothing again and changes nothing.
+#[test]
+fn a_whole_part_is_decided_at_once() {
+    let text = body();
+    let r = run(&text, &settings(true));
+    let rec = LayoutRecord::of(&parse(&r.text));
+    // (Measured: D00 and D03 split stay with the plates, D01 and D02
+    // without them — both kinds.)
+    let mut kinds = std::collections::BTreeSet::new();
+    for m in ["D00", "D01"] {
+        assert!(rec.own_turns.contains_key(m), "{m} decided whole");
+        let s = split(&text, m);
+        let r = run(&s, &settings(true));
+        let rec = LayoutRecord::of(&parse(&r.text));
+        let (a, b) = (format!("{m}a"), format!("{m}b"));
+        let (ra, rb) = (&rec.own_turns[&a], &rec.own_turns[&b]);
+        // Both pieces decided, the same way, as one part.
+        assert_eq!(ra.kind, rb.kind, "{m}");
+        kinds.insert(ra.kind.clone());
+        assert!(
+            ra.words.starts_with(&format!("{a}: with {b}, one part")),
+            "{}",
+            ra.words
+        );
+        assert!(ra.words.contains("decided at once (O44 L32)"));
+        for (x, row) in [(&a, ra), (&b, rb)] {
+            assert_eq!(roll(&r.text, x), row.kept(), "{x}");
+            if row.held() {
+                assert!(!rec.rolled.contains_key(x.as_str()), "{x}");
+            }
+        }
+        assert!(
+            r.notes
+                .iter()
+                .any(|n| n.starts_with(&format!("{a}, {b}: one part"))),
+            "{:?}",
+            r.notes
+        );
+        // A run again: nothing decided again, nothing changed.
+        let again = run(&r.text, &settings(true));
+        assert_eq!(again.text, r.text, "{m}");
+    }
+    assert_eq!(kinds.len(), 2, "{kinds:?}");
+}
+
+/// O44 L32: L1's guard's fallback taken back where it writes a joint
+/// worse — on the invented body (where it does: measured) the run lays out
+/// no fewer member ends and no joint fewer than with the fallback kept, and
+/// a run again on its result changes nothing.
+#[test]
+fn l1_guards_fallback_taken_back_where_it_writes_a_joint_worse() {
+    let text = body();
+    let kept = run(&text, &settings(true));
+    let on = LayoutSettings {
+        guard_taken_back: true,
+        ..settings(true)
+    };
+    let back = run(&text, &on);
+    let (a, b) = (
+        crate::weighed_turns::counts_of(&kept),
+        crate::weighed_turns::counts_of(&back),
+    );
+    let ends = |c: &std::collections::BTreeMap<&str, crate::weighed_turns::Counts>| {
+        c.values().map(|x| x.ends).sum::<usize>()
+    };
+    assert!(ends(&b) > ends(&a), "{} → {}", ends(&a), ends(&b));
+    for (j, x) in &a {
+        assert!(b[j].ends >= x.ends, "{j}: {x:?} → {:?}", b[j]);
+    }
+    let again = run(&back.text, &on);
+    assert_eq!(again.text, back.text);
 }
