@@ -4890,6 +4890,23 @@ only where it helps):
   > those kinds next, before any new form. (7) The one tower where the
   > third pass still held a roll → Recommended: accept for now (said in the
   > notes); measure whether a fourth pass pays with the next step.
+  > **Answered 2026-11-27: as recommended** (owner: "Okay with
+  > recommendations go ahead"; (3), (6) and (7) are L32, with the owner's
+  > pull-back searches to 5 mm:
+  > [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-27-owner-answers-the-joint-layouts-l28-recommendations-the-pull-back-searches-to-5-mm)).
+- [ ] L32. **A whole part decided at once, item 2's worse joints traced, a
+  fourth pass, the pull-back searches to 5 mm** (L28's questions 3, 6 and
+  7, the owner's "Okay with recommendations go ahead" and his pull-back
+  suggestion, 2026-11-27). **In active development, not approved yet.**
+  A: members one part with another whose roll the far-out welded plates
+  change decided as a whole part at once over every joint any of its
+  members reaches (L28's rule, L19's weighing of a run). B: the joint
+  kinds behind item 2's 14 joints worse traced, fixed where a fix measures
+  better. C: L28's passes measured at four. D: the searches stepping a
+  millimetre at a time over the pull-back or shift range (a bent plate's
+  holding bolts slid, the sideways shifts) searched to 5 mm — the far end
+  first and back by bisection, or a plain 5 mm scan — measured against
+  the millimetre search; the ordinary cut stays computed exactly.
 - [x] L29. **The detailing practice measured, its plate thicknesses, its
   editor** (L24's questions 2 to 5; the owner, 2026-11-25: *"use
   recommendations for l23 to l25"*). **Built 2026-11-26, in active

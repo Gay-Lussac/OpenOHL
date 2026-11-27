@@ -8,6 +8,28 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-27 (owner answers: the joint layout's L28 recommendations; the pull-back searches to 5 mm)
+
+**The joint layout's L28 questions** (roadmap O44 L28; owner, 2026-11-27:
+*"Okay with recommendations go ahead"*), each as recommended: (1) the
+turns the far-out welded plates change decided with and without them, on
+by default; (2) ties and mixed cases kept going to the roll without the
+plates (the approved rule); (3) members one part with another decided next
+as a whole part at once, as L19 weighs a run; (4) the extra layouts on
+every run (two to six) accepted; (5) a plate bent once carrying its axis
+offset, only where no welded plate fits, on by default; (6) item 2's
+joints laid out worse traced next, by joint kind; (7) the one tower whose
+third pass still held a roll accepted for now, a fourth pass measured with
+the next step. All three next steps are O44 L32.
+
+**The pull-back searches** (owner, the same day): *"For the pull back
+value, maybe it's worth pulling back more then bringing it back or using a
+bisection to find the optimal value within 5mm more precision is not
+needed"* — the searches that step a millimetre at a time over the
+pull-back or shift range may search to 5 mm (the only place computed
+precision is coarsened, by the owner's leave), always taking a place that
+was checked and fits; measured as O44 L32 item D.
+
 ## 2026-11-26 (joint layout: Solve the clashes after the run, the joints left by reason, L30)
 
 **A pass after the run solving the joints left (a tick, off by default),
