@@ -223,6 +223,69 @@ stricter than 2°, the bundled codes giving no practice.
    what it writes at the end too (`layout_run::unplace`); tested on an
    invented tower (fails without the fix). Without a table after the
    plates the file written is the same as before.
+## 2026-11-26 (joint layout: the turns the far-out welded plates change, L28)
+
+**Each turn the far-out welded plates change is decided with and without
+them; a plate bent once may carry its axis offset up to 40 mm where no
+welded plate fits** (roadmap O44 L28, L23's questions 3 and 5 — the owner's
+"use recommendations for l23 to l25" of 2026-11-25; the owner busy: built
+on its own, reported;
+[theory](../theory/joint-layout.md#the-turns-the-far-out-welded-plates-change-decided-with-and-without-them-l28)).
+
+- **Before**: the run's half and quarter turns (steps 2b, L3b) and L10's
+  other faces were chosen on plans counting L20 item 2's welded plates that
+  put an end's axis up to 40 mm out. An angle has one roll along its whole
+  length: such a plate could make a turn look better at one joint while
+  another joint of the member lost an end. Choosing every turn without
+  them (L23) was worse overall.
+- **Now** (`ohl_structure_link::own_turns`, `LayoutSettings::own_turns_weighed`,
+  on): the tower laid out once more with those turns chosen without the
+  far-out welded plates (`turns_without_own`); each member whose roll that
+  changes decided over every joint it reaches after writing — the roll
+  with the plates kept only where every such joint is laid out no worse
+  and one better and no joint elsewhere worse where a member turned
+  otherwise meets (L19's rule), else (a tie too, L20's tie rule) the roll
+  without them, held by later runs; the rolls held laid out together and
+  those kept with the plates weighed again until they agree; in passes
+  (at most three, `OWN_PASSES`) until a pass holds no roll — without the
+  passes a run again found one more member to decide on an invented body.
+  Each member said in the run's notes (both rolls, the effect either way,
+  which kept and why) and recorded in the layout record's `own_turns` (no
+  version change; the follow drops a row an edit changes). Members one
+  part with another are not decided (their rolls stay alike), said. With
+  L25's turns in rounds (at most three, `ROUNDS`): where L25 turns a member,
+  both are made again on the settled file — with item 2 on, a run again
+  otherwise decided more (found by the tests).
+- **A plate bent once** (L23's question 5: the joggle dropped, this
+  measured first; `LayoutSettings::bent_offset_analysed`, on): a plate bent
+  from the flat plate by an end's few degrees may put the member's axis up
+  to `own_out_max` (40 mm, L20's value) out of or nearer the flange — only
+  where no plate welded in its own plane fits (ranked after it) —, the
+  offset recorded (`axis_out`, its size) and carried into the analysis as
+  the welded plate's; NOT ON THE SAFE SIDE said where the analysis does not
+  take it (the run's note now names welded or bent plates). Tried first
+  with the bend before the welded plate: five towers 26 joints better, 18
+  worse — the bends took the welded plates' places; taken out (the code
+  kept privately), then ranked after the welded plate and kept.
+- **Measured** (eight private towers, 6 852 joints, kept privately; the
+  base the run on L27's files without L28; the bundled ASCE 10-97 plugin
+  built fresh and checked to load before every run): item 2 alone on eight
+  towers whole 4 253 → 4 266, member ends 15 268 → 15 316, plates 8 196 →
+  8 308, 49 joints better, 14 worse; both on seven towers whole 3 618 →
+  3 627, ends 13 135 → 13 177, plates 7 110 → 7 193, 72 better, 21 worse
+  (item 2 alone there 36 / 12); item 1 alone on three towers 4 better, none
+  worse (the other runs stopped by their time limit under the machine's
+  load). 131 members decided with both (65 kept with the plates, 66
+  without); two to six layouts more per run.
+- **Safe side**: the weighing chooses between two rolls the run writes
+  anyway; no member's size, work point or check changes. The bent plate's
+  offset is treated as the welded plate's: in the analysis only with the
+  estimated eccentricities, otherwise said NOT ON THE SAFE SIDE (what is
+  left out: that offset's moment; why it can be unsafe: those members'
+  usage can be too low; what makes it safe: the estimated eccentricities at
+  level 3, or those members checked by hand).
+- **Owner questions**: in the roadmap's L28 block, each with a
+  recommendation.
 
 ## 2026-11-26 (the plugin fixes: the default bolt sent with the members; a rolled angle's own leg a rolled edge)
 

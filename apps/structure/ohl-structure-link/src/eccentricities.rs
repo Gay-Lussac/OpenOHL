@@ -384,8 +384,14 @@ pub fn estimate(text: &str, ask: &EstimateAsk<'_>) -> Result<Estimates, String> 
                     let p = o.plan.plates.get(*k);
                     (
                         p.map(|p| p.on.clone()),
-                        p.and_then(|p| p.own.as_ref())
-                            .map_or(0.0, |w| w.out_more.max(0.0)),
+                        // (L28: a plate bent once, its offset either way.)
+                        p.and_then(|p| p.own.as_ref()).map_or(0.0, |w| {
+                            if w.bend.is_some() {
+                                w.out_more.abs()
+                            } else {
+                                w.out_more.max(0.0)
+                            }
+                        }),
                     )
                 }
             };

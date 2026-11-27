@@ -511,6 +511,37 @@ pub struct LayoutSettings {
     /// thinnest of them at least as thick as the thickest leg on it and the
     /// least; none that thick, its ends left for a hand detail, said.
     pub plate_thicknesses: Vec<f64>,
+    /// O44 L28 (L23's question 3): **each turn the far-out welded plates
+    /// change weighed** — the run's half and quarter turns and L10's other
+    /// faces are chosen on plans with the plates of L20 item 2 (an end on a
+    /// plate in its own plane welded to the flat plate putting its axis more
+    /// than a plate's thickness out); the tower is laid out once more with
+    /// those turns chosen without them, and each member whose roll that
+    /// changes is decided with and without them over every joint it reaches
+    /// after writing ([`crate::own_turns`]): the roll chosen with them kept
+    /// only where every such joint is laid out no worse and one better than
+    /// without, else the roll without them (said in the run's notes,
+    /// recorded in the layout record's `own_turns`). On by default; off: the
+    /// turns chosen with them, as before.
+    pub own_turns_weighed: bool,
+    /// O44 L28: the half and quarter turns and L10's other faces chosen on
+    /// plans without L20 item 2's far-out welded plates (L23's variant; the
+    /// joints then planned with them where the rolls let them) — the second
+    /// layout [`LayoutSettings::own_turns_weighed`] compares. Off by default.
+    pub turns_without_own: bool,
+    /// O44 L28 (L23's question 5, measured first): an end on a plate bent
+    /// once from the flat plate (L3) whose axis that bend puts more than a
+    /// plate's thickness out of (or nearer) the flange laid out up to
+    /// [`LayoutSettings::own_out_max`] — only where no plate welded in its
+    /// own plane fits (measured: bent first, such plates took the welded
+    /// ones' places and lost ends) —, the offset recorded with the plate
+    /// (the record's `layout_run::OWN_OUT` mark, its size) and carried into
+    /// the analysis as the welded plate's (L20 item 2: the estimated
+    /// eccentricities, of either sign; without them, or at level 4, said
+    /// NOT ON THE SAFE SIDE). Only with
+    /// [`LayoutSettings::own_offset_analysed`]. On by default; off: a bent
+    /// plate at most a plate's thickness off, as before.
+    pub bent_offset_analysed: bool,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -583,6 +614,9 @@ impl Default for LayoutSettings {
             practice_refused: None,
             plate_least: 0.0,
             plate_thicknesses: Vec::new(),
+            own_turns_weighed: true,
+            turns_without_own: false,
+            bent_offset_analysed: true,
         }
     }
 }
@@ -3738,7 +3772,14 @@ fn plan_avoiding(
                     let rank = match room {
                         // (L24) The practice's order on this tie.
                         Room::Weld if s.weld_before_bend => -1.0,
-                        Room::Weld => f64::INFINITY,
+                        Room::Weld => 1e9,
+                        // (L28: bent with its axis more than a plate's
+                        // thickness out only where no welded plate fits —
+                        // measured: bent first, such plates took the welded
+                        // plates' places and lost more ends than they gained.)
+                        Room::Bend { .. } if geo.out_more.abs() > x.own_t + 1e-9 => {
+                            2e9 + geo.out_more.abs()
+                        }
                         Room::Bend { down } => geo.out_more.abs() + if down { 1e-6 } else { 0.0 },
                     };
                     fits.push((rank, geo, cut));
@@ -6598,7 +6639,12 @@ fn rooms_words(errs: &[(Room, String)]) -> String {
 fn within(room: Room, more: f64, t: f64, s: &LayoutSettings) -> bool {
     match room {
         Room::Weld => more <= t + 1e-9 || (s.own_offset_analysed && more <= s.own_out_max + 1e-9),
-        Room::Bend { .. } => more.abs() <= t + 1e-9,
+        Room::Bend { .. } => {
+            more.abs() <= t + 1e-9
+                || (s.bent_offset_analysed
+                    && s.own_offset_analysed
+                    && more.abs() <= s.own_out_max + 1e-9)
+        }
     }
 }
 
@@ -6982,11 +7028,17 @@ fn own_fits(
 /// farther out of the flange than on a flat plate, more than a plate of
 /// thickness `t` (its leg's), m.
 fn farther_out(more: f64, t: f64, room: Room, s: &LayoutSettings) -> String {
-    if room == Room::Weld && s.own_offset_analysed && more > 0.0 {
+    let bent_far = matches!(room, Room::Bend { .. }) && s.bent_offset_analysed;
+    if (room == Room::Weld && more > 0.0 || bent_far) && s.own_offset_analysed {
         return format!(
-            "its axis would lie {:.0} mm farther out of the flange than on a flat plate (more \
-             than the {:.0} mm the analysis takes for a plate in its own plane)",
-            more * 1000.0,
+            "its axis would lie {:.0} mm {} than on a flat plate (more than the {:.0} mm the \
+             analysis takes for a plate in its own plane)",
+            more.abs() * 1000.0,
+            if more < 0.0 {
+                "nearer the flange"
+            } else {
+                "farther out of the flange"
+            },
             s.own_out_max * 1000.0
         );
     }

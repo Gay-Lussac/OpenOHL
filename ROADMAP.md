@@ -4813,6 +4813,83 @@ only where it helps):
   > one more pass weighs one or two members on four of the eight towers,
   > none kept, the first run there longer by about that weighing, a run
   > again quicker by as much) → Recommended: keep.
+- [x] L28. **The turns the far-out welded plates change, decided with and
+  without them; a plate bent once carrying its axis offset** (L23's
+  questions 3 and 5, the owner's "use recommendations for l23 to l25" of
+  2026-11-25; the owner busy: built on its own, reported). **Built
+  2026-11-26, in active development, not approved yet**
+  ([theory](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#the-turns-the-far-out-welded-plates-change-decided-with-and-without-them-l28),
+  [theory, item 2](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/theory/joint-layout.md#a-plate-bent-once-carrying-its-axis-offset-l28-item-2),
+  [user guide](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/joint-layout.md#lay-out-joints),
+  [decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-26-joint-layout-the-turns-the-far-out-welded-plates-change-l28);
+  the layout record's `own_turns`, no version change). **1. The turns the
+  welded plates change** (`own_turns`, `LayoutSettings::own_turns_weighed`,
+  on): after the run (and L19's weighing) the tower is laid out once more
+  with the run's half and quarter turns and L10's other faces chosen
+  without L20 item 2's far-out welded plates (L23's variant,
+  `turns_without_own`); each member whose roll that changes is decided over
+  every joint it reaches after writing — the roll with the plates kept only
+  where every such joint is laid out no worse and one better and no joint
+  elsewhere is worse where a member turned otherwise meets (L19's rule),
+  else the roll without them (a tie too, L20's tie rule), held by later
+  runs; in passes (at most three) until a pass holds no roll, and with
+  L25's turns in rounds (at most three) until L25 turns none; each member
+  said in the notes (both rolls, the effect either way, which kept and why)
+  and recorded (`own_turns`). Members one part with another are not decided
+  (said). Tested on invented bodies: both kinds decided, each roll kept with
+  the plates helping against the layout without them, a run again the same
+  file (without the passes, and without the rounds once item 2 was on, a run
+  again decided more — found by the tests, fixed). **2. A plate bent once
+  carrying its axis offset** (`LayoutSettings::bent_offset_analysed`, on;
+  measured first): a plate bent from the flat plate may put its member's axis
+  up to 40 mm out of or nearer the flange, **only where no plate welded in
+  its own plane fits**, the offset recorded (`axis_out`) and analysed as the
+  welded plate's (estimated eccentricities; else NOT ON THE SAFE SIDE, said).
+  Bent first (before the welded plate) it was tried and measured worse
+  (five towers: 26 joints better, 18 worse; the bends took the welded
+  plates' places), taken out, then measured ranked after the welded plate.
+  Measured on the eight private towers (6 852 joints; kept privately; the
+  base the run on L27's files without L28, every joint as L27's; the bundled
+  ASCE 10-97 plugin built fresh and checked to load before every run; the
+  machine loaded by other work):
+
+  | | towers | joints whole | member ends | plates | better / worse |
+  |---|---|---|---|---|---|
+  | item 1 alone | 3 | 1 110 → 1 110 | 4 535 → 4 539 | 2 555 → 2 563 | 4 / 0 |
+  | item 2 alone (as kept) | 8 | 4 253 → 4 266 | 15 268 → 15 316 | 8 196 → 8 308 | 49 / 14 |
+  | both, as built | 7 | 3 618 → 3 627 | 13 135 → 13 177 | 7 110 → 7 193 | 72 / 21 |
+
+  With both: 131 members decided on six towers (65 kept with the plates, 66
+  without); 9 to 17 members per tower one part with another not decided; on
+  one tower the third pass still held a roll (said: a run again may decide
+  more there). Item 2 alone: 65 more bent plates, 49 more offsets recorded,
+  7 fewer welded plates. Item 1 alone and the eighth tower of *both* were
+  stopped by the runs' time limit under the machine's load (not measured).
+  Each run lays the tower out two to six times more.
+  > **Owner:** (1) The turns the welded plates change decided with and
+  > without them, on by default (with item 2, against the base on seven
+  > towers: 72 joints better, 21 worse, +42 ends; item 2 alone there 36 /
+  > 12, +35 ends; item 1 alone on three towers 4 better, none worse) →
+  > Recommended: keep. (2) Ties and mixed cases (better at one joint,
+  > worse at another) go to the roll without the plates — the approved rule,
+  > which gives up some joints the plates' roll laid out better → Recommended:
+  > keep (no offset in the analysis for nothing; never silent: said per
+  > member); if the owner prefers fewer joints worse than before, the mixed
+  > cases could keep the roll with the plates — measured as its own step.
+  > (3) Members one part with another whose roll the plates change are not
+  > decided (9 to 17 per tower: their rolls must stay alike) → Recommended:
+  > next, decide a whole part at once (all its pieces one candidate), as L19
+  > weighs a run. (4) The extra layouts on every run, a run again too (at
+  > least one more; two to six on these towers) → Recommended: accept (the
+  > welded plates' effect on the turns can only be seen by laying the tower
+  > out both ways; never a coarser plan). (5) A plate bent once carrying its
+  > offset where no welded plate fits, on by default (+48 member ends, +13
+  > joints whole, 49 better, 14 worse on eight towers) → Recommended: keep.
+  > (6) Its 14 joints worse (5 with 7 ends fewer, 9 with as many ends on
+  > more plates; a few joint kinds on several towers) → Recommended: trace
+  > those kinds next, before any new form. (7) The one tower where the
+  > third pass still held a roll → Recommended: accept for now (said in the
+  > notes); measure whether a fourth pass pays with the next step.
 - [x] L29. **The detailing practice measured, its plate thicknesses, its
   editor** (L24's questions 2 to 5; the owner, 2026-11-25: *"use
   recommendations for l23 to l25"*). **Built 2026-11-26, in active

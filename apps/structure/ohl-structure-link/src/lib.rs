@@ -117,6 +117,9 @@ mod orient_tests;
 mod other_face;
 #[cfg(test)]
 mod other_face_tests;
+pub mod own_turns;
+#[cfg(test)]
+mod own_turns_tests;
 #[cfg(test)]
 mod plane_hosts_tests;
 pub mod plane_rolls;

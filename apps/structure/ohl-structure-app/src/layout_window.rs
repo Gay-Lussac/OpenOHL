@@ -433,6 +433,15 @@ impl LayoutWindow {
             // L30 (2026-11-26): Solve the clashes after the run at the
             // joints left not whole — the window's tick (off by default).
             solve_left: self.solve_left,
+            // L28 (2026-11-26): each turn the far-out welded plates (L20
+            // item 2) change decided with and without them over every joint
+            // its member reaches (the roll with them kept only where it
+            // helps; else held without them).
+            own_turns_weighed: true,
+            // L28 (2026-11-26): a plate bent once carrying its member's axis
+            // up to 40 mm out (only where no welded plate fits), the offset
+            // recorded for the analysis.
+            bent_offset_analysed: true,
             // L24 (2026-11-25): the detailing practice's values, below.
             ..LayoutSettings::default()
         };

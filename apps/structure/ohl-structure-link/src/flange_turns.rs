@@ -305,7 +305,14 @@ fn candidates(
         if ways.is_empty() {
             continue;
         }
-        let automatic = rec.rolled.contains_key(&m) || rec.oriented.contains_key(&m);
+        // (O44 L28: a roll kept without the far-out welded plates is the
+        // program's too.)
+        let automatic = rec.rolled.contains_key(&m)
+            || rec.oriented.contains_key(&m)
+            || rec
+                .own_turns
+                .get(&m)
+                .is_some_and(|r| r.held() && r.current(&t, &m));
         let auto = automatic
             || (x.roll.is_none() && x.reference.is_none() && x.orientation.is_none())
             || ask.replace_hand;
@@ -389,15 +396,17 @@ fn text_with(
 /// a run again weighed them: measured on private towers, rows written and
 /// the run again as long as a weighing). The members still left after the
 /// last pass are said in the notes (a run again weighs them).
+/// (O44 L28: also the notes the passes added, for the run's weighing
+/// rounds with [`crate::own_turns`].)
 pub(crate) fn weigh_flange_turns(
     text: &str,
     r0: LayoutRun,
     base_notes: &[String],
     ask: &RunAsk<'_>,
-) -> Result<(LayoutRun, String), String> {
+) -> Result<(LayoutRun, String, Vec<String>), String> {
     let (mut run, mut settled, head) = weigh_flange_pass(text, r0, base_notes, ask)?;
     if head.is_empty() {
-        return Ok((run, settled));
+        return Ok((run, settled, Vec::new()));
     }
     let mut notes = base_notes.to_vec();
     notes.extend(head);
@@ -431,7 +440,8 @@ pub(crate) fn weigh_flange_turns(
             ));
         }
     }
-    Ok((run, settled))
+    let heads = notes[base_notes.len()..].to_vec();
+    Ok((run, settled, heads))
 }
 
 /// O44 L27: the most passes the run's weighing of these turns makes (the
