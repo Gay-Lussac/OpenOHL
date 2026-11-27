@@ -9,7 +9,7 @@ id = "structsize-001"
 title = "Member sizer on a plane truss of three groups: its choice the lightest passing one, proved by brute force over every combination of the library"
 calculation = "structure.size"
 reference = "Brute force: every combination of the library's six angles for the three member groups (6³ = 216 full runs of the structure by OHL-Structure's run, the bundled ASCE 10-97 plugin), each kept only when every member's usage is at most 1, no limit of the code (member-limits: ASCE 10-97 3.3, 3.4, 3.7.1) is broken and no joint-fit limit (the leg takes its 16 mm bolt at mid-leg with the code's edge distance; the member holds its bolts) — the lightest kept"
-notes = "A (0, 0, 0) and B (0, 0, 2 m) pinned, C (2 m, 0, 0), D (2 m, 0, 2 m), E (4 m, 0, 0) held across the plane; 30 kN down at E, the members' own weight (the default analysis: P-Delta, self-weight × 1). Groups: bottom AC, CE (legs; 60 kN and 30 kN compression by hand), top BD (leg; 30 kN tension), web CD, BC, DE (bracing; 30 kN compression, 42.4 kN tension). Every member starts as an L80×8; two 16 mm bolts at each end. mass_total: the sizer's chosen members' mass (profile mass per metre × length between joints, kg) = brute_mass_total: the brute force's lightest passing combination; same_choice 1: the same section for every group."
+notes = "A (0, 0, 0) and B (0, 0, 2 m) pinned, C (2 m, 0, 0), D (2 m, 0, 2 m), E (4 m, 0, 0) held across the plane; 30 kN down at E, the members' own weight (the default analysis: P-Delta, self-weight × 1). Groups: bottom AC, CE (legs; 60 kN and 30 kN compression by hand), top BD (leg; 30 kN tension), web CD, BC, DE (bracing; 30 kN compression, 42.4 kN tension). Every member starts as an L80×8; two 16 mm bolts at each end. mass_total: the sizer's chosen members' mass (profile mass per metre × length between joints, kg) = brute_mass_total: the brute force's lightest passing combination; same_choice 1: the same section for every group. Each group is held by another rule, none by its usage: bottom L70×7 (usage 65 %) by ASCE 10-97 3.4's L/r < 150 of a leg (2 m / 13.7 mm = 146; the L60×6's 11.7 mm gives 171); top L50×5 (usage 25 %) by the joint fit (its check alone takes the L40×4; the 40 and 45 mm legs do not take the 16 mm bolt at mid-leg with the code's edge distance to the toe); web L60×6 (usage 60 %) by 3.4's KL/r < 200 of the other members. mass_bottom, mass_top, mass_web: each group's mass with its choice (kg)."
 max_seconds = 300.0
 inputs.sections = '''
 format = "ohl-sections"
@@ -127,7 +127,10 @@ design = { class = "bracing", bolts = { diameter = "16 mm", count = 2 } }
 node = "E"
 force = ["0 kN", "0 kN", "-30 kN"]
 '''
-expected.mass_total = { value = 0.0, abs_tol = 0.01 }
-expected.brute_mass_total = { value = 0.0, abs_tol = 0.01 }
+expected.mass_total = { value = 78.988, abs_tol = 0.01 }
+expected.mass_bottom = { value = 29.665, abs_tol = 0.01 }
+expected.mass_top = { value = 7.579, abs_tol = 0.01 }
+expected.mass_web = { value = 41.745, abs_tol = 0.01 }
+expected.brute_mass_total = { value = 78.988, abs_tol = 0.01 }
 expected.same_choice = { value = 1.0, abs_tol = 0.0 }
 expected.over_target = { value = 0.0, abs_tol = 0.0 }

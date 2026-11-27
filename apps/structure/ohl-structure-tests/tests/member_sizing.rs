@@ -120,7 +120,7 @@ fn passes(text: &str, lib: &SectionLibrary) -> Result<bool, String> {
     }
     let ks: Vec<usize> = (0..model.members.len()).collect();
     let forces: Vec<f64> = model.members.iter().map(|m| axial[&m.id]).collect();
-    let (fit, _) = sizing::joint_fit(&model, &ks, &forces);
+    let (fit, _) = sizing::joint_fit(&model, &ks, &forces, &sizing::FitRules::for_structure(text, Some(&d)));
     Ok(fit.is_empty())
 }
 

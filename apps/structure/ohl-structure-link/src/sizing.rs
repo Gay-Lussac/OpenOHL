@@ -110,9 +110,10 @@ impl Default for Settings {
 /// The most rounds by default.
 pub const DEFAULT_ROUNDS: usize = 10;
 
-/// The most times one round takes groups back because the structure did
-/// not solve with them lighter (each time at least one group; the
-/// program's bound on the work, not a standard's).
+/// The most times one round takes back the groups a failed solve names
+/// (each time at least one group); then every group made lighter goes
+/// back at once (the choice that solved). The program's bound on the
+/// work, not a standard's.
 pub const MAX_REPAIRS: usize = 20;
 
 /// What the sizer works on.
@@ -522,13 +523,15 @@ fn cancelled(budget: &Budget) -> bool {
     budget.token().is_some_and(|t| t.is_cancelled())
 }
 
-/// Why the forces of a choice could not be worked out: the words, and the
+/// Why the forces of a choice could not be worked out: the words, the
 /// members a buckling mode names (in compression at the joint moving
-/// most, straining most in the mode; empty for any other refusal).
+/// most, straining most in the mode) and the members meeting at the joints
+/// a refusal names as moving most (empty for any other refusal).
 #[derive(Debug, Clone)]
 struct NotSolved {
     words: String,
     members: Vec<String>,
+    around: Vec<String>,
 }
 
 impl From<String> for NotSolved {
@@ -536,8 +539,26 @@ impl From<String> for NotSolved {
         Self {
             words,
             members: Vec::new(),
+            around: Vec::new(),
         }
     }
+}
+
+/// The members of `model` meeting at the joints `joints` (by id).
+fn members_at(model: &Model, joints: &[String]) -> Vec<String> {
+    let at: std::collections::HashSet<usize> = model
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| joints.contains(&n.id))
+        .map(|(k, _)| k)
+        .collect();
+    model
+        .members
+        .iter()
+        .filter(|m| at.contains(&m.i) || at.contains(&m.j))
+        .map(|m| m.id.clone())
+        .collect()
 }
 
 /// The structure of `text` (its model, the counted self-weight as the run
@@ -571,24 +592,33 @@ fn forces(input: &SizingInput, text: &str, budget: &Budget) -> Result<Forces, No
             .map_err(NotSolved::from)?;
         ohl_structures_fe::analyse(&model, &loads, c.strength, &case_budget(budget))
             .map(|(s, _)| s)
-            .map_err(|e| NotSolved {
-                words: format!(
-                    "case {}: did not solve: {}",
-                    c.name,
-                    ohl_structures_fe::refusal_text(&model, &e)
-                ),
-                members: match &e {
-                    ohl_structures_fe::FeError::Unstable {
-                        compressed,
-                        straining,
-                        ..
-                    } => compressed
-                        .iter()
-                        .map(|x| x.0.clone())
-                        .chain(straining.iter().cloned())
-                        .collect(),
-                    _ => Vec::new(),
-                },
+            .map_err(|e| {
+                use ohl_structures_fe::FeError;
+                NotSolved {
+                    words: format!(
+                        "case {}: did not solve: {}",
+                        c.name,
+                        ohl_structures_fe::refusal_text(&model, &e)
+                    ),
+                    members: match &e {
+                        FeError::Unstable {
+                            compressed,
+                            straining,
+                            ..
+                        } => compressed
+                            .iter()
+                            .map(|x| x.0.clone())
+                            .chain(straining.iter().cloned())
+                            .collect(),
+                        _ => Vec::new(),
+                    },
+                    around: match &e {
+                        FeError::Unstable { joints, .. }
+                        | FeError::Implausible { joints, .. }
+                        | FeError::Mechanism { joints, .. } => members_at(&model, joints),
+                        _ => Vec::new(),
+                    },
+                }
             })
     });
     let solutions = solved.into_iter().collect::<Result<Vec<_>, NotSolved>>()?;
@@ -1122,24 +1152,35 @@ pub fn size_with(
                     Ok(x) => break x,
                     Err(e) => {
                         // A buckling mode with the lighter sections: the
-                        // groups it names made lighter go back to the
-                        // sections that solved (never lighter again), said;
-                        // none named: every group made lighter.
-                        let named: Vec<usize> = e
-                            .members
-                            .iter()
-                            .filter_map(|m| group_of.get(m.as_str()).copied())
-                            .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
-                            .collect();
-                        let back: Vec<usize> = if named.is_empty() {
-                            (0..groups.len())
+                        // groups made lighter go back to the sections that
+                        // solved (never lighter again), said — those of
+                        // the members the mode names, else those meeting
+                        // at the joints it moves most, else every group
+                        // made lighter.
+                        let lighter = |ids: &[String]| -> Vec<usize> {
+                            let mut out: Vec<usize> = ids
+                                .iter()
+                                .filter_map(|m| group_of.get(m.as_str()).copied())
                                 .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
-                                .collect()
-                        } else {
-                            named
+                                .collect();
+                            out.sort_unstable();
+                            out.dedup();
+                            out
                         };
                         repairs += 1;
-                        if back.is_empty() || repairs > MAX_REPAIRS {
+                        let mut back = Vec::new();
+                        if repairs < MAX_REPAIRS {
+                            back = lighter(&e.members);
+                            if back.is_empty() {
+                                back = lighter(&e.around);
+                            }
+                        }
+                        if back.is_empty() {
+                            back = (0..groups.len())
+                                .filter(|&g| mass_of_id(&choice[g]) < mass_of_id(&solved[g]))
+                                .collect();
+                        }
+                        if back.is_empty() {
                             return Err(format!(
                                 "{} — with the sections chosen in round {r} (the structure as it \
                                  is solves): no lighter group left to take back",
