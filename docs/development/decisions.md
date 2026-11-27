@@ -8,6 +8,74 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-27 (O49 stage 1c: long joints, packings, bolts per size, one bolt size per joint, the second plate's room)
+
+Built the same day from the owner's answers below, in active development,
+not approved yet ([member sizing](../theory/member-sizing.md),
+[SIA 263](../theory/sia263.md#long-joints-and-packings-o49-stage-1c-2026-11-27),
+[joint groups](../theory/joint-groups.md), [joint layout](../theory/joint-layout.md)).
+
+- **SIA 263 6.2.2.2 in the sia263 plugin**: β_Lf at a member's end from
+  its bolt pattern (bolts per line less one, times the pitch; no pitch:
+  Table 17's minimum, said not checked for a wider one — NOT ON THE SAFE
+  SIDE), and in the joint checks per bolt from the group's bolts carrying
+  the same parts (the largest bolt-to-bolt distance: conservative); the
+  clause's exception never taken. ASCE 10-97 and ASCE/SEI 48-19: no
+  long-joint rule found (48-19's C6.2.2 puts a factor of about 0.95 in its
+  design stress), none applied.
+- **The second plate's own bolts in Results' joint checks** as a holding
+  group of their own (half the end's force; plies the second plate, the
+  packing, the first plate). **One additive export** `joint-check-groups-
+  packing` (interface 0.3, ADR-0012 style) sends each bolt's packings;
+  SIA 263 applies 6.2.2.5's β_p; ASCE 10-97 has no packing rule (found
+  none: noted, a packing above d/3 said NOT ON THE SAFE SIDE); a plugin
+  without the export: said NOT ON THE SAFE SIDE. *Core changes, each for
+  this code need*: `code.wit` (the interface and its world entries),
+  `ohl_plugins` (its binding and `WasmHost::check_joint_groups_packing`),
+  `ohl_member_check::joints::check_joint_groups_packing`. The NOT ON THE
+  SAFE SIDE L33 said on the joint is gone.
+- **The sizer**: a proposal per bolt size (diameter and grade) within a
+  group; one bolt size per joint — more bolts of the joint's size first,
+  else the old size's bolts at the joints taken along to the larger one
+  (the same count: never weaker), mixed only where it cannot be had, each
+  said; a group the bolts govern with no proposal keeps its section. No
+  file format change.
+- **Lay out joints**: the second plate tried nearer the joint, then on the
+  first plate's leg bolts (one bolt group, drawn once, its grip through
+  four plies), then beside the end's bolts past its leg's toe; its packing
+  the plate's own outline where the end's leg is not; provisional bolts at
+  the joint's size; the joints left with mixed sizes listed. No file
+  format change (structure file version 31 kept).
+
+## 2026-11-27 (owner: O49 stage 1b and L33 recommendations approved; one bolt size per joint)
+
+The owner, on the six questions of O49 stage 1b and L33: *"Okay with
+recommendations go ahead"*; then, the same day: *"for the bolts please try
+to use the same ones for a joint. this would ease the construction once
+outside"*. Built as O49 stage 1c (roadmap), in active development, not
+approved yet.
+
+1. **The second plate and its own bolts for half the end's force, the
+   first plate the full force: kept** until a code clause gives a split.
+2. **SIA 263 6.2.2.2 (long joints) added to the sia263 plugin**, from the
+   end's bolt pattern sent to it.
+3. **The second plate's own bolts in Results' joint checks** as a bolt
+   group of their own, SIA 263 6.2.2.5's packing reduction in the sia263
+   plugin through an additive packing field.
+4. **A group the bolts govern with no bolt proposal possible keeps its
+   current section** (said), instead of stage 1's "least usage" rule (the
+   lightest of equally failing sections).
+5. **The second plate's own bolts are the first plate's leg bolts where
+   these fall within it** (one bolt group); else the second plate stops
+   short of them with its own bolts beside the end's.
+6. **A bolt proposal per diameter within a group.**
+7. **One bolt size (diameter and grade) per joint wherever it can**: more
+   bolts of the joint's size first; where one end needs a larger size,
+   the whole joint goes to it (every end and plate bolt there changed,
+   proposed and said); mixed sizes only where one size cannot fit, said
+   with the reason. The second plate's own bolts are the joint's size.
+   *Why*: one bolt size per joint eases the erection on site.
+
 ## 2026-11-27 (joint layout: a whole part decided at once, item 2's worse joints traced, a fourth pass, the searches to 5 mm, L32)
 
 **Members one part with another decided as a whole part at once; L1's

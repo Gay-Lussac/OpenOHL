@@ -101,10 +101,32 @@ proposes more of its own bolts, or a larger bolt of the project's bolt
 library where more do not fit the member ("2 × 16 mm to 4 × 16 mm"; hover
 for why). Ticking the group takes its bolts with its section; Apply writes
 both in one undo step. On the command line the proposal is the line
-`bolts … → …` under the group. A group whose members' bolts differ in
-diameter, or whose bolts are given at its member ends (level 4), gets no
-bolt proposal: it stays above the target, said. Built, in active
-development (not approved yet).
+`bolts … → …` under the group. Built, in active development (not
+approved yet).
+
+**Per bolt size** (2026-11-27): a group whose members have bolts of
+several sizes gets one proposal per size — one line each in the Bolts
+column ("2 × 16 mm to 3 × 16 mm", "2 × 20 mm to 4 × 20 mm"; hover for the
+members and why).
+
+![Choose the members on the invented truss whose bottom chord has 16 mm bolts at AC and 20 mm at CE, both of 10 kN per plane: the Bolts column shows two lines for the group, one per bolt size](../images/structure-tools/tool-member-sizing-bolts-per-size.png)
+
+**One bolt size per joint** (the owner, 2026-11-27: *"for the bolts please
+try to use the same ones for a joint. this would ease the construction
+once outside"*): more bolts of the joint's size come first; where a
+member's bolts must go to a larger bolt, the other bolts of the old size at
+its joints go with it (the same count of the larger bolt, never weaker),
+shown in the Bolts column as "one bolt size per joint: …". Where one size
+cannot be had (sizes mixed already, bolts laid out at the joint, a member
+not sized, a leg that does not take the larger bolt, a member whose check
+then fails) the joint stays mixed, said with why; the notes count the
+joints with one size and with several, before and after.
+
+**The bolts govern and no proposal fits**: a group whose members' bolts
+are given at their ends (level 4, with the joint details) or not given
+keeps its **current section**, said ("its current section kept"): a
+heavier one does not raise the bolt shear, a lighter one is not taken for
+it.
 
 ![The same window run again after Apply: no group changed, the Bolts column empty, the largest usage 87 %](../images/structure-tools/tool-member-sizing-bolts-after.png)
 
@@ -140,8 +162,10 @@ ohl-structure-size tower.ohls --problems
 ```
 
 One line per group (`*` where it changes): section, mass, usage and
-governing case, joint-fit problems, before → after, and why; then every
-member above the target ("ABOVE THE TARGET: …"; exit status 2). Options:
+governing case, joint-fit problems, before → after, and why; under it one
+`bolts … → … (n member(s)) — why` line per bolt proposal; then every joint
+whose bolts stay of several sizes ("BOLT SIZES MIXED: joint …: sizes — why")
+and every member above the target ("ABOVE THE TARGET: …"; exit status 2). Options:
 `--sections`, `--loads`, `--case`, `--target` (at most 1), `--no-joint-fit`,
 `--rounds` (at least 2), `--split`, `--keep`, `--problems` (each group's
 joint-fit problems before and after, in words), `-o` (write the structure

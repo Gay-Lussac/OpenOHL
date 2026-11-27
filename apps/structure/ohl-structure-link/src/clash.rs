@@ -681,6 +681,26 @@ fn clashes_of(
                 .zip(arrival(o))
                 .is_some_and(|(a, b)| in_line(a, b))
     };
+    // A bolt's point and axis (a member end's, a plate's own holding bolt).
+    let bolt_at = |b: &ClashPart| -> Option<([f64; 3], [f64; 3])> {
+        match b {
+            ClashPart::Bolt { member, index, .. } => arrival(member)
+                .and_then(|a| a.bolts_with_axes().nth(*index))
+                .map(|(q, axis, _)| (q, axis)),
+            ClashPart::PlateBolt {
+                plate,
+                member,
+                index,
+                ..
+            } => plates
+                .iter()
+                .find(|p| &p.id == plate)
+                .and_then(|p| p.holding_ends().find(|h| &h.member == member))
+                .and_then(|h| h.bolts_with_axes().nth(*index))
+                .map(|(q, axis, _)| (q, axis)),
+            _ => None,
+        }
+    };
     // Whether parts `x` and `y` bolt together (so are not tested), and
     // whether only the shank of a bolt among them is excused.
     let together = |x: usize, y: usize| -> Together {
@@ -749,6 +769,17 @@ fn clashes_of(
                 if welded { Together::Yes } else { Together::No }
             }
             (Cover(a, _), Cover(b, _)) if a == b => Together::Yes,
+            // (O49 stage 1c, L33's room) A first plate's leg bolt that is
+            // also a second plate's own bolt: through that second plate
+            // (one bolt group, its head or nut on its face).
+            (b @ (Bolt { .. } | PlateBolt { .. }), Plate(m))
+            | (Plate(m), b @ (Bolt { .. } | PlateBolt { .. }))
+                if bolt_at(b).is_some_and(|(q, axis)| {
+                    crate::two_plates::shared_bolt(plates, q, axis) == Some(m.as_str())
+                }) =>
+            {
+                Together::Yes
+            }
             // (L21) A plate's own holding bolt: through its plate and the
             // member it bolts the plate onto.
             (

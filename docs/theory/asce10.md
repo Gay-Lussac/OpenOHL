@@ -668,6 +668,22 @@ connection is in its column curves (3.7.4). ASCE/SEI 48-19 (steel poles:
 said not on the safe side for it.
 
 
+
+**Long joints and packings** (O49 stage 1c, 2026-11-27, read in the
+standards): ASCE 10-97 gives no reduction of the bolt shear for a long
+joint nor for packings (fillers) in a bolt's grip (4.3.2, 4.4, C4.3.2
+read); ASCE/SEI 48-19 neither (6.2.2, 6.2.5 read) — its commentary C6.2.2
+says a joint-length factor of about 0.95 for the joint lengths common to
+transmission structures is already in its design stress of 0.45 F_u, and
+that the lengths of typical joints with A394 bolts do not warrant one.
+**Not found: none applied.** The second plate's own bolts (L33) through a
+packing are checked in the joint checks by 4.3.2 and 4.4 as any bolt
+(`joint-check-groups-packing`: the packing sent, noted "no reduction
+(none found)"); a packing thicker than a third of the bolt's diameter is
+said **NOT ON THE SAFE SIDE**: (1) the bolt's bending across the packing
+is left out, (2) a thick packing lowers the bolt's shear resistance (other
+codes reduce it from there), (3) keep the packing at d/3 or less, or check
+the bolt by hand.
 ## End conditions
 
 > **When the connections are taken (2026-11-11).** The check reads a member end's `[[connection]]` only when the structure file asks for it (`joint_details = true`) **and** is level 4 (every checked member end with its joint detail). Otherwise — the default — the members are checked in the simple form: the member's own design data only, the ends assumed eccentric and not restrained where nothing is given. That simple form does not check a connection's bolt shear, bearing and net section nor the moment of a shifted end, which can govern: it is **not on the safe side for those**, and the results say which form was used. Everything below that names a connection applies when they are taken.

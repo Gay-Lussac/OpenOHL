@@ -638,6 +638,40 @@ parameter file for the plugin may change it).
   bolt Table 17 has no row for: said NOT ON THE SAFE SIDE (its distances are
   then not checked against a minimum).
 
+## A second plate's own bolts, packings and long joints (O49 stage 1c)
+
+Built 2026-11-27, in active development, not approved yet (the owner's
+answer of that day to O49 stage 1b's question 3).
+
+- **A group of their own.** A second plate held by its own bolts through
+  a packing into the first plate (O44 L33, `[plate.paired]`) is checked as
+  a holding group: its bolts carry the second plate's share of its end's
+  force — **half** (the split L33 takes from the codes' per-plane bolt
+  shear rule; the first plate keeps the end's whole force: conservative)
+  — along the end's line through its bolts' centroid, with its moment
+  about these bolts' centroid, shared elastically. The plies: the second
+  plate and the packing (the bolts push them against the force) and the
+  first plate (along it), each with its edges and holes; holes of the
+  first plate overlapping and a bolt outside a ply read "does not fit".
+  Where the second plate's own bolts are the first plate's leg bolts
+  (L33's room, below in the joint layout's page), those bolts are one
+  group with the leg — their holding group carries the first plate's
+  forces as before, the packing in their grip.
+- **Packings** (`joint-check-groups-packing`, additive to interface 0.3):
+  each bolt's packings sent with its group (the second plate's packing
+  where the bolt is one of its own bolts). SIA 263 applies 6.2.2.5's
+  \( eta_p \) above d/3; ASCE 10-97 has no rule (said, and a packing
+  above d/3 said NOT ON THE SAFE SIDE). A plugin without the export: its
+  groups with a packing say "a … mm packing in its bolts' grip not sent …"
+  NOT ON THE SAFE SIDE ((1) a code's reduction for packings left out,
+  (2) the bolts can resist less than shown, (3) update the plugin, or
+  check the bolts by hand).
+- **Long joints** (SIA 263 6.2.2.2): per bolt from the group's own bolt
+  positions ([SIA 263](sia263.md#long-joints-and-packings-o49-stage-1c-2026-11-27)).
+
+The NOT ON THE SAFE SIDE that L33 said on the joint ("the joint checks do
+not check those bolts") is gone: they are checked.
+
 ## What is not checked, said
 
 Never silently skipped — each a row of the joint without a usage,

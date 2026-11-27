@@ -689,7 +689,7 @@ fn the_bolts_govern() {
         );
     let s = size(&text, &Settings::default());
     let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
-    let b = bottom.bolts.as_ref().expect("bolts proposed");
+    let b = bottom.bolts.first().expect("bolts proposed");
     assert!(b.pick.count >= 6, "{b:?}");
     assert_eq!(b.from, "2 × 16 mm");
     assert!(
@@ -739,6 +739,7 @@ fn a_larger_bolt_by_its_capacity() {
         hole: None,
         shear_capacity: Some(60e3),
         bolt: None,
+        grade: None,
     };
     let m20 = BoltPick {
         count: 2,
@@ -746,6 +747,7 @@ fn a_larger_bolt_by_its_capacity() {
         hole: Some(0.022),
         shear_capacity: Some(94e3),
         bolt: Some("M20".into()),
+        grade: Some("8.8".into()),
     };
     assert_eq!(count_for(&m16, 6, &m20), 4);
     let m20_bare = BoltPick {
@@ -755,4 +757,151 @@ fn a_larger_bolt_by_its_capacity() {
     // By the areas: 6 × (16/20)² = 3.84.
     assert_eq!(count_for(&m16, 6, &m20_bare), 4);
     assert_eq!(m20.words(), "2 × 20 mm (M20)");
+}
+
+/// O49 stage 1c (the owner's answer of 2026-11-27): a proposal per bolt
+/// size within a group. The bottom group's AC bolted by 16 mm, CE by 20 mm,
+/// both at 10 kN per plane (the ASCE 10-97 plugin): each size its own
+/// proposal, more of its own bolts; stage 1b gave none (the sizes differ).
+#[test]
+fn a_proposal_per_bolt_size_within_a_group() {
+    let text = TRUSS
+        .replace("capacity = \"simple\"", "capacity = \"asce10-97\"")
+        .replace(
+            "bolts = { diameter = \"16 mm\", count = 2 }",
+            "bolts = { diameter = \"16 mm\", count = 2, shear_capacity = \"10 kN\" }",
+        )
+        .replacen(
+            "design = { bolts = { diameter = \"16 mm\", count = 2, shear_capacity = \"10 kN\" } }",
+            "design = { bolts = { diameter = \"20 mm\", count = 2, shear_capacity = \"10 kN\" } }",
+            1,
+        );
+    let s = size(&text, &Settings::default());
+    let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
+    assert_eq!(bottom.bolts.len(), 2, "{:?}", bottom.bolts);
+    let by = |d: &str| {
+        bottom
+            .bolts
+            .iter()
+            .find(|b| b.from.contains(d))
+            .unwrap_or_else(|| panic!("{d}: {:?}", bottom.bolts))
+    };
+    assert_eq!(by("16 mm").members, vec!["AC".to_owned()]);
+    assert_eq!(by("20 mm").members, vec!["CE".to_owned()]);
+    assert!(by("16 mm").pick.count >= 6 && by("16 mm").pick.diameter == 0.016);
+    assert!(s.over_target.is_empty(), "{:?}", s.over_target);
+    // No larger bolt was asked: every joint keeps its sizes.
+    assert_eq!(s.joint_sizes.taken_along, 0);
+    assert_eq!(s.joint_sizes.mixed[0], s.joint_sizes.mixed[1]);
+    let applied = sizing::apply(&text, &s, std::slice::from_ref(&bottom.group.name)).unwrap();
+    assert!(applied.contains("diameter = \"20 mm\""), "{applied}");
+}
+
+/// O49 stage 1c (the owner's answer of 2026-11-27): the bolts govern and no
+/// bolt proposal is possible (the bottom members' ends laid out, their
+/// bolts given there): the group keeps its current section, said — not the
+/// lightest of equally failing sections (stage 1's "least usage").
+#[test]
+fn bolts_governing_without_a_proposal_keep_the_section() {
+    let mut text = TRUSS
+        .replace("capacity = \"simple\"", "capacity = \"asce10-97\"")
+        .replace(
+            "bolts = { diameter = \"16 mm\", count = 2 }",
+            "bolts = { diameter = \"16 mm\", count = 2, shear_capacity = \"1 kN\" }",
+        );
+    text = text.replacen(
+        "kind = \"lattice\"",
+        "kind = \"lattice\"\njoint_details = true",
+        1,
+    );
+    for (m, j) in [
+        ("AC", "A"),
+        ("AC", "C"),
+        ("CE", "C"),
+        ("CE", "E"),
+        ("BD", "B"),
+        ("BD", "D"),
+        ("CD", "C"),
+        ("CD", "D"),
+        ("BC", "B"),
+        ("BC", "C"),
+        ("DE", "D"),
+        ("DE", "E"),
+    ] {
+        text.push_str(&format!(
+            "\n[[connection]]\nmember = \"{m}\"\njoint = \"{j}\"\nbolts = {{ count = 2, \
+             diameter = \"16 mm\" }}\n"
+        ));
+    }
+    let t = StructureType::parse(std::path::Path::new("t.ohls"), &text).unwrap();
+    assert_eq!(t.joint_details_not_applied(), None);
+    let s = size(&text, &Settings::default());
+    let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
+    assert_eq!(bottom.basis, sizing::Basis::BoltsKept, "{bottom:?}");
+    assert_eq!(bottom.to, bottom.from, "{bottom:?}");
+    assert!(
+        bottom.why.contains("current section kept"),
+        "{}",
+        bottom.why
+    );
+    assert!(bottom.bolts.is_empty());
+    assert!(
+        bottom
+            .bolts_govern
+            .as_ref()
+            .is_some_and(|w| w.contains("no bolt proposal")),
+        "{bottom:?}"
+    );
+}
+
+/// O49 stage 1c (the owner, 2026-11-27): one bolt size per joint. AC goes
+/// from 16 mm to 20 mm: the 16 mm bolts at its joints go with it, and on
+/// through the joints those reach that had 16 mm alone (the whole truss);
+/// CD kept (its leg does not take it): its joint C stops it — said, and
+/// nothing is taken through C.
+#[test]
+fn one_bolt_size_per_joint() {
+    use crate::sizing_bolts::{BoltPick, JointSizes, same_size, size_key};
+    let t = StructureType::parse(std::path::Path::new("t.ohls"), TRUSS).unwrap();
+    let model = crate::model_of(&t, TRUSS, None, &library()).unwrap();
+    let place = |id: &str| model.members.iter().position(|m| m.id == id).unwrap();
+    let joints = JointSizes::of(&model, &t, &Default::default());
+    let m20 = BoltPick {
+        count: 2,
+        diameter: 0.020,
+        hole: None,
+        shear_capacity: None,
+        bolt: None,
+        grade: None,
+    };
+    let old = size_key(0.016, None, None);
+    let none = vec![None; model.members.len()];
+    let (taken, stops) = same_size(
+        &model,
+        &joints,
+        &[place("AC")],
+        &old,
+        &m20,
+        &none,
+        &Default::default(),
+    );
+    let mut ids: Vec<&str> = taken
+        .iter()
+        .map(|(k, _)| model.members[*k].id.as_str())
+        .collect();
+    ids.sort();
+    assert_eq!(ids, ["BC", "BD", "CD", "CE", "DE"], "{stops:?}");
+    assert!(stops.is_empty(), "{stops:?}");
+    let frozen: std::collections::HashMap<usize, String> =
+        [(place("CD"), "its leg does not take it".to_owned())].into();
+    let (taken, stops) = same_size(&model, &joints, &[place("AC")], &old, &m20, &none, &frozen);
+    assert!(taken.is_empty(), "{taken:?}");
+    assert!(
+        stops
+            .iter()
+            .any(|(j, w)| j == "C" && w.contains("CD keeps its 16 mm")),
+        "{stops:?}"
+    );
+    let (single, mixed) = joints.count(&model, &none);
+    assert_eq!((single, mixed.len()), (5, 0));
 }

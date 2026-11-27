@@ -1148,6 +1148,7 @@ fn group_of(g: &jgr::Group) -> groups::Group {
                     .collect()
             })
             .collect(),
+        packings: None,
     }
 }
 
@@ -1208,7 +1209,38 @@ impl jgt::Guest for Sia263 {
     }
 }
 
+use exports::ohl::plugin::joint_check_groups_packing as jgk;
 use exports::ohl::plugin::joint_check_groups_prying as jgp;
+
+impl jgk::Guest for Sia263 {
+    /// As `check-joint-groups-prying`, each bolt with the packings in its
+    /// grip (O49 stage 1c, 2026-11-27): a group left out, its packings not
+    /// known; an empty list, none known for its bolts.
+    fn check_joint_groups_packing(
+        method: String,
+        input: jgr::GroupInput,
+        tension: Vec<jgp::GroupPrying>,
+        packings: Vec<jgk::GroupPacking>,
+    ) -> Result<Vec<jgr::GroupResult>, String> {
+        ours(&method)?;
+        params::set(params::parse(&input.parameters)?);
+        let strengths: Vec<f64> = input.cases.iter().map(|c| c.strength).collect();
+        Ok(input
+            .groups
+            .iter()
+            .map(|g| {
+                let t = tension.iter().find(|t| t.id == g.id).map(prying_of);
+                let mut x = group_of(g);
+                x.packings = Some(match packings.iter().find(|k| k.id == g.id) {
+                    Some(k) if !k.packings.is_empty() => k.packings.clone(),
+                    _ => vec![None; g.bolts.len()],
+                });
+                let r = groups::check_group(&x, &strengths, t.as_ref());
+                result_of(g.id, r)
+            })
+            .collect())
+    }
+}
 use exports::ohl::plugin::joint_check_groups_tension as jgt;
 
 impl jgp::Guest for Sia263 {

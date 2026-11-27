@@ -373,6 +373,11 @@ pub fn bolt_solids(d: &JointDetails) -> Vec<BoltSolid> {
             let assumed = a.gauges.source == crate::Source::Assumed
                 || a.pitch.source == crate::Source::Assumed;
             for (index, (p, axis, grip)) in a.bolts_with_axes().enumerate() {
+                // (O49 stage 1c) A leg bolt a second plate shares: drawn
+                // once, as that plate's own (its grip through all four).
+                if crate::two_plates::shared_bolt(&j.plates, p, axis).is_some() {
+                    continue;
+                }
                 let me = crate::clash::ClashPart::Bolt {
                     member: a.member.clone(),
                     index,

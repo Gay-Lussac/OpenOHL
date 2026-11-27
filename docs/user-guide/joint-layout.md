@@ -223,15 +223,27 @@ forces come from the structure's own load cases (on the command line, a
 table with `--loads`; `--no-two-plates` leaves every end on one plate).
 Both plates, the packing and the bolts show in the 3D view, the Detail tab,
 the close-ups and the bill of materials; Joint details' sketch says the two
-shear planes. The second plate's own bolts are checked by the layout only
-(said NOT ON THE SAFE SIDE with the joint): lay the joints out again after
-the forces change. Built, in active development (not approved yet).
+shear planes. The second plate's own bolts are checked in Results' joint
+checks as a bolt group of their own (half the end's force, the packing's
+reduction of the code where it has one: SIA 263 6.2.2.5). Built, in active
+development (not approved yet).
 
-The second plate needs room between the end's steel and the first plate's
-own bolts onto the leg, for its own bolts and the code's distances: where
-the end stops close to the joint, it runs into those bolts and is not kept
-(the note says so). On the invented tower of the pictures, D1's steel stops
-260 mm from the work point.
+**Where its own bolts go** (2026-11-27): first nearer the joint than the
+end's steel; where the first plate's bolts onto the leg fall there, those
+bolts become the second plate's own (one bolt group through the leg, both
+plates and the packing, drawn once); where that cannot be, beside the
+end's bolts past its leg's toe. The note says which, and for an end left
+on one plate what was tried and why not. The second plate's own bolts are
+the joint's bolt size.
+
+![Lay out joints on the invented tower with D1's steel stopping 120 mm from the work point: the note says D1 at N2 is given a second plate G1b on the first plate's leg bolts (three bolts, one group through the leg, G1, the packing and G1b), 133 % to 67 %, no clash](../images/structure-tools/tool-lay-out-joints-two-plates-shared.png)
+
+**One bolt size per joint**: provisional bolts of an end without bolts take
+the joint's size where the joint's other ends have one; the joints whose
+bolts stay of several sizes are listed in the run's notes.
+
+On the invented tower of the first pictures, D1's steel stops 260 mm from
+the work point.
 
 ![The 3D view on D1's end after Lay out joints: D1 between the first plate G1 and the second plate G1b, the end's bolts through both, the second plate's own bolts nearer the joint](../images/structure-tools/two-plates-3d.png)
 

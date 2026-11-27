@@ -273,7 +273,7 @@ fn the_bolts_are_proposed_and_applied() {
         let w = h.state().sizing_window.as_ref().unwrap();
         let s = &w.result.as_ref().unwrap().sizing;
         let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
-        let b = bottom.bolts.as_ref().expect("bolts proposed");
+        let b = bottom.bolts.first().expect("bolts proposed");
         assert_eq!(b.from, "2 × 16 mm");
         b.pick.count
     };
@@ -308,7 +308,11 @@ fn the_bolts_are_proposed_and_applied() {
     {
         let w = h.state().sizing_window.as_ref().unwrap();
         let s = &w.result.as_ref().unwrap().sizing;
-        assert!(s.groups.iter().all(|g| g.bolts.is_none()), "{:?}", s.groups);
+        assert!(
+            s.groups.iter().all(|g| g.bolts.is_empty()),
+            "{:?}",
+            s.groups
+        );
         assert!(s.over_target.is_empty(), "{:?}", s.over_target);
     }
     h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
@@ -323,5 +327,62 @@ fn the_bolts_are_proposed_and_applied() {
     h.step();
     h.state_mut().file.as_mut().unwrap().undo();
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
+    std::fs::remove_dir_all(dir).ok();
+}
+
+/// O49 stage 1c (2026-11-27): a proposal per bolt size within a group. The
+/// truss's bottom chord bolted by 16 mm at AC and 20 mm at CE, all of 10 kN
+/// per shear plane: the Bolts column shows the group's two proposals, one
+/// line each. The window's picture (`OHL_RENDER_PNG`).
+#[test]
+fn the_bolts_are_proposed_per_size() {
+    let dir = std::env::temp_dir().join(format!(
+        "ohl-structure-sizing-bolt-sizes-{}",
+        std::process::id()
+    ));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::write(dir.join("Sections/angles.ohlsec"), LIBRARY).unwrap();
+    let path = dir.join("sizing-truss.ohls");
+    let text = TRUSS.replace(
+        "bolts = { diameter = \"16 mm\", count = 2 }",
+        "bolts = { diameter = \"16 mm\", count = 2, shear_capacity = \"10 kN\" }",
+    );
+    // CE's bolts of 20 mm (the second member of the bottom chord).
+    let at = text.find("id = \"CE\"").unwrap();
+    let text = format!(
+        "{}{}",
+        &text[..at],
+        text[at..].replacen("diameter = \"16 mm\"", "diameter = \"20 mm\"", 1)
+    );
+    std::fs::write(&path, text).unwrap();
+    let mut h = harness(&path);
+    h.state_mut().open_sizing_window();
+    h.run_steps(2);
+    h.get_all_by_label("Choose the members")
+        .last()
+        .unwrap()
+        .click();
+    h.run_steps(2);
+    wait_result(&mut h);
+    {
+        let w = h.state().sizing_window.as_ref().unwrap();
+        let s = &w.result.as_ref().unwrap().sizing;
+        let bottom = s.groups.iter().find(|g| g.group.name == "bottom").unwrap();
+        assert_eq!(bottom.bolts.len(), 2, "{:?}", bottom.bolts);
+    }
+    assert!(
+        h.query_all_by_label_contains("2 × 20 mm to ")
+            .next()
+            .is_some()
+    );
+    h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
+        1290.0, 890.0,
+    )));
+    crate::tool_window_tests::window_shot(
+        &mut h,
+        "Choose the members",
+        "member-sizing-bolts-per-size",
+    );
     std::fs::remove_dir_all(dir).ok();
 }

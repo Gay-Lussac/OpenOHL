@@ -275,8 +275,9 @@ pub mod joint_check_moments {
 pub const JOINT_CHECK_MOMENTS_EXPORT: &str = "ohl:plugin/joint-check-moments@0.1.0";
 
 // One binding for `joint-check-groups`, `joint-check-groups-tension`,
-// `joint-check-groups-prying`, `joint-check-bends` and (2026-11-25)
-// `joint-check-welds`, whose functions take the first's records
+// `joint-check-groups-prying`, `joint-check-bends`, (2026-11-25)
+// `joint-check-welds` and (2026-11-27) `joint-check-groups-packing`, whose
+// functions take the first's records
 // (2026-11-19): each export is looked up on its own
 // ([`joint_check_groups_guest`], [`joint_check_groups_tension_guest`],
 // [`joint_check_groups_prying_guest`], [`joint_check_bends_guest`],
@@ -357,6 +358,32 @@ pub mod joint_check_welds {
 /// Export name of the optional `joint-check-welds` interface of any
 /// plugin.
 pub const JOINT_CHECK_WELDS_EXPORT: &str = "ohl:plugin/joint-check-welds@0.1.0";
+
+/// The records of the `joint-check-groups-packing` interface (2026-11-27,
+/// roadmap O49 stage 1c): per group the packings in each bolt's grip, sent
+/// with the `joint-check-groups` and `joint-check-groups-prying` records.
+pub mod joint_check_groups_packing {
+    pub use super::joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_packing::GroupPacking;
+}
+
+/// Export name of the optional `joint-check-groups-packing` interface of
+/// any plugin.
+pub const JOINT_CHECK_GROUPS_PACKING_EXPORT: &str = "ohl:plugin/joint-check-groups-packing@0.1.0";
+
+/// The `joint-check-groups-packing` export of an instance, looked up
+/// alone.
+fn joint_check_groups_packing_guest<T: 'static>(
+    store: &mut wasmtime::Store<T>,
+    instance: &wasmtime::component::Instance,
+) -> wasmtime::Result<
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_packing::Guest,
+> {
+    let pre = instance.instance_pre(&*store);
+    joint_check_groups_bindings::exports::ohl::plugin::joint_check_groups_packing::GuestIndices::new(
+        &pre,
+    )?
+    .load(&mut *store, instance)
+}
 
 /// The `joint-check-welds` export of an instance, looked up alone.
 fn joint_check_welds_guest<T: 'static>(
@@ -2929,6 +2956,49 @@ impl WasmHost {
         let given = export
             .call_check_joint_groups_prying(&mut p.store, method, input, tension)
             .map_err(|e| classify(e, &p.manifest, "joint-check-groups-prying", p.limits))?
+            .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
+        check_part_results(
+            &name,
+            input.groups.iter().map(|x| x.id),
+            input.cases.len(),
+            given.iter().map(|r| {
+                (
+                    r.id,
+                    r.usages.iter().map(|u| (u.load_case, u.usage)).collect(),
+                )
+            }),
+        )?;
+        Ok(Some(given))
+    }
+
+    /// The joint bolt groups of `input` as
+    /// [`WasmHost::check_joint_groups_prying`] checks them, each bolt with
+    /// the packings in its grip (`packings`), through the plugin's
+    /// `joint-check-groups-packing` export (2026-11-27, roadmap O49 stage
+    /// 1c). None: the plugin has no such export (the caller then calls
+    /// [`WasmHost::check_joint_groups_prying`] and says, on each group with
+    /// a packing, that the packings were not sent). Errors as
+    /// [`WasmHost::check_joints`]'s.
+    pub fn check_joint_groups_packing(
+        &self,
+        dir: &Path,
+        method: &str,
+        input: &joint_check_groups::GroupInput,
+        tension: &[joint_check_groups_prying::GroupPrying],
+        packings: &[joint_check_groups_packing::GroupPacking],
+    ) -> Result<Option<Vec<joint_check_groups::GroupResult>>, PluginError> {
+        let Some((mut p, instance)) =
+            self.optional_export(dir, JOINT_CHECK_GROUPS_PACKING_EXPORT)?
+        else {
+            return Ok(None);
+        };
+        let export = joint_check_groups_packing_guest(&mut p.store, &instance)
+            .map_err(|e| classify(e, &p.manifest, "instantiation", p.limits))?;
+        let name = p.manifest.plugin.name.clone();
+        p.store.set_epoch_deadline(p.limits.deadline_ticks());
+        let given = export
+            .call_check_joint_groups_packing(&mut p.store, method, input, tension, packings)
+            .map_err(|e| classify(e, &p.manifest, "joint-check-groups-packing", p.limits))?
             .map_err(|e| PluginError::Runtime(format!("plugin {name}: {e}")))?;
         check_part_results(
             &name,

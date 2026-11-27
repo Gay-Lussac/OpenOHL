@@ -6225,6 +6225,8 @@ fn strip_of(
                 .or(by_class)
                 .or(s.bolt.clone())
                 .ok_or("no bolts, no preset for its class and no bolt picked")?;
+            // (O49 stage 1c) The joint's bolt size where it has one.
+            let pick = crate::bolt_sizes::joint_size(j, pick);
             (pick.clone(), Some(pick))
         }
     };

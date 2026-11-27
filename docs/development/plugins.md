@@ -1307,6 +1307,28 @@ further optional export carries them:
   SAFE SIDE: the weld's sides not sent: the plugin … has no
   joint-check-welds — …" ([theory](../theory/joint-plates.md#a-welds-sides-j7b)).
   Both bundled plugins have it.
+- `joint-check-groups-packing` (2026-11-27, roadmap O49 stage 1c, the
+  owner's answer of that day: a second plate's own bolts through a packing
+  checked as a bolt group of their own, a code's reduction for packings in
+  the plugin; `code.wit`, additive: found by its export name, its records
+  using `joint-check-groups`' `group-input` and `group-result` and
+  `joint-check-groups-prying`'s `group-prying`; the host binds it in the
+  world `joint-check-groups-prying-export`, looked up on its own):
+  `check-joint-groups-packing(method, group-input, list<group-prying>,
+  list<group-packing>) -> result<list<group-result>, string>`, the same
+  call as `check-joint-groups-prying` with, per group (`group-packing`:
+  `id`, `packings`), each bolt's total thickness of packings in its grip,
+  m (0: none; none: not known — the plugin says what it could not apply;
+  an empty list: not known for any bolt; a group left out: not known).
+  SIA 263 applies 6.2.2.5's β_p = 9 d/(8 d + 3 t_p) ≤ 1 above d/3; ASCE
+  10-97 has no rule (noted; a packing above d/3 said NOT ON THE SAFE SIDE).
+  Called by `ohl_structure_link` (`joint_groups::group_rows`, through
+  `ohl_member_check::joints::check_joint_groups_packing`, one call); **a
+  plugin without it**: called by `check-joint-groups-prying` as before,
+  and each group with a packing says "a … mm packing in its bolts' grip
+  not sent (the plugin has no joint-check-groups-packing export) …" NOT ON
+  THE SAFE SIDE ([theory](../theory/joint-groups.md#a-second-plates-own-bolts-packings-and-long-joints-o49-stage-1c)).
+  Both bundled plugins have it.
 - **Parameters** (the design-code plugins' mechanism: the user's
   parameter file, TOML, the plugin's template): the structure's
   parameter file for a plugin is `Plugins/<plugin>.toml` beside the

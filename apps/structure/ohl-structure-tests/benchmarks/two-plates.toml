@@ -89,3 +89,240 @@ expected.usage_one = { value = 0.75, abs_tol = 1e-6 }
 expected.usage_two = { value = 0.375, abs_tol = 1e-6 }
 expected.ratio = { value = 0.5, abs_tol = 1e-9 }
 expected.planes_two = { value = 2.0, abs_tol = 0.0 }
+
+[[case]]
+id = "structsize-003"
+title = "A second plate's own bolts through its packing: a bolt group of their own in the joint checks, SIA 263 6.2.2.5 for the packing"
+calculation = "structure.paired_bolts"
+reference = "By hand (O49 stage 1c): structsize-002's structure with D1's steel stopping 150 mm from N2 (its two bolts at 174 and 222 mm on a 45 mm gauge) and the plates' outlines given (G1 360 × 110 mm, G1b 260 × 70 mm, room for the code's distances). D1's 30 kN tension at N2; G1b, held by its own two 16 mm bolts through an 8 mm packing into G1, takes half of it (the split of the per-plane bolt shear rule, L33): 15 kN along D1's line, which runs through its bolts' centroid (both at 60 and 100 mm on D1's 45 mm gauge line), so 7.5 kN on each bolt, no moment. ASCE 10-97 4.3.2 as the bundled plugin takes it: the bolt's 20 kN per plane, one plane: 7.5/20 = 0.375 (no packing rule found in ASCE 10-97). SIA 263: Table 16 with the bolt's given capacity, 20/γ_M2 = 20/1.25 = 16 kN per plane; 6.2.2.5, t_p = 8 mm above d/3 = 5.33 mm: β_p = 9 × 16/(8 × 16 + 3 × 8) = 144/152 = 0.947368, 16 × 0.947368 = 15.158 kN: 7.5/15.158 = 0.494792."
+notes = "force_*: the most loaded of G1b's own bolts in the run of the structure's own load (kN); usage_*: the group's usage by the bundled plugin (bolt shear governs)."
+max_seconds = 120.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+name = "Two plates angles (invented)"
+default_material = "s355"
+[[material]]
+id = "s355"
+name = "Steel (invented)"
+elasticity = "210 GPa"
+shear_modulus = "81 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+ultimate = "510 MPa"
+[[section]]
+id = "L80x8"
+shape = "equal_angle"
+h = "80 mm"
+t = "8 mm"
+r = "9 mm"
+'''
+inputs.model = '''
+format = "ohl-structure"
+version = 31
+id = "two-plates"
+name = "Two plates (invented)"
+kind = "lattice"
+joint_details = true
+[analysis]
+self_weight = false
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "D1"
+nodes = ["N1", "N2"]
+section = "L80x8"
+design = { class = "bracing", connected_leg = "long", bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_capacity = "20 kN" } }
+[[load]]
+node = "N2"
+force = ["30 kN", "0 kN", "0 kN"]
+[[connection]]
+member = "D1"
+joint = "N1"
+leg = "long"
+bolts = { count = 8, diameter = "16 mm" }
+[[connection]]
+member = "D1"
+joint = "N2"
+onto = "G1"
+leg = "long"
+cut = "150 mm"
+gauges = ["45 mm"]
+bolts = { count = 2, diameter = "16 mm" }
+[[plate]]
+id = "G1"
+joint = "N2"
+thickness = "10 mm"
+outline = [["1.70 m", "0.022765 m", "-0.03 m"], ["2.06 m", "0.022765 m", "-0.03 m"], ["2.06 m", "0.022765 m", "0.08 m"], ["1.70 m", "0.022765 m", "0.08 m"]]
+[[plate]]
+id = "G1b"
+joint = "N2"
+thickness = "10 mm"
+outline = [["1.74 m", "0.014765 m", "-0.01 m"], ["2.00 m", "0.014765 m", "-0.01 m"], ["2.00 m", "0.014765 m", "0.06 m"], ["1.74 m", "0.014765 m", "0.06 m"]]
+[plate.paired]
+plate = "G1"
+member = "D1"
+packing = "8 mm"
+bolts = { count = 2, diameter = "16 mm" }
+bolt_points = [["0.06 m", "0.045 m"], ["0.10 m", "0.045 m"]]
+'''
+expected.force_asce10 = { value = 7.5, abs_tol = 1e-6 }
+expected.usage_asce10 = { value = 0.375, abs_tol = 1e-6 }
+expected.force_sia263 = { value = 7.5, abs_tol = 1e-6 }
+expected.usage_sia263 = { value = 0.494792, abs_tol = 1e-6 }
+
+[[case]]
+id = "structsize-004"
+title = "SIA 263 6.2.2.2: eight bolts in one line make a long joint, the bolt shear reduced by β_Lf"
+calculation = "structure.long_joint"
+reference = "By hand (O49 stage 1c): D1's ends have eight 16 mm bolts in one line (one hole in the section) at a pitch of 50 mm: L_j = 7 × 50 = 350 mm above 15 d = 240 mm; SIA 263 6.2.2.2, Figure 25: β_Lf = 1 − (350 − 240)/(200 × 16) = 0.965625 (0.75 ≤ β_Lf ≤ 1). Table 16 with the bolt's given capacity: 20/γ_M2 = 16 kN per plane, one plane: 8 × 16 × 0.965625 = 123.6 kN. Bearing (76) with e_1 = p_1 − d_0/2 = 41.25 mm (p_1 < e_1 + d_0/2 for the inner bolts, taken for all): 8 × 0.85 × 41.25/17.5 × 510 × 16 × 8 /1.25 = 837 kN; the net section (39) 0.9 × 510 × (1230 − 17.5 × 8)/1.25 = about 400 kN; 6.2.4.4 and the gross section above too: the bolt shear governs."
+notes = "capacity: D1's tension capacity by the bundled SIA 263 plugin (kN), level 3 (its design data)."
+max_seconds = 60.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+name = "Long joint angles (invented)"
+default_material = "s355"
+[[material]]
+id = "s355"
+name = "Steel (invented)"
+elasticity = "210 GPa"
+shear_modulus = "81 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+ultimate = "510 MPa"
+[[section]]
+id = "L80x8"
+shape = "equal_angle"
+h = "80 mm"
+t = "8 mm"
+r = "9 mm"
+'''
+inputs.model = '''
+format = "ohl-structure"
+version = 31
+id = "long-joint"
+name = "Long joint (invented)"
+kind = "lattice"
+[analysis]
+self_weight = false
+capacity = "sia263-2013"
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = ["y", "z"]
+[[member]]
+id = "D1"
+nodes = ["N1", "N2"]
+section = "L80x8"
+design = { class = "bracing", connected_leg = "long", end_distance = "30 mm", edge_distance = "40 mm", spacing = "50 mm", bolts = { diameter = "16 mm", hole = "17.5 mm", count = 8, holes = 1, shear_capacity = "20 kN" } }
+[[load]]
+node = "N2"
+force = ["30 kN", "0 kN", "0 kN"]
+'''
+expected.capacity = { value = 123.6, abs_tol = 1e-6 }
+
+[[case]]
+id = "structsize-005"
+title = "A second plate on the first plate's leg bolts: one bolt group through four plies, SIA 263 6.2.2.5 on the leg bolts"
+calculation = "structure.shared_bolts"
+reference = "By hand (O49 stage 1c, L33's room): G1 is held by L1's two 16 mm bolts onto it; G1b's own bolts are those bolts (their points written in D1's leg's frame from L1's), so they pass through L1's leg (8 mm), G1 (10 mm), the 8 mm packing and G1b (10 mm): shared = 1; their grip on the nut's side G1 and L1's leg, 10 + 8 = 18 mm; no clash more than without G1b. G1's holding group (its bolts onto L1) carries the same forces with and without G1b (G1 keeps D1's whole force: L33's split); with the 8 mm packing in their grip their SIA 263 shear resistance is β_p = 144/152 = 0.947368 of it (6.2.2.5), the bolt shear governing: the usage ratio 1/0.947368 = 1.055556."
+notes = "shared: the joint details find G1b's own bolts to be the first plate's leg bolts (1); grip_nut_side (mm); clashes: at N2 with G1b less without; ratio: G1's holding group's usage with G1b over without (SIA 263 plugin, bolt shear governing)."
+max_seconds = 180.0
+inputs.sections = '''
+format = "ohl-sections"
+version = 1
+name = "Two plates angles (invented)"
+default_material = "s355"
+[[material]]
+id = "s355"
+name = "Steel (invented)"
+elasticity = "210 GPa"
+shear_modulus = "81 GPa"
+density = "7850 kg/m3"
+yield = "355 MPa"
+ultimate = "510 MPa"
+[[section]]
+id = "L80x8"
+shape = "equal_angle"
+h = "80 mm"
+t = "8 mm"
+r = "9 mm"
+'''
+inputs.model = '''
+format = "ohl-structure"
+version = 31
+id = "shared-bolts"
+name = "Shared bolts (invented)"
+kind = "lattice"
+joint_details = true
+[analysis]
+self_weight = false
+capacity = "sia263-2013"
+[[node]]
+id = "N1"
+point = ["0 m", "0 m", "0 m"]
+support = "fixed"
+[[node]]
+id = "N2"
+point = ["2 m", "0 m", "0 m"]
+support = ["y"]
+[[node]]
+id = "N3"
+point = ["2 m", "0 m", "2 m"]
+support = "fixed"
+[[member]]
+id = "D1"
+nodes = ["N1", "N2"]
+section = "L80x8"
+design = { class = "bracing", connected_leg = "long", bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_capacity = "20 kN" } }
+[[member]]
+id = "L1"
+nodes = ["N2", "N3"]
+section = "L80x8"
+design = { class = "leg", connected_leg = "long", bolts = { diameter = "16 mm", hole = "17.5 mm", count = 2, shear_capacity = "20 kN" } }
+[[load]]
+node = "N2"
+force = ["30 kN", "0 kN", "0 kN"]
+[[connection]]
+member = "D1"
+joint = "N1"
+leg = "long"
+bolts = { count = 8, diameter = "16 mm" }
+[[connection]]
+member = "D1"
+joint = "N2"
+onto = "G1"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm" }
+[[connection]]
+member = "L1"
+joint = "N3"
+leg = "long"
+bolts = { count = 8, diameter = "16 mm" }
+[[connection]]
+member = "L1"
+joint = "N2"
+onto = "G1"
+leg = "long"
+bolts = { count = 2, diameter = "16 mm" }
+[[plate]]
+id = "G1"
+joint = "N2"
+thickness = "10 mm"
+held_by = "L1"
+'''
+expected.shared = { value = 1.0, abs_tol = 0.0 }
+expected.grip_nut_side = { value = 18.0, abs_tol = 1e-6 }
+expected.clashes = { value = 0.0, abs_tol = 0.0 }
+expected.ratio = { value = 1.055556, abs_tol = 1e-6 }
