@@ -1001,12 +1001,14 @@ fn full_run(
     Ok((run, t))
 }
 
+/// Per member id its largest usage (none: not checked), the case and
+/// what governs.
+type Usages = HashMap<String, (Option<f64>, String, String)>;
+
 /// Per member id its largest usage in `run` over the cases, with the case
 /// and what governs; a case that did not solve: refused.
-fn usages(
-    run: &crate::StructureRun,
-) -> Result<HashMap<String, (Option<f64>, String, String)>, String> {
-    let mut out: HashMap<String, (Option<f64>, String, String)> = HashMap::new();
+fn usages(run: &crate::StructureRun) -> Result<Usages, String> {
+    let mut out: Usages = HashMap::new();
     for c in &run.cases {
         let r = match &c.fe {
             Some(Ok(r)) => r,
@@ -1035,10 +1037,7 @@ fn usages(
 
 /// The group's largest usage, its case and what governs (none: a member
 /// without a usage).
-fn group_usage(
-    g: &Group,
-    u: &HashMap<String, (Option<f64>, String, String)>,
-) -> (Option<f64>, String, String) {
+fn group_usage(g: &Group, u: &Usages) -> (Option<f64>, String, String) {
     let mut best: (Option<f64>, String, String) = (Some(0.0), String::new(), String::new());
     for id in &g.members {
         match u.get(id) {
@@ -1132,7 +1131,7 @@ pub fn size_with(
         .iter()
         .enumerate()
         .map(|(k, g)| {
-            if s.keep.iter().any(|x| *x == g.name) {
+            if s.keep.contains(&g.name) {
                 not_sized[k] = Some("left as it is (asked)".into());
                 return None;
             }
@@ -1481,7 +1480,7 @@ pub fn size_with(
         })
         .collect();
     over.sort_by(|a, b| b.usage.total_cmp(&a.usage).then(a.member.cmp(&b.member)));
-    let worst = |u: &HashMap<String, (Option<f64>, String, String)>| {
+    let worst = |u: &Usages| {
         u.values()
             .filter_map(|x| x.0)
             .fold(None, |w: Option<f64>, x| Some(w.map_or(x, |w| w.max(x))))
@@ -1635,7 +1634,7 @@ pub fn apply(text: &str, sizing: &Sizing, accepted: &[String]) -> Result<String,
         .parse()
         .map_err(|e| format!("the structure file does not read: {e}"))?;
     for c in &sizing.groups {
-        if !c.changed() || !accepted.iter().any(|a| *a == c.group.name) {
+        if !c.changed() || !accepted.contains(&c.group.name) {
             continue;
         }
         for id in &c.group.members {

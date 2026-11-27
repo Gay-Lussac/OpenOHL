@@ -336,7 +336,7 @@ fn the_lightest_passing_section_per_group() {
                     }],
                     ..s.clone()
                 },
-                &[g.group.name.clone()],
+                std::slice::from_ref(&g.group.name),
             )
             .unwrap();
             let u = usage_of(&lighter);
@@ -511,14 +511,11 @@ fn joint_fit_by_hand() {
 /// A section not in the library: its group left as it is, said.
 #[test]
 fn a_section_outside_the_library_is_left() {
-    let own = TRUSS
-        .replace("group = \"top\"", "group = \"top\"")
-        .replacen(
-            "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"L80x8\"",
-            "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"own\"",
-            1,
-        )
-        + "\n[[section]]\nid = \"own\"\narea = \"10 cm2\"\niy = \"50 cm4\"\niz = \"50 cm4\"\ni_min = \"20 cm4\"\nmaterial = \"m\"\n[[material]]\nid = \"m\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n";
+    let own = TRUSS.replacen(
+        "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"L80x8\"",
+        "id = \"BD\"\nnodes = [\"B\", \"D\"]\nsection = \"own\"",
+        1,
+    ) + "\n[[section]]\nid = \"own\"\narea = \"10 cm2\"\niy = \"50 cm4\"\niz = \"50 cm4\"\ni_min = \"20 cm4\"\nmaterial = \"m\"\n[[material]]\nid = \"m\"\nelasticity = \"210 GPa\"\nyield = \"355 MPa\"\n";
     let s = size(&own, &Settings::default());
     let top = s.groups.iter().find(|g| g.group.name == "top").unwrap();
     assert!(top.not_sized && !top.changed());

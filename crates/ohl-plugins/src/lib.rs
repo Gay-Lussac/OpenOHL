@@ -594,10 +594,16 @@ fn check_limits_output(
         input.members.iter().map(|m| m.id.as_str()).collect();
     for l in given {
         if !sent.contains(l.member.as_str()) {
-            return Err(bad(format!("a limit for member \"{}\", not sent", l.member)));
+            return Err(bad(format!(
+                "a limit for member \"{}\", not sent",
+                l.member
+            )));
         }
         if l.name.trim().is_empty() {
-            return Err(bad(format!("a limit without a name on member \"{}\"", l.member)));
+            return Err(bad(format!(
+                "a limit without a name on member \"{}\"",
+                l.member
+            )));
         }
         if !l.value.is_finite() {
             return Err(bad(format!(
