@@ -1416,8 +1416,9 @@ fn a_chord_turn_is_offered_with_a_tick_and_applied_with_the_run() {
     let before = h.state().file.as_ref().unwrap().text();
     h.state_mut()
         .open_layout_window(crate::layout_window::Scope::Tower);
-    wait_preview(&mut h);
-    h.run_steps(4);
+    // (The final preview: the first is worked out again once the joints'
+    // similar ones are known — a click before that is lost.)
+    wait_apply(&mut h);
     {
         let w = h.state().layout_window.as_ref().unwrap();
         let p = w.preview.as_ref().unwrap();
@@ -1446,6 +1447,11 @@ fn a_chord_turn_is_offered_with_a_tick_and_applied_with_the_run() {
             p.effects
         );
     }
+    // (Below the window's fold since the window grew: scrolled into view, the
+    // scroll's animation given its frames.)
+    h.get_by_label_contains("Chord (from the ends at its joints): turn")
+        .scroll_to_me();
+    h.run_steps(10);
     h.get_by_label_contains("Chord (from the ends at its joints): turn")
         .click();
     let mut done = false;
