@@ -4648,6 +4648,7 @@ as today.
 | Plates may stop short of the work point | yes | L2's follow-up (a) |
 | The picked bolt's pattern | 2 in one line | the provisional bolts of an end without bolts or a class preset |
 | Per member class | none | the picked bolt's pattern per class (as the connection presets are); per joint kind later |
+| Plate thickness (L29) | the thickest leg on it | a least thickness and the thicknesses the shop makes: the thinnest listed at least as thick as the thickest leg and the least, never thinner ([L29](#the-practice-measured-its-plate-thicknesses-and-its-editor-l29)) |
 
 **On the safe side.** A practice only chooses among what the engine does
 already: it turns forms off, orders a tie and changes the program's
@@ -4690,12 +4691,13 @@ practice in force, where it comes from, why one given is not used, and
 each value with where it comes from (this file, the code plugin, the
 default) and its effect. A run records the plugin's answer in the layout
 record; an edit's follow and the estimated eccentricities lay the file's
-table over it, as the run did. **Expected cost**: none measurable —
-reading a practice is microseconds; a form not allowed makes a run a
-little faster, never slower. The effect of each value on the private
-real towers is not measured yet (each value's measured effect is the
-owner's sixth recommendation: next, with the bundled `asce10` built
-fresh, L23's finding).
+table over it, as the run did. **Expected cost** (as written when L24
+was built): none measurable — reading a practice is microseconds; a form
+not allowed makes a run a little faster, never slower. **Measured in
+[L29](#the-practice-measured-its-plate-thicknesses-and-its-editor-l29)
+otherwise**: reading stays microseconds, but every end a stricter value
+leaves unplaced by the first try goes through the later, costlier passes
+— a form not allowed made a run again about five times as long.
 
 **Tested** (`practice_tests.rs`, `ohl-structure-tests/tests/detailing_practice.rs`):
 the default practice leaves the engine's settings exactly as they were
@@ -4709,6 +4711,135 @@ leaves it for a hand detail, said; an axis offset limit of 0 leaves the
 30° diagonal by hand; three bolts per end, four for the bracing class;
 every refusal, in the run's notes too; the record's plugin answer; the
 example plugin's practice through the real host.
+
+## The practice measured, its plate thicknesses and its editor (L29)
+
+(The owner, 2026-11-25: *"use recommendations for l23 to l25"* — L24's
+questions 2 to 5 taken as recommended; built 2026-11-26, in active
+development, not approved yet;
+[user guide](../user-guide/detailing-practice.md),
+[decisions](../development/decisions.md#2026-11-26-joint-layout-the-detailing-practice-measured-its-plate-thicknesses-and-its-editor-o44-l29).)
+
+**The plate thickness rules.** Until L29 every plate the layout makes was
+as thick as the thickest leg bolted on it. A practice may now give a
+**least thickness** and **the thicknesses the shop makes** (its stock):
+a plate takes the thinnest listed at least as thick as the thickest leg
+on it and the least (no list: the larger of the two). **Thicker only**:
+never thinner than the thickest leg on it, whatever is given; without a
+rule exactly as before. Where no listed thickness is that thick, the
+plate is not made and its ends are left for a hand detail, with why. A
+plate between a built-up member's angles is as thick as the gap (L15):
+the least holds for it (a thinner gap: by hand), the list does not. The
+rule is applied wherever the plan makes a plate (the flat plate, the
+bent plate round the heel and by a few degrees, the plate welded in its
+member's own plane takes the flat plate's) and wherever it estimates one
+before choosing (the room for the bend, the nuts behind a plate, the
+seam's keep), so that the plan sees the plate as the joint details will
+draw it. Not changed: the L5 move limit (the leg's thickness, the
+smaller, on the safe side) and step 4's "a plate's thickness farther
+out" (the leg's, the stricter).
+
+**NOT ON THE SAFE SIDE** where a plate is made thicker than the thickest
+leg on it — said in Lay out joints, in each such joint's notes (the plate,
+its thickness, the thickest leg, how much farther out its members sit)
+and in the run's notes: *what is left out* — the analysis does not take an
+end's seat out of the flange on a gusset plate (one plate's thickness, as
+for every plate, O45 D), and a thicker plate puts its members' axes
+farther out by the extra thickness; *why it can be unsafe* — that offset
+is a moment at the member's end no member check sees, so its usage can be
+too low; *what makes it safe* — the member checks' rules for an angle
+bolted by one leg take its end's eccentricity as far as the code says, a
+list close to the legs' thicknesses keeps the extra small (each plate
+says by how much), and an eccentricity written by hand at such an end is
+taken by the analysis. A thicker plate is stronger in its own checks
+(bearing, sections, block shear), and the bend checks take its radius
+with it.
+
+**Lay out joints' own settings** stay the user's choice for each run
+(question 4): the practice gives the window's starting values. Where a
+run's gap is smaller, its pull-back longer or its shift larger than the
+practice in force (or its gap below the 2 mm the clash check sees), the
+window says so under its settings and the run's notes say it too; the
+practice is unchanged, the run's values kept in the layout record as
+before. The program's default is no shop's practice: nothing is said
+without a practice given.
+
+**The editor** (question 5): Design › Detailing practice… (or *Edit…*
+under Lay out joints' practice) — a tool window in the tool-window
+pattern (its own guide page, numbered sections, every field's effect and
+time behind its (?), Escape cancels). It writes the file's own
+`[layout_practice]` with only the values that differ from what it is laid
+over (the code plugin's practice, else the default), one undo step, the
+file raised to version 27, or 30 with a thickness rule. Every value is
+checked as the run checks it; Save waits while one is refused.
+
+**Measured** (question 2; 2026-11-26/27, kept privately; **three of the
+eight private towers** L26 and L27 measure — the three quickest, a small
+dead-end tower and two tension towers, 1 996 of the 6 852
+joints: the machine was shared with other measuring runs, and the eight
+would have taken days; the other five are still to be measured; the
+bundled ASCE 10-97 plugin built fresh and checked to load before every
+run; each value changed alone, given as the file's own
+`[layout_practice]`, in **a run again on the laid-out towers** — L27's
+result, the turns weighed and recorded by the first run kept — against
+the same run again with no practice: 1 110 joints whole, 4 535 ends
+laid out, 2 555 plates, 604 s of CPU time, about 4 000 kg of plate
+steel). **Time is CPU time** (two threads), not wall time, which the
+shared machine made meaningless; the values that change no result took
++4 to +12 %, so a change within about 15 % reads *within noise*. Joints
+better / worse: more ends laid out (or as many on fewer plates) / fewer
+(or more plates). Plate steel: the plates' outlines × their thicknesses.
+
+| Value changed (default) | joints whole | ends laid out | plates | joints better / worse | CPU time | plates made thicker | plate steel |
+|---|---|---|---|---|---|---|---|
+| Fabrication: bend not allowed (all allowed) | −16 | −65 | −143 | 67 / 85 | +371 % | — | −5 % |
+| Fabrication: welded not allowed (all allowed) | −8 | −134 | −241 | 26 / 103 | +397 % | — | −1 % |
+| Fabrication order: welded before bend (bend first) | 0 | 0 | 0 | 0 / 0 | within noise | — | 0 |
+| Faces of a flange: the later class first (diagonal inner first) | +1 | +2 | −6 | 9 / 0 | within noise | — | 0 |
+| Members on either side of a flange: no (yes) | −9 | −25 | −17 | 16 / 26 | within noise | — | +1 % |
+| Both faces of one plate: no (yes) | 0 | 0 | +78 | 0 / 53 | within noise | — | +1 % |
+| Gap 20 mm (10 mm) | −17 | −51 | +83 | 55 / 162 | +341 % | — | +9 % |
+| Pull-back 150 mm (300 mm) | −191 | −758 | −689 | 65 / 441 | +562 % | — | −39 % |
+| Shift 15 mm (30 mm) | 0 | +20 | +8 | 20 / 0 | within noise | — | +2 % |
+| Flatness 1° (2°) | −82 | −161 | +211 | 31 / 266 | +533 % | — | −4 % |
+| Small bend at most 10° (20°) | 0 | 0 | 0 | 0 / 0 | within noise | — | 0 |
+| Welded plate's axis offset at most 20 mm (40 mm) | −8 | −17 | −23 | 13 / 52 | +372 % | — | +3 % |
+| Bend's inside radius 3 × thickness (2 ×) | +14 | +14 | −13 | 25 / 12 | within noise | — | 0 |
+| Plate between angles, least gap 1.0 × leg (0.5 ×) | −26 | −54 | −26 | 2 / 30 | +160 % | — | 0 |
+| Plates may stop short: no (yes) | −50 | −224 | −191 | 50 / 218 | +398 % | — | −11 % |
+| Picked bolt: 3 in one line (2) | 0 | −8 | −4 | 0 / 8 | within noise | — | 0 |
+| Bracing class: 3 bolts (none) | 0 | −8 | −4 | 0 / 8 | within noise | — | 0 |
+| Least plate thickness 6 mm (none) | −37 | −98 | −72 | 24 / 88 | +334 % | 1 408 | +6 % |
+| Plate thicknesses 6, 8, 10, 12, 15, 20, 25 mm (none) | +8 | +1 | −17 | 30 / 35 | +379 % | 1 704 | +10 % |
+| Least 8 mm and that list (none) | −49 | −106 | −89 | 49 / 111 | +412 % | 2 032 | +25 % |
+
+**What it shows.** (1) **A stricter value costs time as well as
+joints**: every end it leaves unplaced by the first try goes through the
+later, costlier passes (the pull-backs, the shifts, the weighed
+members), so a form not allowed made the run again about five times as
+long, not a little faster as L24 expected; the time is a run again's —
+there the joints a value does not change are only confirmed — so in a
+first run, which lays out every joint anyway, the same value's share of
+the time is smaller (not measured). (2) The largest effects on the
+joints: a shorter pull-back, a stricter flatness, plates not stopping
+short, a larger gap. (3) No effect on these towers: welded before bend
+in the order, the small bend's limit at 10°. (4) Two values did better
+than the default: a smaller shift (20 ends more, none worse — why is not
+looked into yet, probably the smaller step finding places the larger one
+passes over; it also lowers
+the estimated eccentricities' upper bound) and a larger bend radius (14
+joints more whole, 25 better, 12 worse). Not changed for that: the
+defaults are the layout as it was (L24), and a practice is the shop's;
+both are offered to the owner. (5) **The plate thickness rules** make
+many plates thicker — with a 6 mm least, 1 408 of the 2 555 (on the small
+tower 316 of them, with no change in time; the rest, and the time, on
+the two larger) — and leave a few more joints for a hand
+detail where the thicker plate runs into something; a list close to the
+legs' thicknesses (6 to 25 mm) changes almost nothing in the joints (8
+whole more, 35 worse, 30 better) but makes 1 704 plates thicker and adds
+10 % of plate steel. Each thicker plate is said NOT ON THE SAFE SIDE
+(above). Each field's (?) in the editor and in Lay out joints says its
+row of this table.
 
 ## Measured (J1 and J2, 2026-11-19)
 

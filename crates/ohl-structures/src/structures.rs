@@ -317,8 +317,12 @@ pub const STRUCTURE_FILE_FORMAT: &str = "ohl-structure";
 /// only when a weld gives them. Version 29 (2026-11-26, the automatic joint
 /// layout's L31) adds a joint's review tick (a joint's `reviewed`:
 /// [`TypeNode::reviewed`], [`REVIEWED_VERSION`]); a file is written at 29
-/// only when a joint is ticked.
-pub const STRUCTURE_FILE_VERSION: u32 = 29;
+/// only when a joint is ticked. Version 30 (2026-11-26, the automatic joint
+/// layout's L29) adds the detailing practice's plate thickness rules
+/// (`[layout_practice.plates]` `least_thickness` and `thicknesses`:
+/// [`LAYOUT_PRACTICE_THICKNESS_VERSION`]); a file is written at 30 only
+/// when its practice gives one.
+pub const STRUCTURE_FILE_VERSION: u32 = 30;
 
 /// The structure file version of a joint's review tick (`reviewed` on a
 /// `[[node]]`, O44 L31, 2026-11-26).
@@ -327,6 +331,12 @@ pub const REVIEWED_VERSION: u32 = 29;
 /// The structure file version of the joint layout's detailing practice
 /// (`[layout_practice]`, O44 L24, 2026-11-25).
 pub const LAYOUT_PRACTICE_VERSION: u32 = 27;
+
+/// The structure file version of the detailing practice's plate thickness
+/// rules (`[layout_practice.plates]` `least_thickness`, `thicknesses`;
+/// O44 L29, 2026-11-26). An older program refuses such a file (rather than
+/// laying it out without the rules).
+pub const LAYOUT_PRACTICE_THICKNESS_VERSION: u32 = 30;
 
 /// The structure file version of the bolt grades (`[[bolt_grade]]`, a
 /// member's `bolt_grade`; owner 2026-11-19).

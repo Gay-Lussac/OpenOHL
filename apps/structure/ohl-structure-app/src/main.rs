@@ -62,6 +62,7 @@ mod orient_window;
 mod plate_outline_ui;
 mod plugins_ui;
 mod pole_panel;
+mod practice_window;
 mod quantities_panel;
 mod results_tab;
 mod review_window;
@@ -125,6 +126,8 @@ mod placed_tests;
 mod pole_extension_ui_tests;
 #[cfg(test)]
 mod post_ui_tests;
+#[cfg(test)]
+mod practice_ui_tests;
 #[cfg(test)]
 mod quantities_ui_tests;
 #[cfg(test)]

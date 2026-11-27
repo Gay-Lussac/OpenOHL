@@ -59,6 +59,11 @@ fn every_tool_has_its_section() {
         ohl_ui::tool_window::has_heading(&read(page), a),
         "{page}: {a}"
     );
+    let (page, a) = crate::practice_window::PRACTICE_PAGE;
+    assert!(
+        ohl_ui::tool_window::has_heading(&read(page), a),
+        "{page}: {a}"
+    );
     let (page, a) = crate::review_window::REVIEW_PAGE;
     assert!(
         ohl_ui::tool_window::has_heading(&read(page), a),

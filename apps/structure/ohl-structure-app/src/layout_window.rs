@@ -938,6 +938,7 @@ impl StructureApp {
         let mut apply = false;
         let mut cancel = false;
         let mut usage_asked = false;
+        let mut practice_asked = false;
         let mut in_line: Option<Vec<ohl_structure_link::InLine>> = None;
         let mut leg_places: Option<LegPlaces> = None;
         let groups: Vec<String> = self
@@ -1153,6 +1154,28 @@ impl StructureApp {
                         });
                         ui.end_row();
                     });
+                // (L29, the owner's L24 question 4) The settings stay the
+                // user's choice for the run; where they go beyond the
+                // practice given, said (always visible).
+                if let Some(p) = &w.practice {
+                    let beyond = p.practice.beyond(
+                        w.gap_mm / 1000.0,
+                        w.pull_mm / 1000.0,
+                        w.shift_mm / 1000.0,
+                    );
+                    if !beyond.is_empty() {
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "Beyond the detailing practice ({}): {}. Your choice for this \
+                                 run — kept in the layout record and said in the run's notes; \
+                                 the practice is unchanged.",
+                                p.source.label(),
+                                beyond.join("; ")
+                            ))
+                            .color(ui.visuals().warn_fg_color),
+                        );
+                    }
+                }
                 ui.checkbox(&mut w.replace, "Replace values given by hand")
                     .on_hover_text(
                         "Off: a cut, shift, roll or what a member bolts onto given by hand is \
@@ -1202,7 +1225,7 @@ impl StructureApp {
                 // (L24) The detailing practice in force, below the preview (its
                 // settings above stay where they were).
                 ui.separator();
-                layout_practice_ui(ui, &mut w);
+                practice_asked = layout_practice_ui(ui, &mut w);
                 });
                 let ready = w
                     .preview
@@ -1228,6 +1251,10 @@ impl StructureApp {
             });
         if usage_asked {
             self.start_usage(&mut w, ctx);
+        }
+        // (L29) The practice's editor, from its section below the preview.
+        if practice_asked {
+            self.open_practice_window();
         }
         // J9 (D15): pieces in line confirmed one part, one undo step; the
         // preview is worked out again on the file as edited.
@@ -1480,8 +1507,8 @@ impl StructureApp {
 /// why one given is not used, what is said with it, and its values
 /// (read-only, each with its effect on the results and its time); the
 /// practice's gap, pull-back and shift taken into the settings above on
-/// request.
-fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
+/// request. True: its editor asked for (O44 L29, *Edit…*).
+fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) -> bool {
     let source = w
         .practice
         .as_ref()
@@ -1508,7 +1535,17 @@ fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
     } else {
         format!(" — \"{}\"", practice.name)
     };
-    ui.label(egui::RichText::new(format!("From {source}{name}")).small());
+    let mut asked = false;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(format!("From {source}{name}")).small());
+        asked = ui
+            .small_button("Edit…")
+            .on_hover_text(
+                "Opens Detailing practice: this structure file's own practice, edited over the \
+                 code plugin's or the default (Design › Detailing practice…)",
+            )
+            .clicked();
+    });
     if let Some(n) = &w.practice_note {
         crate::app::error_label(ui, egui::RichText::new(n.as_str()).small());
     }
@@ -1557,6 +1594,7 @@ fn layout_practice_ui(ui: &mut egui::Ui, w: &mut LayoutWindow) {
                 (w.gap_mm, w.pull_mm, w.shift_mm) = start;
             }
         });
+    asked
 }
 
 /// The numbers of a preview.

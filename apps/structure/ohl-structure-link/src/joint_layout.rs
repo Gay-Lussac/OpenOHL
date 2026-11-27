@@ -501,6 +501,16 @@ pub struct LayoutSettings {
     /// O44 L24: why the detailing practice given was refused (none: not
     /// refused) — the default used, said in the run's notes.
     pub practice_refused: Option<String>,
+    /// O44 L29 (the practice's thickness rules): the least thickness of a
+    /// plate the layout makes, m (0: none — as thick as the thickest leg on
+    /// it, as before); a plate is never made thinner than the thickest leg
+    /// on it ([`LayoutSettings::plate_thickness`]).
+    pub plate_least: f64,
+    /// O44 L29: the plate thicknesses the shop makes, m, ascending (empty:
+    /// any — the thickness worked out, as before): a plate takes the
+    /// thinnest of them at least as thick as the thickest leg on it and the
+    /// least; none that thick, its ends left for a hand detail, said.
+    pub plate_thicknesses: Vec<f64>,
 }
 
 /// The least gap between a built-up member's angles a plate between them
@@ -571,6 +581,8 @@ impl Default for LayoutSettings {
             weld_before_bend: false,
             class_bolts: BTreeMap::new(),
             practice_refused: None,
+            plate_least: 0.0,
+            plate_thicknesses: Vec::new(),
         }
     }
 }
@@ -1232,6 +1244,11 @@ fn bent_over(
         .iter()
         .map(|p| strips[p.k].own_t)
         .fold(into.map_or(0.0, |i| plates[i].thickness), f64::max);
+    // (L29) The practice's thickness rules: thicker only.
+    let tp = match s.plate_thickness(tp) {
+        Ok(t) => t,
+        Err(e) => return Err(group.iter().map(|p| (p.k, why(p.k, &e))).collect()),
+    };
     let r = bend_radius_by(tp, s.bend_radius_ratio);
     // (J2b fix) The member it bolts onto as it will be drawn: where its own
     // end is laid out in this plan, moved across by its move and lifted onto
@@ -1764,7 +1781,8 @@ fn plate_holds(
     };
     // (A seam: on the flat plate's side of it — the run cuts the plate
     // there —, its plate's thickness and bend beside it.)
-    let seam_keep = (head + bend_radius_by(x0.own_t, s.bend_radius_ratio) + x0.own_t).max(ring);
+    let t0 = s.plate_planned(x0.own_t);
+    let seam_keep = (head + bend_radius_by(t0, s.bend_radius_ratio) + t0).max(ring);
     let ok = |q: [f64; 2]| -> bool {
         if !(lo_y - 1e-9..=hi_y + 1e-9).contains(&q[1]) || !inside(q) {
             return false;
@@ -3267,7 +3285,7 @@ fn plan_avoiding(
             // the thicker of its leg and the flange).
             if s.exact_plan && strips[k].tilted.is_none() && strips[k].over.is_none() {
                 let x = &strips[k];
-                let thick = x.own_t.max(x.t);
+                let thick = s.plate_planned(x.own_t).max(x.t);
                 let top = x.out_w + thick;
                 let far = thick + (BOLT_DRAWN[2] + BOLT_DRAWN[3]) * x.d;
                 let up = fixed_slab(x, j, &pieces, &fixed, &laid3, (FACE_TOUCH, top));
@@ -3672,7 +3690,7 @@ fn plan_avoiding(
                 .cloned()
                 .collect();
             let mut dropped: Vec<usize> = Vec::new();
-            let tf_all = tf(&kept);
+            let tf_all = s.plate_planned(tf(&kept));
             for kp in kept.iter_mut() {
                 let p = kp.clone();
                 let x = &strips[p.k];
@@ -3769,7 +3787,57 @@ fn plan_avoiding(
                     }
                     continue;
                 }
+                // (L29) The practice's least thickness holds here too; its
+                // list does not (the plate is as thick as the gap).
+                if gap + 1e-9 < s.plate_least {
+                    let host = strips[placed[0].k].host.clone();
+                    for p in &placed {
+                        let m = strips[p.k].member.clone();
+                        plan.by_hand(
+                            &m,
+                            format!(
+                                "{m}: across the gap between {host}'s angles, a plate between \
+                                 them would be {} thick (the gap), thinner than the detailing \
+                                 practice's least plate thickness ({}; lay it out by hand)",
+                                mm_text(gap),
+                                mm_text(s.plate_least)
+                            ),
+                        );
+                    }
+                    continue;
+                }
                 thickness = gap;
+            } else {
+                // (L29) The practice's thickness rules: thicker only, never
+                // thinner than the thickest leg on it.
+                match s.plate_thickness(thickness) {
+                    Ok(t) => {
+                        if t > thickness + 1e-9 {
+                            plan.notes.push(format!(
+                                "a plate on {} for {} is {} {} (the thickest leg on it {}): its \
+                                 members sit {} farther out of the flange",
+                                strips[placed[0].k].host,
+                                placed
+                                    .iter()
+                                    .map(|p| strips[p.k].member.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", "),
+                                mm_text(t),
+                                crate::practice::THICKER_MARK,
+                                mm_text(thickness),
+                                mm_text(t - thickness)
+                            ));
+                        }
+                        thickness = t;
+                    }
+                    Err(e) => {
+                        for p in &placed {
+                            let m = strips[p.k].member.clone();
+                            plan.by_hand(&m, format!("{m}: {e}"));
+                        }
+                        continue;
+                    }
+                }
             }
             // (L2's follow-up a, 2026-11-20) Its outline stopping short of
             // the work point, where the one round it would run into
@@ -4622,7 +4690,7 @@ fn level_holds(
         {
             let y = &mut sb[lead];
             y.fixed = fixed_in(y, j, l.pieces, l.fixed, &laid3);
-            let thick = y.own_t.max(y.t);
+            let thick = s.plate_planned(y.own_t).max(y.t);
             let far = thick + (BOLT_DRAWN[2] + BOLT_DRAWN[3]) * y.d;
             y.fixed_far = fixed_slab(y, j, l.pieces, l.fixed, &laid3, (-far, -FACE_TOUCH));
         }
@@ -6238,7 +6306,7 @@ fn strip_of(
             let nb = scale(f.across, -1.0);
             let ob = dot(add(j.position, f.heel), nb);
             Some(Over {
-                tp: g.t,
+                tp: s.plate_planned(g.t),
                 keep: edge_end(g.t),
                 other_w: other,
                 plane_b: (mm(nb[0]), mm(nb[1]), mm(nb[2]), mm(ob)),

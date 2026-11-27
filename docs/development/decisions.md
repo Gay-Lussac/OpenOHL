@@ -157,6 +157,72 @@ members exist; then the ASCE family (`asce`, with ASCE MOP 74's load
 cases). Every interface addition additive (ADR-0012). Nine questions to
 the owner, each with a recommendation, are in the roadmap.
 
+## 2026-11-26 (joint layout: the detailing practice measured, its plate thicknesses and its editor, O44 L29)
+
+**The owner's answer of 2026-11-25** ("use recommendations for l23 to
+l25") to O44 L24's questions 2 to 5, built in that order (built, in
+active development, not approved yet;
+[theory](../theory/joint-layout.md#the-practice-measured-its-plate-thicknesses-and-its-editor-l29),
+[user guide](../user-guide/detailing-practice.md)). Kept as they were
+(confirmed with it): the six design questions of L24, the flatness only
+stricter than 2°, the bundled codes giving no practice.
+
+1. **Each value's effect measured** (question 2) on **three of the eight
+   private towers** (the three quickest, 1 996 joints; the machine was
+   shared with other measuring runs and the eight would have taken days
+   — the other five are still to be measured), the bundled ASCE 10-97
+   plugin built fresh and checked to load before every run, one run per
+   value changed — as a run again on the laid-out towers (L27's result),
+   each value alone as the file's own `[layout_practice]`, against the
+   same run again without one (kept privately; the table in the theory
+   page, each field's row in its help). **Time measured as CPU time**,
+   not wall time (the shared machine, and runs paused by the memory
+   guard). **Found**: a stricter value costs time as well as joints —
+   its ends go through the later passes — so a form not allowed made the
+   run again about five times as long, not a little faster as L24
+   expected (the L24 text corrected). **Decided**: the defaults stay the
+   layout as it was (L24), also where a value did better on these towers
+   (a 15 mm shift, a 3 × bend radius) — offered to the owner.
+2. **The plate's thickness rules as data** (question 3):
+   `[layout_practice.plates]` `least_thickness` and `thicknesses` (the
+   shop's stock). A plate is the thinnest listed at least as thick as the
+   thickest leg on it and the least; **thicker only**, never thinner than
+   that leg; none listed that thick: its ends by hand, said. Applied where
+   the plan makes a plate and where it estimates one; a plate between a
+   built-up member's angles keeps the gap's thickness (the least holds,
+   the list not). **Decided on the way**: step 4's "a plate's thickness
+   farther out" and L5's move limit keep the leg's thickness (the
+   stricter: no eccentricity grows silently with a thicker plate); a
+   plate made thicker is said NOT ON THE SAFE SIDE with the three parts
+   (its members' seat out of the flange, one plate's thickness, is not in
+   the analysis — O45 D — and grows by the extra). **Format**: structure
+   file version 30 (`LAYOUT_PRACTICE_THICKNESS_VERSION`), written only
+   when the practice gives a rule; the practice's own format version 2
+   (1 without the rules, both read); older files read as before (no rule).
+   A code plugin may answer the rules in its practice's text — no
+   interface change (the export's text is the same table).
+3. **The window's gap, pull-back and shift stay the user's choice per
+   run** (question 4): where a run's go beyond the practice given (a
+   smaller gap, a longer pull-back, a larger shift, a gap below the 2 mm
+   the clash check sees) Lay out joints says so under its settings and
+   the run's notes say it too (`practice::DetailingPractice::beyond`,
+   `beyond_note`); nothing said without a practice given.
+4. **A small practice editor** (question 5): Design › Detailing
+   practice… (and *Edit…* under Lay out joints' practice), the
+   tool-window pattern (own guide page, numbered sections, every field's
+   effect and time behind its (?), Escape cancels, pictures made as
+   `USER=tester`). It writes only the values that differ from the code
+   plugin's practice or the default (`DetailingPractice::own_over`,
+   `practice::write_own`), one undo step, the file raised to 27 or 30.
+5. **Found on the way, fixed**: a run on a laid-out file whose plates have
+   sub-tables (`[plate.bend]`, `[[plate.weld]]`) and that has a table after
+   them — the practice at the file's end, as the editor writes it — wrote
+   those sub-tables where they had been read, before their own entry: the
+   file no longer read (the first measuring runs failed so on seven of
+   the eight towers). The run now takes the places of the nested tables of
+   what it writes at the end too (`layout_run::unplace`); tested on an
+   invented tower (fails without the fix). Without a table after the
+   plates the file written is the same as before.
 
 ## 2026-11-26 (the plugin fixes: the default bolt sent with the members; a rolled angle's own leg a rolled edge)
 

@@ -41,7 +41,13 @@ themselves are not chosen here (that comes with the design codes).
    too). A practice given with a value out of range is not used (red,
    with why; the default is used, and the run's notes say so). *Take its
    gap, pull-back and shift* puts the practice's starting values into the
-   settings above. A structure's own practice is written in its file as
+   settings above; the settings stay your choice for the run, and where
+   they go beyond the practice given (a smaller gap, a longer pull-back,
+   a larger shift) a line under them says so, in the warning colour, and
+   so do the run's notes (2026-11-26, L29). **Edit…** opens
+   [Detailing practice](detailing-practice.md), the editor of this
+   structure file's own practice — the plate thicknesses among its values
+   (L29). A structure's own practice is written in its file as
    `[layout_practice]`
    ([theory](../theory/joint-layout.md#the-detailing-practice-l24),
    [the table](../development/plugins.md#detailing-practice)).
