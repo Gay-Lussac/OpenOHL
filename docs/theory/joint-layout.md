@@ -5851,3 +5851,55 @@ never thins it).
 
 **Measured** on the eight private towers (one vertical case; kept
 privately): see O49 stage 1b in the roadmap.
+
+### The second plate's room and the joint's bolt size (O49 stage 1c)
+
+Built 2026-11-27, in active development, not approved yet (the owner's
+answers of that day to O49 stage 1b's question 4, and *"for the bolts
+please try to use the same ones for a joint"*).
+
+- **Where its own bolts lie**, tried in this order, each kept only where
+  the end's usage falls and its joint has no more clashes (one round of
+  the step each; each end said with what was tried and why not): (1) its
+  own bolts on the end's gauge line nearer the joint than the end's steel
+  (as L33 was built) — not where any other bolt of the first plate falls
+  within it; (2) **the first plate's leg bolts as its own** where they
+  fall within it: the leg bolts toward the joint (on the first plate's
+  other face, clear of the end's steel and its other leg; as many as half
+  the end's force needs by the code's force one bolt passes), the plate
+  grown round every leg bolt that then falls within it (another member's
+  bolt there: refused) — one bolt group through the leg, the first plate,
+  the packing and the second plate, their grip through all four, drawn
+  once; (3) its own bolts **beside the end's**, past the end's leg's toe
+  (the plate stopped short of the leg bolts), the packing alongside the
+  end from its toe on. Every placement: inside the first plate with the
+  code's distances, its corners inside it, clear of the end's other leg.
+  No file format change (version 31): leg bolts shared are found where a
+  second plate's own bolt lies on one (within a quarter of a diameter
+  across the bolts' axis).
+- **The packing's outline** is the second plate's own where the end's leg
+  is not (toward the joint from the end's steel, or past its toe), so its
+  edges keep the distances the plate's do (before: 1.5 bolt diameters
+  round its bolts, below SIA 263 Table 17's e_1 for an M16).
+- **Its own bolts are the joint's bolt size**: the end's, or the leg's
+  where it shares them.
+- **Provisional bolts at the joint's size** (`bolt_sizes::joint_size`): a
+  member end without bolts of its own gets the layout's provisional bolts
+  (its class's preset, the practice's picked bolt) at the joint's size
+  where the joint's ends with bolts have one diameter — the preset's count
+  and lines kept, its pitch and end distance left to the code's rules for
+  that bolt; said in the bolts' words. A plate's own holding bolts already
+  take the bolts of the member they bolt it onto.
+- **What stays mixed is listed** (`bolt_sizes::mixed_note`): after every
+  run, the joints asked whose bolts are of several sizes (members' own,
+  laid-out ends', plates' own), in the run's notes (the first 20, then how
+  many more).
+- **Measured** (eight private towers, kept privately; every bolt's shear
+  capacity divided by four, one vertical case, `--loads`): 20 ends laid
+  onto a plate weighed, none failing by its bolt shear at that end (the
+  towers' ends are mostly lapped directly), so no second plate and none of
+  the new rooms needed there; about 1 980 s of CPU time for the eight, as
+  stage 1b's run (1 978 s); 2 970 joints listed with mixed bolt sizes (the
+  towers as built). The rooms are shown on the invented tower of the user
+  guide (the first plate's three leg bolts shared, 133 % to 67 %, no clash)
+  and checked by validation `structsize-005`.

@@ -44,6 +44,7 @@ bolts in tension, with prying, 2026-11-19), `joint-check-groups-prying`
 (the gusset plates' own prying and bending too, 2026-11-19),
 `joint-check-bends` (a bent plate's bend, 2026-11-19),
 `joint-check-welds` (a weld with its sides, 2026-11-25),
+`joint-check-groups-packing` (packings in the bolts' grips, 2026-11-27),
 `bolt-distances`, `bolt-distances-full`), moved out of the core on 2026-11-18 (SIA 263 first,
 then ASCE 10-97, each with the same numbers bit for bit) and **shipped
 with OpenOHL** — found before the user's plugins, an error at start when

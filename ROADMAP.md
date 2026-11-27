@@ -5310,8 +5310,10 @@ joint layout's L28–L31 were merged, resumed 2026-11-27. **Stage 1 built
   its second plate were counted as clashes, so Lay out joints never kept
   one; the run's note with an empty "not:" and the sketch's two-planes
   label shrinking the drawing. Pictures in the user guides.
-- [ ] Stage 1c (M), the owner's answers of 2026-11-27 to stage 1b's
-  questions (above): (A) SIA 263 6.2.2.2 (long joints) in the sia263
+- [x] Stage 1c (M), the owner's answers of 2026-11-27 to stage 1b's
+  questions (above). **Built 2026-11-27, in active development, not
+  approved yet** ([decisions](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/decisions.md#2026-11-27-o49-stage-1c-long-joints-packings-bolts-per-size-one-bolt-size-per-joint-the-second-plates-room)):
+  (A) SIA 263 6.2.2.2 (long joints) in the sia263
   plugin from the end's bolt pattern; (B) the second plate's own bolts in
   Results' joint checks as a bolt group of their own, SIA 263 6.2.2.5's
   packing reduction in the sia263 plugin through an additive packing
@@ -5322,6 +5324,27 @@ joint layout's L28–L31 were merged, resumed 2026-11-27. **Stage 1 built
   said; mixed sizes only where one size cannot fit, said with the reason);
   (E) the second plate on the first plate's leg bolts where they fall
   within it (one bolt group), else stopped short of them (O44 L33).
+  As built: A — at a member's end from its bolt pattern (no pitch: Table
+  17's minimum, said not checked for a wider one) and per bolt in the
+  joint checks; ASCE 10-97 and ASCE/SEI 48-19 have no long-joint or
+  packing rule (not found). B — the second plate's own bolts a holding
+  group (half the end's force; plies the second plate, the packing, the
+  first plate), the packing through the additive export
+  `joint-check-groups-packing` (interface 0.3; the only core changes:
+  `code.wit`, `ohl_plugins`, `ohl_member_check`), the L33 NOT ON THE SAFE
+  SIDE note gone. C — `Basis::BoltsKept`, said. D — per size (diameter and
+  grade); one size per joint (the old size's bolts at the joints taken
+  along with the same count of the larger bolt, mixed only where it cannot
+  be had, each said; the joints with one size and several counted before
+  and after). E — nearer the joint, else on the leg bolts (one group,
+  drawn once), else beside the end's past its toe; the packing the plate's
+  outline where the leg is not; provisional bolts at the joint's size; the
+  joints left mixed listed by every run. No file format change.
+  Validation `structsize-003` (the second plate's own bolts, ASCE and SIA
+  by hand), `structsize-004` (a long joint by hand), `structsize-005` (the
+  leg bolts shared: β_p by hand). Measured on eight private towers (kept
+  privately): with the quarter-capacity bolts 83 bolt proposals and no
+  group left above the target (stage 1b: 7), CPU 510 s (stage 1b 698 s).
 - [ ] Stage 2 (M): level 3 members created from a level 2 outline (a
   first section per member from its role and length, then stage 1).
 - [ ] Stage 3 (M): the joint layout's "bigger member" option calling the

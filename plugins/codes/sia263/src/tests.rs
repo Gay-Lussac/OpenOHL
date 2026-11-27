@@ -231,6 +231,44 @@ fn bearing_on_the_thinner_leg_bolted_onto_by_hand() {
     assert_eq!(what, "bearing at b");
 }
 
+/// A long joint at the member's ends (SIA 263 6.2.2.2, O49 stage 1c;
+/// invented, by hand): L 150×15, eight M16 8.8 on one line at a pitch of
+/// 50 mm — L_j = 7 × 50 = 350 mm above 15 d = 240 mm: β_Lf = 1 − (350 −
+/// 240)/(200 × 16) = 0.965625; the bolt shear 8 × 0.6 × 800 × 0.6 ×
+/// 201.06 / 1.25 × 0.965625 = 357.8 kN governs the tension (bearing 8 ×
+/// 115.6 kN, the net section 1 470 kN). Without a pitch: Table 17's
+/// minimum 40 mm, L_j 280 mm, β_Lf 0.9875, said not checked for a wider one.
+#[test]
+fn a_long_joint_by_hand() {
+    let (mut m, _) = angle(0.150, 0.015, 355e6, 2.0);
+    if let Some(b) = m.design.bolts.as_mut() {
+        b.count = 8;
+    }
+    m.design.spacing = Some(0.050);
+    let area = std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+    let one = 0.6 * 800e6 * 0.6 * area / GAMMA_M2;
+    let (c, _) = sia263::capacity(&m, None);
+    let (t, what) = c.tension.clone().unwrap();
+    let beta = 1.0 - (0.350 - 0.240) / (200.0 * 0.016);
+    assert!((t - 8.0 * one * beta).abs() < 1e-6, "{t} {what} {c:?}");
+    assert!(what.contains("bolt shear"), "{what}");
+    assert!(
+        c.tension_assumed.iter().any(|n| n.contains("β_Lf 0.966")),
+        "{c:?}"
+    );
+    m.design.spacing = None;
+    let (c, _) = sia263::capacity(&m, None);
+    let (t, _) = c.tension.clone().unwrap();
+    let beta = 1.0 - (0.280 - 0.240) / (200.0 * 0.016);
+    assert!((t - 8.0 * one * beta).abs() < 1e-6, "{t} {c:?}");
+    assert!(
+        c.tension_assumed
+            .iter()
+            .any(|n| n.contains("6.2.2.2) not checked for a pitch wider")),
+        "{c:?}"
+    );
+}
+
 /// A member whose data gives no bolts or holes (O19 stage 5, the owner's
 /// answer of 2026-11-23, built 2026-11-24): a bolt hole in each leg of an
 /// angle in the net section (39) until the bolts are known — the default

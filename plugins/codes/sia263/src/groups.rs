@@ -105,6 +105,11 @@ pub struct Group {
     pub bolts: Vec<Bolt>,
     /// Per case, per bolt.
     pub loads: Vec<Vec<Load>>,
+    /// Per bolt the total thickness of the packings in its grip, m (0:
+    /// none; none: not known — SIA 263 6.2.2.5 not applied, said); none:
+    /// not sent (an export before `joint-check-groups-packing`, O49 stage
+    /// 1c: OpenOHL says where packings were not sent).
+    pub packings: Option<Vec<Option<f64>>>,
 }
 
 /// A flange a bolt bends as it pulls (a T-stub's flange; theory page).
@@ -418,8 +423,78 @@ fn note(out: &mut Vec<String>, w: String) {
     }
 }
 
-/// The checks of bolt `b` bearing on `plies` under load `l`.
-pub fn bolt_checks(b: &Bolt, plies: &[Ply], l: &Load) -> Checked {
+/// The reductions of a group's bolts' shear resistance (O49 stage 1c,
+/// 2026-11-27): per bolt the product of SIA 263 6.2.2.2's β_Lf (a long
+/// joint) and 6.2.2.5's β_p (packings in its grip), with their words, and
+/// what is not on the safe side.
+///
+/// **L_j** (6.2.2.2, the length the force is passed on over, Figure 25):
+/// per bolt, the largest over the parts it carries (member ends, plates)
+/// of the largest distance between two bolts of the group carrying that
+/// part — at least the length along the force (the distance between two
+/// bolts is never shorter than its part along the force: on the safe
+/// side).
+pub fn shear_reductions(g: &Group) -> (Vec<(f64, String)>, Vec<String>) {
+    let mut out = Vec::with_capacity(g.bolts.len());
+    let mut not_safe: Vec<String> = Vec::new();
+    for (k, b) in g.bolts.iter().enumerate() {
+        let d = b.diameter;
+        let mut lj = 0.0f64;
+        for part in &b.carries {
+            for (i, x) in g.bolts.iter().enumerate() {
+                if !x.carries.contains(part) {
+                    continue;
+                }
+                for y in g.bolts.iter().skip(i + 1) {
+                    if y.carries.contains(part) {
+                        lj = lj.max((x.at[0] - y.at[0]).hypot(x.at[1] - y.at[1]));
+                    }
+                }
+            }
+        }
+        let mut beta = 1.0;
+        let mut words: Vec<String> = Vec::new();
+        let bl = sia263::long_joint(lj, d);
+        if bl < 1.0 {
+            beta *= bl;
+            words.push(format!(
+                "× β_Lf {bl:.3}: a long joint, L_j {:.0} mm above 15 d {:.0} mm (SIA 263 \
+                 6.2.2.2, Figure 25)",
+                mm(lj),
+                mm(15.0 * d)
+            ));
+        }
+        match g.packings.as_ref().map(|p| p.get(k).copied().flatten()) {
+            Some(Some(tp)) => {
+                let bp = sia263::packing_factor(tp, d);
+                if bp < 1.0 {
+                    beta *= bp;
+                    words.push(format!(
+                        "× β_p {bp:.3}: packings {:.0} mm in its grip above d/3 {:.1} mm (SIA \
+                         263 6.2.2.5: β_p = 9 d/(8 d + 3 t_p))",
+                        mm(tp),
+                        mm(d / 3.0)
+                    ));
+                }
+            }
+            Some(None) => note(
+                &mut not_safe,
+                "the packings in a bolt's grip not known: SIA 263 6.2.2.5's reduction (packings \
+                 thicker than d/3 lower the bolt shear by β_p = 9 d/(8 d + 3 t_p)) not applied \
+                 — give the packings"
+                    .into(),
+            ),
+            None => {}
+        }
+        out.push((beta, words.join(", ")));
+    }
+    (out, not_safe)
+}
+
+/// The checks of bolt `b` bearing on `plies` under load `l`, its shear
+/// resistance reduced by `reduce` (the factor and its words, O49 stage
+/// 1c: [`shear_reductions`]).
+pub fn bolt_checks(b: &Bolt, plies: &[Ply], l: &Load, reduce: &(f64, String)) -> Checked {
     let mut out = Checked::default();
     let d = b.diameter;
     let f = l.force;
@@ -436,12 +511,17 @@ pub fn bolt_checks(b: &Bolt, plies: &[Ply], l: &Load) -> Checked {
         Some((cap, words)) => {
             out.checks.push(PlateCheck {
                 what: format!(
-                    "bolt shear, {} plane{} ({words})",
+                    "bolt shear, {} plane{} ({words}{})",
                     b.planes.max(1),
-                    if b.planes.max(1) == 1 { "" } else { "s" }
+                    if b.planes.max(1) == 1 { "" } else { "s" },
+                    if reduce.1.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {}", reduce.1)
+                    }
                 ),
                 demand: f,
-                resistance: cap,
+                resistance: cap * reduce.0,
                 distance: false,
             });
             if b.shear_capacity.is_none() && !sia263::shear_factor(grade).1 {
@@ -603,13 +683,16 @@ pub fn bolt_checks(b: &Bolt, plies: &[Ply], l: &Load) -> Checked {
 pub fn check_group(g: &Group, strengths: &[f64], tension: Option<&GroupTension>) -> GroupResult {
     let mut out = GroupResult::default();
     let mut worst: Option<f64> = None;
+    let (reduce, said) = shear_reductions(g);
+    out.not_safe.extend(said);
+    let one = (1.0, String::new());
     for (n, strength) in strengths.iter().enumerate() {
         let mut best: Option<(f64, String)> = None;
         for (k, b) in g.bolts.iter().enumerate() {
             let Some(l) = g.loads.get(n).and_then(|x| x.get(k)) else {
                 continue;
             };
-            let mut c = bolt_checks(b, &g.plies, l);
+            let mut c = bolt_checks(b, &g.plies, l, reduce.get(k).unwrap_or(&one));
             if let Some(gt) = tension
                 && let Some(t) = gt.loads.get(n).and_then(|x| x.get(k)).copied()
                 && t > 0.0
@@ -714,12 +797,17 @@ mod tests {
                 .unwrap()
                 .resistance
         };
-        let c = bolt_checks(&m16(), &[leg(true)], &l(Some(0.030)));
+        let c = bolt_checks(&m16(), &[leg(true)], &l(Some(0.030)), &(1.0, String::new()));
         let want = 0.85 * 30.0 / 18.0 * 510e6 * 0.016 * 0.008 / 1.25;
         assert!((bearing(&c) - want).abs() < 1e-6, "{}", bearing(&c));
-        let c = bolt_checks(&m16(), &[leg(true)], &l(None));
+        let c = bolt_checks(&m16(), &[leg(true)], &l(None), &(1.0, String::new()));
         assert!((bearing(&c) - 2.4 * 510e6 * 0.016 * 0.008 / 1.25).abs() < 1e-6);
-        let c = bolt_checks(&m16(), &[leg(false)], &l(Some(0.030)));
+        let c = bolt_checks(
+            &m16(),
+            &[leg(false)],
+            &l(Some(0.030)),
+            &(1.0, String::new()),
+        );
         let want = 0.85 * 25.0 / 18.0 * 510e6 * 0.016 * 0.008 / 1.25;
         assert!((bearing(&c) - want).abs() < 1e-6);
         assert!(!c.checks.iter().any(|x| x.what.starts_with("end distance")));
@@ -815,6 +903,7 @@ mod tests {
                 sides: vec![None],
                 ahead: vec![None],
             }]],
+            packings: None,
         };
         let gt = GroupTension {
             bolts: vec![bt],
@@ -823,6 +912,66 @@ mod tests {
         let r = check_group(&g, &[1.0], Some(&gt));
         let (u, w) = r.usages[0].clone().unwrap();
         assert!(u > 1.0 && w.contains("bending of L1"), "{u} {w}");
+    }
+
+    /// A long joint and a packing (O49 stage 1c, invented, by hand): two
+    /// M16 8.8 carrying D1, 300 mm apart — L_j 300 mm above 15 d = 240 mm:
+    /// β_Lf = 1 − (300 − 240)/(200 × 16) = 0.98125 (SIA 263 6.2.2.2); a 10
+    /// mm packing in their grip, above d/3 = 5.33 mm: β_p = 9 × 16/(8 × 16
+    /// + 3 × 10) = 144/158 = 0.91139 (6.2.2.5). Shear per plane 46.32 kN
+    /// (73) × 0.98125 × 0.91139 = 41.42 kN. A third bolt carrying R1 alone
+    /// takes β_p only; a packing not known is said not on the safe side.
+    #[test]
+    fn a_long_joint_and_a_packing_reduce_the_bolt_shear() {
+        let at = |x: f64, carries: &[&str]| Bolt {
+            at: [x, 0.0],
+            carries: carries.iter().map(|c| c.to_string()).collect(),
+            ..m16()
+        };
+        let load = Load {
+            force: 30e3,
+            ends: vec![None],
+            sides: vec![None],
+            ahead: vec![None],
+        };
+        let g = Group {
+            plies: vec![leg(true)],
+            bolts: vec![at(-0.15, &["D1"]), at(0.15, &["D1"]), at(0.0, &["R1"])],
+            loads: vec![vec![load.clone(), load.clone(), load]],
+            packings: Some(vec![Some(0.010), Some(0.010), Some(0.010)]),
+        };
+        let (r, said) = shear_reductions(&g);
+        assert!(said.is_empty());
+        let bl = 1.0 - (0.300 - 0.240) / (200.0 * 0.016);
+        let bp = 144.0 / 158.0;
+        assert!((r[0].0 - bl * bp).abs() < 1e-12, "{:?}", r[0]);
+        assert!((r[2].0 - bp).abs() < 1e-12, "{:?}", r[2]);
+        assert!(
+            r[0].1.contains("6.2.2.2") && r[0].1.contains("6.2.2.5"),
+            "{}",
+            r[0].1
+        );
+        let area = std::f64::consts::PI * 0.016f64.powi(2) / 4.0;
+        let res = check_group(&g, &[1.0], None);
+        let (u, w) = res.usages[0].clone().unwrap();
+        let want = 30e3 / (0.6 * 800e6 * 0.6 * area / 1.25 * bl * bp);
+        assert!(
+            (u - want).abs() < 1e-9 && w.contains("β_Lf"),
+            "{u} {want} {w}"
+        );
+        let unknown = Group {
+            packings: Some(vec![None, None, None]),
+            ..g
+        };
+        assert!(
+            check_group(&unknown, &[1.0], None)
+                .not_safe
+                .iter()
+                .any(|w| w.contains("6.2.2.5"))
+        );
+        assert_eq!(sia263::packing_factor(0.016 / 3.0, 0.016), 1.0);
+        assert_eq!(sia263::long_joint(0.240, 0.016), 1.0);
+        assert_eq!(sia263::long_joint(2.0, 0.016), 0.75);
     }
 
     /// The next hole along the force nearer than e_1 + d_0/2: e_1 = p_1 −
@@ -839,6 +988,7 @@ mod tests {
             plies: vec![leg(true)],
             bolts: vec![m16()],
             loads: vec![vec![l]],
+            packings: None,
         };
         let r = check_group(&g, &[1.0], None);
         let (u, w) = r.usages[0].clone().unwrap();

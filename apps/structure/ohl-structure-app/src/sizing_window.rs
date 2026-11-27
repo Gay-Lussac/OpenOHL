@@ -635,16 +635,37 @@ fn proposal(ui: &mut egui::Ui, s: &Sizing, accepted: &mut BTreeSet<String>) {
                         }
                         ui.label(section).on_hover_text(why);
                         // O49 stage 1b: the bolts where they govern.
-                        match (&g.bolts, &g.bolts_govern) {
-                            (Some(b), w) => {
-                                ui.label(format!("{} to {}", b.from, b.to))
-                                    .on_hover_text(w.as_deref().unwrap_or("the bolts govern"));
+                        // Stage 1c: one line per bolt size (and per
+                        // size the joints take its bolts to).
+                        match (g.bolts.is_empty(), &g.bolts_govern) {
+                            (false, _) => {
+                                let hover: Vec<String> = g
+                                    .bolts
+                                    .iter()
+                                    .map(|b| {
+                                        format!(
+                                            "{} to {} ({}): {}",
+                                            b.from,
+                                            b.to,
+                                            b.members.join(", "),
+                                            b.why
+                                        )
+                                    })
+                                    .collect();
+                                ui.label(
+                                    g.bolts
+                                        .iter()
+                                        .map(|b| format!("{} to {}", b.from, b.to))
+                                        .collect::<Vec<_>>()
+                                        .join("\n"),
+                                )
+                                .on_hover_text(hover.join("\n"));
                             }
-                            (None, Some(w)) => {
+                            (true, Some(w)) => {
                                 ui.label(egui::RichText::new("govern").color(warn))
                                     .on_hover_text(w);
                             }
-                            (None, None) => {
+                            (true, None) => {
                                 ui.label("");
                             }
                         }

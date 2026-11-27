@@ -220,6 +220,12 @@ pub(crate) struct GroupPlan {
     /// each from none to whole (with the other ends' forces whole or none),
     /// the larger bolt by bolt.
     passed: Vec<Source>,
+    /// The share of its sources' forces it takes (1; a second plate's own
+    /// bolts, O49 stage 1c: half the end's force, [`paired_groups`]).
+    share: f64,
+    /// Per bolt the total thickness of the packings in its grip, m (empty:
+    /// none; O49 stage 1c, [`packings_of`]).
+    packings: Vec<f64>,
 }
 
 /// A member's own steel at its end bolts with the ends laid onto it near
@@ -831,8 +837,283 @@ pub(crate) fn group_plans(
         holding_groups(j, model, library, bolts, &mut out);
         bearing_groups(j, model, bolts, first, &mut out);
         end_bolt_groups(j, model, library, bolts, &caps, &mut out);
+        paired_groups(j, model, library, bolts, &mut out);
+        for g in &mut out.groups[first..] {
+            g.packings = packings_of(j, &g.bolts);
+        }
     }
     out
+}
+
+/// Per bolt of `bolts` at joint `j` the total thickness of the packings
+/// in its grip (O49 stage 1c, 2026-11-27): a second plate's packing
+/// (`[plate.paired]`, L33) where the bolt is one of that plate's own bolts
+/// — its axis within a hole's reach of one of them (the first plate's leg
+/// bolts taken as its own, L33's room, pass through the packing too);
+/// empty where no bolt has one.
+fn packings_of(j: &JointDetail, bolts: &[Bolt]) -> Vec<f64> {
+    let mut out = vec![0.0; bolts.len()];
+    for q in j.plates.iter().filter_map(|p| p.paired.as_ref()) {
+        if !q.held {
+            continue;
+        }
+        for (k, b) in bolts.iter().enumerate() {
+            let hit = q.bolts.iter().any(|x| {
+                let d = sub(b.at, *x);
+                let off = sub(d, scale(q.bolt_axis, dot(d, q.bolt_axis)));
+                norm(off) <= same_hole(b.diameter)
+            });
+            if hit {
+                out[k] += q.packing;
+            }
+        }
+    }
+    if out.iter().all(|t| *t <= 0.0) {
+        out.clear();
+    }
+    out
+}
+
+/// A ply of a plate checked under a second plate's own bolts.
+fn plate_ply(
+    part: String,
+    steel: &ohl_structures_fe::plates::PlateSteel,
+    thickness: f64,
+    outline: &[V3],
+    holes: Vec<V3>,
+    sign: f64,
+) -> Ply {
+    Ply {
+        part,
+        member: false,
+        sheared: false,
+        thickness,
+        fy: steel.fy,
+        fu: steel.fu,
+        redundant: false,
+        known: outline.len() >= 3,
+        edges: Edges::Outline(outline.to_vec()),
+        holes,
+        sign,
+    }
+}
+
+/// The second plates' own bolts at joint `j` (O49 stage 1c, the owner's
+/// answer of 2026-11-27 to stage 1b's question 3): each second plate held
+/// by its own bolts through a packing into the first plate (L33,
+/// `[plate.paired]`) a group of its own — those bolts carry the second
+/// plate's share of its end's force, half of it (the split L33 takes, the
+/// codes' per-plane bolt shear rule; the first plate keeps the whole:
+/// conservative), along the end's line through its bolts' centroid, with
+/// its moment about these bolts' centroid, shared elastically. The plies:
+/// the second plate and the packing (the bolts push them against the
+/// force) and the first plate (along it), each with its edges and holes;
+/// the packing's thickness sent with the bolts (SIA 263 6.2.2.5).
+fn paired_groups(
+    j: &JointDetail,
+    model: &Model,
+    library: &SectionLibrary,
+    bolt_lib: &BoltLibrary,
+    out: &mut GroupPlans,
+) {
+    for p2 in &j.plates {
+        let Some(q) = &p2.paired else { continue };
+        if !q.held {
+            continue;
+        }
+        let Some(a) = j
+            .arrivals
+            .iter()
+            .find(|a| a.member == q.member && a.onto.value.as_deref() == Some(q.first.as_str()))
+        else {
+            continue;
+        };
+        let Some(p1) = j.plates.iter().find(|x| x.id == q.first) else {
+            continue;
+        };
+        if q.bolts.is_empty() {
+            out.not_checked.push((
+                j.id.clone(),
+                p2.id.clone(),
+                format!(
+                    "NOT CHECKED, NOT ON THE SAFE SIDE: plate {}'s own bolts into {} are not \
+                     placed, so a failure there would not be found; place them",
+                    p2.id, q.first
+                ),
+            ));
+            continue;
+        }
+        let mut notes = Vec::new();
+        let mut misfits = Vec::new();
+        let mut bolts: Vec<Bolt> = Vec::new();
+        for at in &q.bolts {
+            let Some(mut b) = bolt_of(a, model, *at, bolt_lib) else {
+                continue;
+            };
+            if let Some(d) = q.diameter
+                && (d - b.diameter).abs() > 1e-9
+            {
+                // Its own bolts not the end's: their diameter alone known.
+                b.diameter = d;
+                b.hole = None;
+                b.shear = None;
+                b.shank = None;
+                b.tension = None;
+                push_once(
+                    &mut notes,
+                    format!(
+                        "plate {}'s own bolts ({:.0} mm) are not {}'s: their library values \
+                         not taken",
+                        p2.id,
+                        d * 1e3,
+                        q.member
+                    ),
+                );
+            }
+            b.planes = 1;
+            b.carries = vec![format!("plate {}", p2.id)];
+            b.given = true;
+            add_bolt(&mut bolts, b, &mut notes);
+        }
+        if bolts.is_empty() {
+            out.not_checked.push((
+                j.id.clone(),
+                p2.id.clone(),
+                format!(
+                    "NOT CHECKED, NOT ON THE SAFE SIDE: plate {}'s own bolts into {} — their \
+                     bolts not known, so a failure there would not be found; give them",
+                    p2.id, q.first
+                ),
+            ));
+            continue;
+        }
+        let c = centroid3(&bolts.iter().map(|b| b.at).collect::<Vec<_>>(), j.position);
+        let Some(plane) = Plane::new(c, q.bolt_axis, Some(a.direction)) else {
+            continue;
+        };
+        let (steel2, note2) = crate::plate_checks::plate_steel_of(p2, j, model, library);
+        let (steel1, note1) = crate::plate_checks::plate_steel_of(p1, j, model, library);
+        notes.extend(note2);
+        notes.extend(note1);
+        let own: Vec<V3> = bolts.iter().map(|b| b.at).collect();
+        let d0 = bolts.iter().map(hole_of).fold(f64::INFINITY, f64::min);
+        let near = same_hole(bolts[0].diameter);
+        let mut first_holes: Vec<V3> = onto_plate(j, &q.first)
+            .iter()
+            .flat_map(|x| x.bolt_points.clone())
+            .collect();
+        // Holes overlapping in the first plate: its own bolts against every
+        // other hole there (the first plate's leg bolts it shares are its
+        // own: one hole).
+        let mut list: Vec<(V3, f64, String, bool)> = bolts
+            .iter()
+            .map(|b| (b.at, hole_of(b), format!("a bolt of plate {}", p2.id), true))
+            .collect();
+        for h in &first_holes {
+            if !own.iter().any(|b| norm(sub(*b, *h)) <= near) {
+                list.push((*h, d0, "another bolt".into(), true));
+            }
+        }
+        for (w, _) in overlaps(&format!("plate {}", q.first), &list) {
+            push_once(&mut misfits, w);
+        }
+        for h in &own {
+            if !first_holes.iter().any(|x| norm(sub(*x, *h)) <= near) {
+                first_holes.push(*h);
+            }
+        }
+        let packing_name = format!("{}'s packing", p2.id);
+        for (outline, name) in [
+            (&p2.outline, &p2.id),
+            (&q.packing_outline, &packing_name),
+            (&p1.outline, &q.first),
+        ] {
+            if outline.len() >= 3
+                && own.iter().any(|x| {
+                    // Laid into the outline's plane along the bolts' axis.
+                    let at = add(
+                        *x,
+                        scale(q.bolt_axis, dot(sub(outline[0], *x), q.bolt_axis)),
+                    );
+                    crate::plate_checks::ray_to_outline(outline, at, a.direction).is_none()
+                })
+            {
+                push_once(
+                    &mut misfits,
+                    format!("a bolt of plate {} lies outside {name}'s outline", p2.id),
+                );
+            }
+        }
+        notes.push(format!(
+            "plate {}'s own bolts through its {:.0} mm packing into {} (the second plate of {}'s \
+             end, L33): half of {}'s end force (the split of the per-plane bolt shear rule; {} \
+             keeps the whole: on the safe side) along its line through its bolts' centroid, with \
+             its moment about these bolts' centroid, shared elastically",
+            p2.id,
+            q.packing * 1e3,
+            q.first,
+            q.member,
+            q.member,
+            q.first
+        ));
+        notes.extend(grade_notes(&bolts));
+        let source = Source {
+            member: a.member.clone(),
+            end: a.end,
+            direction: a.direction,
+            centroid: centroid3(&a.bolt_points, j.position),
+            bolts: Vec::new(),
+            riders: Vec::new(),
+            passed: Vec::new(),
+        };
+        let mut second_holes: Vec<V3> = a.bolt_points.clone();
+        second_holes.extend(own.iter().copied());
+        let plies = vec![
+            plate_ply(
+                p2.id.clone(),
+                &steel2,
+                steel2.thickness,
+                &p2.outline,
+                second_holes,
+                -1.0,
+            ),
+            plate_ply(
+                packing_name,
+                &steel2,
+                q.packing,
+                &q.packing_outline,
+                own.clone(),
+                -1.0,
+            ),
+            plate_ply(
+                q.first.clone(),
+                &steel1,
+                steel1.thickness,
+                &p1.outline,
+                first_holes,
+                1.0,
+            ),
+        ];
+        out.groups.push(GroupPlan {
+            joint: j.id.clone(),
+            holding: true,
+            part: p2.id.clone(),
+            holders: format!("plate {}", q.first),
+            position: j.position,
+            plane,
+            bolts,
+            plies,
+            sources: vec![source],
+            from: Vec::new(),
+            notes,
+            misfits,
+            misfit_given: true,
+            ends_of: None,
+            passed: Vec::new(),
+            share: 0.5,
+            packings: Vec::new(),
+        });
+    }
 }
 
 /// The member ends whose forces pass through `host`'s own end bolts at
@@ -1531,6 +1812,8 @@ fn end_bolt_groups(
             misfit_given,
             ends_of: Some(words.clone()),
             passed: Vec::new(),
+            share: 1.0,
+            packings: Vec::new(),
         });
         // (L14's question 2, the owner 2026-11-22) The member's own steel
         // at those bolts under the force followed through: its tension
@@ -1575,12 +1858,46 @@ fn end_bolt_groups(
 /// The member ends bolted onto plate `q` at joint `j`: those of
 /// [`crate::joints::bolted_onto`], then the plate's own bolts onto the
 /// leg (`[plate.leg_bolts]`, 2026-11-19) as that leg's end bolted onto it.
+pub(crate) fn onto_plate_ends<'a>(j: &'a JointDetail, q: &str) -> Vec<Cow<'a, Arrival>> {
+    onto_plate(j, q)
+}
+
+/// The member ends bolted onto plate `q` at joint `j`, with its own bolts
+/// onto the leg as that leg's ends.
 fn onto_plate<'a>(j: &'a JointDetail, q: &str) -> Vec<Cow<'a, Arrival>> {
     let mut v = crate::joints::bolted_onto(&j.arrivals, q);
     if let Some(p) = j.plates.iter().find(|p| p.id == q) {
         v.extend(p.holding_ends().map(Cow::Borrowed));
     }
     v
+}
+
+/// The member ends holding plate `plate` at joint `j` (its leg bolts):
+/// the joint's legs' ends bolted onto it, its own bolts onto the leg
+/// (`[plate.leg_bolts]`, `[plate.also_bolts]`) and the member whose own end
+/// bolts hold it (`held_by`) — as [`holding_groups`] finds them (O49 stage
+/// 1c: the bolts a second plate may share, L33's room).
+pub(crate) fn plate_holders<'a>(j: &'a JointDetail, plate: &str) -> Vec<Cow<'a, Arrival>> {
+    let mut legs: Vec<String> = crate::welds::joint_legs(j)
+        .iter()
+        .map(|a| a.member.clone())
+        .collect();
+    for p in &j.plates {
+        for a in p.holding_ends() {
+            if !legs.contains(&a.member) {
+                legs.push(a.member.clone());
+            }
+        }
+        if let Some(m) = p.held_by.as_deref()
+            && !legs.iter().any(|l| l == m)
+        {
+            legs.push(m.to_owned());
+        }
+    }
+    onto_plate(j, plate)
+        .into_iter()
+        .filter(|a| !a.modelling && legs.contains(&a.member))
+        .collect()
 }
 
 /// The holding groups of joint `j` (module docs).
@@ -1999,6 +2316,8 @@ fn holding_groups(
                     misfit_given,
                     ends_of: None,
                     passed: passed_here,
+                    share: 1.0,
+                    packings: Vec::new(),
                 });
             }
         }
@@ -2386,6 +2705,8 @@ fn bearing_groups(
                 misfit_given,
                 ends_of: None,
                 passed: Vec::new(),
+                share: 1.0,
+                packings: Vec::new(),
             });
         }
     }
@@ -2554,6 +2875,8 @@ fn case_forces(
             let mut m3_own = [0.0; 3];
             for s in &g.sources {
                 let (f, m) = source_load(s, &g.plane, g.position, axial, ends);
+                // (O49 stage 1c) A second plate's own bolts: its share.
+                let (f, m) = (scale(f, g.share), scale(m, g.share));
                 let mo = add(m, cross(in_plane(&g.plane, s.centroid, c3), f));
                 f3 = add(f3, f);
                 m3 = add(m3, mo);
@@ -3056,14 +3379,29 @@ pub(crate) fn group_rows(
             }
         })
         .collect();
-    let (checked, tension_checked) = if fits.is_empty() {
-        (by_plugin::GroupsChecked::Results(Vec::new()), true)
+    // (O49 stage 1c) The packings in the bolts' grips: per group sent.
+    let packings: Vec<by_plugin::packing::GroupPacking> = fits
+        .iter()
+        .map(|&k| {
+            let g = &plans.groups[k];
+            by_plugin::packing::GroupPacking {
+                id: k as u32,
+                packings: (0..g.bolts.len())
+                    .map(|i| Some(g.packings.get(i).copied().unwrap_or(0.0)))
+                    .collect(),
+            }
+        })
+        .collect();
+    let (checked, tension_checked, packings_sent) = if fits.is_empty() {
+        (by_plugin::GroupsChecked::Results(Vec::new()), true, true)
     } else {
         // With the plates' prying when the plugin has it (2026-11-19),
         // else said not worked out by the plugin (each plate named among
-        // the plies whose bending is not known).
-        let (c, level) = by_plugin::check_joint_groups_prying(p, &input, &tension);
-        (c, level != by_plugin::TensionChecked::No)
+        // the plies whose bending is not known); with the packings when it
+        // has their export (O49 stage 1c), else said not sent.
+        let (c, level, sent) =
+            by_plugin::check_joint_groups_packing(p, &input, &tension, &packings);
+        (c, level != by_plugin::TensionChecked::No, sent)
     };
     let not_checked = by_plugin::not_checked_by(p);
     (0..cases.len())
@@ -3110,6 +3448,16 @@ pub(crate) fn group_rows(
                 unsafe_words.extend(forces.said.iter().cloned());
                 if !tension_checked && let Some(w) = &forces.pulled {
                     unsafe_words.push(w.clone());
+                }
+                let g = &plans.groups[k];
+                if !packings_sent && let Some(tp) = g.packings.iter().copied().reduce(f64::max) {
+                    unsafe_words.push(format!(
+                        "a {:.0} mm packing in its bolts' grip not sent (the plugin has no \
+                         joint-check-groups-packing export): a code's reduction for packings \
+                         (SIA 263 6.2.2.5: above d/3) left out, so the bolts can resist less \
+                         than shown — update the plugin, or check the bolts by hand",
+                        tp * 1e3
+                    ));
                 }
                 if !unsafe_words.is_empty() {
                     r.governs.push_str(&format!(
@@ -3317,6 +3665,8 @@ mod tests {
             misfit_given: false,
             ends_of: None,
             passed: Vec::new(),
+            share: 1.0,
+            packings: Vec::new(),
         }
     }
 

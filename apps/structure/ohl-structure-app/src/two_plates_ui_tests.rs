@@ -205,3 +205,77 @@ fn a_second_plate_is_laid_out_drawn_and_said() {
     assert_eq!(h.state().file.as_ref().unwrap().text(), before);
     std::fs::remove_dir_all(dir).ok();
 }
+
+/// O49 stage 1c (2026-11-27, the owner's answer to stage 1b's question 4):
+/// the second plate's room. The same tower with D1's steel stopping near
+/// the joint: its own bolts nearer the joint would fall on the first
+/// plate's leg bolts, so those become its own (one bolt group), or it goes
+/// beside D1's bolts — the run's note says which. The window's picture
+/// (`OHL_RENDER_PNG`).
+#[test]
+fn a_second_plate_finds_room() {
+    let path = copy_of("type-02.ohls", "two-plates-room-ui");
+    let dir = path.parent().unwrap().to_path_buf();
+    let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../libraries");
+    std::fs::create_dir_all(dir.join("Sections")).unwrap();
+    std::fs::copy(
+        examples.join("sections/example-sections.ohlsec"),
+        dir.join("Sections/example-sections.ohlsec"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("Bolts")).unwrap();
+    std::fs::copy(
+        examples.join("bolts/example-bolts.ohlb"),
+        dir.join("Bolts/example-bolts.ohlb"),
+    )
+    .unwrap();
+    let tower_path = dir.join("two-plates-room.ohls");
+    std::fs::write(
+        &tower_path,
+        tower().replace("cut = \"260 mm\"", &format!("cut = \"{ROOM_CUT}\"")),
+    )
+    .unwrap();
+    let mut h = harness(&tower_path);
+    menu(&mut h, "Design", "Joint details");
+    h.state_mut().selected = vec![Handle::Joint("N2".into())];
+    h.run_steps(3);
+    h.get_by_label("Lay out joint…").click();
+    h.step();
+    crate::layout_ui_tests::wait_preview(&mut h);
+    let notes = {
+        let w = h.state().layout_window.as_ref().unwrap();
+        w.preview.as_ref().unwrap().run.notes.clone()
+    };
+    let note = notes
+        .iter()
+        .find(|n| n.starts_with("two plates on one end"))
+        .unwrap_or_else(|| panic!("{notes:#?}"));
+    assert!(
+        note.contains("bolt shear given a second plate") && note.contains(ROOM_WORDS),
+        "{notes:#?}"
+    );
+    if ohl_core::env::var_os("OHL_RENDER_PNG").is_some() {
+        h.get_by_label("Before and after:").scroll_to_me();
+        h.run_steps(3);
+        if let Some(w) = h.state_mut().layout_window.as_mut() {
+            for v in [&mut w.views.0, &mut w.views.1] {
+                v.yaw -= 2.3;
+                v.pitch += 0.5;
+                v.zoom = 1.0;
+            }
+        }
+        h.event(eframe::egui::Event::PointerMoved(eframe::egui::pos2(
+            1290.0, 890.0,
+        )));
+        crate::tool_window_tests::window_shot(
+            &mut h,
+            "Lay out joints",
+            "lay-out-joints-two-plates-shared",
+        );
+    }
+}
+
+/// Where D1's steel stops in [`a_second_plate_finds_room`], and the room
+/// the run then finds for its second plate.
+const ROOM_CUT: &str = "120 mm";
+const ROOM_WORDS: &str = "the first plate's leg bolts as its own";

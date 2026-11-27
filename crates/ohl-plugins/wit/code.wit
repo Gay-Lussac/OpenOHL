@@ -1548,6 +1548,45 @@ world joint-check-groups-prying-export {
     /// A weld with its sides (2026-11-25): it takes `joint-check-groups`'
     /// records too; looked up on its own as the others.
     export joint-check-welds;
+    /// The packings in the bolts' grips (2026-11-27, O49 stage 1c): it
+    /// takes `joint-check-groups`' and `joint-check-groups-prying`'s
+    /// records too; looked up on its own as the others.
+    export joint-check-groups-packing;
+}
+
+/// The packings in the grips of a joint's bolt groups (optional export of
+/// any plugin beside `joint-check-groups-prying`, found by its export
+/// name; 2026-11-27, roadmap O49 stage 1c, the owner's answer of that day:
+/// a second plate's own bolts through a packing checked as a bolt group of
+/// their own, with a code's reduction for packings; added to interface
+/// version 0.3 without changing anything else). The same call as
+/// `check-joint-groups-prying`, with, per group, the total thickness of
+/// the packings (fillers: plies that carry no force of their own, between
+/// the parts a bolt joins) in each bolt's grip — the plugin applies its
+/// code's rule for them (SIA 263 6.2.2.5's β_p, for example). A plugin
+/// without this export is called by `check-joint-groups-prying`, and
+/// OpenOHL says, on each group with a packing, that the packings were not
+/// sent (NOT ON THE SAFE SIDE). SI units throughout.
+interface joint-check-groups-packing {
+    use joint-check-groups.{group-input, group-result};
+    use joint-check-groups-prying.{group-prying};
+
+    /// The packings of one group of `group-input.groups`.
+    record group-packing {
+        /// The group's number.
+        id: u32,
+        /// Per bolt (the order of `group.bolts`): the total thickness of
+        /// the packings in its grip, m (0: none; none: not known — the
+        /// plugin says what it could not apply). An empty list: not known
+        /// for any of its bolts.
+        packings: list<option<f64>>,
+    }
+
+    /// Checks the groups of `input` by method `method` as
+    /// `check-joint-groups-prying` does, each bolt with the packings in
+    /// its grip from `packings` (one per group of `input`; a group left
+    /// out: its packings not known).
+    check-joint-groups-packing: func(method: string, input: group-input, tension: list<group-prying>, packings: list<group-packing>) -> result<list<group-result>, string>;
 }
 
 /// A bent plate's bend in bending (optional export of any plugin, found by
@@ -2484,7 +2523,9 @@ world member-limits-export {
 /// bolts in tension, with prying, by `joint-check-groups-tension`
 /// (2026-11-19), the plates' prying too by `joint-check-groups-prying`
 /// (2026-11-19), a bent plate's bend by `joint-check-bends` (2026-11-19),
-/// a weld with its sides by `joint-check-welds` (2026-11-25), its members
+/// a weld with its sides by `joint-check-welds` (2026-11-25), the
+/// packings in its bolt groups' grips by `joint-check-groups-packing`
+/// (2026-11-27, O49 stage 1c), its members
 /// without bolts in their data with OpenOHL's default bolt by
 /// `member-check-default-bolts` (2026-11-26), the limits its code puts on
 /// its members' sizes by `member-limits` (2026-11-26, O49).
@@ -2502,6 +2543,7 @@ world structure-code-plugin {
     export joint-check-groups-prying;
     export joint-check-bends;
     export joint-check-welds;
+    export joint-check-groups-packing;
     export bolt-distances;
     export bolt-distances-full;
 }

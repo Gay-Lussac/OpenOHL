@@ -630,6 +630,30 @@ pub fn bolt_shear(
     Some((f64::from(planes) * per_plane, words))
 }
 
+/// The reduction of the bolts' shear resistance for a long joint (SIA 263
+/// 6.2.2.2, Figure 25; O49 stage 1c, 2026-11-27): the force passed on
+/// over a length `lj` (from the first bolt to the last along the force, m)
+/// above 15 d — β_Lf = 1 − (L_j − 15 d)/(200 d), 0.75 ≤ β_Lf ≤ 1.0; 1 for
+/// L_j ≤ 15 d. (The clause's exception, a force passed on evenly over the
+/// whole length guaranteed, is never taken: on the safe side.)
+pub fn long_joint(lj: f64, d: f64) -> f64 {
+    if d <= 0.0 || lj <= 15.0 * d {
+        return 1.0;
+    }
+    (1.0 - (lj - 15.0 * d) / (200.0 * d)).clamp(0.75, 1.0)
+}
+
+/// The reduction of the bolts' shear resistance for packings in their grip
+/// (SIA 263 6.2.2.5; O49 stage 1c, 2026-11-27): packings of total
+/// thickness t_p above d/3 — β_p = 9 d/(8 d + 3 t_p) ≤ 1.0; 1 for t_p ≤
+/// d/3.
+pub fn packing_factor(tp: f64, d: f64) -> f64 {
+    if d <= 0.0 || tp <= d / 3.0 {
+        return 1.0;
+    }
+    (9.0 * d / (8.0 * d + 3.0 * tp)).min(1.0)
+}
+
 /// One end's connection as the check takes it.
 struct EndCheck {
     /// The bolts' shear, N.
@@ -812,6 +836,46 @@ fn end_check(
         shear = per_plane.map(|v| f64::from(b.count) * f64::from(b.shear_planes) * v);
         let lines = b.holes.unwrap_or(1).max(1);
         let per_line = b.count.div_ceil(lines).max(1);
+        // 6.2.2.2 (long joints, O49 stage 1c): L_j from the end's bolt
+        // pattern — its bolts per line less one times the pitch; the pitch
+        // not given, Table 17's minimum spacing (the shortest joint), said
+        // not checked for a wider one.
+        if per_line > 1
+            && let Some(v) = shear
+        {
+            let given = end.and_then(|e| e.pitch).or(d.spacing);
+            let p = given.or_else(|| bolt_minimums(b.diameter).map(|m| m[1]));
+            if let Some(p) = p {
+                let lj = f64::from(per_line - 1) * p;
+                let beta = long_joint(lj, b.diameter);
+                if beta < 1.0 {
+                    shear = Some(v * beta);
+                    notes.push(format!(
+                        "long joint: L_j {:.0} mm above 15 d {:.0} mm, bolt shear × β_Lf {beta:.3} \
+                         (SIA 263 6.2.2.2, Figure 25)",
+                        lj * 1e3,
+                        15.0 * b.diameter * 1e3
+                    ));
+                }
+                if given.is_none() {
+                    notes.push(format!(
+                        "long joint (SIA 263 6.2.2.2) not checked for a pitch wider than Table \
+                         17's minimum {:.0} mm (no pitch given: L_j {:.0} mm with it) — a wider \
+                         pitch makes a longer joint, its bolt shear up to 25 % lower; give the \
+                         pitch (`spacing`, or lay out the joint)",
+                        p * 1e3,
+                        lj * 1e3
+                    ));
+                }
+            } else {
+                notes.push(format!(
+                    "long joint (SIA 263 6.2.2.2) not checked: no pitch given and Table 17 has \
+                     no M{:.0} — a joint longer than 15 d has its bolt shear up to 25 % lower; \
+                     give the pitch",
+                    b.diameter * 1e3
+                ));
+            }
+        }
         let e1 = end
             .and_then(|e| e.end_distance)
             .or(d.end_distance)

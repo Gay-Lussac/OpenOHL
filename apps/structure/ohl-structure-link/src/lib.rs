@@ -46,6 +46,7 @@ mod bends;
 mod bent_plate_tests;
 #[cfg(test)]
 mod between_plate_tests;
+pub mod bolt_sizes;
 mod both_faces;
 #[cfg(test)]
 mod both_faces_tests;

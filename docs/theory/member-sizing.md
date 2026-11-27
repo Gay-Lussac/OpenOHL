@@ -228,10 +228,11 @@ section**: a heavier section never raises it. So, per trial:
    as before: those depend on the section's thickness and area, a heavier
    section can help.
 
-At most 12 bolt proposals per group per round (the program's bound); the
-bolts proposed carry over to the next round. A group whose bolts are
-given at its members' ends (`[[connection]]`, level 4), differ in diameter
-within the group or are not given has no bolt proposal. The window's
+At most 12 bolt proposals per bolt size of a group per round (the
+program's bound); the bolts proposed carry over to the next round.
+Members whose bolts are given at their ends (`[[connection]]`, level 4)
+or not given have no bolt proposal (since stage 1c a group's members are
+taken by their bolts' size, below). The window's
 **Bolts** column and the command line's line under the group show them;
 Apply writes them in the same undo step as the sections (the count; a new
 bolt with its hole and shear capacity, a capacity or hole of the old bolt
@@ -244,6 +245,64 @@ four (a variant made so that they govern): 76 bolt proposals on seven of
 the eight towers; 7 groups (17 members) left above the target, each mixing
 bolts of 16 and 20 mm within the group, so without a proposal (said in the
 result); 698 s of CPU time for the eight against 548 s (+27 %).
+
+## The bolts per size, one bolt size per joint (stage 1c)
+
+(2026-11-27; built, in active development, not approved yet.) The
+owner's answers of that day to stage 1b's questions — *"Okay with
+recommendations go ahead"* — and, the same day, *"for the bolts please
+try to use the same ones for a joint. this would ease the construction
+once outside"*.
+
+- **A proposal per bolt size within a group.** A group's members are
+  taken by their own bolts' size — the diameter and the grade (a grade
+  not given is the same size as any grade of its diameter; a shear
+  capacity is no size: it also depends on the threads) — and each
+  size is proposed on its own, as a group was in stage 1b: its count, else
+  the next larger bolt of the library. Members of one group failing by
+  another check (bearing, block shear, the net section) still make the
+  group heavier; members of another size failing by their bolts get their
+  bolts at the same trial.
+- **One bolt size per joint wherever it can.** (1) More bolts of the
+  joint's size first (the count above never changes a size). (2) Where a
+  size's members go to a larger bolt (more do not fit their length or
+  leg), every member of the old size at their joints goes with them, and
+  on through the joints those reach that had that size alone
+  (`sizing_bolts::same_size`): each with **the same count of the larger
+  bolt** — never less bolt shear or bearing (both rise with the diameter)
+  — proposed and said ("one bolt size per joint: …" in the window and on
+  the command line). (3) Mixed sizes only where one size cannot be had,
+  each joint said with why: its bolts were of several sizes already; bolts
+  laid out there (`[[connection]]`, a plate's own) keep theirs (lay the
+  joint out again); a member the sizer does not change (its group kept or
+  not sized); a member whose leg or length does not take the larger bolt
+  (the joint-fit limits; checked, and such a member keeps its bolts); a
+  member whose check fails with it (the larger hole lowers the net
+  section: found in the final run, it keeps its bolts and the run is made
+  again once). The joints with one size and with several are counted
+  before and after (the window's notes, the command line's
+  `one bolt size per joint: …` and `BOLT SIZES MIXED: joint …` lines).
+- **The bolts govern and no proposal fits: the section kept.** Where no
+  section passes, the bolts govern (their shear) and no bolt proposal is
+  possible (bolts given at the members' ends, or the most proposals tried),
+  the group keeps its **current section** (said: "its current section
+  kept"), not stage 1's "least usage" choice — the lightest of sections
+  failing alike (the owner's answer of 2026-11-27).
+
+**Measured** on the eight private towers (kept privately), every bolt's
+shear capacity divided by four as in stage 1b, one vertical case: 83 bolt
+proposals (stage 1b: 76) and **no group left above the target** (stage
+1b: 7 groups, 17 members, each mixing 16 and 20 mm bolts); mass 155 944 kg
+(stage 1b: 155 925); 510 s of CPU time for the eight (stage 1b's final
+binary: 698 s, −27 %: groups settle with fewer trials). No size went up
+there (no larger bolt needed), so every joint kept its sizes: joints with
+one size 3 791 → 3 791, with several 2 970 → 2 970 (the towers as built
+mix 16, 20 and 24 mm at many joints). With the towers' bolt library
+beside them (larger bolts possible) the same: every proposal more bolts of
+the same size, no bolts taken along by a joint (about 510 s of CPU time).
+The joint rule is checked by the unit test `one_bolt_size_per_joint`
+(a 16 mm member going to 20 mm takes the truss's other 16 mm bolts along;
+a member whose leg does not take it stops it at its joint, said).
 
 ## Conservative assumptions
 
@@ -267,6 +326,10 @@ result); 698 s of CPU time for the eight against 548 s (+27 %).
   code's distances of a default bolt never below the default minimums.
 - **Conservative**: a bolt proposal is tried until the plugin's check
   passes; bolts proposed in a round are never fewer in the next.
+- **Conservative** (stage 1c): a member a joint takes along to a larger
+  bolt keeps its count — the larger bolt's shear and bearing are never
+  less; its net section (a larger hole) is checked in the final run, and a
+  member failing with it keeps its bolts (said).
 - **Assumed, not a safety question** (they decide whether a joint can be
   built, not its strength; Lay out joints checks the real joint): the
   gauge at mid-leg; the length between the joints' work points (the steel

@@ -100,6 +100,64 @@ pub struct Group {
     pub bolts: Vec<Bolt>,
     /// Per case, per bolt.
     pub loads: Vec<Vec<Load>>,
+    /// Per bolt the total thickness of the packings in its grip, m (0:
+    /// none; none: not known); none: not sent (an export before
+    /// `joint-check-groups-packing`, O49 stage 1c).
+    pub packings: Option<Vec<Option<f64>>>,
+}
+
+/// What ASCE 10-97 says of packings in a group's bolts' grips (O49 stage
+/// 1c, 2026-11-27): nothing — no rule for packings or fillers was found in
+/// ASCE 10-97 (4.3.2, 4.4, C4.3.2 read) nor in ASCE/SEI 48-19 (6.2.2,
+/// C6.2.2); its bolt shear is not reduced. A packing thicker than a third
+/// of the bolt's diameter bends the bolt across it and lowers its shear
+/// resistance (other codes reduce it from there): said NOT ON THE SAFE
+/// SIDE, with what makes it safe. Returns (notes, not safe).
+pub fn packing_words(g: &Group) -> (Vec<String>, Vec<String>) {
+    let mut notes = Vec::new();
+    let mut not_safe = Vec::new();
+    let Some(p) = &g.packings else {
+        return (notes, not_safe);
+    };
+    let mut thick: Option<(f64, f64)> = None;
+    let mut unknown = false;
+    let mut any = false;
+    for (k, b) in g.bolts.iter().enumerate() {
+        match p.get(k).copied().flatten() {
+            Some(tp) if tp > 0.0 => {
+                any = true;
+                if tp > b.diameter / 3.0 && thick.is_none_or(|x| tp > x.0) {
+                    thick = Some((tp, b.diameter));
+                }
+            }
+            Some(_) => {}
+            None => unknown = true,
+        }
+    }
+    if any {
+        notes.push(
+            "packings in the bolts' grips: ASCE 10-97 gives no reduction for them (none found), \
+             the bolt shear not reduced"
+                .into(),
+        );
+    }
+    if let Some((tp, d)) = thick {
+        not_safe.push(format!(
+            "a packing {:.0} mm thick in a bolt's grip, above a third of its {:.0} mm diameter: \
+             the bolt bends across it and resists less shear, which ASCE 10-97 does not cover \
+             (no rule found) — keep the packing at d/3 or less, or check the bolt by hand",
+            mm(tp),
+            mm(d)
+        ));
+    }
+    if unknown {
+        not_safe.push(
+            "the packings in a bolt's grip not known: a thick packing lowers the bolt's shear \
+             resistance — give the packings"
+                .into(),
+        );
+    }
+    (notes, not_safe)
 }
 
 /// A flange a bolt bends as it pulls (a T-stub's flange; theory page).
@@ -523,6 +581,9 @@ pub fn bolt_checks(b: &Bolt, plies: &[Ply], l: &Load) -> Checked {
 pub fn check_group(g: &Group, strengths: &[f64], tension: Option<&GroupTension>) -> GroupResult {
     let mut out = GroupResult::default();
     let mut worst: Option<f64> = None;
+    let (said, unsafe_words) = packing_words(g);
+    out.notes.extend(said);
+    out.not_safe.extend(unsafe_words);
     for (n, strength) in strengths.iter().enumerate() {
         let mut best: Option<(f64, String)> = None;
         for (k, b) in g.bolts.iter().enumerate() {
@@ -589,6 +650,32 @@ pub fn check_group(g: &Group, strengths: &[f64], tension: Option<&GroupTension>)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Packings (O49 stage 1c): ASCE 10-97 has no rule — a 10 mm packing
+    /// under an M16 (above 16/3 = 5.3 mm) said not on the safe side, a 4
+    /// mm one only noted; the bolt shear not reduced either way.
+    #[test]
+    fn a_packing_is_said_not_reduced() {
+        let g = |tp: f64| Group {
+            plies: vec![leg()],
+            bolts: vec![m16(&["G1b"])],
+            loads: vec![vec![Load {
+                force: 20e3,
+                ends: vec![None],
+                sides: vec![None],
+                ahead: vec![None],
+            }]],
+            packings: Some(vec![Some(tp)]),
+        };
+        let thick = check_group(&g(0.010), &[1.0], None);
+        let thin = check_group(&g(0.004), &[1.0], None);
+        assert!(
+            thick.not_safe.iter().any(|w| w.contains("10 mm")),
+            "{thick:?}"
+        );
+        assert!(thin.not_safe.is_empty() && thin.notes.iter().any(|w| w.contains("none found")));
+        assert_eq!(thick.usages, thin.usages);
+    }
 
     fn leg() -> Ply {
         Ply {
@@ -811,6 +898,7 @@ mod tests {
                     ahead: vec![Some(0.05)],
                 },
             ]],
+            packings: None,
         };
         let r = check_group(&g, &[1.0], None);
         let (u, w) = r.usages[0].clone().unwrap();

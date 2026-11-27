@@ -53,6 +53,7 @@ pub use ohl_plugins::joint_check::{CaseUsage, JointInput, LoadCase, Part, PartRe
 pub use ohl_plugins::joint_check_bends as bends;
 use ohl_plugins::joint_check_full as full;
 pub use ohl_plugins::joint_check_groups as groups;
+pub use ohl_plugins::joint_check_groups_packing as packing;
 pub use ohl_plugins::joint_check_groups_prying as prying;
 pub use ohl_plugins::joint_check_groups_tension as tension;
 use ohl_plugins::joint_check_moments as mom;
@@ -494,6 +495,55 @@ pub fn check_joint_groups_prying(
             (
                 GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
                 TensionChecked::No,
+            )
+        }
+    }
+}
+
+/// The joint bolt groups of `input` as [`check_joint_groups_prying`]
+/// checks them, each bolt with the packings in its grip (`packings`;
+/// 2026-11-27, roadmap O49 stage 1c): through the plugin's
+/// `joint-check-groups-packing` export when it has it — then the third
+/// value is true — else as [`check_joint_groups_prying`] (the packings not
+/// sent: the caller says so on each group with one); one call counted
+/// either way.
+pub fn check_joint_groups_packing(
+    p: &PluginMethod,
+    input: &groups::GroupInput,
+    prying: &[prying::GroupPrying],
+    packings: &[packing::GroupPacking],
+) -> (GroupsChecked, TensionChecked, bool) {
+    let dir = match installed(p) {
+        Ok(d) => d,
+        Err(e) => return (GroupsChecked::NotChecked(e), TensionChecked::No, false),
+    };
+    let host = match crate::host() {
+        Ok(h) => h,
+        Err(e) => {
+            return (
+                GroupsChecked::NotChecked(format!("the plugin host does not start: {e}")),
+                TensionChecked::No,
+                false,
+            );
+        }
+    };
+    let mut with = input.clone();
+    with.parameters = p.parameters.as_ref().map_or(String::new(), |x| x.1.clone());
+    match host.check_joint_groups_packing(&dir, &p.method, &with, prying, packings) {
+        Ok(Some(r)) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (GroupsChecked::Results(r), TensionChecked::Plates, true)
+        }
+        Ok(None) => {
+            let (c, t) = check_joint_groups_prying(p, input, prying);
+            (c, t, false)
+        }
+        Err(e) => {
+            JOINT_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (
+                GroupsChecked::NotChecked(format!("the joint's bolt groups' check failed: {e}")),
+                TensionChecked::No,
+                false,
             )
         }
     }
