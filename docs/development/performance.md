@@ -1717,6 +1717,39 @@ not structures; structures come only for the area in view, at most
 routes of one line (each route is its own line; towers shared between
 lines are twins, kept as they are), so no shared-tower squares there.
 
+## OHL-Server, stages C to F (2026-11-28)
+
+The pages of stages C to F (ROADMAP O17) on the same 12 000-pylon
+synthetic country (147 lines), with the country's cable library put and
+released, two requests, and **10 000 audit rows** added before the server
+starts; the app connected as the network admin (the `bench-fast`
+profile; Apple M-series, the machine shared with other builds; one run):
+
+```bash
+cargo test -p ohl-server-app --profile bench-fast --test stages_cf measure -- --ignored --nocapture
+```
+
+| What (asked → answered and drawn) | Measured |
+|---|---|
+| the Libraries page (kinds, files, entries, requests, the 147 lines' pins) | 48 ms |
+| the Lines page (147 lines) | 67 ms |
+| the Shared towers page | 41 ms |
+| the Audit page: 200 rows, newest first, of 10 162 | 49 ms |
+| an audit page of 1000 rows, filtered by scope (text in the target) | 57 ms |
+| the whole audit to CSV (11 pages of 1000, 10 162 rows) | 0.31 s |
+| one line exported (160 structures, 1.3 MB): written on the exports' thread and fetched in pieces | 0.19 s |
+| (set-up) 10 000 audit rows written | 0.6 s |
+
+Each time includes the app's frames until the answer is drawn (a few
+milliseconds). The audit is read with bound parameters, `count(*)` of
+the filter and a page by row number (newest first); 10 000 rows are far
+from a cost. The export is the store's own (`ohl network export`'s) on a
+reader connection of the exports' thread, so the authority keeps
+serving meanwhile. The import is not in this run: it runs on the
+authority (it needs the writer) — in the app's own test (a debug build)
+a synthetic line of 97 structures, 913 ids renamed and 108 twins listed,
+took 6.3 s, during which other users wait.
+
 ## Automatic joint layout: the run made faster (O44 L9, 2026-11-21)
 
 The layout run took about 45 s per real tower after L8 (median of six
