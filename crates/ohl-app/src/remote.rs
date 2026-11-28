@@ -367,7 +367,9 @@ impl Model {
             | ServerMsg::Heartbeat { .. }
             | ServerMsg::CatchUp { .. }
             | ServerMsg::Extent { .. }
-            | ServerMsg::RouteDetail { .. } => None,
+            | ServerMsg::RouteDetail { .. }
+            // OHL-Design asks no admin messages (OHL-Server does).
+            | ServerMsg::Admin { .. } => None,
             // Phase 12: offline working sets exported and brought back —
             // the Offline working set window's answers (2026-11-21), kept
             // for it; said if one comes without a working set.
