@@ -277,6 +277,7 @@ fn the_pages_of_stages_c_to_f() {
         [cx + w, cy + hh],
         [cx - w, cy + hh],
     ]);
+    conn(&mut h).data.said.clear();
     h.run_steps(3);
     shot(&mut h, "ohl-server-draw-region.png");
     h.state_mut().finish_region();
@@ -290,6 +291,11 @@ fn the_pages_of_stages_c_to_f() {
     assert_eq!(h.state().map.background_requests(), 1);
     let line = seen.lock().unwrap()[0].clone();
     assert!(line.starts_with("GET /wms?BBOX="), "{line}");
+    // The picture shows an example URL, never the test's local one.
+    h.state_mut().map.background.url =
+        "https://maps.example/wms?SERVICE=WMS&REQUEST=GetMap&BBOX={x0},{y0},{x1},{y1}&WIDTH={width}&HEIGHT={height}".into();
+    conn(&mut h).data.said.clear();
+    h.run_steps(2);
     shot(&mut h, "ohl-server-background.png");
     h.state_mut().map.background = Default::default();
 
@@ -346,7 +352,7 @@ fn the_pages_of_stages_c_to_f() {
     shot(&mut h, "ohl-server-libraries.png");
     h.state_mut().window = Some(Window::Library(LibraryAction::Refuse {
         id: req1,
-        note: String::new(),
+        note: "Not needed: the released wires cover it".into(),
     }));
     h.run_steps(3);
     shot(&mut h, "ohl-server-refuse.png");
@@ -408,6 +414,7 @@ fn the_pages_of_stages_c_to_f() {
     });
     open_page(&mut h, Page::SeeAs);
     h.state_mut().pages.see_as = "vic".into();
+    h.state_mut().pages.explain_line = t.codes[0].clone();
     conn(&mut h).ask_explain(
         "vic",
         Permission::Edit,

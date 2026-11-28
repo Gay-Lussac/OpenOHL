@@ -649,7 +649,8 @@ impl Conn {
             (want, AdminReply::Done(text)) => {
                 d.said.push((text, false));
                 // What a change changes is shown again.
-                if matches!(want, Want::Act(_)) {
+                if let Want::Act(what) = &want {
+                    let setting = what.starts_with("setting ");
                     let admin = self.data.network_admin();
                     let cf = self.data.stages_cf();
                     self.waiting.retain(|_, w| {
@@ -662,7 +663,10 @@ impl Conn {
                     self.ask_map();
                     if admin {
                         self.ask_backups();
-                        self.ask_settings();
+                        if setting {
+                            self.waiting.retain(|_, w| *w != Want::Settings);
+                            self.ask_settings();
+                        }
                         if cf {
                             self.ask_identities();
                         }
