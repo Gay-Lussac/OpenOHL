@@ -1686,6 +1686,37 @@ whole line's solves with its lookups: 4.4 s searched); `ohl-app`
 `network::a_replica_takes_the_servers_rows_in_place` 0.7 s. The other
 server tests run with the idle solve off (their timings unchanged).
 
+## OHL-Server, the admin app (2026-11-28)
+
+The admin app (ROADMAP O17, stages A and B) on the owner's size: the
+12 000-pylon synthetic country, one model per route (147 lines), imported
+into a throwaway PostgreSQL cluster, served by `ohl network serve`'s code,
+the app connected through the protocol as its network admin (the
+`bench-fast` profile; Apple M-series, the machine shared with other
+builds; one run):
+
+```bash
+cargo test -p ohl-server-app --profile bench-fast --test server measure -- --ignored --nocapture
+```
+
+| What | Measured |
+|---|---|
+| import of the 147 lines (the test's set-up, not the app) | 115.9 s |
+| the server reading every line at its start | 2.6 s |
+| **open**: Connect clicked → the map answered (overview, rights and map asked together) | 0.07 s |
+| **frame**, whole country on the Map page (147 routes, each alignment ≤ 64 points): median, p95 | 6.8 ms, 8.5 ms |
+| of it, the map's own shapes | 0.01 ms |
+| zoomed in (a view 32 km wide): the structures of the area asked and answered | 0.05 s (28 structures there) |
+| frame zoomed in: median, p95 | 6.5 ms, 7.5 ms |
+
+A frame is the app's whole frame in the test window, painted on the GPU
+and read back (an upper bound of a window's own painting). The map is fed
+by route summaries (never whole lines), so its cost grows with routes,
+not structures; structures come only for the area in view, at most
+20 000 an answer. The synthetic country has no tower shared by two
+routes of one line (each route is its own line; towers shared between
+lines are twins, kept as they are), so no shared-tower squares there.
+
 ## Automatic joint layout: the run made faster (O44 L9, 2026-11-21)
 
 The layout run took about 45 s per real tower after L8 (median of six

@@ -1282,6 +1282,26 @@ impl App {
                             ui.end_row();
                         }
                     });
+                // The tree: line › the routes they see.
+                let routes = c
+                    .data
+                    .map
+                    .as_ref()
+                    .map(|m| m.routes.clone())
+                    .unwrap_or_default();
+                let seen: BTreeSet<&String> = sa.routes.iter().collect();
+                for l in &sa.lines {
+                    egui::CollapsingHeader::new(format!("line {}", l.line))
+                        .id_salt(("see-as-line", &l.line))
+                        .show(ui, |ui| {
+                            for r in routes
+                                .iter()
+                                .filter(|r| r.model == l.line && seen.contains(&r.id))
+                            {
+                                ui.label(format!("route {} {}", r.id, r.name));
+                            }
+                        });
+                }
             });
     }
 

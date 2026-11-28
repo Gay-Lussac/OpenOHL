@@ -467,7 +467,12 @@ impl Conn {
             (_, AdminReply::SeeAs(s)) => d.see_as = Some(*s),
             (Want::Preview(c), AdminReply::Preview(w)) => d.preview = Some((c, *w)),
             (_, AdminReply::Preview(_)) => {}
-            (_, AdminReply::Invitation(i)) => d.invitation = Some(i),
+            (_, AdminReply::Invitation(i)) => {
+                d.invitation = Some(i);
+                // The user invited is listed.
+                self.waiting.retain(|_, w| *w != Want::Rights);
+                self.ask_rights();
+            }
             (want, AdminReply::Done(text)) => {
                 d.said.push((text, false));
                 // What a change changes is shown again.

@@ -491,6 +491,7 @@ impl App {
     }
 
     fn nav(&mut self, ui: &mut egui::Ui) {
+        ui.set_min_width(140.0);
         ui.add_space(6.0);
         for p in Page::ALL {
             if !self.page_open(p) {

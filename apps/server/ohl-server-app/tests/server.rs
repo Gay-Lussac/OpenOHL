@@ -206,7 +206,7 @@ fn a_network_admin_uses_every_page_and_saves_after_what_changes() {
     // Operations: every tab answers.
     open_page(&mut h, Page::Operations);
     for (tab, wait, pic) in [
-        (OpTab::Sessions, "admin", "ohl-server-sessions.png"),
+        (OpTab::Sessions, "an admin app", "ohl-server-sessions.png"),
         (OpTab::Settings, "database", "ohl-server-settings.png"),
         (OpTab::Log, "changed the rights", "ohl-server-log.png"),
         (OpTab::Backups, "Back up now", "ohl-server-backups.png"),
@@ -225,6 +225,24 @@ fn a_network_admin_uses_every_page_and_saves_after_what_changes() {
             );
             h.run_steps(1);
             std::thread::sleep(Duration::from_millis(20));
+        }
+        if tab == OpTab::Backups && ohl_store_pg::backup::pg_tool("pg_dump").is_ok() {
+            click(&mut h, "Back up now");
+            until(&mut h, "the backup listed", |a| {
+                a.conn
+                    .as_ref()
+                    .and_then(|c| c.data.backups.as_ref())
+                    .is_some_and(|b| !b.rows.is_empty())
+            });
+        }
+        if tab == OpTab::Settings {
+            // The picture shows an example database, never the test
+            // cluster's socket folder.
+            for r in &mut h.state_mut().conn.as_mut().unwrap().data.settings {
+                if r.key == "database" {
+                    r.value = "db.example / network (TLS require)".into();
+                }
+            }
         }
         shot(&mut h, pic);
     }
@@ -267,7 +285,10 @@ fn host_mode_starts_the_server_and_closing_asks_first() {
     let mut h = harness(app);
     click(&mut h, "Look at the database");
     assert!(shown_part(&h, "network admins: admin"));
+    // The picture shows an example string, never the test cluster's.
+    h.state_mut().host_form.database = "host=db.example dbname=network user=ohl".into();
     shot(&mut h, "ohl-server-host-form.png");
+    h.state_mut().host_form.database = t.url.clone();
     click(&mut h, "Host");
     until(&mut h, "the hosted server's overview", |a| {
         a.hosted.is_some() && a.conn.as_ref().is_some_and(|c| c.data.overview.is_some())
@@ -340,9 +361,15 @@ fn measure_the_twelve_thousand_pylon_country() {
     let frames = |h: &mut egui_kittest::Harness<'static, App>| {
         let mut ms = Vec::new();
         let mut draw = Vec::new();
+        let gpu = ohl_render::headless_device().is_ok();
         for _ in 0..30 {
             let t = Instant::now();
             h.run_steps(1);
+            // The frame painted too (on the GPU, read back: an upper bound
+            // of the window's own painting).
+            if gpu {
+                let _ = h.render();
+            }
             ms.push(t.elapsed().as_secs_f64() * 1e3);
             draw.push(h.state().map.draw_ms);
         }
@@ -376,8 +403,8 @@ fn measure_the_twelve_thousand_pylon_country() {
     let c = h.state().conn.as_ref().unwrap();
     eprintln!(
         "12k: {} routes, {} shared towers; open (connect → map) {open_s:.2} s; whole country: \
-         frame median {:.1} ms (p95 {:.1}), map drawing {:.1} ms; zoomed (25 km): {} \
-         structures in {dots_s:.2} s, frame median {:.1} ms (p95 {:.1}), map drawing {:.1} ms",
+         frame median {:.1} ms (p95 {:.1}), map drawing {:.2} ms; zoomed (25 km): {} \
+         structures in {dots_s:.2} s, frame median {:.1} ms (p95 {:.1}), map drawing {:.2} ms",
         c.data.map.as_ref().unwrap().routes.len(),
         c.data.map.as_ref().unwrap().shared.len(),
         whole.0,

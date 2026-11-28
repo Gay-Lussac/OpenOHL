@@ -274,8 +274,8 @@ nothing changes.
 
 What a user sees: the server's own filter, as both you and they may (an
 admin learns nothing they may not see themselves): per line, whole or
-not, and each kind's objects seen out of all. **on the map** shows only
-the routes they see. Each look is in the audit.
+not, and each kind's objects seen out of all, then the tree of each line
+and the routes they see. **on the map** shows only the routes they see. Each look is in the audit.
 
 ![See as user: a line admin sees one line](../images/ohl-server/ohl-server-see-as.png)
 
