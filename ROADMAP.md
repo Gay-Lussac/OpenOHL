@@ -6789,7 +6789,10 @@ comes after phase 6 with 7 and 8; phase 10 brings the full checks.
 have the server running in its own app which would allow for the gestion
 of the roles and an overview map of the model inside but very simplified
 mostly oriented for admin? This is a plan to define and not already start
-on"). **Nothing built until the owner answers.** A third application, for
+on"). **Answered 2026-11-28** (owner: "go with the admin app i'll build a
+physical server first before we test it"): the seven questions below
+taken as recommended, the owner may redirect. **Stages A and B in
+progress** (2026-11-28); C–F follow in a later task. A third application, for
 admins only (no engineering editing, no 3D, no checks run from it), in
 two modes: *host* (the server inside the app, for a small office or a
 test; closing asks first) and *connect* (to a headless server, the
@@ -6808,7 +6811,8 @@ with the server's phases: A after 5 (the app, both modes, Overview,
 Operations, the map), B with 7 (the rights pages, replacing the admin
 window planned inside OHL-Design), C with 8, D with 9, E the Lines page,
 F with 13.
-> **Owner:** (to answer, 2026-11-18; the recommendation after the arrow)
+> **Owner:** (asked 2026-11-18; answered 2026-11-28: each taken as
+> recommended, the owner may redirect)
 > 1. A desktop app or a page in the browser? → a desktop app. 2. Host and
 > connect modes, or connect only? → both. 3. Who may open it? → network
 > admins, line admins (their lines), library maintainers (their

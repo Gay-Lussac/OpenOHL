@@ -8,6 +8,32 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-28 (OHL-Server, the admin app: the plan's seven questions answered)
+
+The owner, 2026-11-28: "go with the admin app i'll build a physical server
+first before we test it". The seven questions of the plan of 2026-11-18
+(ROADMAP O17, "OHL-Server, an app for admins") are **taken as
+recommended 2026-11-28; the owner may redirect**:
+
+1. A desktop app (egui, like OHL-Design and OHL-Structure), not a page in
+   the browser.
+2. Both modes: **host** (the network's server inside the app, for a small
+   office or a test; closing asks first) and **connect** (to a headless
+   `ohl network serve`, the production way; the app is never needed for
+   the server to run).
+3. Who may open it: network admins, line admins (their lines), library
+   maintainers (their libraries); each sees only the pages and objects
+   their rights allow.
+4. The map is read-only.
+5. The map's background: none by default; region outlines the admin
+   imports; optionally the owner's own tile server (a URL setting, no
+   third-party default, no requests to third parties).
+6. The admin rights in OHL-Design stay for a project hosted from a file;
+   for the database server they are only in OHL-Server.
+7. Stages A–F with the server's phases; every phase they depend on is
+   built, so they start now: stages A and B first (in progress), C–F in a
+   later task.
+
 ## 2026-11-27 (O49 stage 1c: long joints, packings, bolts per size, one bolt size per joint, the second plate's room)
 
 Built the same day from the owner's answers below, in active development,
