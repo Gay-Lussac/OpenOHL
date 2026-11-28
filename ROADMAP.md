@@ -6795,7 +6795,9 @@ taken as recommended, the owner may redirect. **Stages A and B built
 2026-11-28, in active development, not approved yet**
 ([OHL-Server](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/ohl-server.md),
 [the admin messages](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/server-security-review.md#the-admin-messages-2026-11-28));
-C–F follow in a later task. A third application, for
+**Stages C–F started 2026-11-28** (owner: "go with the admin app"),
+with questions 1 (the owner's own tile server as a background) and 8 (a
+polygon drawn on the map as a scope) of stages A–B taken into C. A third application, for
 admins only (no engineering editing, no 3D, no checks run from it), in
 two modes: *host* (the server inside the app, for a small office or a
 test; closing asks first) and *connect* (to a headless server, the
