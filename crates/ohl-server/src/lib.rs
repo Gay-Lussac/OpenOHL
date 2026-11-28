@@ -2038,6 +2038,8 @@ pub fn random_code(n: usize) -> String {
 }
 
 #[cfg(all(test, feature = "network"))]
+mod admin_cf_tests;
+#[cfg(all(test, feature = "network"))]
 mod admin_tests;
 #[cfg(test)]
 mod hardening_tests;

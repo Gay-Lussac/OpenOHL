@@ -35,8 +35,33 @@ use ohl_session::rights::{Assignment, Permission, RightsCommand, RightsData, Sub
 use serde::{Deserialize, Serialize};
 
 /// The admin messages' version a server speaks ([`crate::NetworkInfo::admin`];
-/// 0: a server of before them).
-pub const ADMIN: u32 = 1;
+/// 0: a server of before them; 1: stages A and B; 2: stages C to F — the
+/// shared towers and twins, the Libraries, Lines and Audit pages, the
+/// identities, "explain", the network's settings changed).
+pub const ADMIN: u32 = 2;
+
+/// The oldest admin messages' version the app works with (stages A and
+/// B; the pages of stages C to F need [`ADMIN`] 2).
+pub const ADMIN_MIN: u32 = 1;
+
+/// Bytes of a line's file in one [`AdminAsk::Download`] or
+/// [`AdminAsk::Upload`] (base64 in the message: under
+/// [`crate::LARGE_MESSAGE`]); a big file goes in many, never held whole in
+/// memory.
+pub const CHUNK: usize = 512 * 1024;
+
+/// The largest line file an admin uploads for an import, bytes.
+pub const MAX_UPLOAD: u64 = 8 << 30;
+
+/// Line files being sent or received at once, per connection.
+pub const MAX_TRANSFERS: usize = 2;
+
+/// Audit rows one [`AdminAsk::Audit`] answers at most.
+pub const AUDIT_PAGE_MAX: usize = 1000;
+
+/// Shared towers one [`AdminAsk::SharedTowers`] lists at most (the count
+/// is given in full).
+pub const SHARED_MAX: usize = 5000;
 
 /// The log lines a server keeps for its admins (the newest).
 pub const LOG_LINES: usize = 4000;
@@ -149,6 +174,249 @@ pub enum AdminAsk {
     },
     /// The country libraries the asker may see ([`AdminReply::Libraries`]).
     Libraries,
+    // Stage C (with phase 8): shared towers and twins.
+    /// The shared towers the asker may see: structures on two routes or
+    /// more, their routes and stale marks ([`AdminReply::SharedTowers`]).
+    SharedTowers,
+    /// One shared tower: its routes, their stale marks, and who may edit
+    /// it (shown to who manages rights on its line)
+    /// ([`AdminReply::SharedTower`]).
+    SharedTower {
+        /// The line.
+        model: String,
+        /// The structure.
+        id: String,
+    },
+    /// The twin towers of a line: its structures within a distance of
+    /// another line's of the same type — shown, never merged (owner
+    /// 2026-11-25) ([`AdminReply::Twins`]).
+    Twins {
+        /// The line.
+        model: String,
+        /// Within this distance, m (default the import's, 0.5 m).
+        #[serde(default)]
+        tolerance: Option<f64>,
+    },
+    // Stage D (with phase 9): the Libraries page.
+    /// The country libraries as their page shows them: each kind's lock,
+    /// maintainers, files and entries, releases, withdrawn entries; the
+    /// requests; which lines pin which release ([`AdminReply::LibraryPage`]).
+    LibraryPage,
+    /// Where an entry is used (the use index, as the asker may see it)
+    /// ([`AdminReply::Uses`]).
+    Uses {
+        /// The library kind.
+        kind: String,
+        /// The entry.
+        entry: String,
+    },
+    /// A maintainer's library change (the store's rights decide; audited).
+    Library {
+        /// The change.
+        action: LibraryAction,
+    },
+    /// What Update library pins would do to a line, nothing changed
+    /// ([`AdminReply::Pins`]).
+    PinsPlan {
+        /// The line.
+        line: String,
+        /// Only these kinds (empty: every kind released).
+        #[serde(default)]
+        kinds: Vec<String>,
+    },
+    /// Update library pins of a line, as planned (the rights decide; one
+    /// logged command, the routes using what changed marked out of date).
+    UpdatePins {
+        /// The line.
+        line: String,
+        /// Only these kinds (empty: every kind released).
+        #[serde(default)]
+        kinds: Vec<String>,
+    },
+    // Stage E: the Lines page.
+    /// The lines the asker may see ([`AdminReply::Lines`]).
+    Lines,
+    /// One line exported as a standalone project file, written on the
+    /// server's exports' thread (export on the whole line; audited); then
+    /// fetched with [`AdminAsk::Download`] ([`AdminReply::Transfer`]).
+    ExportLine {
+        /// The line.
+        model: String,
+    },
+    /// A piece of a file the server holds for this connection
+    /// ([`AdminReply::Chunk`]).
+    Download {
+        /// The transfer.
+        token: String,
+        /// From this byte.
+        offset: u64,
+    },
+    /// A project file to import starts coming (network admins)
+    /// ([`AdminReply::Transfer`]).
+    UploadStart {
+        /// Its file name (kept in the import's report).
+        name: String,
+        /// Its size, bytes.
+        bytes: u64,
+    },
+    /// A piece of it, in order ([`AdminReply::Received`]).
+    Upload {
+        /// The transfer.
+        token: String,
+        /// Its first byte.
+        offset: u64,
+        /// The bytes, base64 (at most [`CHUNK`]).
+        data: String,
+    },
+    /// The uploaded file imported as a new line of the network (network
+    /// admins; audited) ([`AdminReply::Imported`]).
+    ImportLine {
+        /// The transfer (the whole file received).
+        token: String,
+        /// The new line's code.
+        code: String,
+        /// Its name (default: the line's name in the file).
+        #[serde(default)]
+        name: Option<String>,
+        /// Twin towers within this distance, m (default 0.5 m).
+        #[serde(default)]
+        tolerance: Option<f64>,
+    },
+    /// A transfer ended: its file removed from the server.
+    TransferDone {
+        /// The transfer.
+        token: String,
+    },
+    // Stage F (with phase 13): the Audit page and the rest of phase 13.
+    /// A page of the network's audit, newest first (network admins)
+    /// ([`AdminReply::Audit`]).
+    Audit {
+        /// Which rows.
+        #[serde(default)]
+        filter: AuditFilter,
+        /// Rows older than this one (none: from the newest).
+        #[serde(default)]
+        before: Option<i64>,
+        /// Rows at most (0: 200; at most [`AUDIT_PAGE_MAX`]).
+        #[serde(default)]
+        limit: usize,
+    },
+    /// The OIDC identities mapped to network users (network admins)
+    /// ([`AdminReply::Identities`]).
+    Identities,
+    /// Why a user may or may not do something (the rights' one function;
+    /// audited) ([`AdminReply::Explain`]).
+    Explain {
+        /// The user.
+        user: String,
+        /// The permission.
+        permission: Permission,
+        /// The target's line (none: the network).
+        #[serde(default)]
+        line: Option<String>,
+        /// The target's object kind (none: the line whole).
+        #[serde(default)]
+        kind: Option<String>,
+        /// The target's object.
+        #[serde(default)]
+        id: Option<String>,
+    },
+    /// A network setting changed (`ohl network setting`; network admins;
+    /// audited).
+    SetSetting {
+        /// The setting.
+        key: String,
+        /// Its value.
+        value: String,
+    },
+}
+
+/// A library maintainer's change from the admin app (the maintainers'
+/// commands of `ohl network library`; files are changed and entries asked
+/// for in OHL-Design, not here).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "do", rename_all = "snake_case")]
+pub enum LibraryAction {
+    /// Lock or unlock a kind, or one file of it.
+    Lock {
+        /// The kind.
+        kind: String,
+        /// One file (none: the kind).
+        #[serde(default)]
+        file: Option<String>,
+        /// Locked.
+        locked: bool,
+        /// Why.
+        #[serde(default)]
+        note: String,
+    },
+    /// A request granted.
+    Grant {
+        /// The request.
+        id: i64,
+        /// A note.
+        #[serde(default)]
+        note: String,
+    },
+    /// A request refused, with a reason.
+    Refuse {
+        /// The request.
+        id: i64,
+        /// Why (required).
+        note: String,
+    },
+    /// The head of a kind released under a tag.
+    Release {
+        /// The kind.
+        kind: String,
+        /// The tag.
+        tag: String,
+        /// Notes.
+        #[serde(default)]
+        notes: String,
+    },
+    /// An entry withdrawn (kept for who uses it; no new use).
+    Withdraw {
+        /// The kind.
+        kind: String,
+        /// The file.
+        file: String,
+        /// The entry.
+        entry: String,
+        /// Why.
+        #[serde(default)]
+        note: String,
+    },
+    /// A withdrawn entry back.
+    Restore {
+        /// The kind.
+        kind: String,
+        /// The file.
+        file: String,
+        /// The entry.
+        entry: String,
+    },
+}
+
+impl LibraryAction {
+    /// In words.
+    pub fn describe(&self) -> String {
+        match self {
+            LibraryAction::Lock {
+                kind, file, locked, ..
+            } => format!(
+                "{} {}{}",
+                if *locked { "lock" } else { "unlock" },
+                kind,
+                file.as_deref().map_or(String::new(), |f| format!("/{f}"))
+            ),
+            LibraryAction::Grant { id, .. } => format!("grant request #{id}"),
+            LibraryAction::Refuse { id, .. } => format!("refuse request #{id}"),
+            LibraryAction::Release { kind, tag, .. } => format!("release {kind} as {tag}"),
+            LibraryAction::Withdraw { kind, entry, .. } => format!("withdraw {kind} {entry}"),
+            LibraryAction::Restore { kind, entry, .. } => format!("restore {kind} {entry}"),
+        }
+    }
 }
 
 impl AdminAsk {
@@ -192,6 +460,455 @@ pub enum AdminReply {
     Structures(Vec<MapDot>),
     /// [`AdminAsk::Libraries`].
     Libraries(Vec<LibraryKindRow>),
+    /// [`AdminAsk::SharedTowers`].
+    SharedTowers(SharedList),
+    /// [`AdminAsk::SharedTower`].
+    SharedTower(Box<SharedDetail>),
+    /// [`AdminAsk::Twins`].
+    Twins(Vec<TwinRow>),
+    /// [`AdminAsk::LibraryPage`].
+    LibraryPage(Box<LibraryPage>),
+    /// [`AdminAsk::Uses`].
+    Uses(Vec<UseRow>),
+    /// [`AdminAsk::PinsPlan`].
+    Pins(Box<PinsView>),
+    /// [`AdminAsk::Lines`].
+    Lines(Vec<LineRow>),
+    /// [`AdminAsk::ExportLine`], [`AdminAsk::UploadStart`].
+    Transfer(TransferInfo),
+    /// [`AdminAsk::Download`].
+    Chunk(ChunkData),
+    /// [`AdminAsk::Upload`]: the bytes received so far.
+    Received(u64),
+    /// [`AdminAsk::ImportLine`].
+    Imported(Box<ImportView>),
+    /// [`AdminAsk::Audit`].
+    Audit(AuditPage),
+    /// [`AdminAsk::Identities`].
+    Identities(Vec<IdentityRow>),
+    /// [`AdminAsk::Explain`].
+    Explain(ExplainView),
+}
+
+/// A route of a shared tower.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SharedRoute {
+    /// Its id.
+    pub id: String,
+    /// Its name.
+    pub name: String,
+    /// Its results are out of date: why (phase 8: a shared tower moved, a
+    /// library updated, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale: Option<String>,
+}
+
+/// A shared tower: a structure on two routes or more.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SharedRow {
+    /// Its line.
+    pub model: String,
+    /// Its id.
+    pub id: String,
+    /// Where (plan, m).
+    pub at: [f64; 2],
+    /// Its routes (those the asker may see).
+    pub routes: Vec<SharedRoute>,
+}
+
+/// The shared towers.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SharedList {
+    /// The towers (at most [`SHARED_MAX`]).
+    pub rows: Vec<SharedRow>,
+    /// Shared towers the asker may see, in all.
+    pub total: usize,
+    /// Of them, on a route whose results are out of date.
+    pub stale: usize,
+}
+
+/// One shared tower in full.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SharedDetail {
+    /// The tower.
+    pub row: SharedRow,
+    /// Who may edit it (active users; none: not shown — the asker does
+    /// not manage rights on its line).
+    pub editors: Option<Vec<String>>,
+}
+
+/// A twin tower: a structure of a line within a distance of another
+/// line's of the same type (shown, never merged).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TwinRow {
+    /// The line.
+    pub line: String,
+    /// Its structure.
+    pub structure: String,
+    /// The other line.
+    pub other_line: String,
+    /// Its structure.
+    pub other: String,
+    /// Plan distance, m.
+    pub distance_m: f64,
+    /// Their structure type (none: modelled point by point).
+    pub structure_type: Option<String>,
+}
+
+/// A library entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntryRow {
+    /// Its id.
+    pub id: String,
+    /// Its version (short).
+    pub version: String,
+    /// The release it first came in with this version (none: not
+    /// released yet — a draft of the head).
+    pub release: Option<String>,
+    /// Withdrawn.
+    pub withdrawn: bool,
+}
+
+/// A file of a library kind's head.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LibraryFileView {
+    /// Its name.
+    pub file: String,
+    /// Locked on its own.
+    pub locked: bool,
+    /// Its entries the asker may see.
+    pub entries: Vec<EntryRow>,
+}
+
+/// A library kind as the Libraries page shows it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LibraryKindView {
+    /// The kind.
+    pub kind: String,
+    /// Locked.
+    pub locked: bool,
+    /// Its maintainers (`user:…`, `group:…`).
+    pub maintainers: Vec<String>,
+    /// Its releases, oldest first.
+    pub releases: Vec<String>,
+    /// Its files.
+    pub files: Vec<LibraryFileView>,
+    /// The asker maintains it (or is a network admin): its maintainers'
+    /// buttons are shown (the store still decides each change).
+    pub maintain: bool,
+}
+
+/// A request for a library addition.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RequestRow {
+    /// Its number.
+    pub id: i64,
+    /// The kind.
+    pub kind: String,
+    /// The file it goes into.
+    pub file: String,
+    /// The entry.
+    pub entry: String,
+    /// draft, requested, granted, refused, withdrawn.
+    pub state: String,
+    /// Who asked.
+    pub user: String,
+    /// The line it is for.
+    pub line: Option<String>,
+    /// Why.
+    pub reason: String,
+    /// Who decided.
+    pub maintainer: Option<String>,
+    /// The decision's note.
+    pub note: Option<String>,
+    /// When asked.
+    pub created: String,
+    /// When decided.
+    pub decided: Option<String>,
+    /// The release it came in.
+    pub released: Option<String>,
+}
+
+/// A line's pin of one kind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PinRow {
+    /// The kind.
+    pub kind: String,
+    /// Its pin (none: the line's own files).
+    pub pinned: Option<String>,
+    /// The latest release.
+    pub latest: Option<String>,
+    /// Releases since its pin.
+    pub behind: usize,
+    /// Withdrawn entries it uses.
+    pub withdrawn_used: Vec<String>,
+}
+
+/// A line's library pins.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LinePins {
+    /// The line.
+    pub line: String,
+    /// Built (pinned; moved only by who may review the whole line).
+    pub built: bool,
+    /// Per kind.
+    pub kinds: Vec<PinRow>,
+}
+
+/// The Libraries page.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LibraryPage {
+    /// The kinds the asker may see.
+    pub kinds: Vec<LibraryKindView>,
+    /// The requests the asker may see (their own, those of what they
+    /// maintain).
+    pub requests: Vec<RequestRow>,
+    /// The lines' pins (which lines pin which release).
+    pub lines: Vec<LinePins>,
+}
+
+/// A use of a library entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UseRow {
+    /// The line.
+    pub line: String,
+    /// The branch.
+    pub branch: String,
+    /// The object's kind (`library`: the line holds the file).
+    pub object_kind: String,
+    /// The object.
+    pub object: String,
+    /// Its routes the asker may see.
+    pub routes: Vec<String>,
+}
+
+/// What Update library pins does to one kind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PinKindPlan {
+    /// The kind.
+    pub kind: String,
+    /// From (none: the line's own files).
+    pub from: Option<String>,
+    /// To.
+    pub to: String,
+    /// Library files changed.
+    pub files: usize,
+    /// Entries whose version changed.
+    pub changed: Vec<String>,
+    /// Of them, used by the line.
+    pub used_changed: Vec<String>,
+    /// Routes whose results go out of date.
+    pub stale_routes: Vec<String>,
+    /// The line's own files kept.
+    pub kept: Vec<String>,
+    /// Withdrawn entries the line uses.
+    pub withdrawn_used: Vec<String>,
+    /// Why it does not move.
+    pub refused: Option<String>,
+}
+
+/// What Update library pins would do (a proposal: nothing changed).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PinsView {
+    /// The line.
+    pub line: String,
+    /// Built.
+    pub built: bool,
+    /// Per kind.
+    pub kinds: Vec<PinKindPlan>,
+    /// Anything moves.
+    pub moves: bool,
+    /// The asker may not carry it out: why.
+    pub refusal: Option<String>,
+    /// In words.
+    pub text: String,
+}
+
+/// A line on the Lines page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LineRow {
+    /// Its code.
+    pub code: String,
+    /// Its name.
+    pub name: String,
+    /// Routes, structures, sections held.
+    pub routes: usize,
+    /// See `routes`.
+    pub structures: usize,
+    /// See `routes`.
+    pub sections: usize,
+    /// Routes whose results are out of date.
+    pub stale: usize,
+    /// The asker sees it whole.
+    pub whole: bool,
+    /// The asker may export it (export on the whole line).
+    pub may_export: bool,
+}
+
+/// A file the server holds for one connection (an export to fetch, an
+/// upload to import).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransferInfo {
+    /// Its token (random; this connection's only).
+    pub token: String,
+    /// Its file name.
+    pub name: String,
+    /// Its size, bytes.
+    pub bytes: u64,
+    /// What it holds, in words.
+    pub note: String,
+}
+
+/// A piece of a file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChunkData {
+    /// Its first byte.
+    pub offset: u64,
+    /// The bytes, base64.
+    pub data: String,
+    /// The file's last piece.
+    pub last: bool,
+}
+
+/// What an import did (the network import's report).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImportView {
+    /// The new line.
+    pub line: String,
+    /// Its name.
+    pub name: String,
+    /// The file's name.
+    pub file: String,
+    /// Objects imported, by kind.
+    pub objects: Vec<(String, usize)>,
+    /// Ids renamed (kind, in the file, in the network).
+    pub renamed: Vec<(String, String, String)>,
+    /// Twin towers listed (never merged).
+    pub twins: Vec<TwinRow>,
+    /// Users of the file (name, role on the line).
+    pub users: Vec<(String, String)>,
+    /// What stayed in the file.
+    pub left_in_file: Vec<String>,
+    /// The report in words (as `ohl network import` prints it).
+    pub text: String,
+    /// Seconds on the server.
+    pub seconds: f64,
+}
+
+/// Which audit rows (every field: empty, no constraint).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditFilter {
+    /// Who (the user, exactly).
+    #[serde(default)]
+    pub user: String,
+    /// What (the action, from its start: `admin.`, `library.`, …).
+    #[serde(default)]
+    pub action: String,
+    /// The scope (the target holding this text: `line L001`, `user:bob`).
+    #[serde(default)]
+    pub target: String,
+    /// Any text of its detail.
+    #[serde(default)]
+    pub text: String,
+    /// From (UTC, `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`).
+    #[serde(default)]
+    pub from: String,
+    /// Until (UTC, as `from`; a day: to its end).
+    #[serde(default)]
+    pub until: String,
+}
+
+/// An audit row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditRow {
+    /// Its number.
+    pub id: i64,
+    /// When (UTC).
+    pub time: String,
+    /// Who.
+    pub user: String,
+    /// What.
+    pub action: String,
+    /// On what.
+    pub target: String,
+    /// The detail.
+    pub detail: String,
+}
+
+/// A page of the audit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditPage {
+    /// The rows, newest first.
+    pub rows: Vec<AuditRow>,
+    /// Rows matching the filter, in all.
+    pub total: u64,
+    /// More rows older than the last (ask with `before` its number).
+    pub more: bool,
+}
+
+/// An identity of the network's identity provider and the user it signs
+/// in as.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IdentityRow {
+    /// The issuer.
+    pub issuer: String,
+    /// The subject.
+    pub subject: String,
+    /// The network user.
+    pub user: String,
+}
+
+/// Why a user may or may not.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExplainView {
+    /// The user.
+    pub user: String,
+    /// The permission.
+    pub permission: Permission,
+    /// The target, in words.
+    pub target: String,
+    /// They may.
+    pub may: bool,
+    /// The assignments granting it there.
+    pub granted_by: Vec<i64>,
+    /// The assignments denying it there.
+    pub denied_by: Vec<i64>,
+    /// More, in words (not active; see not given).
+    pub notes: Vec<String>,
+}
+
+/// Audit rows as CSV (a header, then a row each; fields quoted where
+/// needed, a formula's leading `=`, `+`, `-` or `@` kept as text).
+pub fn audit_csv(rows: &[AuditRow], header: bool) -> String {
+    fn field(s: &str) -> String {
+        // A spreadsheet takes `=…` as a formula: kept as text.
+        let s = if s.starts_with(['=', '+', '-', '@']) {
+            format!("'{s}")
+        } else {
+            s.to_owned()
+        };
+        if s.contains([',', '"', '\n', '\r']) {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s
+        }
+    }
+    let mut out = String::new();
+    if header {
+        out.push_str("id,time,user,action,target,detail\n");
+    }
+    for r in rows {
+        out.push_str(&format!(
+            "{},{},{},{},{},{}\n",
+            r.id,
+            field(&r.time),
+            field(&r.user),
+            field(&r.action),
+            field(&r.target),
+            field(&r.detail)
+        ));
+    }
+    out
 }
 
 /// The server at a glance.

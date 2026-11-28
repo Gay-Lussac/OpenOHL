@@ -3,7 +3,8 @@
 // License v3.0 or later); see the LICENSE file or https://www.gnu.org/licenses/.
 
 //! The admin messages on a network's server (2026-11-28, OHL-Server the
-//! admin app, stages A and B; [`crate::admin`] for the messages and their
+//! admin app, stages A and B; C to F in `network_admin_cf.rs`;
+//! [`crate::admin`] for the messages and their
 //! rules). Answered on the authority from what it holds (its clients, its
 //! models' lines and places, its rights as read); a rights change through
 //! the database's one function ([`ohl_store_pg::Network::rights_command`],
@@ -73,6 +74,12 @@ impl NetHost {
                 | AdminAsk::Settings
                 | AdminAsk::Invite { .. }
                 | AdminAsk::Reissue { .. }
+                | AdminAsk::UploadStart { .. }
+                | AdminAsk::Upload { .. }
+                | AdminAsk::ImportLine { .. }
+                | AdminAsk::Audit { .. }
+                | AdminAsk::Identities
+                | AdminAsk::SetSetting { .. }
         );
         if admins_only && !network_admin {
             let why = format!(
@@ -143,6 +150,11 @@ impl NetHost {
                 AdminReply::Structures(self.route_dots(&me, &model, &route)?)
             }
             AdminAsk::Libraries => AdminReply::Libraries(self.libraries(&me)?),
+            // Stages C to F.
+            ask => match self.admin_cf(client, user, id, &me, network_admin, ask)? {
+                Some(r) => r,
+                None => return Ok(()),
+            },
         };
         self.push(
             client,
@@ -156,7 +168,7 @@ impl NetHost {
         Ok(())
     }
 
-    fn audit_admin(&self, user: &str, action: &str, target: &str, detail: &str) {
+    pub(super) fn audit_admin(&self, user: &str, action: &str, target: &str, detail: &str) {
         if let Err(e) = self.net.audit(user, action, target, detail) {
             log(&format!("the audit: {e}"));
         }
@@ -1094,7 +1106,7 @@ impl NetHost {
 /// deny, whose role may review and lock, on a library scope: as the
 /// store names maintainers; `*`: every kind) — answer 3 of 2026-11-28: a
 /// library maintainer opens the admin app for their libraries.
-fn maintained_kinds(d: &RightsData, user: &str) -> BTreeSet<String> {
+pub(super) fn maintained_kinds(d: &RightsData, user: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     if !d.active(user) {
         return out;
@@ -1113,7 +1125,7 @@ fn maintained_kinds(d: &RightsData, user: &str) -> BTreeSet<String> {
 }
 
 /// The refusal of something the asker may not see (no name given back).
-const HIDDEN: &str = ohl_session::rights::HIDDEN_REFUSAL;
+pub(super) const HIDDEN: &str = ohl_session::rights::HIDDEN_REFUSAL;
 
 /// A polyline simplified to at most `max` points (every n-th, the ends
 /// kept): the map is a sketch, never measured on.

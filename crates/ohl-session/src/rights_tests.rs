@@ -816,3 +816,36 @@ fn the_country_library_is_of_no_line() {
     let ann = d.compile("ann", &NoModels);
     assert!(ann.allows(Permission::Lock, &costs));
 }
+
+#[test]
+fn a_region_whose_edges_cross_is_refused() {
+    // 2026-11-28: a polygon drawn on OHL-Server's map.
+    let square = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+    let bow = vec![[0.0, 0.0], [10.0, 10.0], [10.0, 0.0], [0.0, 10.0]];
+    let l_shape = vec![
+        [0.0, 0.0],
+        [5.0, 0.0],
+        [10.0, 0.0],
+        [10.0, 5.0],
+        [5.0, 5.0],
+        [5.0, 10.0],
+        [0.0, 10.0],
+    ];
+    let back = vec![
+        [0.0, 0.0],
+        [10.0, 0.0],
+        [10.0, 5.0],
+        [12.0, 0.0],
+        [12.0, 5.0],
+    ];
+    assert!(!region_self_crosses(&square));
+    assert!(!region_self_crosses(&l_shape));
+    assert!(region_self_crosses(&bow));
+    assert!(region_self_crosses(&back));
+    let region = |r: Vec<[f64; 2]>| Scope {
+        region: Some(r),
+        ..Scope::default()
+    };
+    assert!(region(l_shape).check().is_ok());
+    assert!(region(bow).check().is_err());
+}

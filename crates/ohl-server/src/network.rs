@@ -91,6 +91,10 @@ mod exports;
 // module: it reads the authority's clients, models and rights).
 #[path = "network_admin.rs"]
 mod admin;
+// 2026-11-28 (OHL-Server, stages C to F): shared towers, libraries, lines
+// exported and imported, the audit (a child module, as `admin`).
+#[path = "network_admin_cf.rs"]
+mod admin_cf;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
@@ -665,6 +669,9 @@ pub(crate) struct NetHost {
     /// on a thread of its own, one at a time, and answers through the jobs.
     admin_jobs: std_mpsc::Sender<Job>,
     admin_busy: Arc<std::sync::atomic::AtomicBool>,
+    /// 2026-11-28 (stage E): the files held for admin connections (a line
+    /// exported, to fetch; a project file uploaded, to import), by token.
+    transfers: BTreeMap<String, admin_cf::Transfer>,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -772,6 +779,7 @@ impl NetHost {
             heavy_started: Instant::now(),
             admin_jobs,
             admin_busy: Arc::default(),
+            transfers: BTreeMap::new(),
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -809,16 +817,58 @@ impl NetHost {
         self.placed.clear();
         let mut last: BTreeMap<String, i64> = BTreeMap::new();
         for row in self.net.lines().map_err(e)? {
-            let store = self.net.store(&row.id).map_err(e)?;
-            let mut session = Session::open_on(Box::new(store), &row.id)
-                .map_err(|x| format!("line {}: {x}", row.id))?;
+            let (model, seq) = self.open_model(&row.id, row.name)?;
+            last.insert(row.id.clone(), seq);
+            self.models.insert(row.id.clone(), model);
+        }
+        let codes: Vec<String> = self.models.keys().cloned().collect();
+        for code in &codes {
+            self.place_model(code);
+        }
+        self.tile_revisions(&last)?;
+        Ok(())
+    }
+
+    /// 2026-11-28 (OHL-Server's Lines page): model `code`, just imported,
+    /// read and served as the others (its tiles placed, their revisions
+    /// moved on: cached packages of them are not taken again).
+    fn add_model(&mut self, code: &str) -> Result<(), String> {
+        let name = self
+            .net
+            .lines()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|l| l.id == code)
+            .map(|l| l.name)
+            .ok_or_else(|| format!("line {code} is not in the network"))?;
+        let (model, seq) = self.open_model(code, name)?;
+        self.models.insert(code.to_owned(), model);
+        self.place_model(code);
+        let mut last = BTreeMap::new();
+        last.insert(code.to_owned(), seq);
+        for t in self.model_tiles(code) {
+            self.tiles.entry(t).or_default().rev.step += 1;
+        }
+        self.tile_revisions(&last)
+    }
+
+    /// Opens model `id` (`name`) from the database, keeping what is
+    /// missing of its interest and use index: the model and its last log
+    /// entry.
+    fn open_model(&mut self, id: &str, name: String) -> Result<(Model, i64), String> {
+        let e = |e: ohl_store_pg::NetError| e.to_string();
+        let row_id = id.to_owned();
+        {
+            let store = self.net.store(&row_id).map_err(e)?;
+            let mut session = Session::open_on(Box::new(store), &row_id)
+                .map_err(|x| format!("line {row_id}: {x}"))?;
             // Imported before the server kept them (schema 2): counted once.
-            if self.net.interest_missing(&row.id).map_err(e)? {
+            if self.net.interest_missing(&row_id).map_err(e)? {
                 let interest = interest_of_line(&mut session);
                 self.net.begin_unit().map_err(e)?;
                 let written = ohl_store_pg::stream::write_interest(
                     &self.net,
-                    &row.id,
+                    &row_id,
                     ohl_session::versions::MAIN,
                     &interest,
                 );
@@ -831,9 +881,9 @@ impl NetHost {
                 }
             }
             // Imported before the use index (schema 5): made once.
-            if self.net.uses_missing(&row.id).map_err(e)? {
+            if self.net.uses_missing(&row_id).map_err(e)? {
                 self.net.begin_unit().map_err(e)?;
-                match self.net.reindex_uses(&row.id, &session) {
+                match self.net.reindex_uses(&row_id, &session) {
                     Ok(_) => self.net.commit_unit().map_err(e)?,
                     Err(x) => {
                         let _ = self.net.roll_back_unit();
@@ -841,22 +891,18 @@ impl NetHost {
                     }
                 }
             }
-            last.insert(
-                row.id.clone(),
-                session.last_seq().map_err(|x| x.to_string())?,
-            );
+            let seq = session.last_seq().map_err(|x| x.to_string())?;
             // Phase 7: its users' roles from the network's rights.
             session.set_role_source(Some(Arc::new(ModelRoles {
-                line: row.id.clone(),
+                line: row_id.clone(),
                 rights: self.compiled.clone(),
             })));
             let places = Places::of_session(&mut session);
             let uses = nr::uses_cache(&session);
-            self.models.insert(
-                row.id.clone(),
+            Ok((
                 Model {
-                    code: Arc::from(row.id.as_str()),
-                    name: row.name,
+                    code: Arc::from(row_id.as_str()),
+                    name,
                     session,
                     rev: 0,
                     libs_rev: 0,
@@ -864,12 +910,15 @@ impl NetHost {
                     places,
                     uses,
                 },
-            );
+                seq,
+            ))
         }
-        let codes: Vec<String> = self.models.keys().cloned().collect();
-        for code in &codes {
-            self.place_model(code);
-        }
+    }
+
+    /// The tiles' revisions of the models of `last` (their last log
+    /// entries) and the stream's position.
+    fn tile_revisions(&mut self, last: &BTreeMap<String, i64>) -> Result<(), String> {
+        let e = |e: ohl_store_pg::NetError| e.to_string();
         // Revisions: the last change of the stream touching a tile, and
         // never older than its models' last log entries (a change made
         // without the server, an import).
@@ -3726,6 +3775,7 @@ impl NetHost {
 
     fn leave(&mut self, client: u64, user: &str) {
         self.forget_checks(client);
+        self.drop_transfers(client);
         if let Some(c) = self.clients.remove(&client) {
             for t in c.waiting {
                 if let Some(b) = self.building.get_mut(&t) {

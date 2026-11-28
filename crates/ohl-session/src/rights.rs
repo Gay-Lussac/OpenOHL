@@ -403,6 +403,13 @@ impl Scope {
         {
             return Err("a region needs at least 3 finite points".into());
         }
+        // 2026-11-28 (OHL-Server, a polygon drawn on the map): a region
+        // whose edges cross is no area (inside and outside undefined).
+        if let Some(r) = &self.region
+            && region_self_crosses(r)
+        {
+            return Err("a region's edges must not cross each other".into());
+        }
         Ok(())
     }
 
@@ -1225,6 +1232,48 @@ fn segment_hits_box(a: [f64; 2], c: [f64; 2], b: &Bounds) -> bool {
         }
     }
     true
+}
+
+/// Two edges of polygon `poly` (closed: its last point back to its first)
+/// that are not neighbours cross or touch: no area (2026-11-28, a region
+/// drawn on OHL-Server's map is checked before it is saved).
+pub fn region_self_crosses(poly: &[[f64; 2]]) -> bool {
+    fn orient(p: [f64; 2], q: [f64; 2], r: [f64; 2]) -> f64 {
+        (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    }
+    let n = poly.len();
+    if n < 4 {
+        return false;
+    }
+    for i in 0..n {
+        let (p1, p2) = (poly[i], poly[(i + 1) % n]);
+        for j in i + 2..n {
+            // The last edge and the first are neighbours.
+            if i == 0 && j == n - 1 {
+                continue;
+            }
+            let (q1, q2) = (poly[j], poly[(j + 1) % n]);
+            let d1 = orient(q1, q2, p1);
+            let d2 = orient(q1, q2, p2);
+            let d3 = orient(p1, p2, q1);
+            let d4 = orient(p1, p2, q2);
+            let hit = if d1 == 0.0 && d2 == 0.0 {
+                // On one line: they meet when they overlap.
+                let span = |a: f64, b: f64| (a.min(b), a.max(b));
+                (0..2).all(|k| {
+                    let (a0, a1) = span(p1[k], p2[k]);
+                    let (b0, b1) = span(q1[k], q2[k]);
+                    a0 <= b1 && b0 <= a1
+                })
+            } else {
+                d1 * d2 <= 0.0 && d3 * d4 <= 0.0
+            };
+            if hit {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Some edge of polygon `a` crosses an edge of polygon `b`.

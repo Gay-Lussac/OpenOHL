@@ -923,6 +923,99 @@ impl Network {
             .map(|r| (r.get(0), [r.get(1), r.get(2), r.get(3), r.get(4), r.get(5)]))
             .collect())
     }
+
+    /// A page of the audit, newest first (2026-11-28, OHL-Server's Audit
+    /// page): the rows matching `q` older than row `before` (none: from
+    /// the newest), at most `limit`; and how many match in all. Reads
+    /// only (the audit stays append-only).
+    pub fn audit_page(
+        &self,
+        q: &AuditQuery,
+        before: Option<i64>,
+        limit: i64,
+    ) -> Result<(Vec<(i64, [String; 5])>, i64), NetError> {
+        let from = audit_time(&q.from, false)?;
+        let until = audit_time(&q.until, true)?;
+        const WHERE: &str = "($1 = '' OR user_name = $1)
+              AND ($2 = '' OR left(action, length($2)) = $2)
+              AND ($3 = '' OR strpos(lower(target), lower($3)) > 0)
+              AND ($4 = '' OR strpos(lower(detail), lower($4)) > 0)
+              AND ($5::text IS NULL OR time >= $5::text::timestamptz)
+              AND ($6::text IS NULL OR time <= $6::text::timestamptz)";
+        let mut c = lock(&self.conn);
+        let total: i64 = c
+            .client
+            .query_one(
+                &format!("SELECT count(*) FROM audit WHERE {WHERE}"),
+                &[&q.user, &q.action, &q.target, &q.text, &from, &until],
+            )?
+            .get(0);
+        let rows = c
+            .client
+            .query(
+                &format!(
+                    "SELECT id, ohl_time(time), user_name, action, target, detail FROM audit
+                     WHERE {WHERE} AND ($7::bigint IS NULL OR id < $7)
+                     ORDER BY id DESC LIMIT $8"
+                ),
+                &[
+                    &q.user, &q.action, &q.target, &q.text, &from, &until, &before, &limit,
+                ],
+            )?
+            .into_iter()
+            .map(|r| (r.get(0), [r.get(1), r.get(2), r.get(3), r.get(4), r.get(5)]))
+            .collect();
+        Ok((rows, total))
+    }
+}
+
+/// Which audit rows [`Network::audit_page`] reads (every field: empty, no
+/// constraint).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AuditQuery {
+    /// The user, exactly.
+    pub user: String,
+    /// The action's start (`admin.`, `library.`, `refused`).
+    pub action: String,
+    /// Text in the target (any case).
+    pub target: String,
+    /// Text in the detail (any case).
+    pub text: String,
+    /// From (UTC, `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`).
+    pub from: String,
+    /// Until (UTC, as `from`; a day alone: to its end).
+    pub until: String,
+}
+
+/// A filter's time (`YYYY-MM-DD` or `YYYY-MM-DD HH:MM`, UTC) as
+/// PostgreSQL reads it; a day alone as `until`: the next day's start.
+fn audit_time(t: &str, until: bool) -> Result<Option<String>, NetError> {
+    let t = t.trim();
+    if t.is_empty() {
+        return Ok(None);
+    }
+    let b = t.as_bytes();
+    let digits = |r: std::ops::Range<usize>| r.into_iter().all(|i| b[i].is_ascii_digit());
+    let day = b.len() >= 10 && digits(0..4) && b[4] == b'-' && digits(5..7) && b[7] == b'-'
+        && digits(8..10);
+    let ok = day
+        && (b.len() == 10
+            || (b.len() == 16 && b[10] == b' ' && digits(11..13) && b[13] == b':'
+                && digits(14..16)));
+    if !ok {
+        return Err(NetError::Refused(format!(
+            "\"{t}\": a time as YYYY-MM-DD or YYYY-MM-DD HH:MM (UTC)"
+        )));
+    }
+    Ok(Some(if b.len() == 10 {
+        if until {
+            format!("{t} 23:59:59.999999+00")
+        } else {
+            format!("{t} 00:00+00")
+        }
+    } else {
+        format!("{t}+00")
+    }))
 }
 
 /// Whether `actor` holds every permission of `perms` by grants whose

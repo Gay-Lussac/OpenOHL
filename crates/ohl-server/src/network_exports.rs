@@ -114,12 +114,17 @@ enum Work {
     Export(Box<ExportPlan>),
     /// A bundle's branch's line made ready.
     Bundle(Box<LineSource>),
+    /// 2026-11-28 (OHL-Server, the Lines page): one line written as a
+    /// standalone project file (`ohl network export`), on a reader
+    /// connection of its own (one snapshot of the database).
+    Model(Box<super::admin_cf::ModelExport>),
 }
 
 /// What the exports' thread gives back (or why it could not).
 enum Done {
     Export(Result<Box<ExportWritten>, String>),
     Bundle(Result<Box<PreparedLine>, String>),
+    Model(Result<ohl_store_pg::export::ExportReport, String>),
 }
 
 /// What is in flight on the thread.
@@ -129,6 +134,8 @@ enum Flight {
     Export { path: PathBuf, landed: Vec<Landed> },
     /// A bundle decided, its branch's line being made ready.
     Bundle(Box<BundleDecided>),
+    /// A line being written as a project file (the admin's transfer).
+    Model(Box<super::admin_cf::ModelExport>),
 }
 
 /// Work on the exports' thread: who asked, with which rights, what.
@@ -250,6 +257,18 @@ impl Exports {
                             }))
                             .unwrap_or_else(|_| Err(internal("the bundle"))),
                         ),
+                        Work::Model(m) => {
+                            let path = m.path.clone();
+                            Done::Model(
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    super::admin_cf::write_model(&m)
+                                }))
+                                .unwrap_or_else(|_| {
+                                    let _ = std::fs::remove_file(&path);
+                                    Err(internal("the line's export"))
+                                }),
+                            )
+                        }
                     };
                     if jobs
                         .send(Job::Exported(Box::new(ExportBack { key, done })))
@@ -329,6 +348,28 @@ impl NetHost {
                     path,
                     landed: Vec::new(),
                 },
+            },
+        )
+    }
+
+    /// 2026-11-28 (OHL-Server, the Lines page): line export `m` of client
+    /// `client` (its question `id`) written on the exports' thread; its
+    /// answer when it comes back ([`NetHost::model_back`]).
+    pub(super) fn start_model_export(
+        &mut self,
+        client: u64,
+        id: u64,
+        user: &str,
+        rights: Arc<UserRights>,
+        m: super::admin_cf::ModelExport,
+    ) -> Result<(), String> {
+        self.send_work(
+            Work::Model(Box::new(m.clone())),
+            InFlight {
+                to: ExportTo::Client { client, id },
+                user: user.to_owned(),
+                rights,
+                flight: Flight::Model(Box::new(m)),
             },
         )
     }
@@ -534,6 +575,10 @@ impl NetHost {
             (Flight::Export { path, landed }, Done::Export(w)) => (path, landed, w),
             (Flight::Bundle(d), Done::Bundle(ready)) => {
                 self.bundle_back(to, &user, &rights, now, *d, ready);
+                return;
+            }
+            (Flight::Model(m), Done::Model(r)) => {
+                self.model_back(to, &user, &rights, now, *m, r);
                 return;
             }
             _ => {

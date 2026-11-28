@@ -1349,6 +1349,9 @@ pub(crate) struct Pace {
     /// 2026-11-28: an admin app's questions (its pages refresh every few
     /// seconds; a page opened asks a few at once).
     admin: Bucket,
+    /// 2026-11-28 (stage E): the pieces of a line's file an admin app
+    /// fetches or sends (each at most `admin::CHUNK`: 16 MB/s at most).
+    transfer: Bucket,
 }
 
 impl Pace {
@@ -1361,6 +1364,7 @@ impl Pace {
             // The web client asks for its tiles at most every 250 ms.
             interest: Bucket::new(4.0, 8.0),
             admin: Bucket::new(8.0, 32.0),
+            transfer: Bucket::new(32.0, 64.0),
         }
     }
 }
@@ -2219,10 +2223,24 @@ pub(crate) async fn dispatch(
         ClientMsg::Request { id, op, line } => {
             request(jobs, client, user, id, op, line, None).await?
         }
-        ClientMsg::Admin { id, .. } if !pace.admin.take() => Some(ServerMsg::Admin {
+        ClientMsg::Admin {
             id,
-            result: Err("too many admin questions: slow down".into()),
+            ask: crate::admin::AdminAsk::Download { .. } | crate::admin::AdminAsk::Upload { .. },
+        } if !pace.transfer.take() => Some(ServerMsg::Admin {
+            id,
+            result: Err("too many pieces of a file at once: slow down".into()),
         }),
+        ClientMsg::Admin { id, ask }
+            if !matches!(
+                ask,
+                crate::admin::AdminAsk::Download { .. } | crate::admin::AdminAsk::Upload { .. }
+            ) && !pace.admin.take() =>
+        {
+            Some(ServerMsg::Admin {
+                id,
+                result: Err("too many admin questions: slow down".into()),
+            })
+        }
         ClientMsg::Admin { id, ask } => {
             let (tx, rx) = oneshot::channel();
             jobs.send(Job::Admin {
