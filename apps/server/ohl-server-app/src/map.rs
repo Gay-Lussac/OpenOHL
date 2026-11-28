@@ -109,11 +109,14 @@ struct Shown {
     view: [f64; 4],
 }
 
+/// A background image being fetched: its answer, the view it shows.
+type Fetching = (mpsc::Receiver<Result<egui::ColorImage, String>>, [f64; 4]);
+
 /// The background image being fetched, and when the view came to rest.
 #[derive(Default)]
 struct BackgroundState {
     shown: Option<Shown>,
-    fetching: Option<(mpsc::Receiver<Result<egui::ColorImage, String>>, [f64; 4])>,
+    fetching: Option<Fetching>,
     rested: Option<([f64; 4], [u32; 2], Instant)>,
     /// The last error (said under the map).
     error: Option<String>,

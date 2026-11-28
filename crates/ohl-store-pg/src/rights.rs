@@ -933,7 +933,7 @@ impl Network {
         q: &AuditQuery,
         before: Option<i64>,
         limit: i64,
-    ) -> Result<(Vec<(i64, [String; 5])>, i64), NetError> {
+    ) -> Result<(AuditRows, i64), NetError> {
         let from = audit_time(&q.from, false)?;
         let until = audit_time(&q.until, true)?;
         const WHERE: &str = "($1 = '' OR user_name = $1)
@@ -968,6 +968,9 @@ impl Network {
         Ok((rows, total))
     }
 }
+
+/// Audit rows: number, then time, user, action, target, detail.
+pub type AuditRows = Vec<(i64, [String; 5])>;
 
 /// Which audit rows [`Network::audit_page`] reads (every field: empty, no
 /// constraint).
