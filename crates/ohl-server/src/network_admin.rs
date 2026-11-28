@@ -53,7 +53,7 @@ impl NetHost {
         }
         let what = format!("admin: {}", ask.describe());
         let me = self.rights_of(user);
-        if !me.manages_anything() {
+        if !me.manages_anything() && maintained_kinds(&self.rights, user).is_empty() {
             let why = format!(
                 "{user} manages no rights on this network: OHL-Server is for network admins, line \
                  admins (their lines) and library maintainers (their libraries)"
@@ -649,11 +649,14 @@ impl NetHost {
             .cloned()
             .collect();
         let rev = d.rev;
+        let maintained = maintained_kinds(&self.rights, me.user());
         let manages_libraries = self
             .library_kind_names(me)
             .into_iter()
             .filter(|k| {
                 network_admin
+                    || maintained.contains(k)
+                    || maintained.contains("*")
                     || me.manages(&Scope {
                         library_kind: Some(k.clone()),
                         ..Scope::default()
@@ -1085,6 +1088,28 @@ impl NetHost {
         }
         Ok(out)
     }
+}
+
+/// The library kinds `user` maintains (an assignment of theirs, not a
+/// deny, whose role may review and lock, on a library scope: as the
+/// store names maintainers; `*`: every kind) — answer 3 of 2026-11-28: a
+/// library maintainer opens the admin app for their libraries.
+fn maintained_kinds(d: &RightsData, user: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    if !d.active(user) {
+        return out;
+    }
+    for a in d.assignments_of(user) {
+        let Some((p, _)) = a.role.as_ref().and_then(|r| d.roles.get(r)) else {
+            continue;
+        };
+        let s = &a.scope;
+        let library = s.library_kind.is_some() || s.kind.as_deref() == Some("library");
+        if !a.deny && library && p.contains(Permission::Review) && p.contains(Permission::Lock) {
+            out.insert(s.library_kind.clone().unwrap_or_else(|| "*".into()));
+        }
+    }
+    out
 }
 
 /// The refusal of something the asker may not see (no name given back).

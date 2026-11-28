@@ -6791,8 +6791,11 @@ of the roles and an overview map of the model inside but very simplified
 mostly oriented for admin? This is a plan to define and not already start
 on"). **Answered 2026-11-28** (owner: "go with the admin app i'll build a
 physical server first before we test it"): the seven questions below
-taken as recommended, the owner may redirect. **Stages A and B in
-progress** (2026-11-28); C–F follow in a later task. A third application, for
+taken as recommended, the owner may redirect. **Stages A and B built
+2026-11-28, in active development, not approved yet**
+([OHL-Server](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/user-guide/ohl-server.md),
+[the admin messages](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/server-security-review.md#the-admin-messages-2026-11-28));
+C–F follow in a later task. A third application, for
 admins only (no engineering editing, no 3D, no checks run from it), in
 two modes: *host* (the server inside the app, for a small office or a
 test; closing asks first) and *connect* (to a headless server, the
@@ -6822,6 +6825,54 @@ F with 13.
 > OHL-Design today? → kept for a project hosted from a file; for the
 > database server only in OHL-Server. 7. When? → stages A–F with the
 > server's phases, A after phase 5.
+
+Built 2026-11-28 (stages A and B, in active development, not approved
+yet): the app `apps/server/ohl-server-app` (`ohl-server-app`, window
+"OHL-Server"; one boundary, its own integration tests), in host mode
+(the server in the app on a PostgreSQL the admin names, with `ohl
+network serve`'s connection settings; closing asks first and names who
+is connected) and connect mode (an invitation or the OIDC sign-in, the
+token in memory only); Overview (version, schema, protocol, uptime,
+users, working sets, the queue, the last backup and its age, warnings),
+Operations (backups made and drilled, migrations, the log, sessions with
+"let go", settings read-only), the map (routes by voltage, owner or
+state, shared towers, structures past a zoom, overlays, GeoJSON region
+outlines kept on the admin's computer, no background), Users and groups
+(invitations expiring, reissue, disable, groups), Roles (the permission
+matrix, shipped roles read-only), Assignments (scope in the tree, the
+library list or on the map; "what changes" before saving), See as user.
+**The server's admin messages** (`ClientMsg::Admin`, additive, protocol 3
+kept; every one checked by the rights' one function, every change,
+refusal and see-as audited); `ohl network serve --backup-dir`,
+`--drill-database`. Measured on the 12 000-pylon synthetic country: see
+[performance](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#ohl-server-the-admin-app-2026-11-28).
+> **Owner:** (to answer, 2026-11-28; the recommendation after the arrow)
+> 1. A background from the owner's own tile server: not built — tiles
+> must be in the network's coordinate system (a WMS-like GetMap URL in
+> that system, no third-party default)? → build it in stage C as a URL
+> setting of the app, off by default. 2. Reads that change nothing
+> (overview, map, sessions, log — refreshed every few seconds) are not
+> audited; changes, refusals and every "see as" are? → yes, as built.
+> 3. The full restore drill needs an empty drill database
+> (`--drill-database`); after a drill it holds the backup and the next
+> drill is refused until the IT empties it — should the server empty it
+> itself? → no, as built (a wrong setting can never wipe a database).
+> 4. Backups from the app go only into the server's own backup folder
+> (`--backup-dir`), never a path the app names? → yes, as built.
+> 5. A route's voltage and owner on the map are its line's (the highest
+> nominal voltage, the first owner given) until routes name their
+> systems? → yes, as built. 6. Line admins and library maintainers see
+> the Overview's program, uptime and counts of what they see (no names,
+> no backups)? → yes, as built. 7. Migrations: the server migrates at its
+> start (with a recent backup); the app shows the state and has no
+> Migrate button of its own? → yes, as built. 8. Scopes on the map: a
+> route, a structure, or the view's rectangle as a region; a drawn
+> polygon? → add drawing in stage C if wanted. 9. An invitation made in
+> the app is shown once to the network admin, kept nowhere? → yes, as
+> built. 10. A library maintainer (review and lock on a library, no
+> manage rights) opens the app read-only for now; giving rights on a
+> library stays with who manages rights there? → yes, as built; their
+> Libraries page comes with stage D.
 
 ### O46. The tests' speed and a flaky PostgreSQL test
 Owner, 2026-11-19: "the server seems to have very long tests can they be

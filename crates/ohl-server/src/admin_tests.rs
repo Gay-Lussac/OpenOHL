@@ -63,6 +63,15 @@ fn a_network_admin_runs_the_server_from_the_admin_messages() {
     {
         let net = Network::connect(&t.url).unwrap();
         add_user(&net, "lena", "line_admin", Scope::line(&t.codes[0]));
+        add_user(
+            &net,
+            "max",
+            "library_maintainer",
+            Scope {
+                library_kind: Some("cables".into()),
+                ..Scope::default()
+            },
+        );
     }
     let backups = t.dir.join("backups");
     std::fs::create_dir_all(&backups).unwrap();
@@ -290,6 +299,13 @@ fn a_network_admin_runs_the_server_from_the_admin_messages() {
         ask(&mut lena, AdminAsk::SeeAs { user: "vic".into() })
     );
     assert_eq!(sa.lines.len(), 1);
+
+    // A library maintainer opens it for their libraries: no server pages,
+    // no assignments to manage.
+    let mut max = join(&server, "max");
+    let mv = reply!(AdminReply::Rights, ask(&mut max, AdminAsk::Rights));
+    assert!(!mv.network_admin && mv.assignments.is_empty() && mv.manages_lines.is_empty());
+    assert!(ask(&mut max, AdminAsk::Backups).is_err());
 
     // A viewer is refused, and the refusal is in the audit.
     let mut vic = join(&server, "vic");

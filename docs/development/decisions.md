@@ -8,6 +8,42 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-28 (OHL-Server, the admin app: stages A and B built)
+
+Built the same day from the answers below, in active development, not
+approved yet ([OHL-Server](../user-guide/ohl-server.md),
+[ADR-0013's amendment](../adr/0013-country-server.md#security-and-operations),
+[security review](server-security-review.md#the-admin-messages-2026-11-28)).
+
+- **A third application**, `apps/server/ohl-server-app` (`ohl-server-app`,
+  window "OHL-Server"), apart from the core behind one boundary (its
+  `conn` module: the server's protocol), with its own integration tests;
+  host and connect modes; pages Overview, Operations, Map, Users and
+  groups, Roles, Assignments, See as user.
+- **The server's admin messages** (`ClientMsg::Admin` /
+  `ServerMsg::Admin`, `ohl_server::admin`): additive, protocol 3 kept
+  (the `network` message gains `admin`: 1). What only `ohl network …` did
+  on the database is now also a message: the rights read and changed
+  (through `Network::rights_command`, the same function and audit),
+  invitations, see as, sessions and letting one go, the log, settings,
+  backups and the restore drill (off the authority, one at a time). Every
+  message is checked by the rights' one function, every change, refusal
+  and see-as audited. `RightsCommand` moved to `ohl_session::rights`
+  (re-exported by `ohl_store_pg::rights`; its JSON unchanged) so the
+  message carries it.
+- **"What changes"** before every rights change: worked out on a copy of
+  the rights (`ohl_server::admin::what_changes`), nothing saved — who
+  gains and loses which permission on which scope, counted.
+- `ohl network serve --backup-dir FOLDER --drill-database URL`;
+  `ohl_store_pg::connect::with_password_file` (host mode's password file
+  without setting the environment).
+- My choices, each an owner question with a recommendation in ROADMAP
+  O17: no tile background yet, reads not audited, the drill database not
+  emptied by the server, backups only into the server's folder, route
+  voltage/owner from the line's systems, a reduced Overview for line
+  admins, no Migrate button, no drawn polygon yet, invitations shown once,
+  library maintainers read-only until stage D's Libraries page.
+
 ## 2026-11-28 (OHL-Server, the admin app: the plan's seven questions answered)
 
 The owner, 2026-11-28: "go with the admin app i'll build a physical server

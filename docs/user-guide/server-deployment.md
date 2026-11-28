@@ -3,7 +3,8 @@
 *Built 2026-11-20 (ADR-0013, phase 13), in active development, not
 approved yet.* How a country server — PostgreSQL with PostGIS, the
 network's server (`ohl network serve`) and its backups — is run for real
-use. **Nothing here is needed for the desktop applications**, nor for a
+use. Its admins run it from [OHL-Server](ohl-server.md), the admin app,
+connected to the server (the server never needs the app to run). **Nothing here is needed for the desktop applications**, nor for a
 project file's own server (File › Host this project).
 
 Two ways, the owner's IT decides:
@@ -125,6 +126,17 @@ so); its users sign in with OHL-Design or join with their invitation.
 
 PostgreSQL's own base backups and WAL archiving (point-in-time recovery)
 work beside these; they are the IT department's.
+
+**From the admin app** (2026-11-28, [OHL-Server](ohl-server.md#operations),
+in active development): start the server with `--backup-dir FOLDER` (a
+folder the server's account may write; copy it off the host as above)
+and, for the full restore drill, `--drill-database "…dbname=drill…"` (an
+empty database — never the network's own, refused). Operations ›
+Backups then makes a backup in a new folder of it and drills one; a
+drill without a drill database checks the dump against its manifest
+only. Both run beside the serving server, one at a time, audited. The
+server's settings, sessions and log are on the same page; migrations
+stay the start of a newer server (above).
 
 ## Running it without Docker
 

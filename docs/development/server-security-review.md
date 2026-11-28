@@ -153,6 +153,45 @@ OHL-Design's Sign in to a network window) and the server's answer to
 - The join carries the ID token over the page's WebSocket (TLS), as
   OHL-Design's; the server's checks and limits are unchanged (S8).
 
+## The admin messages (2026-11-28)
+
+*In active development, not approved yet.* OHL-Server's admin messages
+(`ClientMsg::Admin`, `crates/ohl-server/src/admin.rs` and
+`network_admin.rs`; tests `admin_tests.rs` and the app's own) reviewed
+against the same attackers. Each message is asked on a joined
+connection only (an invitation or a mapped sign-in: nothing before the
+join), paced (8 a second, 32 at once, per connection; more are refused
+with "slow down"), and refused on a connection seeing as another user.
+
+| Message | Who may | Audited | What it could leak or do, and why it does not |
+|---|---|---|---|
+| `overview` | anyone managing rights somewhere, or maintaining a library; full to network admins | refusals | others get the program, the uptime and counts of the lines they see — no user names, no backup times |
+| `sessions` | network admins | refusals | who is connected and what they follow — network admins see it anyway (the audit) |
+| `disconnect` | network admins | yes (who, the connection, the reason) | a reason is required; one's own connection refused; the user may join again (disabling them is a rights change) |
+| `log` | network admins | refusals | the server's own log lines (the newest 4000, each cut at 2000 characters): the server never logs a secret — no access code, token, password or connection string (checked: every `log` call) |
+| `backups`, `backup_now`, `restore_drill` | network admins | yes (start, and the backup's own record) | the backup folder is the server's start option, never a client's path; a drill names a folder of it by name only (no `/`, `\`, leading `.`, control characters: refused, tested with `../`); a drill database equal to the network's own is refused; one long work at a time, off the authority (the server keeps serving) |
+| `settings` | network admins | refusals | the database by host and name only — the password and the drill database's string never sent (tested) |
+| `rights` | anyone managing rights somewhere, or maintaining a library | refusals | users, groups and roles are listed to every manager (an assignment names them); assignments only where the asker manages (`UserRights::manages`), all to network admins (tested with a line admin) |
+| `change` | the rights' one function decides (`Network::rights_command`) | yes (in the same transaction, before and after) | nothing new: the command line's checks; the server reads the rights again at once (clients whose rights changed are let go) |
+| `preview` | anyone managing rights somewhere, or maintaining a library | no (nothing saved) | worked out on a copy of the rights the asker could list anyway; names only users (no objects); a change the asker may not save says so |
+| `invite`, `reissue` | network admins | yes (`admin.invite`, `admin.reissue_invitation`, and the user added) | the access code goes only to the network admin who asked, over the connection's TLS; the app shows it once and keeps it in memory only; days 1–3650 |
+| `see_as` | anyone managing rights somewhere, or maintaining a library | yes | what both the asker and the user may see (`UserRights::and`), as the join's see-as |
+| `map`, `structures`, `route_structures` | anyone managing rights somewhere, or maintaining a library | no | only routes and structures the asker may see (the rights' one function per object); a hidden route asked for by name gets the hidden refusal (no name back); at most 20 000 structures per answer |
+| `libraries` | anyone managing rights somewhere, or maintaining a library | no | the store's own listing with the asker's rights (entries they may not see left out) |
+
+**Host mode** (the server inside the app): the database's connection
+string, password file and TLS are those of `ohl network serve`; the
+string holding a password stays in memory (never shown: the Settings
+tab parses it for its host and name), nothing of the host form is saved.
+The first network admin is made only while the network has none (the
+rights function's own rule). The app signs in to its own server through
+the protocol with the admin's personal invitation, on 127.0.0.1.
+
+**Accepted**: the overview's counts and the map's bounds tell a line
+admin how much of the network they see (not what the rest is).
+Reads are not audited (an app refreshes them every few seconds; the
+audit would fill with them).
+
 ## Not reviewed here
 
 The desktop applications, the plugins' sandbox (ADR-0003, its own

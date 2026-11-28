@@ -5151,6 +5151,25 @@ main that marks other routes out of date sends a `notice` ("line L:
 route R's results are out of date (…, by U)") to each connected user who
 may edit such a route, in words they may see.
 
+**The admin messages** (2026-11-28, OHL-Server stages A and B; additive,
+protocol 3 kept; `ohl_server::admin`, handled in
+`crates/ohl-server/src/network_admin.rs`; in active development):
+
+| Message | Fields | Meaning |
+|---|---|---|
+| client `admin` | `id`, `ask` (`"ask"`: `overview`, `sessions`, `disconnect` {`client`, `reason`}, `log` {`after`, `filter`}, `backups`, `backup_now`, `restore_drill` {`backup`}, `settings`, `rights`, `change` {`command`}, `preview` {`command`}, `invite` {`name`, `display`?, `days`?}, `reissue` {`name`, `days`?}, `see_as` {`user`}, `map`, `structures` {`bounds`}, `route_structures` {`model`, `route`}, `libraries`) | an admin app's question or action; `command` is an `ohl_session::rights::RightsCommand` (tagged `"do"`, the same JSON as before; the type moved from `ohl_store_pg::rights`, which re-exports it) |
+| server `admin` | `id`, `result` (`Ok`: `{"reply": KIND, "data": …}` — `overview` (`Overview`), `sessions` (`SessionRow`s: `client`, `user`, `since` Unix s, `follows`, `see_as`?), `done` (words), `log` (`LogPage`: `lines` [{`n`, `time`, `text`}], `last`), `backups` (`BackupList`), `settings` (`SettingRow`s: `key`, `value`, `source` `start`/`network`, `note`), `rights` (`RightsView`), `preview` (`WhatChanges`: `users` [{`user`, `gained`, `lost`}], `gaining`, `losing`, `gained`, `lost`, `notes`), `invitation` (`user`, `code`, `until`?), `see_as` (`SeeAsView`), `map` (`AdminMap`: `crs`, `bounds`, `lines`, `routes` [{`id`, `model`, `name`, `voltage_kv`?, `owner`, `lines` (polylines, ≤ 64 points each), `structures`, `stale`?, `in_use`, `locks`}], `shared`), `structures` (`MapDot`s: `model`, `id`, `at`, `shared`; ≤ 20 000), `libraries` (`LibraryKindRow`s); `Err`: why) | answered once per question; a backup or a drill when done |
+| server `network` | + `admin` (0 when absent) | the admin messages' version the server speaks (1); an app refuses a server of 0 |
+
+A file server answers `admin` with a refusal (its admin rights are in
+OHL-Design). Nothing of the project file or the network's schema
+changed. `ohl network serve` gained `--backup-dir` and
+`--drill-database` (`NetOptions::backup_dir`, `drill_database`).
+OHL-Server keeps on the admin's computer, in its settings (eframe
+storage `OHL-Server`), only the map's region outlines (`ohl-server.regions`:
+JSON list of `{name, rings: [[[x, y], …], …]}` in the network's
+coordinates); never a connection string, an invitation or a token.
+
 ## What a plugin sees
 
 Plugin tiers and manifests: [Writing plugins](plugins.md) and ADR-0003.

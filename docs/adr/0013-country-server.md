@@ -582,6 +582,29 @@ behind the commands; since the owner's approval of the same day a check
 runs on a worker thread from a snapshot. The security review:
 [its page](../development/server-security-review.md).
 
+**Amendment (2026-11-28, OHL-Server stages A and B; built, in active
+development, not approved yet)**: the admin app OHL-Server (the owner's
+seven answers of 2026-11-28, ROADMAP O17) talks to the server's protocol
+only, never to the database. What an admin did only with `ohl network …`
+on the database is now also an **admin message** of the server
+(`ClientMsg::Admin` / `ServerMsg::Admin`, additive: protocol 3 kept, the
+server's `network` message says the admin messages' version): the
+server's state (overview, sessions, its log, its settings read-only),
+letting a connection go, backups made and drilled from a backup folder
+the server is started with (off the authority, one at a time), the
+rights (read, changed through `Network::rights_command` — the same one
+function and audit as the command line —, and "what changes" worked out
+on a copy without saving), invitations made and reissued, see as user,
+and a simplified map from the authority's places (route polylines,
+shared towers, structures by area; never whole lines). Every message is
+checked by the rights' one function (network admins for the server's own
+pages; line admins and library maintainers for what they manage; the map
+by what the asker may see); every change, every refusal and every "see
+as" is in the audit. Host mode starts the server program in the app's
+process (the database touched only as `ohl network serve` touches it).
+Migrations stay the start of a newer server. Reviewed:
+[the security review](../development/server-security-review.md#the-admin-messages-2026-11-28).
+
 ### Measured first
 
 A **synthetic country** of the owner's size (12 000 pylons, 2.5 systems

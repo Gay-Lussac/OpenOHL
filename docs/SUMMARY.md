@@ -85,6 +85,7 @@
   - [Offline working sets in OHL-Design](user-guide/offline-working-set.md)
   - [A network on the command line](user-guide/network-commands.md)
   - [Deploying a network's server](user-guide/server-deployment.md)
+  - [OHL-Server, the admin app](user-guide/ohl-server.md)
 - [Project lines and stages](user-guide/project-lines.md)
 - [Towers shared by several routes](user-guide/shared-towers.md)
 - [Join routes from another project](user-guide/join-routes.md)

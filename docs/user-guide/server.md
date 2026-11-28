@@ -95,14 +95,14 @@ yet** ([ADR-0013](../adr/0013-country-server.md),
 | The database (PostgreSQL with PostGIS), import and export of lines (phases 2–4) | built, in active development |
 | The server on the database: tiles, changes by interest, catch-up, heartbeats, the web client by tile (phase 5) | built, in active development |
 | Working sets and context in OHL-Design (phase 6) | built, in active development |
-| Rights and roles on (almost) every element and library, the audit, see as user (phase 7) | built, in active development; managed on the command line |
+| Rights and roles on (almost) every element and library, the audit, see as user (phase 7) | built, in active development; managed on the command line and, since 2026-11-28, in [OHL-Server](ohl-server.md) |
 | Towers shared by several routes (phase 8) | built, in active development: in the session, on branches over a working set and (since 2026-11-20) on edits made directly on a network's main line |
 | Country libraries: locks, requests, releases, pins, withdrawn entries, the use index (phase 9) | built, in active development; Update library pins on the command line and the server's protocol |
 | Scoped computations: checks pulling in their neighbours — clearances between wires, the magnetic field, shared towers' loads — hidden neighbours counted, results marked stale (phase 10) | built, in active development; through the server's protocol (OHL-Design's check windows run on the working set's file and say what they did not pull in) |
 | Version control at scale: split trees, branches over a working set, merges at shared towers (phase 11) | built, in active development; through the server's protocol |
 | Offline working sets: exported with read-only neighbours, checked offline, back as a bundle onto a branch (phase 12) | built, in active development; on the command line, the server's protocol and, since 2026-11-21, OHL-Design's [Offline working set window](offline-working-set.md) (Versions › Offline copy) |
 | Security review and its fixes, deployment files (Compose), **backups, restores and the restore drill**, migrations only after a backup, OIDC sign-in, invitations reissued and expiring, TLS to a database on another host (phase 13) | built, in active development: on the command line ([below](#security-sign-in-and-backups-phase-13-in-active-development), [deployment](server-deployment.md), [the review](../development/server-security-review.md)); OHL-Design's sign-in window built 2026-11-20 ([Signing in to a network](sign-in.md)); the web client's not yet |
-| The admin app OHL-Server | a plan waiting for the owner |
+| The admin app [OHL-Server](ohl-server.md): host and connect modes, Overview, Operations (backups, the restore drill, migrations, the log, sessions, settings), the map, users and groups, roles, assignments with "what changes", see as user (stages A and B, 2026-11-28) | built, in active development; through the server's admin messages (stages C–F not yet) |
 | Point clouds, terrain tiles and backgrounds served by the network | not yet (they stay in project files) |
 
 A country server keeps every line of a network in a PostgreSQL database
@@ -186,8 +186,10 @@ working set, a route's structures, the users' list or an error message
 ("refused: it touches objects you have no access to"); a working set
 reaching something they may not see is refused.
 
-Rights are managed on the command line (the admin app OHL-Server is a
-plan waiting for the owner). `--user` is who acts: their own rights
+Rights are managed on the command line, or in the admin app
+[OHL-Server](ohl-server.md) (since 2026-11-28, in active development:
+the same rights function, "what changes" shown before saving). `--user`
+is who acts: their own rights
 decide whether they may.
 
     ohl network rights bootstrap --user ana          # the first network admin (only while none)
