@@ -4723,6 +4723,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ohl-server-app"
+version = "0.0.2"
+dependencies = [
+ "clap",
+ "eframe",
+ "egui_kittest",
+ "env_logger",
+ "image",
+ "log",
+ "ohl-render",
+ "ohl-server",
+ "ohl-session",
+ "ohl-store-pg",
+ "ohl-synth",
+ "ohl-ui",
+ "rfd",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ohl-session"
 version = "0.0.2"
 dependencies = [

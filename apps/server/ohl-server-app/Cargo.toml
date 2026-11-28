@@ -1,0 +1,42 @@
+[package]
+name = "ohl-server-app"
+description = "OHL-Server, the admin application of OpenOHL: a network's server hosted or connected to, its overview, operations, map and rights pages (talks to the server's protocol only)"
+default-run = "ohl-server-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "ohl-server-app"
+path = "src/main.rs"
+
+[dependencies]
+# The server's protocol and its admin messages; host mode starts the
+# network's server in this process (feature `network`).
+ohl-server = { workspace = true, features = ["network"] }
+ohl-session.workspace = true
+# Host mode only: the connection string's password file and TLS, the
+# schema looked at before the server starts, the first network admin.
+ohl-store-pg.workspace = true
+ohl-ui.workspace = true
+eframe.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+# The region outlines' file (GeoJSON).
+rfd = "0.17"
+log = "0.4"
+env_logger = "0.11"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+ohl-render.workspace = true
+ohl-store-pg = { workspace = true, features = ["testing"] }
+ohl-synth.workspace = true
+
+[lints]
+workspace = true

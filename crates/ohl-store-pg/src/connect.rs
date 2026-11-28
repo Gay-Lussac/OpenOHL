@@ -532,6 +532,35 @@ impl ServerCertVerifier for Unchecked {
     }
 }
 
+/// `url` with the password read from `file` added (2026-11-28: OHL-Server's
+/// host mode names the password file, as [`PASSWORD_FILE_ENV`] does for the
+/// command line, without setting the program's environment): unchanged when
+/// the string has a password already. The string returned holds the
+/// password: never show or log it.
+pub fn with_password_file(url: &str, file: &std::path::Path) -> Result<String, NetError> {
+    if Target::parse(url)?.config.get_password().is_some() {
+        return Ok(url.to_owned());
+    }
+    let text = std::fs::read_to_string(file)
+        .map_err(|e| NetError::Refused(format!("the password file ({}): {e}", file.display())))?;
+    let password = text.trim_end_matches(['\n', '\r']);
+    if url.starts_with("postgres://") || url.starts_with("postgresql://") {
+        let mut s = url.to_owned();
+        s.push(if s.contains('?') { '&' } else { '?' });
+        s.push_str("password=");
+        for b in password.bytes() {
+            if b.is_ascii_alphanumeric() || b"-._~".contains(&b) {
+                s.push(b as char);
+            } else {
+                s.push_str(&format!("%{b:02X}"));
+            }
+        }
+        Ok(s)
+    } else {
+        Ok(format!("{url} password={}", quoted(password)))
+    }
+}
+
 /// `url` with TLS settings added (the command line's `--db-sslmode` and
 /// `--db-ca`): a key/value string gets `sslmode=…` and `sslrootcert=…`,
 /// a URL the same in its query.
@@ -576,6 +605,27 @@ pub fn with_tls(url: &str, mode: Option<&str>, ca: Option<&std::path::Path>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_password_file_goes_into_the_string_only_when_it_has_none() {
+        let dir = std::env::temp_dir().join(format!("ohl-pw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("pw");
+        std::fs::write(&f, "s'e cr&t\n").unwrap();
+        let kv = with_password_file("host=127.0.0.1 user=ohl dbname=net", &f).unwrap();
+        assert_eq!(
+            Target::parse(&kv).unwrap().config.get_password(),
+            Some(&b"s'e cr&t"[..])
+        );
+        let url = with_password_file("postgresql://ohl@127.0.0.1/net", &f).unwrap();
+        assert_eq!(
+            Target::parse(&url).unwrap().config.get_password(),
+            Some(&b"s'e cr&t"[..])
+        );
+        let kept = "host=127.0.0.1 user=ohl dbname=net password=x";
+        assert_eq!(with_password_file(kept, &f).unwrap(), kept);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn tls_keys_read_and_a_remote_host_refused_without_tls() {
