@@ -48,6 +48,7 @@
 //! protocol 2 (the alpha) are refused with a message saying so; a file
 //! server speaks it too, its messages unchanged.
 
+pub mod admin;
 pub mod base64;
 pub mod client;
 #[cfg(feature = "network")]
@@ -986,6 +987,15 @@ pub enum ClientMsg {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<String>,
     },
+    /// 2026-11-28 (OHL-Server, the admin app, [`admin`]): a question or an
+    /// action of an admin app (a network's server; additive, protocol 3
+    /// kept); answered once with [`ServerMsg::Admin`] of the same id.
+    Admin {
+        /// Chosen by the client.
+        id: u64,
+        /// What is asked.
+        ask: admin::AdminAsk,
+    },
 }
 
 /// What an offline working set's export wrote (phase 12).
@@ -1389,6 +1399,14 @@ pub enum ServerMsg {
         id: u64,
         /// What it did, or why not.
         result: Result<Box<BroughtBack>, String>,
+    },
+    /// 2026-11-28 (OHL-Server, the admin app): the answer to
+    /// [`ClientMsg::Admin`] of the same id.
+    Admin {
+        /// The question's id.
+        id: u64,
+        /// The answer, or why not.
+        result: Result<admin::AdminReply, String>,
     },
 }
 
@@ -2019,6 +2037,8 @@ pub fn random_code(n: usize) -> String {
         .collect()
 }
 
+#[cfg(all(test, feature = "network"))]
+mod admin_tests;
 #[cfg(test)]
 mod hardening_tests;
 #[cfg(all(test, feature = "network"))]

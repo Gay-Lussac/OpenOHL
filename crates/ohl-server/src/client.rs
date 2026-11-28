@@ -97,6 +97,14 @@ impl Link {
         self.next
     }
 
+    /// Sends an admin message (2026-11-28, OHL-Server); returns its id
+    /// (the [`ServerMsg::Admin`] answering it has it).
+    pub fn admin(&mut self, ask: crate::admin::AdminAsk) -> Result<u64, String> {
+        self.next += 1;
+        self.send(ClientMsg::Admin { id: self.next, ask })?;
+        Ok(self.next)
+    }
+
     /// Sends a message.
     pub fn send(&self, msg: ClientMsg) -> Result<(), String> {
         self.out

@@ -478,6 +478,24 @@ pub(crate) enum Job {
         days: Option<u32>,
         reply: std_mpsc::Sender<Result<String, String>>,
     },
+    /// 2026-11-28: an admin app's question or action (answered on the
+    /// client's own queue with [`ServerMsg::Admin`]; a file server
+    /// refuses: its admin rights are in OHL-Design).
+    Admin {
+        client: u64,
+        user: String,
+        id: u64,
+        ask: crate::admin::AdminAsk,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Network, 2026-11-28: an admin's long work done off the authority (a
+    /// backup, a restore drill): its answer to the client.
+    #[cfg(feature = "network")]
+    AdminDone {
+        client: u64,
+        id: u64,
+        result: Result<crate::admin::AdminReply, String>,
+    },
     /// Network: a measurement of the authority's own work (the bench).
     #[cfg(feature = "network")]
     Probe {
@@ -1109,6 +1127,15 @@ impl Host for Authority {
             Job::Invitation { reply, .. } => {
                 let _ = reply.send(Err(FILE_MODE.into()));
             }
+            Job::Admin { reply, .. } => {
+                let _ = reply.send(Err(
+                    "a project hosted from a file has no admin messages: its admins set the \
+                     roles in OHL-Design"
+                        .into(),
+                ));
+            }
+            #[cfg(feature = "network")]
+            Job::AdminDone { .. } => {}
             #[cfg(test)]
             Job::Panic { reply } => {
                 let _ = reply.send(self.guarded("a test", |_| -> Result<(), String> {
@@ -1319,6 +1346,9 @@ pub(crate) struct Pace {
     /// A network's interest and catch-up requests (each may make the
     /// server build tiles or read its stream).
     interest: Bucket,
+    /// 2026-11-28: an admin app's questions (its pages refresh every few
+    /// seconds; a page opened asks a few at once).
+    admin: Bucket,
 }
 
 impl Pace {
@@ -1330,6 +1360,7 @@ impl Pace {
             locks: Bucket::new(20.0, 64.0),
             // The web client asks for its tiles at most every 250 ms.
             interest: Bucket::new(4.0, 8.0),
+            admin: Bucket::new(8.0, 32.0),
         }
     }
 }
@@ -1783,6 +1814,7 @@ impl Drop for Server {
 
 pub(crate) fn log(text: &str) {
     eprintln!("ohl-server: {text}");
+    crate::admin::keep_log(text);
 }
 
 /// Phase 13: what a connection shares with the others: the budget of
@@ -2186,6 +2218,25 @@ pub(crate) async fn dispatch(
         }
         ClientMsg::Request { id, op, line } => {
             request(jobs, client, user, id, op, line, None).await?
+        }
+        ClientMsg::Admin { id, .. } if !pace.admin.take() => Some(ServerMsg::Admin {
+            id,
+            result: Err("too many admin questions: slow down".into()),
+        }),
+        ClientMsg::Admin { id, ask } => {
+            let (tx, rx) = oneshot::channel();
+            jobs.send(Job::Admin {
+                client,
+                user: user.to_owned(),
+                id,
+                ask,
+                reply: tx,
+            })
+            .map_err(|_| "server stopped")?;
+            rx.await
+                .map_err(|_| "server stopped")?
+                .err()
+                .map(|e| ServerMsg::Admin { id, result: Err(e) })
         }
         // More than the applications send: dropped.
         ClientMsg::Presence(_) if !pace.presence.take() => None,

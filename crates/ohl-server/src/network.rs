@@ -87,6 +87,10 @@ mod checks;
 // thread (a child module: it takes what an export holds on the authority).
 #[path = "network_exports.rs"]
 mod exports;
+// 2026-11-28 (OHL-Server, the admin app): the admin messages (a child
+// module: it reads the authority's clients, models and rights).
+#[path = "network_admin.rs"]
+mod admin;
 use crate::packager::{BuildJob, Built, Caches, LibFiles, Lru, Packager, Part};
 use crate::server::{
     Common, CopyWait, Event, Host, Job, JoinOptions, Joined, Listening, MAX_COPIES, NetAsk,
@@ -186,6 +190,14 @@ pub struct NetOptions {
     /// thread of their own, decided on the authority (false: written on
     /// the authority, as before — measurements, tests of the same file).
     pub export_worker: bool,
+    /// 2026-11-28 (the admin app's Operations page): the folder the
+    /// backups an admin asks for are written into (a new folder each;
+    /// none: backups only with `ohl network backup`).
+    pub backup_dir: Option<PathBuf>,
+    /// 2026-11-28: an empty database a restore drill asked from the admin
+    /// app restores a backup into (none: the drill checks the dump against
+    /// its manifest only). Never the network's own database.
+    pub drill_database: Option<String>,
     /// Tests: the exports' thread waits at this gate before each work
     /// while a test holds it (a change landing while an export is written
     /// or a bundle made ready, made certain however busy the machine).
@@ -208,6 +220,11 @@ impl std::fmt::Debug for NetOptions {
             .field("oidc", &self.oidc)
             .field("check_worker", &self.check_worker)
             .field("export_worker", &self.export_worker)
+            .field("backup_dir", &self.backup_dir)
+            .field(
+                "drill_database",
+                &self.drill_database.as_ref().map(|_| "(not shown)"),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -236,6 +253,8 @@ impl Default for NetOptions {
             oidc: None,
             check_worker: true,
             export_worker: true,
+            backup_dir: None,
+            drill_database: None,
             #[cfg(test)]
             export_gate: None,
         }
@@ -435,6 +454,9 @@ struct NetClient {
     see_as: Option<String>,
     /// Phase 13: the new tiles it may have made now.
     tile_budget: crate::Bucket,
+    /// 2026-11-28 (the admin app's sessions): connected since (Unix time,
+    /// s).
+    since: u64,
 }
 
 /// Phase 13: a check, an export or a bundle waiting for its turn.
@@ -639,6 +661,10 @@ pub(crate) struct NetHost {
     exports: exports::Exports,
     /// Phase 14: when long work last started (see [`HEAVY_MAX_WAIT`]).
     heavy_started: Instant,
+    /// 2026-11-28: the admins' long work (a backup, a restore drill) runs
+    /// on a thread of its own, one at a time, and answers through the jobs.
+    admin_jobs: std_mpsc::Sender<Job>,
+    admin_busy: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// A tile package's rights class: the objects of the tile its client may
@@ -693,6 +719,7 @@ impl NetHost {
         } else {
             exports::Exports::default()
         };
+        let admin_jobs = jobs.clone();
         let packager = Packager::start(o.packagers, caches, jobs, copies.join("work"))?;
         let mut host = NetHost {
             common,
@@ -743,6 +770,8 @@ impl NetHost {
             check_running: false,
             exports,
             heavy_started: Instant::now(),
+            admin_jobs,
+            admin_busy: Arc::default(),
         };
         host.load()?;
         host.stats.start_s = started.elapsed().as_secs_f64();
@@ -1102,6 +1131,7 @@ impl NetHost {
             bounds: bounds.map(|b| [b.min[0], b.min[1], b.max[0], b.max[1]]),
             models,
             routes,
+            admin: crate::admin::ADMIN,
         }
     }
 
@@ -1700,6 +1730,7 @@ impl NetHost {
                     self.options.tiles_per_second,
                     self.options.tiles_burst,
                 ),
+                since: crate::admin::unix_now(),
             },
         );
         // In the stream's order: what it follows, what the network holds,
@@ -4050,7 +4081,11 @@ impl Host for NetHost {
     fn handle(&mut self, job: Job) {
         if !matches!(
             job,
-            Job::Built(_) | Job::Probe { .. } | Job::Checked(_) | Job::Exported(_)
+            Job::Built(_)
+                | Job::Probe { .. }
+                | Job::Checked(_)
+                | Job::Exported(_)
+                | Job::AdminDone { .. }
         ) {
             self.last_busy = Instant::now();
             // Phase 7: rights an admin changed hold from the next job on.
@@ -4123,6 +4158,22 @@ impl Host for NetHost {
             }
             Job::Invitation { user, days, reply } => {
                 let _ = reply.send(self.personal_code(&user, days));
+            }
+            Job::Admin {
+                client,
+                user,
+                id,
+                ask,
+                reply,
+            } => {
+                let what = ask.describe();
+                let done = self.guarded(&format!("the admin's {what}"), |h| {
+                    h.admin(client, &user, id, ask)
+                });
+                let _ = reply.send(done);
+            }
+            Job::AdminDone { client, id, result } => {
+                self.push(client, None, None, Some(ServerMsg::Admin { id, result }));
             }
             Job::Built(b) => self.built(*b),
             Job::Checked(done) => {

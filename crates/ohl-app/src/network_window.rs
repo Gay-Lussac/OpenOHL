@@ -342,6 +342,7 @@ impl JoinNetworkWindow {
                 bounds: Some([1000.0, 1880.0, 9000.0, 6000.0]),
                 models,
                 routes,
+                admin: 0,
             }),
             model: Some("L001".into()),
             mode: Mode::Stations,

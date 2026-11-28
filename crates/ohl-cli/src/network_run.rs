@@ -453,6 +453,17 @@ pub enum NetworkCommand {
         /// The oldest ID token taken, s.
         #[arg(long, default_value_t = 3600)]
         oidc_max_age_s: u64,
+        /// 2026-11-28 (OHL-Server, the admin app): the folder the backups
+        /// an admin asks for from the app are written into (a new folder
+        /// each; default: none — backups with `ohl network backup`).
+        #[arg(long, value_name = "FOLDER")]
+        backup_dir: Option<PathBuf>,
+        /// 2026-11-28: an empty database the admin app's restore drill
+        /// restores a backup into and compares (a connection string, as
+        /// --database; default: none — the drill checks the dump against
+        /// its manifest only). Never the network's own database.
+        #[arg(long, value_name = "URL")]
+        drill_database: Option<String>,
     },
     /// Measure the server on the network (the plan's targets): start,
     /// memory idle and per client, join to first view, tile packages made
@@ -804,6 +815,8 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
             oidc_jwks_file,
             oidc_ca,
             oidc_max_age_s,
+            backup_dir,
+            drill_database,
         } => {
             let oidc = match (oidc_issuer, oidc_audience) {
                 (Some(issuer), Some(audience)) => {
@@ -847,6 +860,8 @@ pub fn run(command: NetworkCommand) -> Result<(), String> {
                     tiles_per_second: tiles_per_second.max(0.001),
                     tiles_burst: (4.0 * tiles_per_second).max(1.0),
                     oidc,
+                    backup_dir,
+                    drill_database: drill_database.map(|d| database(Some(d))).transpose()?,
                     ..Default::default()
                 },
             )?;

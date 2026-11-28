@@ -1259,3 +1259,130 @@ pub fn words(text: &str) -> impl Iterator<Item = &str> {
 /// What the server tells a user refused on an object they may not see (no
 /// id, no place).
 pub const HIDDEN_REFUSAL: &str = "it touches objects you have no access to (ask a network admin)";
+
+/// A change of the network's rights.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "do", rename_all = "snake_case")]
+// An admin's command, a few at a time: the scope kept in place.
+#[allow(clippy::large_enum_variant)]
+pub enum RightsCommand {
+    /// The first network admin (only while the network has none).
+    Bootstrap {
+        /// The user (added if new).
+        user: String,
+    },
+    /// A user added (or shown again under a new display name).
+    AddUser {
+        /// Name (as invitations name them).
+        name: String,
+        /// Display name (default: the name).
+        #[serde(default)]
+        display: Option<String>,
+    },
+    /// A user disabled (no rights at all, connections let go) or enabled
+    /// again.
+    SetActive {
+        /// The user.
+        name: String,
+        /// Enabled.
+        active: bool,
+    },
+    /// A group added.
+    AddGroup {
+        /// Name.
+        name: String,
+        /// A note.
+        #[serde(default)]
+        note: String,
+    },
+    /// A group removed (with its assignments).
+    DeleteGroup {
+        /// Name.
+        name: String,
+    },
+    /// A user made a member of a group.
+    AddMember {
+        /// The group.
+        group: String,
+        /// The user.
+        user: String,
+    },
+    /// A user taken out of a group.
+    RemoveMember {
+        /// The group.
+        group: String,
+        /// The user.
+        user: String,
+    },
+    /// A role defined (or its permissions changed): not a shipped one.
+    PutRole {
+        /// Name.
+        name: String,
+        /// Its permissions.
+        permissions: Vec<Permission>,
+        /// A note.
+        #[serde(default)]
+        note: String,
+    },
+    /// A role removed (refused while an assignment names it).
+    DeleteRole {
+        /// Name.
+        name: String,
+    },
+    /// A role given (or denied) to a user or group on a scope.
+    Assign {
+        /// Who.
+        subject: Subject,
+        /// The role (a deny without one denies everything).
+        #[serde(default)]
+        role: Option<String>,
+        /// A deny (network admins only).
+        #[serde(default)]
+        deny: bool,
+        /// Where.
+        scope: Scope,
+        /// A note.
+        #[serde(default)]
+        note: String,
+    },
+    /// An assignment taken away.
+    Unassign {
+        /// Its number.
+        id: i64,
+    },
+    /// Phase 13: a user's personal invitation made again (network admins):
+    /// every older one of that user refused from now on, the user let go
+    /// if connected.
+    ReissueInvitation {
+        /// The user.
+        name: String,
+    },
+    /// Phase 13: an identity provider's subject signs in as a user (OIDC;
+    /// network admins).
+    MapIdentity {
+        /// The issuer (as the server is configured with it).
+        issuer: String,
+        /// The ID token's `sub`.
+        subject: String,
+        /// The user.
+        user: String,
+    },
+    /// Phase 13: an identity provider's subject no longer signs in.
+    UnmapIdentity {
+        /// The issuer.
+        issuer: String,
+        /// The subject.
+        subject: String,
+    },
+}
+
+impl RightsCommand {
+    /// The audit's action (`rights.add_user`, …).
+    pub fn action(&self) -> String {
+        let v = serde_json::to_value(self).expect("serialises");
+        format!(
+            "rights.{}",
+            v.get("do").and_then(|d| d.as_str()).unwrap_or("change")
+        )
+    }
+}

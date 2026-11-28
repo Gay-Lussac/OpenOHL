@@ -153,6 +153,10 @@ pub struct NetworkInfo {
     pub models: Vec<ModelInfo>,
     /// The routes of every model.
     pub routes: Vec<RouteInfo>,
+    /// The admin messages' version the server speaks
+    /// ([`crate::admin::ADMIN`]; 0: a server of before them).
+    #[serde(default)]
+    pub admin: u32,
 }
 
 /// A model of a network, listed.
