@@ -605,6 +605,34 @@ process (the database touched only as `ohl network serve` touches it).
 Migrations stay the start of a newer server. Reviewed:
 [the security review](../development/server-security-review.md#the-admin-messages-2026-11-28).
 
+**Amendment (2026-11-28, OHL-Server stages C to F; built, in active
+development, not approved yet)**: the admin messages' version 2 (still
+additive, protocol 3 kept; an app of this version hides the new pages on
+a server of version 1). **C** (with phase 8): the shared towers from the
+authority's places (their routes, stale marks, who may edit one) and a
+line's twin towers from the store's twin query — shown, never merged;
+a region scope whose edges cross is refused by the scope's own check
+(the app draws polygons as regions). **D** (with phase 9): the
+Libraries page from the store's listings (`library_kinds`,
+`library_files`, `library_requests`, `library_status`, `uses`, all with
+the asker's rights), the maintainers' commands through
+`Network::library_command` (no file text from the admin app), Update
+library pins planned on the server's session as a proposal and carried
+out as the server's own command. **E**: one model exported as a
+standalone project file on the **exports' thread** (a reader connection
+of its own: one snapshot) and fetched in pieces of 512 KB; a project file
+uploaded in pieces into a token folder of the server's own and imported
+with the store's import on the authority (it needs the writer), the new
+model then read and served like the others without a restart — big files
+never whole in memory on either side. **F** (with phase 13): the audit
+read in pages with a filter (`Network::audit_page`: who, what, scope,
+text, when; bound parameters; append-only kept), the OIDC identities
+listed (mapped and unmapped through the rights' one function), "explain",
+a network setting changed through the store's checks. Every message is
+checked by the rights' one function; every change and refusal audited.
+No schema change; the desktop `.ohl` format unchanged. Reviewed:
+[the security review](../development/server-security-review.md#the-admin-messages-of-stages-c-to-f-2026-11-28).
+
 ### Measured first
 
 A **synthetic country** of the owner's size (12 000 pylons, 2.5 systems

@@ -62,6 +62,13 @@ fn the_user_guide_has_a_section_for_every_page() {
         "what-changes",
         "sessions",
         "users-and-groups",
+        "libraries",
+        "lines",
+        "settings",
+        "identities",
+        "explain",
+        "drawing-a-region",
+        "background-from-your-own-map-server",
     ] {
         assert!(ohl_ui::tool_window::has_heading(&guide, anchor), "{anchor}");
     }

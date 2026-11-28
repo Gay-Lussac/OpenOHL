@@ -8,11 +8,19 @@
 //! of the assignments, the working sets in use, the locks and the stale
 //! results. No background by default: region outlines the admin imports
 //! from a GeoJSON file, kept with this app's settings on this computer
-//! (never on the server; owner's answer 5). Fed by the server's route
-//! summaries, never whole lines. A click picks a route or a structure (the
-//! Assignments page's scope).
+//! (never on the server; owner's answer 5); and (stage C, the owner's
+//! question 1 of stages A–B) the owner's own map server, a URL the admin
+//! types — off and empty by default, so no request goes anywhere until
+//! then: one image of the view, in the network's own coordinate system
+//! ([`tile_url`]), fetched on a thread of its own once the view rests.
+//! Fed by the server's route summaries, never whole lines. A click picks a
+//! route or a structure (the Assignments page's scope); in drawing mode
+//! (stage C) each click adds a corner of a polygon, the region of an
+//! assignment's scope.
 
 use std::collections::BTreeSet;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use ohl_server::admin::{AdminMap, MapDot, MapRoute};
@@ -23,6 +31,104 @@ pub const DOTS_BELOW_M: f64 = 40_000.0;
 
 /// The settings key of the region outlines.
 pub const REGIONS_KEY: &str = "ohl-server.regions";
+
+/// The settings key of the background map server (its URL and whether it
+/// is shown).
+pub const BACKGROUND_KEY: &str = "ohl-server.background";
+
+/// The view rests this long before its background image is asked for.
+pub const BACKGROUND_REST: Duration = Duration::from_millis(400);
+
+/// A background image is this large at most, bytes.
+pub const BACKGROUND_MAX_BYTES: u64 = 32 << 20;
+
+/// The owner's own map server (off and empty by default).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Background {
+    /// Its URL template: `{x0}`, `{y0}`, `{x1}`, `{y1}` (the view in the
+    /// network's coordinates, m), `{width}`, `{height}` (pixels), `{crs}`
+    /// (the network's coordinate system), e.g. a WMS GetMap request.
+    pub url: String,
+    /// Shown.
+    pub on: bool,
+}
+
+/// The URL of the background image of `view` (x0, y0, x1, y1) at
+/// `size` pixels: `template` filled in; refused unless http(s).
+pub fn tile_url(
+    template: &str,
+    view: [f64; 4],
+    size: [u32; 2],
+    crs: &str,
+) -> Result<String, String> {
+    let t = template.trim();
+    let lower = t.to_ascii_lowercase();
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return Err("the map server's URL starts with https:// (or http://)".into());
+    }
+    let crs: String = crs
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ':' | '.' | '-' | '_'))
+        .collect();
+    Ok(t.replace("{x0}", &format!("{:.2}", view[0]))
+        .replace("{y0}", &format!("{:.2}", view[1]))
+        .replace("{x1}", &format!("{:.2}", view[2]))
+        .replace("{y1}", &format!("{:.2}", view[3]))
+        .replace("{width}", &size[0].to_string())
+        .replace("{height}", &size[1].to_string())
+        .replace("{crs}", &crs))
+}
+
+/// Fetches and decodes the image at `url` (15 s, [`BACKGROUND_MAX_BYTES`]
+/// at most, no redirect followed).
+pub fn fetch_image(url: &str) -> Result<egui::ColorImage, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(15)))
+        .max_redirects(0)
+        .build()
+        .into();
+    let bytes = agent
+        .get(url)
+        .call()
+        .map_err(|e| format!("the map server: {e}"))?
+        .body_mut()
+        .with_config()
+        .limit(BACKGROUND_MAX_BYTES)
+        .read_to_vec()
+        .map_err(|e| format!("the map server: {e}"))?;
+    let img = image::load_from_memory(&bytes)
+        .map_err(|e| format!("the map server's answer is no image: {e}"))?
+        .to_rgba8();
+    let size = [img.width() as usize, img.height() as usize];
+    Ok(egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+}
+
+/// The background as drawn: its image and the view it shows.
+struct Shown {
+    texture: egui::TextureHandle,
+    view: [f64; 4],
+}
+
+/// The background image being fetched, and when the view came to rest.
+#[derive(Default)]
+struct BackgroundState {
+    shown: Option<Shown>,
+    fetching: Option<(mpsc::Receiver<Result<egui::ColorImage, String>>, [f64; 4])>,
+    rested: Option<([f64; 4], [u32; 2], Instant)>,
+    /// The last error (said under the map).
+    error: Option<String>,
+    /// Requests made (the tests: none while the URL is empty).
+    requests: usize,
+}
+
+impl std::fmt::Debug for BackgroundState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BackgroundState")
+            .field("shown", &self.shown.as_ref().map(|s| s.view))
+            .field("requests", &self.requests)
+            .finish_non_exhaustive()
+    }
+}
 
 /// What the routes are coloured by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -104,6 +210,18 @@ pub struct MapView {
     pub view: Option<[f64; 4]>,
     /// The last frame's drawing time, ms (measured: the 12k country).
     pub draw_ms: f64,
+    /// The owner's own map server.
+    pub background: Background,
+    bg: BackgroundState,
+    /// A polygon being drawn (its corners), the region of an assignment's
+    /// scope; none: clicks pick.
+    pub drawing: Option<Vec<[f64; 2]>>,
+}
+
+impl Clone for BackgroundState {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 impl Default for MapView {
@@ -120,6 +238,9 @@ impl Default for MapView {
             picked: None,
             view: None,
             draw_ms: 0.0,
+            background: Background::default(),
+            bg: BackgroundState::default(),
+            drawing: None,
         }
     }
 }
@@ -264,7 +385,7 @@ pub fn regions_from_geojson(text: &str) -> Result<Vec<Region>, String> {
 }
 
 impl MapView {
-    /// The outlines kept with the app's settings.
+    /// The outlines and the background kept with the app's settings.
     pub fn load(&mut self, storage: Option<&dyn eframe::Storage>) {
         if let Some(r) = storage
             .and_then(|s| s.get_string(REGIONS_KEY))
@@ -272,12 +393,132 @@ impl MapView {
         {
             self.regions = r;
         }
+        if let Some(b) = storage
+            .and_then(|s| s.get_string(BACKGROUND_KEY))
+            .and_then(|t| serde_json::from_str(&t).ok())
+        {
+            self.background = b;
+        }
     }
 
-    /// Keeps the outlines with the app's settings.
+    /// Keeps the outlines and the background with the app's settings.
     pub fn save(&self, storage: &mut dyn eframe::Storage) {
         if let Ok(t) = serde_json::to_string(&self.regions) {
             storage.set_string(REGIONS_KEY, t);
+        }
+        if let Ok(t) = serde_json::to_string(&self.background) {
+            storage.set_string(BACKGROUND_KEY, t);
+        }
+    }
+
+    /// Background images asked for so far.
+    pub fn background_requests(&self) -> usize {
+        self.bg.requests
+    }
+
+    /// The background's last error.
+    pub fn background_error(&self) -> Option<&str> {
+        self.bg.error.as_deref()
+    }
+
+    /// A background image is shown.
+    pub fn background_shown(&self) -> bool {
+        self.bg.shown.is_some()
+    }
+
+    /// The background: the image of the view asked for once it rests (a
+    /// thread of its own), and drawn under everything when it came.
+    fn background_ui(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        rect: Rect,
+        view: [f64; 4],
+        crs: &str,
+    ) {
+        if !self.background.on || self.background.url.trim().is_empty() {
+            self.bg.shown = None;
+            self.bg.rested = None;
+            return;
+        }
+        if let Some((rx, v)) = &self.bg.fetching {
+            match rx.try_recv() {
+                Ok(Ok(img)) => {
+                    let texture = ui.ctx().load_texture(
+                        "ohl-server-background",
+                        img,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    self.bg.shown = Some(Shown { texture, view: *v });
+                    self.bg.error = None;
+                    self.bg.fetching = None;
+                }
+                Ok(Err(e)) => {
+                    self.bg.error = Some(e);
+                    self.bg.fetching = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => self.bg.fetching = None,
+            }
+        }
+        if let Some(s) = &self.bg.shown {
+            let a = self.screen(rect, [s.view[0], s.view[3]]);
+            let b = self.screen(rect, [s.view[2], s.view[1]]);
+            painter.image(
+                s.texture.id(),
+                Rect::from_two_pos(a, b),
+                Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
+        let ppp = ui.ctx().pixels_per_point();
+        let size = [
+            (rect.width() * ppp).round().clamp(1.0, 4096.0) as u32,
+            (rect.height() * ppp).round().clamp(1.0, 4096.0) as u32,
+        ];
+        let same = |a: [f64; 4], b: [f64; 4]| {
+            let tol = (a[2] - a[0]).abs().max(1.0) * 1e-3;
+            a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() <= tol)
+        };
+        let now = Instant::now();
+        match self.bg.rested {
+            Some((v, s, _)) if same(v, view) && s == size => {}
+            _ => self.bg.rested = Some((view, size, now)),
+        }
+        let Some((v, s, since)) = self.bg.rested else {
+            return;
+        };
+        let have = self.bg.shown.as_ref().is_some_and(|x| same(x.view, v))
+            || self.bg.fetching.as_ref().is_some_and(|x| same(x.1, v));
+        if have || self.bg.fetching.is_some() {
+            return;
+        }
+        if now.duration_since(since) < BACKGROUND_REST {
+            ui.ctx().request_repaint_after(BACKGROUND_REST);
+            return;
+        }
+        match tile_url(&self.background.url, v, s, crs) {
+            Ok(url) => {
+                let (tx, rx) = mpsc::channel();
+                let ctx = ui.ctx().clone();
+                self.bg.requests += 1;
+                let spawned = std::thread::Builder::new()
+                    .name("ohl-server-app-background".into())
+                    .spawn(move || {
+                        let _ = tx.send(fetch_image(&url));
+                        ctx.request_repaint();
+                    });
+                match spawned {
+                    Ok(_) => self.bg.fetching = Some((rx, v)),
+                    Err(e) => self.bg.error = Some(e.to_string()),
+                }
+            }
+            Err(e) => {
+                self.bg.error = Some(e);
+                // Not asked again until the view moves.
+                self.bg.rested = None;
+                self.bg.shown = None;
+            }
         }
     }
 
@@ -342,6 +583,8 @@ impl MapView {
         let view = [tl[0], br[1], br[0], tl[1]];
         self.view = Some(view);
         let fg = ui.visuals().text_color();
+        // The owner's own map server's image, under everything.
+        self.background_ui(ui, &painter, rect, view, &map.crs);
         // The region outlines (no background otherwise).
         for r in &self.regions {
             for ring in &r.rings {
@@ -349,16 +592,20 @@ impl MapView {
                 painter.add(egui::Shape::line(pts, Stroke::new(1.0, Color32::DARK_GRAY)));
             }
         }
-        // The assignments' regions.
+        // The assignments' regions (a drawn polygon may be concave:
+        // filled only when convex, always outlined).
         if self.assignments {
             for poly in &hl.regions {
                 let pts: Vec<Pos2> = poly.iter().map(|p| self.screen(rect, *p)).collect();
                 if pts.len() >= 3 {
-                    painter.add(egui::Shape::convex_polygon(
-                        pts.clone(),
-                        ASSIGNED.gamma_multiply(0.15),
-                        Stroke::new(1.5, ASSIGNED),
-                    ));
+                    if convex(poly) {
+                        painter.add(egui::Shape::convex_polygon(
+                            pts.clone(),
+                            ASSIGNED.gamma_multiply(0.15),
+                            Stroke::NONE,
+                        ));
+                    }
+                    painter.add(egui::Shape::closed_line(pts, Stroke::new(1.5, ASSIGNED)));
                 }
             }
         }
@@ -436,11 +683,33 @@ impl MapView {
                 );
             }
         }
-        // A click picks the nearest structure, else route (6 px).
+        // The polygon being drawn: its corners, the edge to the pointer.
+        if let Some(poly) = &self.drawing {
+            let mut pts: Vec<Pos2> = poly.iter().map(|p| self.screen(rect, *p)).collect();
+            if let Some(h) = resp.hover_pos() {
+                pts.push(h);
+            }
+            if pts.len() >= 2 {
+                painter.add(egui::Shape::closed_line(
+                    pts.clone(),
+                    Stroke::new(2.0, ASSIGNED),
+                ));
+            }
+            for p in pts.iter().take(poly.len()) {
+                painter.circle_filled(*p, 3.5, ASSIGNED);
+            }
+        }
+        // A click adds a corner (drawing), else picks the nearest
+        // structure, else route (6 px).
         if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
         {
-            self.picked = self.pick(rect, p, map, if small { dots } else { &[] });
+            let w = self.world(rect, p);
+            if let Some(poly) = &mut self.drawing {
+                poly.push(w);
+            } else {
+                self.picked = self.pick(rect, p, map, if small { dots } else { &[] });
+            }
         }
         self.draw_ms = started.elapsed().as_secs_f64() * 1e3;
         // Structures asked for once the view is small enough (rounded
@@ -520,6 +789,29 @@ impl MapView {
         self.view
             .map(|v| vec![[v[0], v[1]], [v[2], v[1]], [v[2], v[3]], [v[0], v[3]]])
     }
+
+    /// Centres the view on `p` (the shared towers' list), zoomed in.
+    pub fn centre_on(&mut self, p: [f64; 2]) {
+        self.centre = p;
+        self.scale = self.scale.max(0.2);
+    }
+}
+
+/// Whether polygon `poly` is convex (its turns all one way).
+pub fn convex(poly: &[[f64; 2]]) -> bool {
+    let n = poly.len();
+    let mut sign = 0.0f64;
+    for i in 0..n {
+        let (a, b, c) = (poly[i], poly[(i + 1) % n], poly[(i + 2) % n]);
+        let z = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        if z != 0.0 {
+            if sign != 0.0 && z.signum() != sign {
+                return false;
+            }
+            sign = z.signum();
+        }
+    }
+    true
 }
 
 fn segment_distance(p: Pos2, a: Pos2, b: Pos2) -> f32 {
@@ -551,6 +843,31 @@ mod tests {
         assert_eq!(r[1].rings.len(), 2);
         assert!(regions_from_geojson("{\"type\":\"Point\",\"coordinates\":[0,0]}").is_err());
         assert!(regions_from_geojson("not json").is_err());
+    }
+
+    #[test]
+    fn the_background_url_is_filled_in_and_must_be_http() {
+        let u = tile_url(
+            "https://maps.example/wms?BBOX={x0},{y0},{x1},{y1}&WIDTH={width}&HEIGHT={height}&CRS={crs}",
+            [1.0, 2.0, 3.5, 4.0],
+            [800, 600],
+            "EPSG:2056",
+        )
+        .unwrap();
+        assert_eq!(
+            u,
+            "https://maps.example/wms?BBOX=1.00,2.00,3.50,4.00&WIDTH=800&HEIGHT=600&CRS=EPSG:2056"
+        );
+        assert!(tile_url("file:///etc/passwd", [0.0; 4], [1, 1], "").is_err());
+        assert!(tile_url("", [0.0; 4], [1, 1], "").is_err());
+        assert!(convex(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]));
+        assert!(!convex(&[
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 2.0],
+            [1.0, 0.5],
+            [0.0, 2.0]
+        ]));
     }
 
     #[test]

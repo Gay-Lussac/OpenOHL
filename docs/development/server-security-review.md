@@ -192,6 +192,59 @@ admin how much of the network they see (not what the rest is).
 Reads are not audited (an app refreshes them every few seconds; the
 audit would fill with them).
 
+## The admin messages of stages C to F (2026-11-28)
+
+*In active development, not approved yet.* The messages of OHL-Server's
+stages C to F (`crates/ohl-server/src/admin.rs`, `network_admin_cf.rs`;
+tests `admin_cf_tests.rs` and the app's `tests/stages_cf.rs`), admin
+messages version 2 (`NetworkInfo.admin` = 2; additive, protocol 3 kept:
+an app of this version works with a server of version 1 and hides these
+pages). They pass the same gate as A and B (joined, not seeing as
+another, managing rights somewhere or maintaining a library) and the same
+pace — except the pieces of a file (`download`, `upload`), paced on a
+bucket of their own (32 a second, 64 at once: 16 MB/s at most per
+connection).
+
+| Message | Who may | Audited | What it could leak or do, and why it does not |
+|---|---|---|---|
+| `shared_towers` | the gate | no | only towers the asker may see, and of each only the routes they may see (the rights' one function per object); 5000 rows at most, the count whole |
+| `shared_tower` | the gate; who may edit: network admins and who manages rights on its line | no | a hidden tower gets the hidden refusal (no name back); the editors are users whose rights allow editing it — a line admin learns it of their own line only |
+| `twins` | the gate, on a line the asker sees something of | no | the store's twin query; a pair is listed only when the asker sees both towers (tested: a line admin asking of another line is refused) |
+| `library_page`, `uses` | the gate | no | the store's own listings with the asker's rights (kinds, files, entries, requests and uses they may not see left out; a request of a line they cannot see loses its line and reason); `maintain` only shows buttons — every change is decided by the store |
+| `library` | the store's one function (`Network::library_command`: maintainers of the kind, a grant by one who did not ask, unlocking by network admins) | yes, by the store (successes and refusals) | only the maintainers' commands (lock, grant, refuse, release, withdraw, restore): no file text and no request is made from the admin app; a refusal needs a reason (tested); the server reads the libraries again at once |
+| `pins_plan` | the gate, on a line the asker sees something of | no | the store's plan on the server's own session, nothing written; whether the asker may carry it out is the store's `check_pin_rights` |
+| `update_pins` | the rights (`check_pin_rights`, a built line's review) | yes (`admin.update_pins`, and the line's own log) | planned again on the authority and carried out as the server's own command (`Op::LibraryPins` is never a client's, as for OHL-Design) |
+| `lines` | the gate | no | only lines the asker sees something of; `may_export` is the rights' answer |
+| `export_line` | export on the **whole** line (as `ohl network export`) | yes (`admin.export_line`, with its size and revision; a refusal as refused) | written on the exports' thread with a reader connection of its own (one snapshot); into a folder of the server's copies folder named by a random token (never a name the app gave as a path); a user whose rights changed meanwhile gets nothing (the file removed, the refusal audited) |
+| `download` | the connection that asked the export | no | the token is random (24 characters) and checked against the connection: another connection is refused (tested); 512 KB a piece; past the end refused |
+| `upload_start`, `upload` | network admins | no (the import is) | 8 GB at most; the name kept to letters, digits, `.`, `_`, `-`, space, cut to 120 characters, its folder part dropped, `.ohl` required (tested with `../copy.txt` and `../copy.ohl`); written into a token folder of the server's own; pieces in order only, never past the size announced; two files per connection at most |
+| `import_line` | network admins (as `ohl network import`) | yes (`admin.import_line`, and the store's own import row) | the store's import (one transaction: a refused import leaves nothing); the file removed after; the line served at once; then the rights read again — every connection whose rights changed is let go, the importer's too (the app joins again) |
+| `transfer_done` | the connection holding it | no | removes its folder; a connection's files go with it when it leaves |
+| `audit` | network admins (as `ohl network rights audit`) | no (a read) | parameters bound, never spliced into the SQL; times checked for their form first; 1000 rows a page at most |
+| `identities` | network admins | no | issuer, subject and user only (no token is kept anywhere); mapping and unmapping go through `change` (the rights' one function, network admins, audited) |
+| `explain` | the gate; about a target the asker may see | yes (`explain`) | the rights' own `explain` (assignment numbers only); a target the asker may not see gets the hidden refusal |
+| `set_setting` | network admins (the store checks again) | yes (by the store: before and after) | only settings the store knows, each value checked (`backup_max_age_hours`: 0–8760 h) |
+
+**The map's background** (the app, not the server): no request is made
+anywhere until the admin types a URL and ticks it (empty and off by
+default; no third-party default); only `http(s)://`; 15 s, 32 MB, no
+redirect; the image decoded by the `image` crate (PNG, JPEG). The URL is
+kept on the admin's computer only; the map server learns the view's
+area. The CSV export of the audit writes on the admin's computer what a
+network admin may read anyway; a field starting `=`, `+`, `-` or `@` is
+kept as text (no formula runs in a spreadsheet).
+
+**A region drawn** whose edges cross is refused by the rights' check of
+a scope (`Scope::check`, `region_self_crosses`) — the server's, not only
+the app's.
+
+**Accepted**: the import runs on the authority (it needs the network's
+writer): other users wait for it (seconds). A file held for a
+connection lives on the server's disk until fetched, imported, cancelled
+or the connection ends (a server stopped meanwhile leaves its copies
+folder to the IT, as for offline working sets). Who may edit a shared
+tower tells a line admin which users have rights on their own line.
+
 ## Not reviewed here
 
 The desktop applications, the plugins' sandbox (ADR-0003, its own

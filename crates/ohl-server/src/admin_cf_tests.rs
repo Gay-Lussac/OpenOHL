@@ -19,11 +19,11 @@ use ohl_session::rights::{Permission, RightsCommand, Scope};
 use ohl_store_pg::Network;
 use ohl_store_pg::library::LibraryCommand as L;
 
+use crate::ServerMsg;
 use crate::admin::{AdminAsk, AdminReply, AuditFilter, CHUNK, LibraryAction};
 use crate::client::{Incoming, Joined, NetJoin, join_network};
 use crate::network_tests::{add_user, local, net_options, test_network};
 use crate::server::Server;
-use crate::ServerMsg;
 
 /// Asks `ask` and waits for its answer (other messages dropped).
 fn ask(j: &mut Joined, ask: AdminAsk) -> Result<AdminReply, String> {
@@ -123,7 +123,10 @@ fn stages_c_to_f_on_the_server() {
             };
             net.library_command(who, &c).unwrap();
         }
-        (request(&net, "bob", "wire-one"), request(&net, "bob", "wire-two"))
+        (
+            request(&net, "bob", "wire-one"),
+            request(&net, "bob", "wire-two"),
+        )
     };
     let server = Server::start_network(local("admin-cf"), net_options(&t.url)).unwrap();
     let mut admin = join(&server, "admin");
@@ -189,13 +192,22 @@ fn stages_c_to_f_on_the_server() {
     assert_eq!(k.releases, vec!["R1".to_owned()]);
     assert!(k.maintainers.contains(&"user:mia".to_owned()), "{k:?}");
     assert!(k.maintain && !k.files.is_empty());
-    assert!(page.requests.iter().any(|r| r.id == req1 && r.state == "requested"));
+    assert!(
+        page.requests
+            .iter()
+            .any(|r| r.id == req1 && r.state == "requested")
+    );
     assert_eq!(page.lines.len(), t.codes.len());
     let theirs = reply!(
         AdminReply::LibraryPage,
         ask(&mut mia, AdminAsk::LibraryPage)
     );
-    assert!(theirs.kinds.iter().any(|k| k.kind == "cables" && k.maintain));
+    assert!(
+        theirs
+            .kinds
+            .iter()
+            .any(|k| k.kind == "cables" && k.maintain)
+    );
     // A refusal needs a reason; a line admin grants nothing.
     let refuse = |note: &str| AdminAsk::Library {
         action: LibraryAction::Refuse {
@@ -244,7 +256,10 @@ fn stages_c_to_f_on_the_server() {
     let p = reply!(AdminReply::Pins, ask(&mut admin, plan.clone()));
     assert!(p.moves && p.refusal.is_none(), "{p:?}");
     assert!(p.kinds.iter().any(|k| k.kind == "cables" && k.to == "R2"));
-    assert!(ask(&mut vic, plan.clone()).is_err(), "a viewer opens no admin app");
+    assert!(
+        ask(&mut vic, plan.clone()).is_err(),
+        "a viewer opens no admin app"
+    );
     reply!(
         AdminReply::Done,
         ask(
@@ -322,7 +337,10 @@ fn stages_c_to_f_on_the_server() {
         offset: offset as u64,
         data: crate::base64::encode(&file[offset..(offset + CHUNK).min(file.len())]),
     };
-    assert!(ask(&mut admin, piece(CHUNK.min(file.len() / 2))).is_err(), "in order");
+    assert!(
+        ask(&mut admin, piece(CHUNK.min(file.len() / 2))).is_err(),
+        "in order"
+    );
     let mut sent = 0;
     while sent < file.len() {
         let got = reply!(AdminReply::Received, ask(&mut admin, piece(sent)));
@@ -350,7 +368,11 @@ fn stages_c_to_f_on_the_server() {
     drop(admin);
     let mut admin = join(&server, "admin");
     let lines = reply!(AdminReply::Lines, ask(&mut admin, AdminAsk::Lines));
-    assert!(lines.iter().any(|l| l.code == "COPY1" && l.name == "a copy"));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.code == "COPY1" && l.name == "a copy")
+    );
     let map = reply!(AdminReply::Map, ask(&mut admin, AdminAsk::Map));
     assert!(map.routes.iter().any(|r| r.model == "COPY1"));
 

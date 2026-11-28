@@ -24,5 +24,6 @@ pub mod help;
 pub mod host;
 pub mod map;
 pub mod pages;
+pub mod pages_cf;
 
 pub use app::App;

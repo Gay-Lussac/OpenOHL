@@ -8,6 +8,50 @@ approved as finished: everything is built and in active development
 (not approved yet). Open questions are in the roadmap (the open points
 of Parts A, B and C).
 
+## 2026-11-28 (OHL-Server, the admin app: stages C to F built)
+
+Started the same day (the owner: "go with the admin app"), with the
+questions 1 (the owner's own map server as a background) and 8 (a
+polygon drawn as a scope) of stages A–B taken into C; built, in active
+development, not approved yet ([OHL-Server](../user-guide/ohl-server.md),
+[ADR-0013's amendment](../adr/0013-country-server.md#security-and-operations),
+[security review](server-security-review.md#the-admin-messages-of-stages-c-to-f-2026-11-28)).
+
+- **Admin messages version 2** (additive, protocol 3 kept; the app works
+  with a server of version 1 and hides the new pages): shared towers and
+  who may edit one, twins, the Libraries page and the maintainers'
+  changes, Update library pins (a proposal, then the server's own
+  command), the lines, a line exported and imported in pieces, a page of
+  the audit, the identities, explain, a network setting changed.
+- **C**: the pages Shared towers (with the twins, shown never merged);
+  on the map a polygon drawn as an assignment's region (a region whose
+  edges cross is refused by `Scope::check` — the server's rule too) and
+  the owner's own map server as a background (a URL template in the
+  network's coordinates, empty and off by default: no request anywhere
+  until typed; one image of the view once it rests).
+- **D**: the Libraries page; library maintainers change **their**
+  libraries there (A–B had them read-only), every change decided by the
+  store's one function; a refusal needs a reason.
+- **E**: the Lines page; a line's export on the server's exports' thread
+  with a reader connection of its own (as `ohl network export`, one
+  snapshot), fetched in pieces of 512 KB; an import uploaded in pieces
+  into a token folder of the server's, imported on the authority (the
+  writer) and served at once (a model added without a restart:
+  `NetHost::add_model`); big files never whole in memory. The import's
+  users join the line, so the importer is let go (the server's rule) and
+  the app joins again at once — kept, not weakened.
+- **F**: the Audit page (filtered, paged newest first, to CSV:
+  `Network::audit_page`); the identities on the Users page; explain on
+  the See as page; network settings changed on Operations › Settings.
+- A connection closed because its user's rights changed is joined again
+  by the app at once (on the same page) — A–B's own rights changes too.
+- My choices, each an owner question with a recommendation in ROADMAP
+  O17: one image of the view (not tiles), the import on the authority,
+  the audit for network admins only and its reading not audited, who
+  may edit a shared tower shown to line admins of its line, the admin
+  app's library changes limited to the maintainers' commands, the
+  importer let go and joined again, a pieces' pace of its own.
+
 ## 2026-11-28 (OHL-Server, the admin app: stages A and B built)
 
 Built the same day from the answers below, in active development, not

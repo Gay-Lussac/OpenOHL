@@ -123,9 +123,9 @@ impl NetHost {
     ) -> Result<Option<AdminReply>, String> {
         Ok(Some(match ask {
             AdminAsk::SharedTowers => AdminReply::SharedTowers(self.shared_towers(me)),
-            AdminAsk::SharedTower { model, id: tower } => {
-                AdminReply::SharedTower(Box::new(self.shared_tower(me, network_admin, &model, &tower)?))
-            }
+            AdminAsk::SharedTower { model, id: tower } => AdminReply::SharedTower(Box::new(
+                self.shared_tower(me, network_admin, &model, &tower)?,
+            )),
             AdminAsk::Twins { model, tolerance } => {
                 AdminReply::Twins(self.twins(me, &model, tolerance)?)
             }
@@ -192,7 +192,10 @@ impl NetHost {
                 return Ok(None);
             }
             AdminAsk::TransferDone { token } => {
-                let mine = self.transfers.get(&token).is_some_and(|t| t.client == client);
+                let mine = self
+                    .transfers
+                    .get(&token)
+                    .is_some_and(|t| t.client == client);
                 if mine {
                     self.transfers.remove(&token);
                 }
@@ -270,7 +273,11 @@ impl NetHost {
                     })
                     .map(|r| SharedRoute {
                         id: r.clone(),
-                        name: names.get(r.as_str()).copied().unwrap_or_default().to_owned(),
+                        name: names
+                            .get(r.as_str())
+                            .copied()
+                            .unwrap_or_default()
+                            .to_owned(),
                         stale: stale.get(r).map(stale_words),
                     })
                     .collect();
@@ -374,7 +381,13 @@ impl NetHost {
             ohl_store_pg::import::twins(&self.net, model, tol).map_err(|e| e.to_string())?;
         let seen = |code: &str, id: &str| {
             all || self.models.get(code).is_some_and(|m| {
-                nr::sees(me, code, Kind::Structure, id, m.places.get(Kind::Structure, id))
+                nr::sees(
+                    me,
+                    code,
+                    Kind::Structure,
+                    id,
+                    m.places.get(Kind::Structure, id),
+                )
             })
         };
         Ok(twins
@@ -392,7 +405,11 @@ impl NetHost {
     }
 
     /// The Libraries page as `me` may see it.
-    fn library_page(&mut self, me: &UserRights, network_admin: bool) -> Result<LibraryPage, String> {
+    fn library_page(
+        &mut self,
+        me: &UserRights,
+        network_admin: bool,
+    ) -> Result<LibraryPage, String> {
         let e = |e: ohl_store_pg::NetError| e.to_string();
         let maintained = super::admin::maintained_kinds(&self.rights, me.user());
         let mut page = LibraryPage::default();
@@ -418,9 +435,7 @@ impl NetHost {
                 })
                 .collect();
             page.kinds.push(LibraryKindView {
-                maintain: network_admin
-                    || maintained.contains(&k.kind)
-                    || maintained.contains("*"),
+                maintain: network_admin || maintained.contains(&k.kind) || maintained.contains("*"),
                 kind: k.kind,
                 locked: k.locked,
                 maintainers: k.maintainers,
@@ -586,7 +601,9 @@ impl NetHost {
         self.apply(None, user, line, main, op)
             .map_err(|e| self.sanitise(me, &e))?;
         self.audit_admin(user, "admin.update_pins", &format!("line {line}"), &note);
-        log(&format!("{user} updated the library pins of line {line}: {note}"));
+        log(&format!(
+            "{user} updated the library pins of line {line}: {note}"
+        ));
         Ok(format!("line {line}: {note}"))
     }
 
@@ -615,7 +632,10 @@ impl NetHost {
 
     /// The transfers of client `client`, counted.
     fn transfers_of(&self, client: u64) -> usize {
-        self.transfers.values().filter(|t| t.client == client).count()
+        self.transfers
+            .values()
+            .filter(|t| t.client == client)
+            .count()
     }
 
     /// A transfer's own folder in the server's copies folder.
@@ -640,7 +660,8 @@ impl NetHost {
             return Err(super::admin::HIDDEN.into());
         }
         if !me.allows(Permission::Export, &Target::Line(model)) {
-            let why = format!("{user} may not export line {model}: it needs export on the whole line");
+            let why =
+                format!("{user} may not export line {model}: it needs export on the whole line");
             self.audit_refused(user, &format!("admin: export line {model}"), &why);
             return Err(why);
         }
@@ -650,7 +671,10 @@ impl NetHost {
             ));
         }
         let (token, dir) = self.transfer_dir()?;
-        let name = format!("{}.ohl", safe_name(&format!("{model}.ohl"))?.trim_end_matches(".ohl"));
+        let name = format!(
+            "{}.ohl",
+            safe_name(&format!("{model}.ohl"))?.trim_end_matches(".ohl")
+        );
         let path = dir.join(&name);
         self.transfers.insert(
             token.clone(),
@@ -743,7 +767,10 @@ impl NetHost {
                         user,
                         "admin.export_line",
                         &format!("line {}", m.code),
-                        &format!("{note}; revision {}", r.revision.as_deref().unwrap_or("none")),
+                        &format!(
+                            "{note}; revision {}",
+                            r.revision.as_deref().unwrap_or("none")
+                        ),
                     );
                     Ok(info)
                 }
@@ -855,7 +882,8 @@ impl NetHost {
         t.received += bytes.len() as u64;
         if t.received == t.bytes {
             if let Some(f) = t.file.take() {
-                f.sync_all().map_err(|e| format!("the server's folder: {e}"))?;
+                f.sync_all()
+                    .map_err(|e| format!("the server's folder: {e}"))?;
             }
             t.ready = true;
         }
@@ -947,7 +975,11 @@ impl NetHost {
         before: Option<i64>,
         limit: usize,
     ) -> Result<AuditPage, String> {
-        let limit = if limit == 0 { 200 } else { limit.min(AUDIT_PAGE_MAX) };
+        let limit = if limit == 0 {
+            200
+        } else {
+            limit.min(AUDIT_PAGE_MAX)
+        };
         let q = ohl_store_pg::rights::AuditQuery {
             user: f.user.trim().to_owned(),
             action: f.action.trim().to_owned(),
@@ -1027,7 +1059,10 @@ impl NetHost {
             notes.push(format!("{who} is not an active user of the network"));
         }
         if p.needs_see() && !them.allows(Permission::See, &target) {
-            notes.push(format!("{} needs see, which is not given there", p.as_str()));
+            notes.push(format!(
+                "{} needs see, which is not given there",
+                p.as_str()
+            ));
         }
         self.audit_admin(
             user,

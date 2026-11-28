@@ -25,7 +25,7 @@ use crate::map::{ColourBy, Highlight, Picked, VOLTAGE_LEGEND, voltage_colour};
 pub const LIST_HEIGHT: f32 = 320.0;
 
 /// What the pages keep between frames.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PageState {
     /// The log's filter.
     pub log_filter: String,
@@ -57,6 +57,68 @@ pub struct PageState {
     pub see_as_on_map: bool,
     /// The change whose "what changes" was asked.
     pub previewed: Option<RightsCommand>,
+    /// Shared towers: the line whose twins are asked, the distance.
+    pub twins_line: String,
+    /// See `twins_line`.
+    pub twin_tolerance: f64,
+    /// The last import's report (kept past a new connection).
+    pub imported: Option<ohl_server::admin::ImportView>,
+    /// The audit's filter, and the pages gone back from (none: not asked
+    /// yet).
+    pub audit_filter: ohl_server::admin::AuditFilter,
+    /// See `audit_filter`.
+    pub audit_asked: Option<Vec<i64>>,
+    /// A new identity: issuer, subject, user.
+    pub id_issuer: String,
+    /// See `id_issuer`.
+    pub id_subject: String,
+    /// See `id_issuer`.
+    pub id_user: String,
+    /// "Explain": the permission, the line, kind and id.
+    pub explain_permission: Permission,
+    /// See `explain_permission`.
+    pub explain_line: String,
+    /// See `explain_permission`.
+    pub explain_kind: String,
+    /// See `explain_permission`.
+    pub explain_id: String,
+    /// Update library pins asked for the window open.
+    pub pins_asked: bool,
+}
+
+impl Default for PageState {
+    fn default() -> Self {
+        Self {
+            log_filter: String::new(),
+            subject_group: false,
+            subject: String::new(),
+            role: String::new(),
+            deny: false,
+            note: String::new(),
+            scope: Scope::default(),
+            selected: None,
+            new_group: String::new(),
+            member: BTreeMap::new(),
+            role_edits: BTreeMap::new(),
+            new_role: String::new(),
+            see_as: String::new(),
+            see_as_on_map: false,
+            previewed: None,
+            twins_line: String::new(),
+            twin_tolerance: 0.5,
+            imported: None,
+            audit_filter: Default::default(),
+            audit_asked: None,
+            id_issuer: String::new(),
+            id_subject: String::new(),
+            id_user: String::new(),
+            explain_permission: Permission::Edit,
+            explain_line: String::new(),
+            explain_kind: String::new(),
+            explain_id: String::new(),
+            pins_asked: false,
+        }
+    }
 }
 
 /// A rights change in words.
@@ -131,10 +193,20 @@ impl App {
             Page::Overview => self.overview_page(ui),
             Page::Operations => self.operations_page(ui),
             Page::Map => self.map_page(ui),
-            Page::Users => self.users_page(ui),
+            Page::Users => {
+                self.users_page(ui);
+                self.identities_section(ui);
+            }
             Page::Roles => self.roles_page(ui),
             Page::Assignments => self.assignments_page(ui),
-            Page::SeeAs => self.see_as_page(ui),
+            Page::SeeAs => {
+                self.see_as_page(ui);
+                self.explain_section(ui);
+            }
+            Page::Shared => self.shared_page(ui),
+            Page::Libraries => self.libraries_page(ui),
+            Page::Lines => self.lines_page(ui),
+            Page::Audit => self.audit_page(ui),
         }
     }
 
@@ -461,11 +533,13 @@ impl App {
         {
             c.ask_settings();
         }
+        let cf = self.conn.as_ref().is_some_and(|c| c.data.stages_cf());
+        let mut change = None;
         let Some(c) = &self.conn else { return };
         ui.label(
-            "Read-only: \"start\" settings are the server's start options (its command line or \
-             configuration — changed by starting it again); \"network\" settings are the \
-             network's own (ohl network setting).",
+            "\"start\" settings are the server's start options (its command line or \
+             configuration — changed by starting it again), read-only; \"network\" settings are \
+             the network's own (ohl network setting), changed here (in the audit).",
         );
         egui::ScrollArea::vertical()
             .max_height(LIST_HEIGHT)
@@ -480,13 +554,31 @@ impl App {
                         ui.end_row();
                         for s in &c.data.settings {
                             ui.label(&s.key);
-                            ui.label(&s.value);
+                            ui.horizontal(|ui| {
+                                ui.label(&s.value);
+                                if cf
+                                    && s.source == "network"
+                                    && ui.small_button("Change…").clicked()
+                                {
+                                    change = Some(Window::Setting {
+                                        key: s.key.clone(),
+                                        value: if s.value == "(default)" {
+                                            String::new()
+                                        } else {
+                                            s.value.clone()
+                                        },
+                                    });
+                                }
+                            });
                             ui.label(&s.source);
                             ui.label(&s.note);
                             ui.end_row();
                         }
                     });
             });
+        if change.is_some() {
+            self.window = change;
+        }
     }
 
     /// What the map highlights now.
@@ -606,18 +698,23 @@ impl App {
                 }
             });
         }
-        if ui
-            .small_button("Use the view as a region scope")
-            .on_hover_text("The rectangle in view, as an assignment's region")
-            .clicked()
-            && let Some(r) = self.map.view_region()
-        {
-            self.pages.scope = Scope {
-                region: Some(r),
-                ..Scope::default()
-            };
-            self.page = Page::Assignments;
-        }
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .small_button("Use the view as a region scope")
+                .on_hover_text("The rectangle in view, as an assignment's region")
+                .clicked()
+                && let Some(r) = self.map.view_region()
+            {
+                self.pages.scope = Scope {
+                    region: Some(r),
+                    ..Scope::default()
+                };
+                self.page = Page::Assignments;
+            }
+            self.draw_controls(ui);
+            ui.separator();
+            self.background_controls(ui);
+        });
         let hl = self.highlight();
         let Some(c) = &mut self.conn else { return };
         let Some(map) = c.data.map.clone() else {
@@ -627,6 +724,96 @@ impl App {
         let want = self.map.ui(ui, &map, &c.data.dots, &hl);
         if let Some(b) = want {
             c.ask_dots(b);
+        }
+    }
+
+    /// Drawing a region on the map (stage C): each click a corner, then
+    /// the polygon as an assignment's region (refused when its edges
+    /// cross).
+    fn draw_controls(&mut self, ui: &mut egui::Ui) {
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        match &mut self.map.drawing {
+            None => {
+                if ui
+                    .small_button("Draw a region")
+                    .on_hover_text(
+                        "Click its corners on the map, then Finish: a polygon as an assignment's \
+                         region (Escape cancels)",
+                    )
+                    .clicked()
+                {
+                    self.map.drawing = Some(Vec::new());
+                    self.map.picked = None;
+                }
+            }
+            Some(poly) => {
+                ui.label(format!("Drawing: {} corner(s)", poly.len()));
+                if ui
+                    .add_enabled(
+                        poly.len() >= 3,
+                        egui::Button::new("Finish the region").small(),
+                    )
+                    .clicked()
+                {
+                    self.finish_region();
+                    return;
+                }
+                if ui
+                    .add_enabled(!poly.is_empty(), egui::Button::new("Undo corner").small())
+                    .clicked()
+                {
+                    poly.pop();
+                }
+                if ui.small_button("Cancel").clicked() || escape {
+                    self.map.drawing = None;
+                }
+            }
+        }
+    }
+
+    /// The polygon drawn as the assignment's scope (its edges checked).
+    pub fn finish_region(&mut self) {
+        let Some(poly) = self.map.drawing.take() else {
+            return;
+        };
+        let said = if poly.len() < 3 {
+            Some("a region needs at least 3 corners".to_owned())
+        } else if ohl_session::rights::region_self_crosses(&poly) {
+            self.map.drawing = Some(poly);
+            Some("the region's edges cross: undo corners or draw it again".to_owned())
+        } else {
+            self.pages.scope = Scope {
+                region: Some(poly),
+                ..Scope::default()
+            };
+            self.page = Page::Assignments;
+            None
+        };
+        if let (Some(s), Some(c)) = (said, &mut self.conn) {
+            c.data.said.push((s, true));
+        }
+    }
+
+    /// The owner's own map server as the background (stage C): off and
+    /// empty by default — no request goes anywhere until a URL is typed
+    /// and shown.
+    fn background_controls(&mut self, ui: &mut egui::Ui) {
+        let b = &mut self.map.background;
+        ui.checkbox(&mut b.on, "background");
+        tw::question(
+            ui,
+            "Your organisation's own map server, none by default (no request is made anywhere \
+             until you type its URL and tick background). One image of the view, in the network's \
+             own coordinate system: {x0} {y0} {x1} {y1} (the view, m), {width} {height} (pixels), \
+             {crs}. For example a WMS GetMap request. Kept on this computer only.",
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut b.url)
+                .hint_text("https://maps.example/wms?…&BBOX={x0},{y0},{x1},{y1}&WIDTH={width}&HEIGHT={height}")
+                .desired_width(260.0),
+        );
+        if let Some(e) = self.map.background_error() {
+            ohl_ui::messages::error_label(ui, egui::RichText::new(e).small());
         }
     }
 
@@ -1310,6 +1497,9 @@ impl App {
     pub(crate) fn windows(&mut self, ctx: &egui::Context) {
         self.invitation_window(ctx);
         let Some(w) = self.window.clone() else { return };
+        if self.cf_window(ctx, &w) {
+            return;
+        }
         let Some(c) = &mut self.conn else {
             self.window = None;
             return;
@@ -1436,6 +1626,10 @@ impl App {
                     });
                 }
             }
+            Window::Library(_)
+            | Window::Pins(_)
+            | Window::Import { .. }
+            | Window::Setting { .. } => {}
             Window::Disconnect {
                 client,
                 user,

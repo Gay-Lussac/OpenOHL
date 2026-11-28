@@ -996,11 +996,18 @@ fn audit_time(t: &str, until: bool) -> Result<Option<String>, NetError> {
     }
     let b = t.as_bytes();
     let digits = |r: std::ops::Range<usize>| r.into_iter().all(|i| b[i].is_ascii_digit());
-    let day = b.len() >= 10 && digits(0..4) && b[4] == b'-' && digits(5..7) && b[7] == b'-'
+    let day = b.len() >= 10
+        && digits(0..4)
+        && b[4] == b'-'
+        && digits(5..7)
+        && b[7] == b'-'
         && digits(8..10);
     let ok = day
         && (b.len() == 10
-            || (b.len() == 16 && b[10] == b' ' && digits(11..13) && b[13] == b':'
+            || (b.len() == 16
+                && b[10] == b' '
+                && digits(11..13)
+                && b[13] == b':'
                 && digits(14..16)));
     if !ok {
         return Err(NetError::Refused(format!(

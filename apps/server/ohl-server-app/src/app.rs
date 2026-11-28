@@ -40,18 +40,30 @@ pub enum Page {
     Assignments,
     /// See as user.
     SeeAs,
+    /// Shared towers and twins (stage C).
+    Shared,
+    /// The country libraries (stage D).
+    Libraries,
+    /// The lines: export, import (stage E).
+    Lines,
+    /// The audit (stage F; network admins).
+    Audit,
 }
 
 impl Page {
     /// Every page, in the order shown.
-    pub const ALL: [Page; 7] = [
+    pub const ALL: [Page; 11] = [
         Page::Overview,
         Page::Operations,
         Page::Map,
+        Page::Shared,
+        Page::Lines,
+        Page::Libraries,
         Page::Users,
         Page::Roles,
         Page::Assignments,
         Page::SeeAs,
+        Page::Audit,
     ];
 
     /// Its name (also its heading in the user guide).
@@ -64,12 +76,24 @@ impl Page {
             Page::Roles => "Roles",
             Page::Assignments => "Assignments",
             Page::SeeAs => "See as user",
+            Page::Shared => "Shared towers",
+            Page::Libraries => "Libraries",
+            Page::Lines => "Lines",
+            Page::Audit => "Audit",
         }
     }
 
     /// For network admins only.
     pub fn admins_only(self) -> bool {
-        matches!(self, Page::Operations)
+        matches!(self, Page::Operations | Page::Audit)
+    }
+
+    /// A page of stages C to F (a server of admin messages 2 or later).
+    pub fn stages_cf(self) -> bool {
+        matches!(
+            self,
+            Page::Shared | Page::Libraries | Page::Lines | Page::Audit
+        )
     }
 }
 
@@ -151,6 +175,30 @@ pub enum Window {
         /// Why.
         reason: String,
     },
+    /// A maintainer's library change (its note or tag filled in here).
+    Library(ohl_server::admin::LibraryAction),
+    /// Update library pins of a line: the proposal shown, carried out on
+    /// the action.
+    Pins(String),
+    /// A project file to import (the file, the code, the name, the twin
+    /// distance).
+    Import {
+        /// The file.
+        path: std::path::PathBuf,
+        /// The new line's code.
+        code: String,
+        /// Its name (empty: the file's).
+        name: String,
+        /// Twins within, m.
+        tolerance: f64,
+    },
+    /// A network setting changed.
+    Setting {
+        /// The setting.
+        key: String,
+        /// Its new value.
+        value: String,
+    },
 }
 
 /// The app.
@@ -183,7 +231,8 @@ pub struct App {
     pub closing: bool,
     allowed_close: bool,
     pub(crate) refreshed: std::collections::HashMap<&'static str, Instant>,
-    pub(crate) pages: crate::pages::PageState,
+    /// What the pages keep between frames.
+    pub pages: crate::pages::PageState,
     applied_style: bool,
 }
 
@@ -245,9 +294,13 @@ impl App {
     }
 
     /// Whether `page` is open to the user (network admins: every page;
-    /// others: not Operations).
+    /// others: not Operations nor Audit; the pages of stages C to F on a
+    /// server that speaks them).
     pub fn page_open(&self, page: Page) -> bool {
-        !page.admins_only() || self.conn.as_ref().is_some_and(|c| c.data.network_admin())
+        let Some(c) = &self.conn else {
+            return !page.admins_only() && !page.stages_cf();
+        };
+        (!page.admins_only() || c.data.network_admin()) && (!page.stages_cf() || c.data.stages_cf())
     }
 
     /// True once `key` was last done `every` ago (or never): done now.
@@ -309,6 +362,31 @@ impl App {
         }
         if let Some(c) = &mut self.conn {
             c.poll();
+            // What an import said outlives the connection.
+            if let Some(v) = c.data.imported.take() {
+                self.pages.imported = Some(v);
+            }
+        }
+        // A change of the user's own rights lets the connection go (the
+        // server's rule): joined again at once, on the same page.
+        let rights_changed = self
+            .conn
+            .as_ref()
+            .filter(|c| c.closed.is_some())
+            .is_some_and(|c| {
+                c.rights_changed
+                    || c.closed
+                        .as_deref()
+                        .is_some_and(|why| why.contains("rights on this network changed"))
+            });
+        if rights_changed
+            && self.joining.is_none()
+            && let Some(how) = self.last_join.clone()
+            && self.due("rejoin", Duration::from_secs(10))
+        {
+            let page = self.page;
+            self.join(how);
+            self.page = page;
         }
     }
 

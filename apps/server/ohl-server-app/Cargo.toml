@@ -28,12 +28,15 @@ serde_json.workspace = true
 clap.workspace = true
 # The region outlines' file (GeoJSON).
 rfd = "0.17"
+# The owner's own map server as the map's background (stage C; off and
+# empty by default: no request until the admin types its URL).
+ureq = { version = "3.4", default-features = false, features = ["rustls"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 log = "0.4"
 env_logger = "0.11"
 
 [dev-dependencies]
 egui_kittest = { version = "0.36", features = ["wgpu", "eframe"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
 ohl-render.workspace = true
 ohl-store-pg = { workspace = true, features = ["testing"] }
 ohl-synth.workspace = true

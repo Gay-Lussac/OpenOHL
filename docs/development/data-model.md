@@ -5168,7 +5168,43 @@ changed. `ohl network serve` gained `--backup-dir` and
 OHL-Server keeps on the admin's computer, in its settings (eframe
 storage `OHL-Server`), only the map's region outlines (`ohl-server.regions`:
 JSON list of `{name, rings: [[[x, y], …], …]}` in the network's
-coordinates); never a connection string, an invitation or a token.
+coordinates) and (stage C) its background map server
+(`ohl-server.background`: `{url, on}`, empty and off by default); never
+a connection string, an invitation or a token.
+
+**The admin messages of stages C to F** (2026-11-28; admin messages
+version 2, additive, protocol 3 kept; handled in
+`crates/ohl-server/src/network_admin_cf.rs`; in active development). New
+`ask`s and their `reply`s:
+
+| `ask` (fields) | `reply` (`data`) | Meaning |
+|---|---|---|
+| `shared_towers` | `shared_towers` (`SharedList`: `rows` [{`model`, `id`, `at`, `routes` [{`id`, `name`, `stale`?}]}] ≤ 5000, `total`, `stale`) | towers on two routes or more the asker may see |
+| `shared_tower` {`model`, `id`} | `shared_tower` (`SharedDetail`: `row`, `editors`? — users who may edit it, to who manages rights on its line) | one shared tower |
+| `twins` {`model`, `tolerance`?} | `twins` (`TwinRow`s: `line`, `structure`, `other_line`, `other`, `distance_m`, `structure_type`?) | a line's twin towers (never merged) |
+| `library_page` | `library_page` (`LibraryPage`: `kinds` [{`kind`, `locked`, `maintainers`, `releases`, `files` [{`file`, `locked`, `entries` [{`id`, `version`, `release`?, `withdrawn`}]}], `maintain`}], `requests` [`RequestRow`], `lines` [{`line`, `built`, `kinds` [{`kind`, `pinned`?, `latest`?, `behind`, `withdrawn_used`}]}]) | the Libraries page |
+| `uses` {`kind`, `entry`} | `uses` (`UseRow`s: `line`, `branch`, `object_kind`, `object`, `routes`) | the use index |
+| `library` {`action`} | `done` | a maintainer's change; `action` tagged `"do"`: `lock` {`kind`, `file`?, `locked`, `note`}, `grant` {`id`, `note`}, `refuse` {`id`, `note`}, `release` {`kind`, `tag`, `notes`}, `withdraw` {`kind`, `file`, `entry`, `note`}, `restore` {`kind`, `file`, `entry`} |
+| `pins_plan` {`line`, `kinds`} | `pins` (`PinsView`: `line`, `built`, `kinds` [{`kind`, `from`?, `to`, `files`, `changed`, `used_changed`, `stale_routes`, `kept`, `withdrawn_used`, `refused`?}], `moves`, `refusal`?, `text`) | Update library pins proposed |
+| `update_pins` {`line`, `kinds`} | `done` | carried out (the line's own command) |
+| `lines` | `lines` (`LineRow`s: `code`, `name`, `routes`, `structures`, `sections`, `stale`, `whole`, `may_export`) | the Lines page |
+| `export_line` {`model`} | `transfer` (`TransferInfo`: `token`, `name`, `bytes`, `note`) | a model written as a project file on the server (answered when written) |
+| `download` {`token`, `offset`} | `chunk` (`ChunkData`: `offset`, `data` base64 ≤ 512 KiB, `last`) | a piece of it |
+| `upload_start` {`name`, `bytes`} | `transfer` | a project file to import starts (≤ 8 GB) |
+| `upload` {`token`, `offset`, `data`} | `received` (bytes so far) | a piece of it, in order |
+| `import_line` {`token`, `code`, `name`?, `tolerance`?} | `imported` (`ImportView`: `line`, `name`, `file`, `objects`, `renamed`, `twins`, `users`, `left_in_file`, `text`, `seconds`) | the network import |
+| `transfer_done` {`token`} | `done` | the file removed from the server |
+| `audit` {`filter` {`user`, `action`, `target`, `text`, `from`, `until`}, `before`?, `limit`} | `audit` (`AuditPage`: `rows` [{`id`, `time`, `user`, `action`, `target`, `detail`}] newest first, `total`, `more`) | a page of the audit (≤ 1000 rows) |
+| `identities` | `identities` (`IdentityRow`s: `issuer`, `subject`, `user`) | the OIDC identities mapped |
+| `explain` {`user`, `permission`, `line`?, `kind`?, `id`?} | `explain` (`ExplainView`: `user`, `permission`, `target`, `may`, `granted_by`, `denied_by`, `notes`) | why a user may or may not |
+| `set_setting` {`key`, `value`} | `done` | a network setting changed |
+
+The server's `network` message says `admin`: 2. A file held for a
+connection lives in `admin-TOKEN/` of the server's copies folder until
+fetched, imported, cancelled or the connection ends. The audit is read
+by `ohl_store_pg::Network::audit_page` (`AuditQuery`); a region scope's
+edges may not cross (`ohl_session::rights::region_self_crosses`, in
+`Scope::check`). No schema change; the desktop `.ohl` format unchanged.
 
 ## What a plugin sees
 

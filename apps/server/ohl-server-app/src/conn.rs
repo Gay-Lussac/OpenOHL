@@ -10,14 +10,19 @@
 //! invitation's access code and a sign-in's token stay in memory.
 
 use std::collections::{BTreeMap, HashMap};
+use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::sync::mpsc;
 
 use ohl_server::admin::{
-    AdminAsk, AdminMap, AdminReply, BackupList, InvitationText, LibraryKindRow, LogLine, MapDot,
-    Overview, RightsView, SeeAsView, SessionRow, SettingRow, WhatChanges,
+    AdminAsk, AdminMap, AdminReply, AuditFilter, AuditPage, BackupList, ExplainView, IdentityRow,
+    ImportView, InvitationText, LibraryAction, LibraryKindRow, LibraryPage, LineRow, LogLine,
+    MapDot, Overview, PinsView, RightsView, SeeAsView, SessionRow, SettingRow, SharedDetail,
+    SharedList, TwinRow, UseRow, WhatChanges,
 };
 use ohl_server::client::{Incoming, Joined, Link, NetJoin};
 use ohl_server::{Invitation, NetworkInfo, ServerMsg};
+use ohl_session::rights::Permission;
 use ohl_session::rights::RightsCommand;
 
 /// Log lines the app keeps (the newest).
@@ -43,10 +48,88 @@ enum Want {
     /// A change or an action: its answer is said.
     Act(String),
     Invitation,
+    // Stages C to F.
+    Shared,
+    SharedTower,
+    Twins(String),
+    LibraryPage,
+    Uses(String, String),
+    Pins,
+    Lines,
+    /// A line's export being written (then fetched).
+    Export,
+    /// A piece of it.
+    Piece,
+    /// An upload's start, a piece of it.
+    UploadStart,
+    UploadPiece,
+    /// The upload imported.
+    Import,
+    /// A page of the audit (for the CSV export: true).
+    Audit(bool),
+    Identities,
+    Explain,
+    /// Its answer said nothing (a transfer ended).
+    Quiet,
+}
+
+/// A line's file being fetched into a file of this computer.
+#[derive(Debug)]
+pub struct Download {
+    /// The server's token.
+    pub token: String,
+    /// The line.
+    pub line: String,
+    /// The file chosen (written as `….part` until whole).
+    pub path: PathBuf,
+    part: PathBuf,
+    file: Option<std::fs::File>,
+    /// Its size, bytes (0: being written on the server).
+    pub bytes: u64,
+    /// Bytes received.
+    pub got: u64,
+    /// What it holds, in words.
+    pub note: String,
+}
+
+/// A project file of this computer being sent to be imported.
+#[derive(Debug)]
+pub struct Upload {
+    /// The server's token (none: not started yet).
+    pub token: Option<String>,
+    /// The file.
+    pub path: PathBuf,
+    file: std::fs::File,
+    /// Its size, bytes.
+    pub bytes: u64,
+    /// Bytes sent and received by the server.
+    pub sent: u64,
+    /// The new line's code, its name, the twin distance.
+    pub code: String,
+    /// See `code`.
+    pub name: Option<String>,
+    /// See `code`.
+    pub tolerance: Option<f64>,
+    /// Being imported (the whole file received).
+    pub importing: bool,
+}
+
+/// The audit's CSV export under way (every page of the filter, oldest
+/// last, written as they come).
+#[derive(Debug)]
+pub struct AuditExport {
+    /// The file.
+    pub path: PathBuf,
+    file: std::fs::File,
+    filter: AuditFilter,
+    /// Rows written.
+    pub rows: u64,
+    /// Rows in all.
+    pub total: u64,
 }
 
 /// What the server answered, as the pages show it.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct Data {
     /// The network, as the welcome said.
     pub info: Option<NetworkInfo>,
@@ -86,9 +169,45 @@ pub struct Data {
     pub said: Vec<(String, bool)>,
     /// Long work or changes waiting for their answer (in words).
     pub busy: Vec<String>,
+    /// Stage C: the shared towers, the one picked, a line's twins.
+    pub shared: Option<SharedList>,
+    /// See `shared`.
+    pub shared_tower: Option<SharedDetail>,
+    /// See `shared`: the line and its twins.
+    pub twins: Option<(String, Vec<TwinRow>)>,
+    /// Stage D: the Libraries page.
+    pub library: Option<LibraryPage>,
+    /// Where an entry is used: (kind, entry), the uses.
+    pub uses: Option<((String, String), Vec<UseRow>)>,
+    /// Update library pins proposed.
+    pub pins: Option<PinsView>,
+    /// Stage E: the lines.
+    pub lines: Option<Vec<LineRow>>,
+    /// A line being fetched.
+    pub download: Option<Download>,
+    /// A file being sent and imported.
+    pub upload: Option<Upload>,
+    /// The last import's report.
+    pub imported: Option<ImportView>,
+    /// Stage F: the audit page shown, and the rows it was asked before.
+    pub audit: Option<AuditPage>,
+    /// See `audit`.
+    pub audit_before: Option<i64>,
+    /// The audit's CSV export under way.
+    pub audit_export: Option<AuditExport>,
+    /// The identities mapped.
+    pub identities: Option<Vec<IdentityRow>>,
+    /// "Explain".
+    pub explain: Option<ExplainView>,
 }
 
 impl Data {
+    /// The server speaks the admin messages of stages C to F.
+    pub fn stages_cf(&self) -> bool {
+        self.info.as_ref().is_some_and(|i| i.admin >= 2)
+            || self.overview.as_ref().is_some_and(|o| o.admin >= 2)
+    }
+
     /// The user is a network admin (the Overview says so).
     pub fn network_admin(&self) -> bool {
         self.overview.as_ref().is_some_and(|o| o.full)
@@ -169,6 +288,9 @@ pub struct Conn {
     pub data: Data,
     /// The connection ended: why.
     pub closed: Option<String>,
+    /// The server said its user's rights changed (it lets the connection
+    /// go: the app joins again).
+    pub rights_changed: bool,
 }
 
 impl Conn {
@@ -179,6 +301,7 @@ impl Conn {
             waiting: HashMap::new(),
             data: Data::default(),
             closed: None,
+            rights_changed: false,
         }
     }
 
@@ -406,7 +529,7 @@ impl Conn {
     fn take(&mut self, msg: ServerMsg) {
         match msg {
             ServerMsg::Network(info) => {
-                if info.admin < ohl_server::admin::ADMIN {
+                if info.admin < ohl_server::admin::ADMIN_MIN {
                     self.closed = Some(
                         "this server is older than OHL-Server's admin messages: update the \
                          server (ohl network serve) to the program of this app"
@@ -415,7 +538,12 @@ impl Conn {
                 }
                 self.data.info = Some(*info);
             }
-            ServerMsg::Notice { text } => self.data.said.push((text, true)),
+            ServerMsg::Notice { text } => {
+                if text.contains("rights on this network changed") {
+                    self.rights_changed = true;
+                }
+                self.data.said.push((text, true));
+            }
             ServerMsg::Refused { reason } => self.closed = Some(reason),
             ServerMsg::Admin { id, result } => {
                 let Some(want) = self.waiting.remove(&id) else {
@@ -427,8 +555,14 @@ impl Conn {
                 match result {
                     Ok(r) => self.answer(want, r),
                     Err(e) => {
-                        if let Want::Preview(_) = want {
-                            self.data.preview = None;
+                        match want {
+                            Want::Preview(_) => self.data.preview = None,
+                            Want::Export | Want::Piece => self.end_download(),
+                            Want::UploadStart | Want::UploadPiece | Want::Import => {
+                                self.data.upload = None;
+                            }
+                            Want::Audit(true) => self.data.audit_export = None,
+                            _ => {}
                         }
                         self.data.said.push((e, true));
                     }
@@ -441,6 +575,44 @@ impl Conn {
     fn answer(&mut self, want: Want, reply: AdminReply) {
         let d = &mut self.data;
         match (want, reply) {
+            (_, AdminReply::SharedTowers(s)) => d.shared = Some(s),
+            (_, AdminReply::SharedTower(s)) => d.shared_tower = Some(*s),
+            (Want::Twins(line), AdminReply::Twins(t)) => d.twins = Some((line, t)),
+            (_, AdminReply::Twins(_)) => {}
+            (_, AdminReply::LibraryPage(p)) => d.library = Some(*p),
+            (Want::Uses(k, e), AdminReply::Uses(u)) => d.uses = Some(((k, e), u)),
+            (_, AdminReply::Uses(_)) => {}
+            (_, AdminReply::Pins(p)) => d.pins = Some(*p),
+            (_, AdminReply::Lines(l)) => d.lines = Some(l),
+            (Want::Export, AdminReply::Transfer(t)) => self.export_ready(t),
+            (Want::UploadStart, AdminReply::Transfer(t)) => {
+                if let Some(u) = &mut self.data.upload {
+                    u.token = Some(t.token);
+                }
+                self.send_piece();
+            }
+            (_, AdminReply::Transfer(_)) => {}
+            (_, AdminReply::Chunk(c)) => self.take_chunk(c),
+            (_, AdminReply::Received(n)) => {
+                if let Some(u) = &mut self.data.upload {
+                    u.sent = n;
+                }
+                self.send_piece();
+            }
+            (_, AdminReply::Imported(v)) => {
+                let line = v.line.clone();
+                d.upload = None;
+                d.said.push((format!("line {line} imported"), false));
+                d.imported = Some(*v);
+                self.waiting
+                    .retain(|_, w| *w != Want::Lines && *w != Want::Map);
+                self.ask_lines();
+                self.ask_map();
+            }
+            (Want::Audit(true), AdminReply::Audit(page)) => self.take_audit_export(page),
+            (_, AdminReply::Audit(page)) => d.audit = Some(page),
+            (_, AdminReply::Identities(i)) => d.identities = Some(i),
+            (_, AdminReply::Explain(e)) => d.explain = Some(e),
             (_, AdminReply::Overview(o)) => d.overview = Some(*o),
             (_, AdminReply::Sessions(s)) => d.sessions = s,
             (_, AdminReply::Log(page)) => {
@@ -473,20 +645,434 @@ impl Conn {
                 self.waiting.retain(|_, w| *w != Want::Rights);
                 self.ask_rights();
             }
+            (Want::Quiet, AdminReply::Done(_)) => {}
             (want, AdminReply::Done(text)) => {
                 d.said.push((text, false));
                 // What a change changes is shown again.
                 if matches!(want, Want::Act(_)) {
                     let admin = self.data.network_admin();
-                    self.waiting
-                        .retain(|_, w| *w != Want::Rights && *w != Want::Map);
+                    let cf = self.data.stages_cf();
+                    self.waiting.retain(|_, w| {
+                        !matches!(
+                            w,
+                            Want::Rights | Want::Map | Want::LibraryPage | Want::Lines
+                        )
+                    });
                     self.ask_rights();
                     self.ask_map();
                     if admin {
                         self.ask_backups();
+                        self.ask_settings();
+                        if cf {
+                            self.ask_identities();
+                        }
+                    }
+                    if cf {
+                        self.ask_library_page();
+                        self.ask_lines();
+                        self.data.pins = None;
                     }
                 }
             }
         }
+    }
+}
+
+/// Stages C to F.
+impl Conn {
+    /// Asks for the shared towers.
+    pub fn ask_shared(&mut self) {
+        if !self.awaits(&Want::Shared) {
+            self.send(AdminAsk::SharedTowers, Want::Shared);
+        }
+    }
+
+    /// Asks for one shared tower (who may edit it).
+    pub fn ask_shared_tower(&mut self, model: &str, id: &str) {
+        self.data.shared_tower = None;
+        self.send(
+            AdminAsk::SharedTower {
+                model: model.to_owned(),
+                id: id.to_owned(),
+            },
+            Want::SharedTower,
+        );
+    }
+
+    /// Asks for a line's twin towers.
+    pub fn ask_twins(&mut self, model: &str, tolerance: Option<f64>) {
+        self.data.twins = None;
+        self.send(
+            AdminAsk::Twins {
+                model: model.to_owned(),
+                tolerance,
+            },
+            Want::Twins(model.to_owned()),
+        );
+    }
+
+    /// Asks for the Libraries page.
+    pub fn ask_library_page(&mut self) {
+        if !self.awaits(&Want::LibraryPage) {
+            self.send(AdminAsk::LibraryPage, Want::LibraryPage);
+        }
+    }
+
+    /// Asks where an entry is used.
+    pub fn ask_uses(&mut self, kind: &str, entry: &str) {
+        self.data.uses = None;
+        self.send(
+            AdminAsk::Uses {
+                kind: kind.to_owned(),
+                entry: entry.to_owned(),
+            },
+            Want::Uses(kind.to_owned(), entry.to_owned()),
+        );
+    }
+
+    /// A maintainer's library change.
+    pub fn library(&mut self, action: LibraryAction) {
+        let what = format!("the library change ({})", action.describe());
+        self.send(AdminAsk::Library { action }, Want::Act(what));
+    }
+
+    /// Asks what Update library pins would do to `line`.
+    pub fn ask_pins(&mut self, line: &str) {
+        self.data.pins = None;
+        self.send(
+            AdminAsk::PinsPlan {
+                line: line.to_owned(),
+                kinds: Vec::new(),
+            },
+            Want::Pins,
+        );
+    }
+
+    /// Update library pins of `line`.
+    pub fn update_pins(&mut self, line: &str) {
+        self.send(
+            AdminAsk::UpdatePins {
+                line: line.to_owned(),
+                kinds: Vec::new(),
+            },
+            Want::Act(format!("updating the library pins of line {line}")),
+        );
+    }
+
+    /// Asks for the lines.
+    pub fn ask_lines(&mut self) {
+        if !self.awaits(&Want::Lines) {
+            self.send(AdminAsk::Lines, Want::Lines);
+        }
+    }
+
+    /// Exports line `line` into file `path` of this computer (written on
+    /// the server, then fetched in pieces).
+    pub fn export_line(&mut self, line: &str, path: PathBuf) {
+        if self.data.download.is_some() {
+            self.data
+                .said
+                .push(("a line is being fetched already".into(), true));
+            return;
+        }
+        let mut part = path.clone().into_os_string();
+        part.push(".part");
+        self.data.download = Some(Download {
+            token: String::new(),
+            line: line.to_owned(),
+            path,
+            part: part.into(),
+            file: None,
+            bytes: 0,
+            got: 0,
+            note: String::new(),
+        });
+        self.send(
+            AdminAsk::ExportLine {
+                model: line.to_owned(),
+            },
+            Want::Export,
+        );
+    }
+
+    fn export_ready(&mut self, t: ohl_server::admin::TransferInfo) {
+        let Some(d) = &mut self.data.download else {
+            return;
+        };
+        let file = std::fs::File::create(&d.part);
+        match file {
+            Ok(f) => {
+                d.file = Some(f);
+                d.token = t.token;
+                d.bytes = t.bytes;
+                d.note = t.note;
+                let token = d.token.clone();
+                self.send(AdminAsk::Download { token, offset: 0 }, Want::Piece);
+            }
+            Err(e) => {
+                let what = format!("{}: {e}", d.part.display());
+                self.send(AdminAsk::TransferDone { token: t.token }, Want::Quiet);
+                self.end_download();
+                self.data.said.push((what, true));
+            }
+        }
+    }
+
+    fn take_chunk(&mut self, c: ohl_server::admin::ChunkData) {
+        let Some(d) = &mut self.data.download else {
+            return;
+        };
+        let written = ohl_server::base64::decode(&c.data).and_then(|b| {
+            if c.offset != d.got {
+                return Err("a piece out of order".into());
+            }
+            d.file
+                .as_mut()
+                .ok_or_else(|| "the file is closed".to_owned())?
+                .write_all(&b)
+                .map_err(|e| format!("{}: {e}", d.part.display()))?;
+            d.got += b.len() as u64;
+            Ok(())
+        });
+        if let Err(e) = written {
+            self.end_download();
+            self.data.said.push((e, true));
+            return;
+        }
+        let (token, got) = (d.token.clone(), d.got);
+        if !c.last {
+            self.send(AdminAsk::Download { token, offset: got }, Want::Piece);
+            return;
+        }
+        let finished = d
+            .file
+            .take()
+            .map_or(Ok(()), |f| f.sync_all())
+            .and_then(|()| std::fs::rename(&d.part, &d.path));
+        let said = match finished {
+            Ok(()) => (
+                format!(
+                    "line {} written to {}: {}",
+                    d.line,
+                    d.path.display(),
+                    d.note
+                ),
+                false,
+            ),
+            Err(e) => (format!("{}: {e}", d.path.display()), true),
+        };
+        self.data.download = None;
+        self.data.said.push(said);
+        self.send(AdminAsk::TransferDone { token }, Want::Quiet);
+    }
+
+    /// The line being fetched stopped (its part file removed).
+    pub fn end_download(&mut self) {
+        if let Some(mut d) = self.data.download.take() {
+            d.file = None;
+            let _ = std::fs::remove_file(&d.part);
+            if !d.token.is_empty() {
+                self.send(AdminAsk::TransferDone { token: d.token }, Want::Quiet);
+            }
+        }
+    }
+
+    /// Sends project file `path` and imports it as line `code`.
+    pub fn import_line(
+        &mut self,
+        path: PathBuf,
+        code: &str,
+        name: Option<String>,
+        tolerance: Option<f64>,
+    ) {
+        if self.data.upload.is_some() {
+            self.data
+                .said
+                .push(("a file is being sent already".into(), true));
+            return;
+        }
+        let opened = std::fs::File::open(&path).and_then(|f| Ok((f.metadata()?.len(), f)));
+        let (bytes, file) = match opened {
+            Ok(x) => x,
+            Err(e) => {
+                self.data
+                    .said
+                    .push((format!("{}: {e}", path.display()), true));
+                return;
+            }
+        };
+        let name_of = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        self.data.imported = None;
+        self.data.upload = Some(Upload {
+            token: None,
+            path,
+            file,
+            bytes,
+            sent: 0,
+            code: code.to_owned(),
+            name,
+            tolerance,
+            importing: false,
+        });
+        self.send(
+            AdminAsk::UploadStart {
+                name: name_of,
+                bytes,
+            },
+            Want::UploadStart,
+        );
+    }
+
+    /// The upload's next piece, or, all sent, the import.
+    fn send_piece(&mut self) {
+        let Some(u) = &mut self.data.upload else {
+            return;
+        };
+        let Some(token) = u.token.clone() else {
+            return;
+        };
+        if u.sent >= u.bytes {
+            u.importing = true;
+            let ask = AdminAsk::ImportLine {
+                token,
+                code: u.code.clone(),
+                name: u.name.clone(),
+                tolerance: u.tolerance,
+            };
+            self.send(ask, Want::Import);
+            return;
+        }
+        let want = ohl_server::admin::CHUNK.min((u.bytes - u.sent) as usize);
+        let mut buf = vec![0u8; want];
+        if let Err(e) = u.file.read_exact(&mut buf) {
+            let what = format!("{}: {e}", u.path.display());
+            self.data.upload = None;
+            self.send(AdminAsk::TransferDone { token }, Want::Quiet);
+            self.data.said.push((what, true));
+            return;
+        }
+        let offset = u.sent;
+        self.send(
+            AdminAsk::Upload {
+                token,
+                offset,
+                data: ohl_server::base64::encode(&buf),
+            },
+            Want::UploadPiece,
+        );
+    }
+
+    /// Asks for a page of the audit (rows older than `before`).
+    pub fn ask_audit(&mut self, filter: &AuditFilter, before: Option<i64>, limit: usize) {
+        self.data.audit_before = before;
+        self.send(
+            AdminAsk::Audit {
+                filter: filter.clone(),
+                before,
+                limit,
+            },
+            Want::Audit(false),
+        );
+    }
+
+    /// Writes every row of `filter` to CSV file `path` (paged).
+    pub fn export_audit(&mut self, filter: &AuditFilter, path: PathBuf) {
+        let file = match std::fs::File::create(&path) {
+            Ok(f) => f,
+            Err(e) => {
+                self.data
+                    .said
+                    .push((format!("{}: {e}", path.display()), true));
+                return;
+            }
+        };
+        self.data.audit_export = Some(AuditExport {
+            path,
+            file,
+            filter: filter.clone(),
+            rows: 0,
+            total: 0,
+        });
+        self.send(
+            AdminAsk::Audit {
+                filter: filter.clone(),
+                before: None,
+                limit: ohl_server::admin::AUDIT_PAGE_MAX,
+            },
+            Want::Audit(true),
+        );
+    }
+
+    fn take_audit_export(&mut self, page: AuditPage) {
+        let Some(x) = &mut self.data.audit_export else {
+            return;
+        };
+        let csv = ohl_server::admin::audit_csv(&page.rows, x.rows == 0);
+        if let Err(e) = x.file.write_all(csv.as_bytes()) {
+            let what = format!("{}: {e}", x.path.display());
+            self.data.audit_export = None;
+            self.data.said.push((what, true));
+            return;
+        }
+        x.rows += page.rows.len() as u64;
+        x.total = page.total;
+        match page.rows.last() {
+            Some(last) if page.more => {
+                let ask = AdminAsk::Audit {
+                    filter: x.filter.clone(),
+                    before: Some(last.id),
+                    limit: ohl_server::admin::AUDIT_PAGE_MAX,
+                };
+                self.send(ask, Want::Audit(true));
+            }
+            _ => {
+                let said = format!("{} audit row(s) written to {}", x.rows, x.path.display());
+                self.data.audit_export = None;
+                self.data.said.push((said, false));
+            }
+        }
+    }
+
+    /// Asks for the identities mapped.
+    pub fn ask_identities(&mut self) {
+        if !self.awaits(&Want::Identities) {
+            self.send(AdminAsk::Identities, Want::Identities);
+        }
+    }
+
+    /// Asks why `user` may or may not.
+    pub fn ask_explain(
+        &mut self,
+        user: &str,
+        permission: Permission,
+        line: Option<String>,
+        kind: Option<String>,
+        id: Option<String>,
+    ) {
+        self.data.explain = None;
+        self.send(
+            AdminAsk::Explain {
+                user: user.to_owned(),
+                permission,
+                line,
+                kind,
+                id,
+            },
+            Want::Explain,
+        );
+    }
+
+    /// A network setting changed.
+    pub fn set_setting(&mut self, key: &str, value: &str) {
+        self.send(
+            AdminAsk::SetSetting {
+                key: key.to_owned(),
+                value: value.to_owned(),
+            },
+            Want::Act(format!("setting {key}")),
+        );
     }
 }

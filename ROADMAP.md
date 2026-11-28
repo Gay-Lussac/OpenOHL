@@ -6797,7 +6797,9 @@ taken as recommended, the owner may redirect. **Stages A and B built
 [the admin messages](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/server-security-review.md#the-admin-messages-2026-11-28));
 **Stages C–F started 2026-11-28** (owner: "go with the admin app"),
 with questions 1 (the owner's own tile server as a background) and 8 (a
-polygon drawn on the map as a scope) of stages A–B taken into C. A third application, for
+polygon drawn on the map as a scope) of stages A–B taken into C; **built
+2026-11-28, in active development, not approved yet**
+([the admin messages of C–F](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/server-security-review.md#the-admin-messages-of-stages-c-to-f-2026-11-28)). A third application, for
 admins only (no engineering editing, no 3D, no checks run from it), in
 two modes: *host* (the server inside the app, for a small office or a
 test; closing asks first) and *connect* (to a headless server, the
@@ -6875,6 +6877,57 @@ refusal and see-as audited); `ohl network serve --backup-dir`,
 > manage rights) opens the app read-only for now; giving rights on a
 > library stays with who manages rights there? → yes, as built; their
 > Libraries page comes with stage D.
+
+Built 2026-11-28 (stages C to F, in active development, not approved
+yet): admin messages version 2 (additive, protocol 3 kept; the app hides
+the new pages on a server of version 1). **C**: the Shared towers page
+(towers on two routes or more, their routes and stale marks, who may
+edit one; a line's twin towers, shown never merged); on the map a polygon
+drawn as an assignment's region (a region whose edges cross refused by
+the scope's own check) and the owner's own map server as a background (a
+URL template in the network's coordinates, empty and off by default).
+**D**: the Libraries page (each kind's lock, maintainers, files, entries,
+releases, withdrawn entries; the requests; which lines pin which
+release; the use index); maintainers grant, refuse with a reason,
+release, withdraw and lock their libraries; Update library pins as a
+proposal, then carried out. **E**: the Lines page; one line exported on
+the server's exports' thread and fetched in pieces, a project file
+uploaded in pieces and imported as a new line with its report, served at
+once. **F**: the Audit page (filtered by who, what, scope and when,
+paged, to CSV), the OIDC identities on the Users page, explain on the See
+as page, network settings changed. A connection let go because its
+user's rights changed is joined again at once. Measured on the 12 000-pylon
+synthetic country: see
+[performance](https://github.com/Gay-Lussac/OpenOHL/blob/main/docs/development/performance.md#ohl-server-stages-c-to-f-2026-11-28).
+> **Owner:** (to answer, 2026-11-28; the recommendation after the arrow)
+> 1. The background is one image of the view from the owner's server
+> (WMS-like, re-asked when the view rests), not a tile pyramid? → yes
+> for now; tiles when a real server shows one image is too slow.
+> 2. The import runs on the server's authority (it needs the network's
+> writer): other users wait for it (seconds for a line)? → yes, as
+> built; off the authority needs a second writer, not worth it yet.
+> 3. The importer is let go after their own import (their rights
+> changed: the file's users join the line) and the app joins again at
+> once? → yes, as built (the server's rule kept, not weakened).
+> 4. The Audit page for network admins only, reading it not audited, a
+> CSV export not audited either? → yes, as built (as `ohl network
+> rights audit`); a line admin's audit of their lines later if wanted.
+> 5. Who may edit a shared tower is shown to network admins and line
+> admins of its line? → yes, as built.
+> 6. The admin app's library changes are the maintainers' commands only
+> (lock, grant, refuse, release, withdraw, restore): files are put and
+> entries asked for in OHL-Design? → yes, as built.
+> 7. A refusal of a library request needs a reason in the admin app (the
+> store takes an empty note)? → yes, as built; the store may require it
+> too.
+> 8. The pieces of a file are paced apart (32 a second, 512 KB each: 16
+> MB/s per connection), files up to 8 GB, two per connection? → yes, as
+> built.
+> 9. A region drawn concave is outlined only (filled when convex)? →
+> yes, as built (the fill is a sketch).
+> 10. Explain and the network settings sit on the See as and Operations
+> pages, the identities on the Users page (no page of their own)? → yes,
+> as built.
 
 ### O46. The tests' speed and a flaky PostgreSQL test
 Owner, 2026-11-19: "the server seems to have very long tests can they be
