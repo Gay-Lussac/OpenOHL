@@ -1458,6 +1458,9 @@ impl App {
         if close || !open {
             self.window = None;
             self.pages.previewed = None;
+            if let Some(c) = &mut self.conn {
+                c.data.preview = None;
+            }
         }
     }
 
